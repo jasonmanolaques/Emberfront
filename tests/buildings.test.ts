@@ -1,6 +1,6 @@
 // Buildings a kingdom places, and the gold economy.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NP, PW, NT, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, GOLD_START, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
+import { TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, GOLD_START, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
 import { W, owner, isLand, pType, pCenter, pBuild, type Human } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { listen } from '../src/sim/events';
@@ -45,7 +45,10 @@ describe('building costs and placement', () => {
     expect(structureOf(B_BARRACKS)!.cost).toEqual([5,5,0]);
     expect(structureOf(B_TOWER)!.cost).toEqual([2,5,1]);
     expect(structureOf(B_MINTER)!.cost).toEqual([5,5,5]);
-    expect(STRUCTURES.map(s => s.type).sort()).toEqual([B_FARM, B_TOWER, B_BARRACKS, B_MINTER].sort());
+    expect(structureOf(B_PLANTATION)!.cost).toEqual([10,0,0]);
+    expect(structureOf(B_QUARRY)!.cost).toEqual([3,5,0]);
+    expect(structureOf(B_COPPERMINE)!.cost).toEqual([10,10,0]);
+    expect(STRUCTURES).toHaveLength(7);
   });
 
   it('takes the resources and places the building, but only if they are all there', () => {
@@ -163,7 +166,7 @@ describe('what the buildings do', () => {
     for (let t=0;t<NT;t++){ if (!isLand[t] || owner[t]) continue; const d=Math.hypot((t%TW)*2+1-tx, ((t/TW)|0)*2+1-ty); if (d<best){ best=d; spot=t; } }
     expect(best).toBeLessThan(20);
     const mk=(kind: number): Human => ({ id: 90000+kind, o: 2, kind, task: 0, x: (spot%TW)*2+1, y: ((spot/TW)|0)*2+1.5, tx: (spot%TW)*2+1, ty: ((spot/TW)|0)*2+1.5,
-      path: [], wait: 1e9, sp: 0, res: -1, carry: -1, amount: 0, hp: SOLDIER_HP, post: -1, site: -1, home: -1 });
+      path: [], wait: 1e9, sp: 0, res: -1, carry: -1, amount: 0, hp: SOLDIER_HP, post: -1, site: -1, home: -1, housed: false, homeless: 0, beggar: false });
     const soldier=mk(H_SOLDIER), villager=mk(H_VILLAGER);
     W.humans.push(soldier, villager);
     let shots=0; listen({ towerShot: () => { shots++; } });

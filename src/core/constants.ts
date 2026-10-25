@@ -10,8 +10,11 @@ export const T_DEEP=0,T_WATER=1,T_SHALLOW=2,T_BEACH=3,T_GRASS=4,T_DRY=5,T_FOREST
 export const TNAME = ['Deep sea','Sea','Shallows','Beach','Grassland','Savanna','Forest','Desert','Hills','Mountains','Snowfield'];
 export const TMULT = [0,0,0,1.1,1,1,1.4,1.2,1.8,3,2.4];   // attack cost multiplier by terrain
 export const B_EMPTY=0,B_HOUSE=1,B_FARM=2,B_TOWER=3,B_MINE=4,B_CASTLE=5,B_CPART=6,B_RUINS=7,B_BARRACKS=8,B_MINTER=9,B_SITE=10;   // B_SITE: a house being built
+// buildings bigger than one plot: the top-left plot holds the type, the others are B_PART pointing at it (pMain)
+export const B_PLANTATION=11, B_QUARRY=12, B_COPPERMINE=13, B_PART=14;
 /** Anything standing on a plot that a kingdom owns and that burns when the ground is taken. */
-export const isStructure = (ty: number) => ty===B_HOUSE || ty===B_FARM || ty===B_TOWER || ty===B_MINE || ty===B_BARRACKS || ty===B_MINTER;
+export const isStructure = (ty: number) => ty===B_HOUSE || ty===B_FARM || ty===B_TOWER || ty===B_MINE || ty===B_BARRACKS || ty===B_MINTER
+  || ty===B_PLANTATION || ty===B_QUARRY || ty===B_COPPERMINE || ty===B_PART;
 
 /* ---------- economy ---------- */
 export const GOLD_START = 250;            // gold each kingdom starts with

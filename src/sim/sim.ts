@@ -6,7 +6,7 @@ import { W, owner, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pB
 import { on } from './events';
 import { genMap } from './mapgen';
 import { setOwner, stepAttack, launch, touches } from './territory';
-import { toRuins, build, togglePriority } from './buildings';
+import { toRuins, build, togglePriority, produce } from './buildings';
 import { scanContacts, census } from './census';
 import { botThink } from './bots';
 import { updatePopulation } from './population';
@@ -19,9 +19,9 @@ const SYL2 = ['mark','heim','dor','gard','ia','or','wyn','vale','mere','rath','h
 function blankNation(id: number, name: string, hex: string, isPlayer: boolean): Nation {
   return { id, name, hex, isPlayer,
     gold:0, income:0, strength:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
-    plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0,
+    plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0,
     sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0,
-    soldierShare:0, humanProg:0, villagers:0, soldiers:0, training:0, stock:[0,0,0], abandoned:0, surplusTicks:0 };
+    soldierShare:0, humanProg:0, villagers:0, soldiers:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0 };
 }
 function makeNation(id: number, name: string, hex: string, isPlayer: boolean): Nation {
   const srand=W.srand;
@@ -146,7 +146,7 @@ export function tick(){
   // passive income plus each villager's tax; each coin minter adds 10% to the total
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive) continue;
-    n.income=(GOLD_PER_SEC+TAX_PER_VILLAGER*n.villagers)*(1+0.1*n.minters); n.gold+=n.income*TICK;
+    n.income=(GOLD_PER_SEC+TAX_PER_VILLAGER*n.taxpayers)*(1+0.1*n.minters); n.gold+=n.income*TICK;   // only housed, working villagers pay
   }
   for (const A of W.attacks) if (!A.done) stepAttack(A);
   if (W.tickN%2===0) W.attacks=W.attacks.filter(A=>!A.done);
@@ -154,6 +154,7 @@ export function tick(){
   for (let i=burning.length-1;i>=0;i--){ const q=burning[i]; pBurn[q]-=TICK; if (pBurn[q]<=0){ burning[i]=burning[burning.length-1]; burning.pop(); toRuins(q); } }
   if (W.tickN%10===0) census();
   for (let i=1;i<N.length;i++){ const n=N[i]; if (n.alive && !n.isPlayer && W.simTime>=n.nextThink) botThink(n); }
+  produce();
   updatePopulation();
   for (let i=1;i<N.length;i++){
     const n=N[i];

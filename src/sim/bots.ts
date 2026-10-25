@@ -1,8 +1,8 @@
 /* ---------- bots ---------- */
-import { B_FARM, B_TOWER, B_BARRACKS, B_MINTER, PW } from '../core/constants';
+import { B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, PW } from '../core/constants';
 import { W, pType, pOwner, pPrio, type Nation } from './state';
 import { launch } from './territory';
-import { STRUCTURES, canAfford, plotProblem, build, togglePriority, anyWithin, isEnemyLand } from './buildings';
+import { STRUCTURES, canAfford, placeProblem, build, togglePriority, anyWithin, isEnemyLand } from './buildings';
 
 /** What a bot would build next, most wanted first. */
 function wishlist(n: Nation, atWar: boolean){
@@ -11,6 +11,11 @@ function wishlist(n: Nation, atWar: boolean){
   if (atWar && n.towers < 1+(n.tiles/900|0)) w.push(B_TOWER);
   if (n.farms < 1+(n.tiles/600|0)) w.push(B_FARM);
   if (n.minters < 1+(n.tiles/1500|0)) w.push(B_MINTER);
+  // a steady supply of whatever the land is poorest in
+  const [wood,stone,copper]=n.stock, few=Math.min(wood,stone,copper);
+  if (copper===few && n.copperMines < 1+(n.tiles/2000|0)) w.push(B_COPPERMINE);
+  if (stone===few && n.quarries < 1+(n.tiles/2000|0)) w.push(B_QUARRY);
+  if (wood===few && n.plantations < 1+(n.tiles/2000|0)) w.push(B_PLANTATION);
   return w;
 }
 const sameNeighbour = (q: number, type: number, id: number) =>
@@ -21,7 +26,7 @@ function pickPlot(n: Nation, type: number){
   const srand=W.srand, cap=n.capPlot; let best=-1, bs=-Infinity;
   for (let k=0;k<24 && n.plots.length;k++){
     const q=n.plots[(srand()*n.plots.length)|0];
-    if (plotProblem(n,q)) continue;
+    if (placeProblem(n,q,type)) continue;
     const d=Math.hypot(q%PW-cap%PW, ((q/PW)|0)-((cap/PW)|0));
     let s = type===B_TOWER ? (anyWithin(q,n.id,2,isEnemyLand) ? 20 : 0) - d*0.2 : -d + (sameNeighbour(q,type,n.id) ? 12 : 0);
     s += srand()*3;

@@ -9,6 +9,9 @@
    kingdom's workers: each one picks a resource, walks to it, harvests it, carries the load to the
    capital and stores it, then thinks about the next job. Houses nobody needs for a while stand
    empty, the outermost first, and fill again from the centre as the kingdom grows.
+   The people who have lived in the kingdom longest get the houses. A villager left homeless for a
+   minute turns beggar: he crawls about town, does no work, pays no tax and can't be recruited,
+   until a home comes free for him.
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, and enemy watchtowers shoot at them. */
 import { TW, TH, PW, TICK, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE } from '../core/constants';
@@ -38,6 +41,7 @@ export const TOWER_RANGE = 24;   // pixels a watchtower can shoot
 export const TOWER_RELOAD = 15;  // ticks between shots (1.5 s)
 const SEARCH_R = 40;             // tiles a villager looks around for work
 export const BUILD_TICKS = 40;   // ticks to put up a house (4 s)
+export const BEG_TICKS = 600;    // ticks homeless before a villager turns beggar (60 s)
 export const ABANDON_TICKS = 200;// ticks with more houses than people before the extra ones stand empty (20 s)
 
 /** Switching role: walking to a barracks for it, or inside training. */
@@ -236,6 +240,7 @@ function goBuildHome(h: Human){
 function think(h: Human){
   const n=W.nations[h.o];
   release(h); h.task=TASK_ROAM;
+  if (h.beggar){ roamTarget(h); return; }   // beggars just drift about town
   if (h.kind===H_VILLAGER && needsHome(n) && goBuildHome(h)) return;
   if (h.kind!==H_VILLAGER || n.capTile<0){ roamTarget(h); return; }   // nowhere to store anything without a capital
   const found=nearestResources(h), have=n.stock.map((s,g)=>s+(pending[h.o]?.[g] ?? 0));
@@ -255,7 +260,7 @@ function think(h: Human){
 function spawnHuman(n: Nation, kind: number, barracks: number[]){
   const r=W.prand, [cx,cy]=doorOf(n), [x,y] = kind===H_SOLDIER ? frontOf(nearestPlot(barracks,cx,cy)) : [cx,cy];
   const h: Human={ id:++W.humanSeq, o:n.id, kind, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+r()*2,
-    res:-1, carry:-1, amount:0, hp:SOLDIER_HP, post:-1, site:-1, home:-1 };
+    res:-1, carry:-1, amount:0, hp:SOLDIER_HP, post:-1, site:-1, home:-1, housed:false, homeless:0, beggar:false };
   W.humans.push(h);
   if (housing[n.id]) housing[n.id].people++;   // counts himself before deciding whether he needs a home
   think(h); h.wait=0;
@@ -301,7 +306,7 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
   for (const h of mine){ if (!diff) return; if (h.task===TASK_TO_TRAIN && h.kind===want){ backToRoam(h); diff--; } }
   // then the people of the other role nearest a barracks; anyone carrying a load delivers it first
   const away=(h: Human)=>{ const [x,y]=frontOf(nearestPlot(barracks,h.x,h.y)); return (h.x-x)**2+(h.y-y)**2; };
-  const cands=mine.filter(h=>!switching(h) && h.task!==TASK_STORE && h.carry<0 && h.home<0 && h.kind===from).sort((a,b)=>away(a)-away(b) || a.id-b.id);
+  const cands=mine.filter(h=>!switching(h) && !h.beggar && h.task!==TASK_STORE && h.carry<0 && h.home<0 && h.kind===from).sort((a,b)=>away(a)-away(b) || a.id-b.id);
   for (const h of cands){ if (!diff) return; sendToTrain(h,barracks); diff--; }
 }
 
@@ -323,6 +328,21 @@ function garrison(n: Nation, mine: Human[]){
       if (count.get(q)!>=GARRISON) continue;
       const [x,y]=frontOf(q), h=nearest(idle,x,y).shift()!;
       h.post=q; count.set(q, count.get(q)!+1); backToRoam(h); progress=true;
+    }
+  }
+}
+
+/** Hands out the houses, longest-standing people first, and turns long-homeless villagers into beggars. */
+function house(n: Nation, mine: Human[]){
+  let free=n.houses;
+  for (const h of [...mine].sort((a,b)=>a.id-b.id)){
+    h.housed = free>0; if (h.housed) free--;
+    if (h.housed){
+      h.homeless=0;
+      if (h.beggar){ h.beggar=false; h.sp=3+W.prand()*2; think(h); }   // a home at last: back to work
+    } else if (h.kind===H_VILLAGER && !h.beggar && ++h.homeless>=BEG_TICKS){
+      // a minute without a roof: he gives up work, drops what he carries, and begs
+      h.carry=-1; h.amount=0; release(h); h.beggar=true; h.sp=1; h.task=TASK_ROAM; h.path=[]; roamTarget(h);
     }
   }
 }
@@ -428,6 +448,7 @@ export function updatePopulation(){
     const k=housing[i] ??= { people:0, builders:0 };
     k.people=mine.length; k.builders=0; for (const h of mine) if (h.home>=0) k.builders++;
     if (W.tickN%10===3) upkeepHouses(n, mine.length);
+    house(n, mine);
     const barracks=barracksOf(n);
     if (n.capTile>=0 && (n.humanProg+=1+FARM_BONUS*n.farms)>=HUMAN_EVERY){
       n.humanProg-=HUMAN_EVERY;
@@ -443,6 +464,11 @@ export function updatePopulation(){
   }
   for (const h of H) step(h);
   // headcount after everyone has moved, so it matches what is on the map this tick
-  for (const n of N){ n.villagers=0; n.soldiers=0; n.training=0; }
-  for (const h of H){ const n=N[h.o]; if (h.kind===H_SOLDIER) n.soldiers++; else n.villagers++; if (switching(h)) n.training++; }
+  for (const n of N){ n.villagers=0; n.soldiers=0; n.training=0; n.beggars=0; n.homeless=0; n.taxpayers=0; }
+  for (const h of H){
+    const n=N[h.o];
+    if (h.kind===H_SOLDIER) n.soldiers++; else if (h.beggar) n.beggars++; else { n.villagers++; if (h.housed) n.taxpayers++; }
+    if (!h.housed) n.homeless++;
+    if (switching(h)) n.training++;
+  }
 }

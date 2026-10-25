@@ -8,7 +8,7 @@ import { $ } from './dom';
 
 export const ui={ meGold:$('meGold'), meRate:$('meRate'), meLand:$('meLand'), meHouses:$('meHouses'), meStrength:$('meStrength'),
   meWood:$('meWood'), meStone:$('meStone'), meCopper:$('meCopper'),
-  meVillagers:$('meVillagers'), meSoldiers:$('meSoldiers'), meTraining:$('meTraining'), meNext:$('meNext'),
+  meVillagers:$('meVillagers'), meHomeless:$('meHomeless'), meSoldiers:$('meSoldiers'), meTraining:$('meTraining'), meNext:$('meNext'),
   soldiers:$('soldiers') as HTMLInputElement, soldiersHint:$('soldiersHint'),
   clock:$('clock'), boardList:$('boardList'), attacks:$('attacks'), log:$('log'), toast:$('toast'), tip:$('tip'), banner:$('banner') };
 
@@ -20,6 +20,8 @@ export function updateHUD(now: number){
   ui.meLand.textContent=(me.tiles/landCount*100).toFixed(1)+'%';
   ui.meHouses.textContent=me.abandoned ? `${me.houses} · ${me.abandoned} empty` : String(me.houses); ui.meStrength.textContent=fmt(me.strength);
   ui.meWood.textContent=fmt(me.stock[0]); ui.meStone.textContent=fmt(me.stock[1]); ui.meCopper.textContent=fmt(me.stock[2]);
+  ui.meHomeless.hidden=!me.homeless;
+  ui.meHomeless.textContent=`${me.homeless} homeless${me.beggars?` · ${me.beggars} begging`:''} · homeless villagers pay no tax`;
   ui.meVillagers.textContent=String(me.villagers); ui.meSoldiers.textContent=String(me.soldiers); ui.meTraining.textContent=String(me.training);
   const perTick=1+FARM_BONUS*me.farms;
   ui.meNext.textContent = me.alive && me.capTile>=0 ? `Next human in ${Math.max(0,Math.ceil((HUMAN_EVERY-me.humanProg)/perTick*TICK))}s${me.farms?` · farms +${Math.round(FARM_BONUS*me.farms*100)}%`:''}` : 'No capital: no new humans';

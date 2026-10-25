@@ -1,10 +1,11 @@
 // Homes: villagers build a hovel when the kingdom is short of houses; spare houses stand empty.
 import { describe, it, expect } from 'vitest';
 import { TW, TH, NT, NP, PW, B_HOUSE, B_SITE, B_EMPTY, B_MINTER, GOLD_PER_SEC, TAX_PER_VILLAGER } from '../src/core/constants';
-import { W, owner, isLand, pType, pOwner, pAband, pCenter } from '../src/sim/state';
+import { W, owner, isLand, pType, pOwner, pAband, pCenter, pBuild } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { build, plotProblem } from '../src/sim/buildings';
-import { H_VILLAGER, H_SOLDIER, TASK_HOME_GO, TASK_HOME_BUILD, TASK_GATHER, BUILD_TICKS, ABANDON_TICKS } from '../src/sim/population';
+import { H_VILLAGER, H_SOLDIER, TASK_ROAM, TASK_HOME_GO, TASK_HOME_BUILD, TASK_GATHER, BUILD_TICKS, ABANDON_TICKS, BEG_TICKS } from '../src/sim/population';
+import { B_BARRACKS } from '../src/core/constants';
 
 const me = () => W.nations[1];
 const mine = () => W.humans.filter(h => h.o === 1);
@@ -120,7 +121,9 @@ describe('empty houses', () => {
     expect(me().abandoned).toBe(spare);
     expect(Math.min(...empty.map(fromCapital))).toBeGreaterThanOrEqual(Math.max(...lived.map(fromCapital)) - 1e-9);   // the outskirts
     // two newcomers: the two innermost empty houses come back to life
-    const innermost=[...empty].sort((a,b) => fromCapital(a)-fromCapital(b)).slice(0,2);
+    // nearest first, exact squared distance in tiles with ties by plot, as the game ranks them
+    const c=me().capTile, d2=(q: number)=>((pCenter[q]%TW)-(c%TW))**2+(((pCenter[q]/TW)|0)-((c/TW)|0))**2;
+    const innermost=[...empty].sort((a,b) => d2(a)-d2(b) || a-b).slice(0,2);
     me().humanProg=0; const target=mine().length+2;
     until(() => mine().length>=target);
     run(10);
@@ -136,11 +139,69 @@ describe('tax', () => {
     const n=me();
     expect(n.villagers).toBeGreaterThan(5);
     tick();
-    expect(n.income).toBeCloseTo((GOLD_PER_SEC + TAX_PER_VILLAGER*n.villagers)*(1+0.1*n.minters), 9);
+    expect(n.income).toBeCloseTo((GOLD_PER_SEC + TAX_PER_VILLAGER*n.taxpayers)*(1+0.1*n.minters), 9);
     // two minters on top
     for (let k=0;k<2;k++){ let q=-1; for (let p=0;p<NP && q<0;p++) if (!plotProblem(n,p)) q=p; n.stock=[5,5,5]; build(n,q,B_MINTER); }
     tick();
-    expect(n.income).toBeCloseTo((GOLD_PER_SEC + TAX_PER_VILLAGER*n.villagers)*1.2, 9);
+    expect(n.income).toBeCloseTo((GOLD_PER_SEC + TAX_PER_VILLAGER*n.taxpayers)*1.2, 9);
     void B_EMPTY;
+  });
+});
+
+describe('homeless people and beggars', () => {
+  /** A town of 8 housed people, then no room left to build and two houses gone: the two newest are homeless. */
+  function crowded(){
+    start(12345, 0); expand(6);
+    until(() => me().houses>=8 && !building().length);
+    me().humanProg=-1e9;
+    until(() => !building().length);
+    pBuild.fill(0);   // no room left anywhere to build another house
+    const hs=houses(); for (const q of hs.slice(-2)){ pType[q]=B_EMPTY; pOwner[q]=0; }
+    me().houses-=2;
+    tick();
+  }
+
+  it('leaves the newest arrivals homeless, and they pay no tax', () => {
+    crowded();
+    const people=[...mine()].sort((a,b) => a.id-b.id), homeless=people.filter(h => !h.housed);
+    expect(homeless.length).toBe(people.length-me().houses);
+    expect(homeless.map(h => h.id)).toEqual(people.slice(-homeless.length).map(h => h.id));
+    expect(me().homeless).toBe(homeless.length);
+    const villagers=mine().filter(h => h.kind===H_VILLAGER && !h.beggar).length;
+    expect(me().taxpayers).toBe(villagers-homeless.filter(h => h.kind===H_VILLAGER).length);
+    tick();   // income is worked out at the start of a tick, from the last tick's head count
+    expect(me().income).toBeCloseTo((GOLD_PER_SEC + TAX_PER_VILLAGER*me().taxpayers)*(1+0.1*me().minters), 9);
+  });
+
+  it('turns a villager homeless for a minute into a beggar who does no work', () => {
+    crowded();
+    const h=mine().filter(h => !h.housed && h.kind===H_VILLAGER)[0];
+    run(BEG_TICKS-5); expect(h.beggar).toBe(false);
+    run(10);          expect(h.beggar).toBe(true);
+    expect(me().beggars).toBeGreaterThan(0);
+    for (let i=0;i<300;i++){ tick(); expect(h.task).toBe(TASK_ROAM); expect(h.carry).toBe(-1); expect(h.res).toBe(-1); expect(h.home).toBe(-1); }
+    expect(h.sp).toBeLessThanOrEqual(1);   // crawls
+  });
+
+  it('never recruits a beggar', () => {
+    crowded();
+    const plots=[]; for (let q=0;q<NP;q++) if (pType[q]===0 && owner[pCenter[q]]===1) plots.push(q);
+    pBuild.fill(1); me().stock=[5,5,0]; expect(build(me(), plots.find(q => !plotProblem(me(),q))!, B_BARRACKS)).toBe(true); pBuild.fill(0);
+    run(BEG_TICKS+10);
+    const beggars=mine().filter(h => h.beggar);
+    expect(beggars.length).toBeGreaterThan(0);
+    queueCommand({ type: 'soldiers', nation: 1, share: 1 }); run(600);
+    for (const h of beggars) expect(W.humans.includes(h) && h.kind===H_VILLAGER && h.beggar).toBe(true);
+  });
+
+  it('takes a beggar off the street once a home comes free', () => {
+    crowded(); run(BEG_TICKS+10);
+    const b=mine().find(h => h.beggar)!;
+    // a housed person dies: the longest-homeless (the beggar) moves in and goes back to work
+    kill(mine().filter(h => h.housed)[0]);
+    run(2);
+    expect(b.housed).toBe(true);
+    expect(b.beggar).toBe(false);
+    expect(b.sp).toBeGreaterThan(1);
   });
 });

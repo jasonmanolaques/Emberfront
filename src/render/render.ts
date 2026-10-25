@@ -1,13 +1,13 @@
 /* ---------- frame rendering: reads the simulation, never changes it ---------- */
 import { TW, PW, PH, PLAYER, PLAYER_COL, B_TOWER } from '../core/constants';
 import { clamp, fmt } from '../core/util';
-import { W, isLand, pType, pPrio } from '../sim/state';
+import { W, isLand, pType, pPrio, pTimer, pBurn } from '../sim/state';
 import { findBlock } from '../sim/sim';
-import { plotProblem, structureOf, canAfford } from '../sim/buildings';
+import { placeProblem, structureOf, canAfford, SIZE, PRODUCE_TICKS } from '../sim/buildings';
 import { client, reduceMotion } from '../client';
 import { view, ctx, cam, stepCamAnim } from './camera';
 import { worldC, flushWorld } from './terrain';
-import { objC, drawIcon } from './sprites';
+import { objC, drawIcon, drawWorking, BIG } from './sprites';
 import { natC } from './nature';
 import { styleOf } from './style';
 import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, floats, glints, shots, updateEffects } from './effects';
@@ -25,7 +25,7 @@ export const hover = { sx: -1, sy: -1, tile: -1, mouse: false };
 const ghosts = new Map<number, HTMLCanvasElement>();
 function ghostOf(type: number){
   let c=ghosts.get(type);
-  if (!c){ c=document.createElement('canvas'); c.width=c.height=8; drawIcon(c.getContext('2d')!,type,styleOf(PLAYER)); ghosts.set(type,c); }
+  if (!c){ const [w,h]=SIZE[type] ?? [1,1]; c=document.createElement('canvas'); c.width=w*8; c.height=h*8; drawIcon(c.getContext('2d')!,type,styleOf(PLAYER)); ghosts.set(type,c); }
   return c;
 }
 export function resetGhosts(){ ghosts.clear(); }
@@ -63,6 +63,15 @@ export function render(now: number, dt: number){
   ctx.drawImage(natC,0,0);
   ctx.drawImage(objC,0,0);
 
+  // production buildings at work: saplings growing, the quarry pulley, the mine's glow
+  {
+    const qx0=Math.max(0,Math.floor(vx0/8)-1), qy0=Math.max(0,Math.floor(vy0/8)-1), qx1=Math.min(PW-1,Math.floor(vx1/8)), qy1=Math.min(PH-1,Math.floor(vy1/8));
+    for (let y=qy0;y<=qy1;y++) for (let x=qx0;x<=qx1;x++){
+      const q=y*PW+x, ty=pType[q]; if (!BIG[ty] || pBurn[q]>0) continue;
+      drawWorking(ctx,ty,x*8,y*8,pTimer[q]/PRODUCE_TICKS,reduceMotion?0:now);
+    }
+  }
+
   // people, 2x4 pixels standing on (x,y): villagers in their kingdom's colour,
   // soldiers in a darker tunic with a helmet and a spear
   if (zc>=1.5){
@@ -70,6 +79,15 @@ export function render(now: number, dt: number){
       if (indoors(p) || p.x<vx0-3||p.y<vy0||p.x>vx1+3||p.y>vy1+7) continue;
       const x=Math.round(p.x)-1, y=Math.floor(p.y), st=styleOf(p.o), skin=SKIN[(p.id*7)&3];
       ctx.fillStyle='rgba(16,28,8,.35)'; ctx.fillRect(x,y+1,3,1);
+      if (p.beggar){
+        // hunched in rags, pale and sickly, shuffling along
+        const lean=reduceMotion ? 0 : ((now/600+p.id)|0)&1;
+        ctx.fillStyle='#a8b68a'; ctx.fillRect(x+1+lean,y-2,1,1);
+        ctx.fillStyle='#6f675a'; ctx.fillRect(x,y-1,2,1);
+        ctx.fillStyle='#5a5348'; ctx.fillRect(x,y,1,1);
+        ctx.fillStyle='#c9c2a8'; ctx.fillRect(x+1,y,1,1);
+        continue;
+      }
       if (p.kind===H_SOLDIER){
         ctx.fillStyle='#aeb7c0'; ctx.fillRect(x,y-3,2,1);
         ctx.fillStyle=skin;      ctx.fillRect(x,y-2,2,1);
@@ -121,10 +139,10 @@ export function render(now: number, dt: number){
     const hx=hover.tile%TW, hy=(hover.tile/TW)|0;
     if (client.state==='play' && client.placing){
       const q=(hy>>2)*PW+(hx>>2), me=W.nations[PLAYER], s=structureOf(client.placing);
-      const ok=!!me && !!s && canAfford(me,s) && !plotProblem(me,q);
+      const ok=!!me && !!s && canAfford(me,s) && !placeProblem(me,q,client.placing), [fw,fh]=SIZE[client.placing] ?? [1,1];
       ctx.globalAlpha=0.7; ctx.drawImage(ghostOf(client.placing),(hx>>2)*8,(hy>>2)*8); ctx.globalAlpha=1;
       ctx.strokeStyle=ok?'rgba(143,227,155,.95)':'rgba(255,90,70,.9)'; ctx.lineWidth=2*dpr/zoom;
-      ctx.strokeRect((hx>>2)*8,(hy>>2)*8,8,8);
+      ctx.strokeRect((hx>>2)*8,(hy>>2)*8,fw*8,fh*8);
     } else if (client.state==='spawn'){
       const b=findBlock(hx,hy,0), bx=Math.round(hx/4)-1, by=Math.round(hy/4)-1;
       ctx.strokeStyle=b?'rgba(255,230,120,.95)':'rgba(255,90,70,.9)'; ctx.lineWidth=2*dpr/zoom;

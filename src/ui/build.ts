@@ -1,9 +1,9 @@
 /* ---------- buildings panel: pick a building, then click your land to place it ---------- */
-import { PLAYER, TW, PW, B_FARM, B_BARRACKS, B_TOWER, B_MINTER } from '../core/constants';
+import { PLAYER, TW, PW, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE } from '../core/constants';
 import type { Nation } from '../sim/state';
 import { W, owner, pType, pOwner, pPrio } from '../sim/state';
 import { queueCommand } from '../sim/sim';
-import { STRUCTURES, canAfford, plotProblem, structureOf, type Structure } from '../sim/buildings';
+import { STRUCTURES, canAfford, placeProblem, structureOf, SIZE, type Structure } from '../sim/buildings';
 import { GOOD_NAME } from '../sim/resources';
 import { client } from '../client';
 import { drawIcon } from '../render/sprites';
@@ -13,7 +13,8 @@ import { $ } from './dom';
 
 const panel=$('buildPanel'), list=$('buildList'), tip=$('btip'), button=$('build');
 const ICO=['wood','stone','copper'];
-const owned = (n: Nation, type: number) => type===B_FARM ? n.farms : type===B_BARRACKS ? n.barracks : type===B_TOWER ? n.towers : type===B_MINTER ? n.minters : 0;
+const owned = (n: Nation, type: number) => type===B_FARM ? n.farms : type===B_BARRACKS ? n.barracks : type===B_TOWER ? n.towers : type===B_MINTER ? n.minters
+  : type===B_PLANTATION ? n.plantations : type===B_QUARRY ? n.quarries : type===B_COPPERMINE ? n.copperMines : 0;
 const rows=new Map<number, HTMLButtonElement>();
 
 /** Builds the panel's rows once a match starts, with icons in the player's colours. */
@@ -21,7 +22,8 @@ export function setupBuildPanel(){
   list.textContent=''; rows.clear();
   for (const s of STRUCTURES){
     const b=document.createElement('button'); b.className='bld'; b.dataset.type=String(s.type);
-    const c=document.createElement('canvas'); c.width=c.height=8; drawIcon(c.getContext('2d')!,s.type,styleOf(PLAYER));
+    const [fw,fh]=SIZE[s.type] ?? [1,1], c=document.createElement('canvas'); c.width=fw*8; c.height=fh*8; drawIcon(c.getContext('2d')!,s.type,styleOf(PLAYER));
+    if (fh<fw) c.style.height='16px';   // keep the pixels square for a 2x1 building
     const body=document.createElement('span'); body.style.display='grid'; body.style.gap='3px'; body.style.minWidth='0';
     body.innerHTML=`<span class="bn"><span></span><i></i></span><span class="costs"></span>`;
     (body.firstElementChild!.firstElementChild as HTMLElement).textContent=s.name;
@@ -86,7 +88,7 @@ export function toggleBuildPanel(open=panel.hidden){
 /** A click on the map while placing: build there if the plot is good. */
 export function placeAt(t: number){
   const me=W.nations[PLAYER], s=structureOf(client.placing); if (!me || !s || t<0) return;
-  const q=((t/TW|0)>>2)*PW+((t%TW)>>2), problem=plotProblem(me,q);
+  const q=((t/TW|0)>>2)*PW+((t%TW)>>2), problem=placeProblem(me,q,s.type);
   if (problem){ toast(problem); return; }
   if (!canAfford(me,s)){ toast(`Not enough resources for a ${s.name.toLowerCase()}`); stopPlacing(); return; }
   queueCommand({ type:'build', nation:PLAYER, plot:q, kind:s.type });

@@ -13,12 +13,13 @@ export interface SimEvents {
   resChanged(t: number): void;                  // the tree or rock on tile t appeared, was harvested or cleared
   stored(id: number, good: number, amount: number): void;   // a villager delivered goods to the capital
   towerShot(x0: number, y0: number, x1: number, y1: number, killed: boolean): void;   // a watchtower hit an enemy soldier
+  produced(q: number, id: number, good: number, amount: number): void;   // a plantation, quarry or copper mine delivered
 }
 
 const noop = () => {};
 export const on: SimEvents = {
   tileChanged: noop, plotChanged: noop, roadBuilt: noop, plotIgnited: noop,
   buildingPlaced: noop, capitalFell: noop, eliminated: noop, roleChanged: noop,
-  resChanged: noop, stored: noop, towerShot: noop,
+  resChanged: noop, stored: noop, towerShot: noop, produced: noop,
 };
 export function listen(l: Partial<SimEvents>){ Object.assign(on, l); }

@@ -73,10 +73,10 @@ describe('resources on the map', () => {
 });
 
 describe('harvesting', () => {
-  it('gives 3 wood per healthy tree, 1 per twiggy tree, 1 stone or copper per harvest', () => {
+  it('gives 1 per harvest of every kind: healthy or twiggy tree, rock or copper', () => {
     newWorld(5);
     const first = (r: number) => { for (let t=0;t<NT;t++) if (resType[t]===r) return t; throw new Error('none of '+r); };
-    expect(harvest(first(R_TREE))).toBe(3);
+    expect(harvest(first(R_TREE))).toBe(1);
     expect(harvest(first(R_TWIG))).toBe(1);
     expect(harvest(first(R_STONE))).toBe(1);
     expect(harvest(first(R_COPPER))).toBe(1);

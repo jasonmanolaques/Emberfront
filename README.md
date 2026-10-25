@@ -36,9 +36,9 @@ That split is what makes online multiplayer possible later: every browser runs t
 
 ## Gold and strength
 
-Each kingdom starts with 250 gold and earns 5 a second plus 0.1 a second in tax from each villager (soldiers pay none); each coin minter adds 10% to the total. Pushing the border spends gold from the treasury (the top slider sets how much each push takes): settling unclaimed land costs 1 gold a tile, and another kingdom's land costs more the stronger it is for its size, and 1.5× near its watchtowers. Unspent gold comes back when a push ends, and the defender loses some gold on every tile taken. Losing your capital loses a quarter of your gold.
+Each kingdom starts with 250 gold and earns 5 a second plus 0.1 a second in tax from each housed villager (soldiers, the homeless and beggars pay none); each coin minter adds 10% to the total. Pushing the border spends gold from the treasury (the top slider sets how much each push takes): settling unclaimed land costs 1 gold a tile, and another kingdom's land costs more the stronger it is for its size, and 1.5× near its watchtowers. Unspent gold comes back when a push ends, and the defender loses some gold on every tile taken. Losing your capital loses a quarter of your gold.
 
-**Strength** is what the labels and leaderboard show: 1 per tile, 50 per villager, 100 per soldier and 3 per gold (`STR_*` in `core/constants.ts`).
+**Strength** is what the labels and leaderboard show: 1 per tile, 50 per villager, 100 per soldier and 3 per gold (`STR_*` in `core/constants.ts`). Beggars count for nothing.
 
 ## People
 
@@ -52,6 +52,8 @@ Every person, villager or soldier, needs a home: one house each. Whenever the ki
 
 With more houses than people for 20 seconds, the spare ones stand empty and run down, the farthest from the capital first; as people arrive again, the innermost empty houses are lived in first (`sim/population.ts`). Land caps housing: once a kingdom's plots are full, new people stay homeless until it expands.
 
+The people who have lived in the kingdom longest get the houses, so the newest arrivals are the homeless ones, and whoever has been homeless longest moves in first when a house comes free. Homeless villagers pay no tax. A villager homeless for a minute turns **beggar**: he crawls slowly about town in rags, does no work, pays no tax and can't be recruited, until a home comes free for him and he goes back to work. Homeless soldiers stay soldiers.
+
 ## Buildings
 
 Houses are built by villagers (above). Everything else is placed by the kingdom from the buildings panel (the hammer button, or B) and paid for from its stockpile:
@@ -62,8 +64,11 @@ Houses are built by villagers (above). Everything else is placed by the kingdom 
 | Barracks | 5 / 5 / 0 | Trains soldiers and is where they wait; needed to raise an army |
 | Watchtower | 2 / 5 / 1 | Shoots the nearest enemy soldier in range (1 damage every 1.5 s); land around it costs 1.5× to take. Click it to toggle **!**: it then calls 5 idle soldiers to guard it. Several calling towers share the idle soldiers out one at a time in the order they called, so 5 soldiers for 2 towers go 3 and 2 |
 | Coin minter | 5 / 5 / 5 | +10% gold income |
+| Plantation | 10 / 0 / 0 | 2×2 plots. Four saplings grow into trees over 30 s, then +5 wood |
+| Stone quarry | 3 / 5 / 0 | 2×2 plots. A pulley hauls stone out of the pit: +3 stone every 30 s |
+| Copper mine | 10 / 10 / 0 | 2×1 plots. A shaft glowing orange: +2 copper every 30 s |
 
-Buildings run by themselves; none need workers. They are modular: a plot draws itself from its four neighbours, so fields of farms merge into one farmland with a single fence round the outside, barracks and minters next to each other become one long hall, and neighbouring watchtowers are joined by walls (`render/sprites.ts`). Bots build with simple priorities of their own (`sim/bots.ts`).
+Buildings run by themselves; none need workers. They are modular: a plot draws itself from its four neighbours, so fields of farms merge into one farmland with a single fence round the outside, barracks and minters next to each other become one long hall, and neighbouring watchtowers are joined by walls (`render/sprites.ts`). The production buildings cover several plots (the top-left plot holds the building, the rest point to it); if any of their plots is taken, the whole building burns. Bots build with simple priorities of their own (`sim/bots.ts`).
 
 ## Resources
 
@@ -71,7 +76,7 @@ Buildings run by themselves; none need workers. They are modular: a plot draws i
 
 | Resource | Where | Per harvest | Harvests |
 |---|---|---|---|
-| Healthy tree | dense in forests; some on grassland, hills, snow | 3 wood | 1 (felled to a stump) |
+| Healthy tree | dense in forests; some on grassland, hills, snow | 1 wood | 1 (felled to a stump) |
 | Dry, twiggy tree | savanna, desert, beaches, hills | 1 wood | 1 |
 | Rock | a little everywhere; plenty on hills and snow, most on and around mountains | 1 stone | 3 |
 | Copper | rare everywhere; most in deserts, some in mountains | 1 copper | 3 |

@@ -10,6 +10,8 @@ import { buildBase, paintAll, paintTile, paintRoad, repaint } from './render/ter
 import { drawPlotAndNeighbours } from './render/sprites';
 import { drawNature, redrawNature } from './render/nature';
 import { addFlash, fireBurst, gatePuff, addShot, floats, resetEffects } from './render/effects';
+import { GOOD_NAME } from './sim/resources';
+import { PW } from './core/constants';
 import { resetStyles } from './render/style';
 import { resetLabels, resetGhosts } from './render/render';
 import { setupBuildPanel, toggleBuildPanel } from './ui/build';
@@ -28,7 +30,10 @@ listen({
   roleChanged: gatePuff,
   resChanged: redrawNature,
   towerShot: addShot,
+  // "+5 wood" over your own plantations, quarries and mines when they deliver
+  produced: (q,id,good,amount) => { if (id===PLAYER) floats.push({ x:(q%PW)*8+8, y:((q/PW)|0)*8-1, text:`+${amount} ${GOOD_NAME[good]}`, t0:performance.now(), c:GOOD_COL[good] }); },
 });
+const GOOD_COL=['#e9b26a','#dcd6cc','#ffa060'];
 
 export function newGame(seed?: number){
   newWorld(seed ?? (Math.random()*2147483647)|0);

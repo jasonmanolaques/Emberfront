@@ -10,7 +10,7 @@ export const R_NONE=0, R_TREE=1, R_TWIG=2, R_STONE=3, R_COPPER=4;   // what stan
 export const G_WOOD=0, G_STONE=1, G_COPPER=2;                       // what goes in the stockpile
 export const GOOD_NAME = ['wood','stone','copper'];
 export const GOOD_OF   = [-1, G_WOOD, G_WOOD, G_STONE, G_COPPER];
-export const YIELD     = [0, 3, 1, 1, 1];        // goods per harvest: a healthy tree gives 3, a dry twiggy one 1
+export const YIELD     = [0, 1, 1, 1, 1];        // goods per harvest: every tree, rock or copper vein gives 1
 const CHARGES          = [0, 1, 1, 3, 3];        // harvests before it is gone: trees are felled, rocks last 3
 export const WORK_TICKS= [0, 40, 25, 40, 50];    // how long one harvest takes
 
