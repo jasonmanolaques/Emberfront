@@ -12,8 +12,8 @@ import { worldC, flushWorld, SEA } from './terrain';
 import { objC, drawIcon, drawWorking, BIG } from './sprites';
 import { natC } from './nature';
 import { styleOf } from './style';
-import { personSprite, BODY_X, FEET_Y } from './people';
-import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, psize, floats, glints, shots, hits, updateEffects } from './effects';
+import { personSprite, corpseSprite, woundStage, BODY_X, FEET_Y } from './people';
+import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, psize, floats, glints, shots, hits, corpses, drips, addDrip, CORPSE_MS, DRIP_MS, updateEffects } from './effects';
 import { H_SOLDIER, TASK_HARVEST, TASK_HOME_GO, TASK_HOME_BUILD, indoors } from '../sim/population';
 import { G_WOOD, G_STONE, G_COPPER } from '../sim/resources';
 import { allied, atWar, HIT_TICKS } from '../sim/war';
@@ -35,11 +35,14 @@ export function resetGhosts(){ ghosts.clear(); }
 
 // smoothed label positions per nation (they glide toward the census anchor)
 const labX = new Float64Array(256).fill(-1), labY = new Float64Array(256);
-export function resetLabels(){ labX.fill(-1); lastX.clear(); lastY.clear(); facing.clear(); }
+export function resetLabels(){ labX.fill(-1); lastX.clear(); lastY.clear(); facing.clear(); bleeding.clear(); }
 
 // where each person stood last frame, to tell walking from standing and which way they face
 let lastX = new Map<number, number>(), lastY = new Map<number, number>();
 const facing = new Map<number, boolean>();   // true = facing left
+// the badly wounded leave a short trail of blood: when it started, and when the last drop fell
+const bleeding = new Map<number, [number, number]>();
+const TRAIL_MS=3500, DROP_MS=260;
 
 /** A box with a dark edge: loads, bags and planks carried above the head. */
 function box(x: number, y: number, w: number, h: number, c: string){ ctx.fillStyle=INK; ctx.fillRect(x-1,y-1,w+2,h+2); ctx.fillStyle=c; ctx.fillRect(x,y,w,h); }
@@ -60,14 +63,25 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
     else if (Math.abs(dx)>0.02) left = dx<0;
     facing.set(p.id,left);
     const kind = p.beggar ? 2 : p.kind===H_SOLDIER ? 1 : 0;
-    const striking = kind===1 && p.cool>HIT_TICKS-3 && (p.foe>=0 || p.aim>=0);
-    const frame = striking ? 2 : moving ? (step ^ (p.id&1)) : 0;
+    const striking = (kind===1 || p.brave===1) && p.cool>HIT_TICKS-3 && p.foe>=0 || (kind===1 && p.cool>HIT_TICKS-3 && p.aim>=0);
+    const frame = striking && kind===1 ? 2 : moving ? (step ^ (p.id&1)) : 0;
     const look = ((p.id*7)&3) | (((p.id*13)%4)<<2);
-    const spr = personSprite(p.o,kind,look,frame,left);
+    const wound = woundStage(kind===1 ? 1 : 0, p.hp);
+    // near death, a trail of blood for a few seconds as they stagger on
+    if (wound===(kind===1 ? 2 : 1)){
+      let b=bleeding.get(p.id); if (!b){ b=[now,0]; bleeding.set(p.id,b); }
+      if (moving && now-b[0]<TRAIL_MS && now-b[1]>DROP_MS){ b[1]=now; addDrip(p.x+(Math.random()-0.5)*0.8,p.y); }
+    } else bleeding.delete(p.id);
+    const spr = personSprite(p.o,kind,look,frame,left,wound);
     const bx = Math.round(rx)-2, fy = Math.floor(ry)+1;   // body's left column, and its feet row
     const sx = left ? bx-(spr.width-BODY_X-4) : bx-BODY_X;
     ctx.drawImage(spr, sx, fy-FEET_Y);
     if (kind!==0) { if (p.loot) drawLoot(bx,fy); continue; }
+    if (p.brave===1){   // up in arms: a pitchfork
+      const tx=left ? bx-1 : bx+4; ctx.fillStyle=INK; ctx.fillRect(tx-1,fy-9,3,9);
+      ctx.fillStyle='#8a6a40'; ctx.fillRect(tx,fy-7,1,7); ctx.fillStyle='#c9cdd1'; ctx.fillRect(tx,fy-8,1,1); ctx.fillRect(tx-1,fy-9,1,1); ctx.fillRect(tx+1,fy-9,1,1);
+      continue;
+    }
     // working: a tool swings beside them
     if (p.task===TASK_HARVEST || p.task===TASK_HOME_BUILD){
       const up=reduceMotion ? 0 : ((now/220+p.id)|0)&1, tx=left ? bx-2 : bx+4;
@@ -80,6 +94,28 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
     else if (p.task===TASK_HOME_GO){ box(bx-1,fy-10,6,1,CARGO[G_WOOD][0]); }
   }
   lastX=nextX; lastY=nextY;
+}
+/** Pools of blood under the fallen and the drops the wounded left, then the bodies themselves. */
+function drawFallen(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
+  while (drips.length && now-drips[0].t0>DRIP_MS) drips.shift();
+  while (corpses.length && now-corpses[0].t0>CORPSE_MS) corpses.shift();
+  for (const d of drips){
+    const x=Math.floor(d.x*K), y=Math.floor(d.y*K)+1; if (x<vx0||y<vy0||x>vx1||y>vy1) continue;
+    const age=(now-d.t0)/DRIP_MS; ctx.globalAlpha=age<0.6 ? 0.85 : 0.85*(1-age)/0.4;
+    ctx.fillStyle='#7e1410'; ctx.fillRect(x,y,1,1); if ((x+y)&1) ctx.fillRect(x+1,y,1,1);
+  }
+  for (const c of corpses){
+    const x=Math.round(c.x*K), y=Math.floor(c.y*K)+1; if (x<vx0-10||y<vy0-8||x>vx1+10||y>vy1+8) continue;
+    const age=now-c.t0, fade=age>CORPSE_MS-5000 ? (CORPSE_MS-age)/5000 : 1, grow=Math.min(1,age/1600);
+    // the pool spreads for a moment and then stays, dark and wide
+    ctx.globalAlpha=0.8*fade; ctx.fillStyle='#6e100c';
+    const rx=Math.round(2+grow*4), ry=Math.round(1+grow*2);
+    for (let j=-ry;j<=ry;j++){ const w=Math.round(rx*Math.sqrt(1-(j/(ry+0.5))**2)); ctx.fillRect(x-w,y+j,w*2+1,1); }
+    ctx.fillStyle='#9a1a14'; ctx.fillRect(x-Math.max(1,rx-2),y-Math.max(0,ry-1),Math.max(1,rx-2)*2,1);
+    ctx.globalAlpha=fade;
+    const s=corpseSprite(c.o,c.kind,c.look); ctx.drawImage(s,x-7,y-7);
+  }
+  ctx.globalAlpha=1;
 }
 /** A raider's plunder: a sack over his shoulder, tied with a gold cord. */
 function drawLoot(bx: number, fy: number){
@@ -148,7 +184,7 @@ export function render(now: number, dt: number){
   }
 
   // people and armies, once close enough to tell them apart
-  if (zs>=1.5){ drawPeople(now,vx0,vy0,vx1,vy1); drawBanners(now,vx0,vy0,vx1,vy1); }
+  if (zs>=1.5){ drawFallen(now,vx0,vy0,vx1,vy1); drawPeople(now,vx0,vy0,vx1,vy1); drawBanners(now,vx0,vy0,vx1,vy1); }
 
   // particles
   for (let i=0;i<fx.pcount;i++){
@@ -171,14 +207,28 @@ export function render(now: number, dt: number){
       ctx.fillStyle='#ffd23f'; ctx.fillRect(ex,ey,2,6); ctx.fillRect(ex,ey+7,2,2);
     }
   }
-  // watchtower arrows in flight, and a red flash where they hit
+  // arrows from watchtowers and castles: a flash on the battlements, a bright bolt arcing over
+  // with a fading streak behind it, and a burst where it hits
   for (let i=shots.length-1;i>=0;i--){
-    const s=shots[i], age=now-s.t0; if (age>450 || age<0){ shots.splice(i,1); continue; }
-    const x0=s.x0*K, y0=s.y0*K, x1=s.x1*K, y1=s.y1*K;
-    if (age<250){ const k=age/250, x=x0+(x1-x0)*k, y=y0+(y1-y0)*k - Math.sin(k*Math.PI)*4, L=Math.hypot(x1-x0,y1-y0)||1, ux=(x1-x0)/L, uy=(y1-y0)/L;
-      ctx.fillStyle='#5a4030'; ctx.fillRect(Math.floor(x-ux*2),Math.floor(y-uy*2),1,1); ctx.fillRect(Math.floor(x-ux),Math.floor(y-uy),1,1);
-      ctx.fillStyle='#f4ead0'; ctx.fillRect(Math.floor(x),Math.floor(y),1,1); ctx.fillStyle='#e8e0d0'; ctx.fillRect(Math.floor(x-ux*3),Math.floor(y-uy*3),1,1); }
-    else { ctx.globalAlpha=1-(age-250)/200; ctx.fillStyle=s.kill?'#ff3b2b':'#ff8a6a'; const r=s.kill?2:1; ctx.fillRect(Math.floor(x1)-r,Math.floor(y1)-r,r*2+1,r*2+1); ctx.globalAlpha=1; }
+    const s=shots[i], age=now-s.t0;
+    const x0=s.x0*K, y0=s.y0*K, x1=s.x1*K, y1=s.y1*K, L=Math.hypot(x1-x0,y1-y0)||1, fly=Math.min(700,220+L*6);
+    if (age>fly+260 || age<0){ shots.splice(i,1); continue; }
+    if (age<120){ ctx.globalAlpha=1-age/120; ctx.fillStyle='#fff2b0'; ctx.fillRect(Math.floor(x0)-1,Math.floor(y0)-1,3,3); ctx.globalAlpha=1; }
+    if (age<fly){
+      const at=(k: number): [number, number] => [x0+(x1-x0)*k, y0+(y1-y0)*k-Math.sin(k*Math.PI)*Math.min(14,L*0.25)];
+      const k=age/fly;
+      for (let j=9;j>=1;j--){ const kk=k-j*0.03; if (kk<0) continue; const [tx,ty]=at(kk); ctx.globalAlpha=0.75*(1-j/10); ctx.fillStyle=j<4 ? '#ffe08a' : '#ff9a3c'; ctx.fillRect(Math.floor(tx),Math.floor(ty),2,2); }
+      ctx.globalAlpha=1;
+      const [x,y]=at(k), X=Math.floor(x)-1, Y=Math.floor(y)-1;
+      ctx.fillStyle=INK; ctx.fillRect(X-1,Y-1,5,5);
+      ctx.fillStyle='#ffd45a'; ctx.fillRect(X,Y,3,3);
+      ctx.fillStyle='#fffbe8'; ctx.fillRect(X+1,Y+1,1,1);
+    } else {
+      const a=(age-fly)/260; ctx.globalAlpha=1-a; ctx.fillStyle=s.kill?'#ff3b2b':'#ffb07a';
+      const r=Math.round(1+a*3)+(s.kill?1:0), cx=Math.floor(x1), cy=Math.floor(y1);
+      ctx.fillRect(cx-r,cy,1,1); ctx.fillRect(cx+r,cy,1,1); ctx.fillRect(cx,cy-r,1,1); ctx.fillRect(cx,cy+r,1,1); ctx.fillRect(cx,cy,1,1);
+      ctx.globalAlpha=1;
+    }
   }
   // blows landing in a fight: a white spark, red when it kills
   for (let i=hits.length-1;i>=0;i--){

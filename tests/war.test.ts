@@ -2,14 +2,14 @@
 // Most of these play on a flat all-grass map, so distances and borders are predictable.
 import { describe, it, expect } from 'vitest';
 import { TW, TH, NT, NP, PW, T_GRASS, B_HOUSE, B_FARM, B_TOWER, B_BARRACKS, B_RUINS } from '../src/core/constants';
-import { W, owner, isLand, terr, resType, resLeft, pBuild, pType, pOwner, pBurn, type Human, type Nation } from '../src/sim/state';
+import { W, owner, occ, isLand, terr, resType, resLeft, pBuild, pType, pOwner, pBurn, type Human, type Nation } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { listen, on } from '../src/sim/events';
 import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
 import { build, plotProblem, structureOf, togglePriority, finishHouse } from '../src/sim/buildings';
-import { H_SOLDIER, H_VILLAGER, TASK_STORE, makeHuman, doorOf, switching } from '../src/sim/population';
-import { allied, atWar, available, declare, warProblem, routeOpen, mayStand, endWar, LOOT_GOLD, MAX_ALLIES } from '../src/sim/war';
+import { H_SOLDIER, H_VILLAGER, TASK_STORE, SOLDIER_HP, VILLAGER_HP, makeHuman, doorOf, switching } from '../src/sim/population';
+import { allied, atWar, available, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R } from '../src/sim/war';
 
 const N = (i: number) => W.nations[i];
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
@@ -172,7 +172,7 @@ describe('at war', () => {
     mine[0].x=sx; mine[0].y=sy; mine[0].sp=0; mine[0].wait=1e9; theirs[0].x=sx+1; theirs[0].y=sy; theirs[0].sp=0; theirs[0].wait=1e9;
     run(100);
     expect(blows).toHaveLength(0);
-    expect(mine[0].hp).toBe(10);
+    expect(mine[0].hp).toBe(SOLDIER_HP);
     // now 1 attacks with everything but that soldier, and fighting starts where the armies meet
     queueCommand({ type:'war', nation:1, target:2, raid:false, soldiers:6 }); tick();
     expect(atWar(1,2)).toBe(true);
@@ -190,8 +190,9 @@ describe('at war', () => {
     soldiers(N(1),30);
     const annexed=collect('annexed');
     queueCommand({ type:'war', nation:1, target:2, raid:false, soldiers:30 }); tick();
-    // marching in, the army takes land before it reaches the castle
-    until(() => theirLand.some(t => owner[t]===1), 2000);
+    // marching in, the army occupies land before it reaches the castle; it stays theirs until the end
+    until(() => theirLand.some(t => occ[t]===1), 2000);
+    expect(theirLand.every(t => owner[t]===2)).toBe(true);
     expect(N(2).alive).toBe(true);
     until(() => !N(2).alive, 4000);
     expect(annexed).toEqual([[2,1]]);
@@ -317,5 +318,121 @@ describe('bots at war', () => {
     expect(began.some(b => b[2])).toBe(true);    // raids
     expect(began.some(b => !b[2])).toBe(true);   // and attacks
     expect(annexed.length).toBeGreaterThan(0);
+  });
+});
+
+describe('wounds and healing', () => {
+  it('gives soldiers 11 hit points and villagers 6; blows do 1, a villager\'s half that; everyone heals 0.1 a second', () => {
+    world(1); quiet();
+    const [s0]=soldiers(N(1),1), [x,y]=doorOf(N(1)), v=makeHuman(N(1),H_VILLAGER,x,y); W.humans.push(v);
+    expect([s0.hp, v.hp, SOLDIER_HP, VILLAGER_HP]).toEqual([11, 6, 11, 6]);
+    expect([HIT_DMG, MILITIA_DMG]).toEqual([1, 0.5]);
+    s0.hp=5; v.hp=2; run(100);
+    expect(s0.hp).toBeCloseTo(6, 5);
+    expect(v.hp).toBeCloseTo(3, 5);
+    run(1000);
+    expect([s0.hp, v.hp]).toEqual([11, 6]);   // no more than full
+  });
+
+  it('announces the fallen where they fell', () => {
+    world(1); quiet();
+    const died=collect('died'), [s0]=soldiers(N(1),1); s0.hp=0; tick();
+    expect(died).toHaveLength(1);
+    expect(died[0].slice(2)).toEqual([1, s0.id, 1]);
+  });
+});
+
+describe('villagers in danger', () => {
+  it('either run or take up arms, about half each; runners get away, fighters go for the enemy', () => {
+    world(1); quiet(); place(N(1),B_FARM);
+    const [x,y]=doorOf(N(1)), folk: Human[]=[];
+    for (let i=0;i<60;i++){ const v=makeHuman(N(1),H_VILLAGER,x+(i%10)-5,y+((i/10)|0)*0.8); W.humans.push(v); folk.push(v); }
+    soldiers(N(2),1); run(1);
+    expect(declare(2,1,true,1)).toBe(true);
+    const e=W.humans.find(h => h.o===2 && h.war>=0)!; e.x=x; e.y=y+2; e.sp=0; e.hp=1000;   // an enemy at the gate who won't fall
+    run(8);
+    const near=folk.filter(v => Math.hypot(v.x-e.x,v.y-e.y)<DANGER_R && W.humans.includes(v));
+    const fight=near.filter(v => v.brave===1).length, flee=near.filter(v => v.brave===0).length;
+    expect(fight+flee).toBe(near.length);
+    expect(fight).toBeGreaterThan(near.length*0.25);
+    expect(flee).toBeGreaterThan(near.length*0.25);
+    const runners=near.filter(v => v.brave===0), d0=runners.map(v => Math.hypot(v.x-e.x,v.y-e.y));
+    run(30);
+    const d1=runners.map(v => Math.hypot(v.x-e.x,v.y-e.y));
+    expect(d1.reduce((a,b)=>a+b,0)).toBeGreaterThan(d0.reduce((a,b)=>a+b,0));
+    expect(e.hp).toBeLessThan(1000);   // the brave ones are at him with pitchforks
+  });
+});
+
+describe('occupation', () => {
+  /** Bot 2 attacks us with k soldiers and occupies some of our land; returns its army. */
+  function invaded(k: number, tiles: number){
+    world(1); quiet(); paintToward(1,2); paintDisc(N(1),14);
+    soldiers(N(2),k); run(1);
+    expect(declare(2,1,false,k)).toBe(true);
+    const c=W.campaigns[0];
+    until(() => W.occCount[1*W.M+2]>=tiles, 4000);
+    return c;
+  }
+  it('leaves occupied land with its owner, hatched as the occupier\'s; nobody builds there; at peace the occupier keeps it', () => {
+    invaded(8,30);
+    const held=Array.from({ length: NT }, (_, t) => t).filter(t => occ[t]===2);
+    expect(held.every(t => owner[t]===1)).toBe(true);
+    const centre=held.find(t => (t%TW&3)===2 && (((t/TW)|0)&3)===2);
+    if (centre!==undefined){ const q=((centre/TW|0)>>2)*PW+((centre%TW)>>2); N(1).stock=[50,50,50]; expect(plotProblem(N(1),q)).toMatch(/enemy holds/); }
+    makePeace(1,2);
+    for (const t of held) if (occ[t]===0 && owner[t]===2) continue; else expect([owner[t], occ[t]]).toEqual([2, 0]);
+    expect(W.occCount[1*W.M+2]).toBe(0);
+    expect(atWar(1,2)).toBe(false);
+  });
+
+  it('keeps the war going when the attacking army is gone; the defenders take their land back and are ready to counter-attack', () => {
+    const c=invaded(8,30);
+    for (const id of c.members) W.humans.find(h => h.id===id)!.hp=0;
+    tick(); tick();
+    expect(W.campaigns.includes(c)).toBe(false);
+    expect(atWar(1,2)).toBe(true);   // the war is not over
+    const ready=collect('counterReady');
+    soldiers(N(1),10);
+    until(() => W.occCount[1*W.M+2]===0, 4000);
+    until(() => ready.length>0, 50);
+    expect(ready[0]).toEqual([1,2]);
+    expect(W.ready[1*W.M+2]).toBeGreaterThan(0);
+    // the counter-attack: the defender becomes the attacker
+    queueCommand({ type:'war', nation:1, target:2, raid:false, soldiers:10 }); tick();
+    expect(W.ready[1*W.M+2]).toBe(0);
+    expect(W.campaigns.some(k => k.a===1 && k.d===2 && !k.raid && k.target<0)).toBe(true);
+  });
+
+  it('sends the idle soldiers to form a line where an enemy army is about to cross the border', () => {
+    world(1); quiet(); paintToward(1,2);
+    const guard=soldiers(N(1),6);
+    soldiers(N(2),6); run(1);
+    expect(declare(2,1,false,6)).toBe(true);
+    const c=W.campaigns[0];
+    const dist=() => guard.reduce((a,h) => a+Math.hypot(h.x-c.bx,h.y-c.by),0)/guard.length;
+    const d0=dist();
+    run(150);
+    expect(dist()).toBeLessThan(d0);
+    for (const h of guard) if (W.humans.includes(h)) expect(owner[(((h.y/2)|0)*TW+((h.x/2)|0))]).toBe(1);   // without leaving home
+  });
+});
+
+describe('intercepting', () => {
+  it('sends soldiers after an enemy army, once, and brings them home when it is gone', () => {
+    world(1); quiet(); paintToward(1,2);
+    soldiers(N(1),8); soldiers(N(2),6); run(1);
+    expect(declare(2,1,false,6)).toBe(true);
+    const E=W.campaigns[0], blows=collect('hit');
+    queueCommand({ type:'intercept', nation:1, campaign:E.id, soldiers:6 }); tick();
+    const I=W.campaigns.find(c => c.a===1)!;
+    expect(I.target).toBe(E.id);
+    expect(I.members).toHaveLength(6);
+    expect(available(N(1)).all).toHaveLength(2);
+    expect(interceptProblem(1,E.id)).toMatch(/already/);
+    expect(intercept(1,E.id,2)).toBe(false);
+    until(() => !W.campaigns.includes(E) || E.phase===2, 4000);
+    expect(blows.length).toBeGreaterThan(0);
+    until(() => !W.campaigns.includes(I), 3000);   // its job done, the rest come home
   });
 });

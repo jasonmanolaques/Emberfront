@@ -2,7 +2,7 @@
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
 import { TW, TH, NT, PW, PH, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, BOT_COLS, PLAYER_COL, GOLD_START, GOLD_PER_SEC, TAX_PER_VILLAGER, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
 import { mulberry32 } from '../core/rng';
-import { W, owner, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, pHp, type Nation, type Command } from './state';
+import { W, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, pHp, type Nation, type Command } from './state';
 import { on } from './events';
 import { genMap } from './mapgen';
 import { setOwner, stepAttack, launch, touches } from './territory';
@@ -11,7 +11,7 @@ import { scanContacts, census } from './census';
 import { botThink } from './bots';
 import { updatePopulation } from './population';
 import { genResources, clearPlot } from './resources';
-import { resetWar, declare, proposeAlliance, endWar, makePeace } from './war';
+import { resetWar, declare, intercept, proposeAlliance, endWar, makePeace } from './war';
 
 const SYL1 = ['Val','Mor','Ost','Kar','Bre','Thal','Ves','Dun','Ard','Sel','Hal','Ner','Cor','Ith','Rav','Lun','Gor','Eld','Tor','Fen','Ash','Ul','Bel','Kes','Myr','Oak','Sar','Wen'];
 const SYL2 = ['mark','heim','dor','gard','ia','or','wyn','vale','mere','rath','holm','ford','ain','esk','ora','burg','moor','reach','fell','haven'];
@@ -72,7 +72,7 @@ export function newWorld(seed: number){
   W.prand=mulberry32(seed^0x2f6b3a1d);
   genMap(seed);
   genResources();
-  owner.fill(0); road.fill(0); frontMark.fill(0);
+  owner.fill(0); occ.fill(0); road.fill(0); frontMark.fill(0);
   pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0); pPrio.fill(0); pAband.fill(0); pHp.fill(0); W.prioSeq=0;
   W.burning=[]; W.attacks=[]; W.attackSeq=0; W.commands.length=0;
   W.nations=[blankNation(0,'Unclaimed land','#cfc6a8',false)];
@@ -144,6 +144,8 @@ function applyCommand(c: Command){
   } else if (c.type==='war'){
     scanContacts(false);
     declare(c.nation,c.target,c.raid,c.soldiers);
+  } else if (c.type==='intercept'){
+    intercept(c.nation,c.campaign,c.soldiers);
   } else if (c.type==='endWar'){
     endWar(c.nation,c.target);
   } else if (c.type==='peace'){

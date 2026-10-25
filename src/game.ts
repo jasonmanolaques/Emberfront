@@ -6,10 +6,10 @@ import { listen } from './sim/events';
 import { newWorld, startMatch, bordersOn, queueCommand, tick } from './sim/sim';
 import { client } from './client';
 import { cam, fitCam, focusOn } from './render/camera';
-import { buildBase, paintAll, paintRoad, repaint } from './render/terrain';
+import { buildBase, paintAll, paintRoad, paintTile, repaint } from './render/terrain';
 import { drawPlotAndNeighbours } from './render/sprites';
 import { drawNature, redrawNature } from './render/nature';
-import { addFlash, fireBurst, gatePuff, addShot, addHit, dustPuff, floats, resetEffects } from './render/effects';
+import { addFlash, fireBurst, gatePuff, addShot, addHit, dustPuff, addCorpse, floats, resetEffects } from './render/effects';
 import { GOOD_NAME } from './sim/resources';
 import { PW } from './core/constants';
 import { resetStyles } from './render/style';
@@ -36,6 +36,8 @@ listen({
   produced: (q,id,good,amount) => { if (id===PLAYER) floats.push({ x:(q%PW)*8+8, y:((q/PW)|0)*8-1, text:`+${amount} ${GOOD_NAME[good]}`, t0:performance.now(), c:GOOD_COL[good] }); },
   // war
   hit: addHit,
+  died: addCorpse,
+  occupied: paintTile,
   bldHit: dustPuff,
   plunder: (id,x,y,gold) => { if (id===PLAYER) floats.push({ x, y:y-4, text:`+${gold} gold`, t0:performance.now(), c:'#ffe27a' }); },
   warBegan: (a,d,raid) => {
@@ -56,6 +58,11 @@ listen({
   allied: (a,b) => { if (a===PLAYER || b===PLAYER){ const o=a===PLAYER?b:a; log(`${nm(o)} is now your ally: your soldiers may cross each other's land`,'good'); toast(`Alliance with ${nm(o)}`); } },
   allyRefused: (a,_b,why) => { if (a===PLAYER) toast(why); },
   allianceBroken: (a,b) => { if (b===PLAYER) log(`${nm(a)} broke your alliance`,'bad'); },
+  counterReady: (o,e) => { if (o===PLAYER){ log(`Your land is free of ${nm(e)}: your army is ready to counter-attack`,'good'); toast('Ready to counter-attack'); } },
+  intercepting: (o,e,k) => {
+    if (o===PLAYER) log(`${k} of your soldiers march out to meet ${nm(e)}'s army`,'good');
+    else if (e===PLAYER) log(`${nm(o)} sends ${k} soldiers to meet your army`,'bad');
+  },
   annexed: (loser,winner) => { if (winner===PLAYER){ log(`You took the castle of ${nm(loser)}: its land and people are yours`,'good'); toast(`${nm(loser)} is yours`); } },
 });
 const GOOD_COL=['#e9b26a','#dcd6cc','#ffa060'];

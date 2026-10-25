@@ -6,7 +6,7 @@ import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { listen } from '../src/sim/events';
 import { setOwner, tileCost } from '../src/sim/territory';
 import { STRUCTURES, structureOf, build, plotProblem } from '../src/sim/buildings';
-import { H_SOLDIER, H_VILLAGER, SOLDIER_HP, VILLAGER_HP, frontOf, switching, makeHuman } from '../src/sim/population';
+import { H_SOLDIER, H_VILLAGER, SOLDIER_HP, frontOf, switching, makeHuman } from '../src/sim/population';
 import { declare } from '../src/sim/war';
 
 const me = () => W.nations[1];
@@ -159,30 +159,30 @@ describe('what the buildings do', () => {
     expect(mine().filter(h => h.post>=0)).toHaveLength(0);
   });
 
-  it('holds its fire at peace; at war it shoots enemy soldiers in range until they fall, then their villagers', () => {
+  it('holds its fire at peace; at war it shoots enemy soldiers on its own land, 2 damage every 4 seconds, and not those outside', () => {
     start(12345, 1); expand(3);
     W.nations[2].nextThink=1e9;   // the bot stays out of it
-    const tower=place(B_TOWER), [tx, ty]=frontOf(tower);
-    // an enemy soldier and villager standing on unclaimed ground just outside the border, in range
-    let spot=-1, best=Infinity;
-    for (let t=0;t<NT;t++){ if (!isLand[t] || owner[t]) continue; const d=Math.hypot((t%TW)*2+1-tx, ((t/TW)|0)*2+1-ty); if (d<best){ best=d; spot=t; } }
-    expect(best).toBeLessThan(20);
-    const mk=(kind: number): Human => { const h=makeHuman(W.nations[2], kind, (spot%TW)*2+1, ((spot/TW)|0)*2+1.5); h.sp=0; h.wait=1e9; W.humans.push(h); return h; };
-    const soldier=mk(H_SOLDIER), villager=mk(H_VILLAGER);
-    let shots=0; listen({ towerShot: () => { shots++; } });
+    const tower=place(B_TOWER), [tx, ty]=frontOf(tower), ox=(tower%PW)*8+4;
+    const near=(want: (t: number) => boolean) => { let spot=-1, best=Infinity;
+      for (let t=0;t<NT;t++){ if (!isLand[t] || !want(t)) continue; const d=Math.hypot((t%TW)*2+1-tx, ((t/TW)|0)*2+1-ty); if (d<best){ best=d; spot=t; } } return [spot, best]; };
+    const [inside]=near(t => owner[t]===1 && Math.hypot((t%TW)*2+1-tx, ((t/TW)|0)*2+1-ty)>6), [outside, out]=near(t => !owner[t]);
+    expect(out).toBeLessThan(20);
+    const mk=(t: number): Human => { const h=makeHuman(W.nations[2], H_SOLDIER, (t%TW)*2+1, ((t/TW)|0)*2+1.5); h.sp=0; h.wait=1e9; W.humans.push(h); return h; };
+    const soldier=mk(outside), raider=mk(outside);
+    const shots: { from: number; tick: number; x: number }[]=[];
+    listen({ towerShot: (x0,_y0,x1) => { shots.push({ from:x0, tick:W.tickN, x:x1 }); } });
     run(100);
-    expect(shots).toBe(0);
-    // the enemy declares a raid: this soldier and another, far off, keep the war going
-    const [dx, dy]=[W.nations[2].ltx*2, W.nations[2].lty*2], far=makeHuman(W.nations[2], H_SOLDIER, dx, dy); far.sp=0; W.humans.push(far);
+    expect(shots).toHaveLength(0);
+    // the enemy raids us with both; one comes onto our land, the other stays outside
     expect(declare(2, 1, true, 2)).toBe(true);
-    run(16);
-    expect(soldier.hp).toBeLessThan(SOLDIER_HP);
-    // soldiers first (the castle may join in when they are in its range too)
-    for (let i=0;i<20*SOLDIER_HP && W.humans.includes(soldier);i++){ expect(villager.hp).toBe(VILLAGER_HP); tick(); }
-    expect(W.humans.includes(soldier)).toBe(false);
-    run(15*VILLAGER_HP+2);
-    expect(W.humans.includes(villager)).toBe(false);
-    expect(shots).toBeGreaterThanOrEqual(SOLDIER_HP+VILLAGER_HP);
+    raider.x=(inside%TW)*2+1; raider.y=((inside/TW)|0)*2+1.5; raider.hp=100;   // tough, so the castle's shots don't end the count
+    run(170);
+    const fromTower=shots.filter(s => s.from===ox);
+    expect(fromTower.length).toBeGreaterThanOrEqual(3);
+    for (let k=1;k<fromTower.length;k++) expect(fromTower[k].tick-fromTower[k-1].tick).toBe(40);   // once every 4 seconds
+    expect(shots.every(s => s.x===raider.x)).toBe(true);           // nobody shoots past the border
+    expect(soldier.hp).toBe(SOLDIER_HP);
+    expect(100-raider.hp).toBeGreaterThanOrEqual(2*shots.length-1e-6);   // 2 damage a shot (villagers with pitchforks may add some)
     listen({ towerShot: () => {} });
   });
 });

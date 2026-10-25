@@ -15,11 +15,11 @@
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, until the kingdom sends them to war (sim/war.ts). */
 import { TW, TH, PW, TICK, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE } from '../core/constants';
-import { W, owner, pType, pOwner, pBurn, pPrio, pAband, pCenter, resType, resBusy, type Human, type Nation } from './state';
+import { W, owner, occ, pType, pOwner, pBurn, pPrio, pAband, pCenter, resType, resBusy, type Human, type Nation } from './state';
 import { homeScore, startSite, cancelSite, finishHouse } from './buildings';
 import { on } from './events';
 import { GOOD_OF, YIELD, WORK_TICKS, available, harvest } from './resources';
-import { updateWar, marchStep, guardStep, mayStand } from './war';
+import { updateWar, marchStep, guardStep, alarmStep, mayStand } from './war';
 
 export const H_VILLAGER = 0, H_SOLDIER = 1;
 export const TASK_ROAM = 0,      // between jobs: villagers think or stroll between buildings, soldiers patrol
@@ -36,10 +36,12 @@ export const FARM_BONUS = 0.05;
 const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 s)
 const STORE_TICKS = 10;          // ticks inside the capital to store a load (1 s)
 const PATROL_R = 36;             // pixels around the capital door soldiers patrol when there is no barracks
-export const SOLDIER_HP = 10, VILLAGER_HP = 4;
+export const SOLDIER_HP = 11, VILLAGER_HP = 6;
+export const REGEN = 0.01;        // hit points everyone heals a tick (0.1 a second)
 export const GARRISON = 5;       // soldiers a watchtower calls for
 export const TOWER_RANGE = 24;   // pixels a watchtower can shoot
-export const TOWER_RELOAD = 15;  // ticks between shots (1.5 s)
+export const TOWER_RELOAD = 40;  // ticks between shots (4 s)
+export const TOWER_DMG = 2;
 const SEARCH_R = 40;             // tiles a villager looks around for work
 export const BUILD_TICKS = 40;   // ticks to put up a house (4 s)
 export const BEG_TICKS = 600;    // ticks homeless before a villager turns beggar (60 s)
@@ -53,6 +55,8 @@ export const indoors = (h: Human) => h.task===TASK_INSIDE || h.task===TASK_STORE
 /** Pixel position just outside the capital's door. */
 export function doorOf(n: Nation): [number, number] { const q=n.capPlot; return [(q%PW)*8+8, ((q/PW)|0)*8+15]; }
 export const tileOf = (x: number, y: number) => ((y/2)|0)*TW+((x/2)|0);
+/** True if pixel (x,y) is kingdom o's own land, not occupied by an enemy. */
+const ownFree = (o: number, x: number, y: number) => { const t=tileOf(x,y); return owner[t]===o && !occ[t]; };
 /** Pixel position at the front of building plot q (barracks door, foot of a watchtower). */
 export const frontOf = (q: number): [number, number] => [(q%PW)*8+4, ((q/PW)|0)*8+7.5];
 const standing = (q: number, type: number, id: number) => pType[q]===type && pOwner[q]===id && pBurn[q]<=0;
@@ -94,7 +98,7 @@ function safeWalk(o: number, ax: number, ay: number, bx: number, by: number){
   const tdx=dx ? Math.abs(1/dx) : Infinity, tdy=dy ? Math.abs(1/dy) : Infinity;
   let tmx=dx ? (sx>0 ? tx+1-x0 : x0-tx)*tdx : Infinity, tmy=dy ? (sy>0 ? ty+1-y0 : y0-ty)*tdy : Infinity;
   for (let guard=0;guard<2000;guard++){
-    if (owner[ty*TW+tx]!==o) return false;
+    const t=ty*TW+tx; if (owner[t]!==o || occ[t]) return false;   // occupied land is no place for daily life
     if (tx===ex && ty===ey) return true;
     if (tmx<tmy){ tmx+=tdx; tx+=sx; } else { tmy+=tdy; ty+=sy; }
   }
@@ -140,7 +144,7 @@ function roamTarget(h: Human){
     h.tx=h.x; h.ty=h.y;
     for (let k=0;k<4;k++){
       const x=cx+(r()*2-1)*rx, y=cy+dy+(r()*2-1)*ry;
-      if (owner[tileOf(x,y)]===h.o && !onCastle(n,x,y)){ h.tx=x; h.ty=y; break; }
+      if (ownFree(h.o,x,y) && !onCastle(n,x,y)){ h.tx=x; h.ty=y; break; }
     }
     h.wait=(b>=0 ? 3+r()*5 : 1+r()*3)/TICK; route(h); return;
   }
@@ -151,10 +155,10 @@ function roamTarget(h: Human){
     const castle=pType[q]===B_CASTLE||pType[q]===B_CPART;
     if (castle && n.capTile<0) continue;
     const [x,y] = castle ? doorOf(n) : [(q%PW)*8+4, ((q/PW)|0)*8+7], d=Math.abs(x-h.x)+Math.abs(y-h.y);
-    if (d>4 && d<60 && d<bd && owner[tileOf(x,y)]===h.o){ bd=d; bx=x; by=y; gate=castle; } }   // a house on the border may stand half on enemy ground
+    if (d>4 && d<60 && d<bd && ownFree(h.o,x,y)){ bd=d; bx=x; by=y; gate=castle; } }   // a house on the border may stand half on enemy ground
   // with no building in reach they just take a step or two where they stand
   const tx=bx+(r()*4-2), ty=by+(gate ? r()*1.5 : r()*2-1);   // at the gate, stand in front of it
-  if (owner[tileOf(tx,ty)]===h.o && !onCastle(n,tx,ty)){ h.tx=tx; h.ty=ty; }
+  if (ownFree(h.o,tx,ty) && !onCastle(n,tx,ty)){ h.tx=tx; h.ty=ty; }
   h.wait=(0.5+r()*2.5)/TICK; route(h);
 }
 
@@ -191,7 +195,7 @@ function nearestResources(h: Human){
       const step = (dy===-r||dy===r) ? 1 : 2*r;
       for (let dx=-r;dx<=r;dx+=step || 1){
         const x=cx+dx; if (x<0||x>=TW) continue;
-        const t=y*TW+x; if (owner[t]!==h.o || !available(t)) continue;
+        const t=y*TW+x; if (owner[t]!==h.o || occ[t] || !available(t)) continue;
         const g=GOOD_OF[resType[t]], [sx,sy]=workSpot(t), d=Math.sqrt((sx-h.x)**2+(sy-h.y)**2), L=found[g];
         if (L.length===CANDIDATES && (d>L[CANDIDATES-1][0] || (d===L[CANDIDATES-1][0] && t>L[CANDIDATES-1][1]))) continue;
         let i=L.length; while (i>0 && (L[i-1][0]>d || (L[i-1][0]===d && L[i-1][1]>t))) i--;
@@ -261,7 +265,7 @@ function think(h: Human){
 export function makeHuman(n: Nation, kind: number, x: number, y: number): Human {
   return { id:++W.humanSeq, o:n.id, kind, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+W.prand()*2,
     res:-1, carry:-1, amount:0, hp:kind===H_SOLDIER?SOLDIER_HP:VILLAGER_HP, post:-1, site:-1, home:-1, housed:false, homeless:0, beggar:false,
-    war:-1, loot:false, foe:-1, aim:-1, cool:0, slot:0 };
+    war:-1, loot:false, foe:-1, aim:-1, cool:0, slot:0, brave:-1, calm:0 };
 }
 /** A new villager walks out of the capital; a new soldier out of the barracks nearest the capital. */
 function spawnHuman(n: Nation, kind: number, barracks: number[]){
@@ -278,6 +282,7 @@ function sendToTrain(h: Human, barracks: number[]){
   h.site=b; h.task=TASK_TO_TRAIN; h.tx=x; h.ty=y; h.wait=0; route(h);
 }
 /** Back out into the world: soldiers resume their patrol, villagers pause a moment and think. */
+export { think };
 export function backToRoam(h: Human){
   release(h); h.task=TASK_ROAM; h.path=[]; h.site=-1;
   if (h.kind===H_SOLDIER){ roamTarget(h); h.wait=0; }
@@ -379,7 +384,7 @@ function step(h: Human){
     if (--h.wait<=0){ h.kind^=1; h.sp+=h.kind===H_SOLDIER?1:-1; h.hp=h.kind===H_SOLDIER?SOLDIER_HP:VILLAGER_HP; backToRoam(h); on.roleChanged(h.x,h.y,h.kind); }
     return;
   }
-  if (h.kind===H_SOLDIER && guardStep(h)) return;   // at war: fighting off enemies near his post
+  if (h.kind===H_SOLDIER ? guardStep(h) : alarmStep(h)) return;   // at war: soldiers defend, villagers run or fight
   if (h.task===TASK_STORE){ if (--h.wait<=0){ store(h); backToRoam(h); } return; }
   if (h.task===TASK_HARVEST){
     if (owner[h.res]!==h.o || !resType[h.res]){ think(h); return; }   // the ground was lost or built over
@@ -420,7 +425,10 @@ export function updatePopulation(){
   // people die when their kingdom falls, the ground under them is taken, or they fall in battle
   for (let i=H.length-1;i>=0;i--){
     const h=H[i];
-    if (!N[h.o].alive || !mayStand(h,owner[tileOf(h.x,h.y)]) || h.hp<=0){ release(h); H[i]=H[H.length-1]; H.pop(); }
+    if (!N[h.o].alive || !mayStand(h,owner[tileOf(h.x,h.y)]) || h.hp<=0){
+      if (h.hp<=0 && N[h.o].alive) on.died(h.x,h.y,h.o,h.id,h.kind===H_SOLDIER ? 1 : h.beggar ? 2 : 0);   // they drop where they fell
+      release(h); H[i]=H[H.length-1]; H.pop();
+    }
   }
   updateWar();   // armies, watchtowers and who is fighting whom
   const groups: Human[][]=N.map(()=>[]);

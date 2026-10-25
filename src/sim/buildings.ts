@@ -1,7 +1,7 @@
 /* ---------- buildings: villagers build their own houses; farms, barracks, watchtowers and coin
    minters are placed by each kingdom and paid for from its stockpile. Also roads, fire & ruins. ---------- */
 import { TW, PW, PH, NP, T_MOUNT, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, isStructure } from '../core/constants';
-import { W, owner, terr, isLand, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, pMain, pHp, type Nation } from './state';
+import { W, owner, occ, terr, isLand, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, pMain, pHp, type Nation } from './state';
 import { on } from './events';
 import { clearPlot } from './resources';
 
@@ -120,6 +120,7 @@ export const canAfford = (n: Nation, s: Structure) => s.cost.every((c,g) => n.st
 export function plotProblem(n: Nation, q: number): string | null {
   if (q<0 || q>=NP || !pBuild[q]) return 'There is no room to build there';
   if (owner[pCenter[q]]!==n.id) return 'Build on your own land';
+  if (occ[pCenter[q]]) return 'The enemy holds that ground';
   if ((pType[q]!==B_EMPTY && pType[q]!==B_RUINS) || pBurn[q]>0) return 'Something already stands there';
   const px=(q%PW)*4, py=((q/PW)|0)*4;
   for (let y=py;y<py+4;y++) for (let x=px;x<px+4;x++){ const o=owner[y*TW+x]; if (o && o!==n.id) return 'Too close to the border'; }

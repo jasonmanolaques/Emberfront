@@ -87,6 +87,17 @@
     </div>
   </section>
   <div id="wars" aria-label="Wars"></div>
+  <section id="warPop" class="plate" hidden aria-label="Meet the army">
+    <div class="dhead"><span class="tag" id="wpTitle">An army is coming</span><button id="wpClose" class="x" aria-label="Close">×</button></div>
+    <div id="wpMenu" class="drow"><button id="wpPeace" title="Offer them peace. They answer depending on how they think the war is going.">Request peace</button><button id="wpIntercept" class="danger" title="Send soldiers out to meet their army in the field">Intercept…</button></div>
+    <div id="wpSend" hidden>
+      <label for="wpCount"><span>Soldiers to send</span><b id="wpVal">0 / 0</b></label>
+      <input type="range" id="wpCount" min="0" max="0" step="1" value="0">
+      <div class="dsplit" id="wpSplit"></div>
+      <div class="dwarn" id="wpWarn" hidden></div>
+      <div class="drow"><button id="wpBack" class="ghost">← Back</button><button id="wpGo" class="danger">Intercept</button></div>
+    </div>
+  </section>
 
   <div id="log" aria-live="polite"></div>
   <div id="banner" class="plate" hidden>Tap open land to found your capital</div>
@@ -106,7 +117,8 @@
       <li>Open <b>Buildings</b> (the hammer) to place farms, barracks, watchtowers and coin minters. The same buildings side by side join up.</li>
       <li>A <b>barracks</b> lets you raise soldiers with the second slider. <b>Click a watchtower</b> to call 5 soldiers to guard it.</li>
       <li><b>Click another kingdom</b> for diplomacy. <b>Allies</b> open their land to your soldiers. Go to <b>war</b> with as many soldiers as you choose: a <b>raid</b> burns their buildings for loot, an <b>attack</b> takes their land and marches on the capital. Break the castle and the whole kingdom is yours.</li>
-      <li>Only at war do soldiers fight and watchtowers shoot. Click the war at the top to recall a raid or offer peace.</li>
+      <li>Only at war do soldiers fight, and watchtowers and your castle shoot at enemies on your land. Land an attack takes is only <b>occupied</b> (hatched) until peace: drive the enemy out and take it back, then counter-attack.</li>
+      <li>Each war has a button at the top: recall a raid, offer peace, or, when an army marches on you, <b>intercept</b> it. Villagers caught near a fight either run or take up arms.</li>
     </ul>
     <div class="row">
       <label class="tag" for="rivals">Rivals</label>

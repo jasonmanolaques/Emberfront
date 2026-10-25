@@ -5,38 +5,47 @@
      outskirts first and on toward the centre. A raider who destroys a building carries a loot
      bag, worth LOOT_GOLD if he gets it home. If other kingdoms close every way through, the
      raid turns back.
-   - an attack needs a shared border. The army takes the ground it marches over (burning what
-     stands there) and pushes for the capital. Breaking the castle annexes the kingdom: its land,
+   - an attack needs a shared border, and starts a war that lasts until peace. The army
+     occupies the ground it marches over (burning what stands there) and pushes for the
+     capital. Occupied land still belongs to its kingdom, but nobody lives or builds on it; at
+     peace each side keeps what it occupies. Breaking the castle annexes the kingdom: its land,
      buildings and people go to the winner, and its gold and stockpile are lost.
-   Two kingdoms are at war while a campaign between them is still fighting. Only then do
-   soldiers fight and watchtowers shoot (soldiers first, then villagers). A raid can be
-   recalled; a war ends when the other side accepts peace, or when the army is gone.
+   - an intercept sends soldiers after one enemy army, wherever it is, to fight it in the field.
+   Two kingdoms are at war while a war between them lasts, or a raid between them is still
+   out. Only then do soldiers fight and watchtowers shoot (at enemies on their own land).
    An army musters in a line behind a banner on its own border, then marches in formation: the
    banner waits for stragglers and for fights to finish, and soldiers break off for enemies and
-   buildings near the line and come back to it. At home, soldiers fight enemies who come near
-   their watchtower or barracks, but never leave their own land; when an army closes on the
-   capital, every soldier not on guard rallies to it, and the castle shoots too. Allies open
-   their land to each other's armies. */
+   buildings near the line and come back to it. At home, when an enemy army comes near the
+   border, idle soldiers form a line where it will cross and hold it, and villagers nearby
+   either run or (half of them) take up arms and fall in behind the soldiers. Once the invaders
+   are beaten the line moves on to the occupied land and takes it back; with all of it back,
+   the army reports ready to counter-attack. Guards stay by their watchtowers, and the castle
+   shoots too. Everyone heals slowly. Allies open their land to each other's armies. */
 import { TW, TH, NT, NP, PW, PH, TICK, B_CASTLE, B_CPART, B_TOWER, B_HOUSE, B_FARM, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_MINE, isStructure } from '../core/constants';
-import { W, owner, isLand, pType, pOwner, pBurn, pMain, pHp, pPrio, pCenter, type Campaign, type Human, type Nation } from './state';
+import { W, owner, occ, isLand, pType, pOwner, pBurn, pMain, pHp, pPrio, pCenter, type Campaign, type Human, type Nation } from './state';
 import { on } from './events';
 import { setOwner } from './territory';
 import { ignite, SIZE } from './buildings';
 import { census } from './census';
-import { H_SOLDIER, TASK_ROAM, TOWER_RANGE, TOWER_RELOAD, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf } from './population';
+import { H_SOLDIER, TASK_ROAM, TOWER_RANGE, TOWER_RELOAD, TOWER_DMG, SOLDIER_HP, VILLAGER_HP, REGEN, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf } from './population';
 
 export const LOOT_GOLD = 50;          // a raider's loot bag, paid when he gets it home
 export const MELEE_R = 2.6;           // pixels: close enough to strike
 export const HIT_TICKS = 8;           // ticks between blows
 export const HIT_CHANCE = 0.7;
-export const HIT_DMG = 2;             // soldiers have SOLDIER_HP (10)
+export const HIT_DMG = 1;             // soldiers have SOLDIER_HP (11)
+export const MILITIA_DMG = 0.5;       // a villager with a pitchfork does half that
 export const BLD_DMG = 1;             // a blow on a building
 const ENGAGE_R = 16;                  // pixels around him a soldier in the field picks a fight...
 const LEASH = 34;                     // ...with enemies this close to his banner
 const RAID_R = 22;                    // pixels around the banner raiders spread out to burn
 const GUARD_R = 26, BARRACKS_R = 30, CAPITAL_R = 40;   // pixels around their post soldiers at home defend
-export const SIEGE_R = 56;            // pixels from the castle: an enemy banner this close and the kingdom rallies to it
-export const CASTLE_RANGE = 30, CASTLE_RELOAD = 8;   // the castle shoots further and faster than a watchtower
+export const CASTLE_RANGE = 30, CASTLE_RELOAD = 20, CASTLE_DMG = 2;   // the castle shoots further and twice as often as a watchtower
+const THREAT_TILES = 12;              // an enemy banner this many tiles from our land, and the home guard turns out
+const DEFEND_R = 30;                  // pixels around its line the home guard fights
+export const DANGER_R = 26;           // pixels: an enemy this close alarms a villager
+export const CALM_TICKS = 120;        // ticks without an enemy near before an alarmed villager goes back to work
+const INTERCEPT_MUSTER = 60;          // interceptors form up quickly
 const SPACING = 4;                    // pixels between soldiers in the line, and between ranks
 export const MARCH_SP = 3.2;          // pixels a second the banner moves
 export const CAPTURE_EVERY = 5;       // ticks between land grabs by each soldier of an attack
@@ -63,8 +72,12 @@ const troops = new Map<number, Human[]>();      // campaign id → its soldiers
 let armies: Human[][] = [];                     // per nation: soldiers out of doors and alive
 let posts: [number, number][][] = [];           // per nation at war: barracks doorsteps
 let warring = new Uint8Array(1);                // per nation: at war with anyone
-let besieged = new Uint8Array(1);               // per nation: an enemy army is closing on its capital
-const held = new Int32Array(NT);                // tick a soldier last stood on or beside this tile of his own land: it can't be taken
+/** Where a kingdom's home guard forms its line: facing an army about to cross the border, or on occupied land to take back. */
+interface Rally { x: number; y: number; dx: number; dy: number; threat: boolean; n: number }
+let rallies: (Rally | null)[] = [];
+// per kingdom: steps to its rally over its own land, and the rally tile they were worked out for
+let homeField: Int16Array[] = [], homeFieldFor: number[] = [];
+const heldAt = new Int32Array(NT), heldBy = new Uint8Array(NT);   // tick a soldier last stood on or beside a tile his side holds, and whose
 const queue = new Int32Array(NT), scratch = new Int16Array(NT);
 const want = new Int32Array(NT); let wantSeq = 0;   // tiles a fill is looking for, stamped wantSeq
 const DIRS8 = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
@@ -72,7 +85,8 @@ const DIRS8 = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
 export function resetWar(M: number){
   W.campaigns=[]; W.campSeq=0;
   W.ally=new Uint8Array(M*M); W.atWar=new Uint8Array(M*M); W.offers=new Int32Array(M*M); W.grudge=new Int32Array(M*M).fill(-1e9);
-  byId.clear(); camps.clear(); troops.clear(); armies=[]; posts=[]; warring=new Uint8Array(M); besieged=new Uint8Array(M); held.fill(0);
+  W.wars=new Uint8Array(M*M); W.warSince=new Int32Array(M*M); W.occCount=new Int32Array(M*M); W.lost=new Uint8Array(M*M); W.ready=new Int32Array(M*M);
+  byId.clear(); camps.clear(); troops.clear(); armies=[]; posts=[]; warring=new Uint8Array(M); rallies=[]; homeField=[]; homeFieldFor=[]; heldAt.fill(0);
 }
 
 /* ---------- the way there ---------- */
@@ -163,18 +177,22 @@ export function raidTargets(d: number){
   const n=W.nations[d]; if (!n) return [];
   return n.blds.filter(q => pOwner[q]===d && pBurn[q]<=0 && isStructure(pType[q]) && pType[q]!==B_PART);
 }
-function nearestTile(d: number, x: number, y: number){
+function nearestTile(d: number, x: number, y: number, by: number){
   let best=-1, bd=Infinity;
-  for (let t=0;t<NT;t++){ if (owner[t]!==d) continue; const e=((t%TW)*2+1-x)**2+(((t/TW)|0)*2+1-y)**2; if (e<bd){ bd=e; best=t; } }
+  for (let t=0;t<NT;t++){ if (owner[t]!==d || occ[t]===by) continue; const e=((t%TW)*2+1-x)**2+(((t/TW)|0)*2+1-y)**2; if (e<bd){ bd=e; best=t; } }
   return best;
 }
-/** Where the army is headed: a raid, every building it could burn; an attack, the capital. */
+/** Where the army is headed: a raid, every building it could burn; an attack, the capital; an
+    intercept, the army it is after. */
 function goalsOf(c: Campaign){
   if (c.raid) return raidTargets(c.d).map(q => pCenter[q]);
+  if (c.target>=0){ const E=campaignById(c.target); return E && E.phase<2 ? [tileOf(E.bx,E.by)] : []; }
   const D=W.nations[c.d];
-  c.goal = D.capTile>=0 ? D.capTile : nearestTile(c.d,c.bx,c.by);
+  c.goal = D.capTile>=0 ? D.capTile : nearestTile(c.d,c.bx,c.by,c.a);
+  if (c.goal<0 && D.alive){ annex(c.d,c.a); return []; }   // no capital and every last field occupied: the kingdom is ours
   return c.goal>=0 ? [c.goal] : [];
 }
+const campaignById = (id: number) => camps.get(id) ?? W.campaigns.find(c => c.id===id);
 /** True if a's army could reach something of d's to raid, crossing only unclaimed, allied or d's land. */
 export function routeOpen(a: number, d: number){
   const src=raidTargets(d).map(q => pCenter[q]); if (!src.length) return false;
@@ -204,22 +222,52 @@ export function declare(a: number, d: number, raid: boolean, count: number){
   if (warProblem(a,d,raid)) return false;
   const A=W.nations[a], D=W.nations[d], pool=available(A).all.slice(0,Math.max(0,Math.floor(count)));
   if (!pool.length) return false;
-  const c: Campaign={ id:++W.campSeq, a, d, raid, hostile:true, members:[], phase:0, bx:0, by:0, dx:1, dy:0, rx:0, ry:0, goal:-1,
-    field:new Int16Array(NT), fieldAt:W.tickN, started:W.tickN, startSoldiers:pool.length, startTiles:D.tiles, stall:0, why:'' };
+  const c=newCampaign(a,d,raid,-1,pool.length,D.tiles);
+  if (!muster(c,pool)) return false;
+  if (allied(a,d)){ W.ally[a*W.M+d]=W.ally[d*W.M+a]=0; on.allianceBroken(a,d); }
+  W.grudge[d*W.M+a]=W.tickN;
+  const M=W.M;
+  if (!raid){
+    if (!W.wars[a*M+d]){ W.wars[a*M+d]=W.wars[d*M+a]=1; W.warSince[a*M+d]=W.warSince[d*M+a]=W.tickN; }
+    W.ready[a*M+d]=0;   // the counter-attack it was ready for is under way
+  }
+  W.atWar[a*M+d]=W.atWar[d*M+a]=1;
+  on.warBegan(a,d,raid);
+  return true;
+}
+function newCampaign(a: number, d: number, raid: boolean, target: number, size: number, tiles: number): Campaign {
+  return { id:++W.campSeq, a, d, raid, target, hostile:true, members:[], phase:0, bx:0, by:0, dx:1, dy:0, rx:0, ry:0, goal:-1,
+    field:new Int16Array(NT), fieldAt:W.tickN, started:W.tickN, startSoldiers:size, startTiles:tiles, stall:0, why:'' };
+}
+/** Works out the way, picks the muster point on our own ground nearest the goal and calls the soldiers to it. */
+function muster(c: Campaign, pool: Human[]){
+  const A=W.nations[c.a];
   if (A.capTile>=0){ const [x,y]=doorOf(A); c.bx=x; c.by=y; }
-  // muster on our own ground nearest the goal, by the way the army will walk
-  const best=fill(c.field,goalsOf(c),a,d,false,ownLand(a),true,80);
+  const best=fill(c.field,goalsOf(c),c.a,c.d,false,ownLand(c.a),true,80);
   if (best<0) return false;
   c.rx=c.bx=(best%TW)*2+1; c.ry=c.by=((best/TW)|0)*2+1;
   const s=downhill(c.field,c.bx,c.by);
   if (s && (s[0]!==c.bx || s[1]!==c.by)){ const L=Math.hypot(s[0]-c.bx,s[1]-c.by); c.dx=(s[0]-c.bx)/L; c.dy=(s[1]-c.by)/L; }
-  if (allied(a,d)){ W.ally[a*W.M+d]=W.ally[d*W.M+a]=0; on.allianceBroken(a,d); }
-  W.grudge[d*W.M+a]=W.tickN;
   W.campaigns.push(c); camps.set(c.id,c);
-  pool.forEach((h,i) => { release(h); h.post=-1; h.site=-1; h.war=c.id; h.foe=-1; h.aim=-1; h.slot=i; h.task=TASK_ROAM; h.path=[]; h.wait=0; });
+  pool.forEach((h,i) => { release(h); h.post=-1; h.site=-1; h.war=c.id; h.foe=-1; h.aim=-1; h.slot=i; h.task=TASK_ROAM; h.path=[]; h.wait=0; h.calm=0; });
   c.members=pool.map(h => h.id);
-  W.atWar[a*W.M+d]=W.atWar[d*W.M+a]=1;
-  on.warBegan(a,d,raid);
+  return true;
+}
+/** Why n can't send soldiers after enemy army `id`, or null. */
+export function interceptProblem(n: number, id: number): string | null {
+  const E=campaignById(id);
+  if (!E || E.phase===2 || !E.hostile || E.d!==n || E.target>=0) return 'That army is gone';
+  if (W.campaigns.some(c => c.a===n && c.target===id && c.phase<2)) return 'You are already after that army';
+  return null;
+}
+/** Sends `count` of n's soldiers (idle first, then guards) after enemy army `id`. */
+export function intercept(n: number, id: number, count: number){
+  if (interceptProblem(n,id)) return false;
+  const E=campaignById(id)!, pool=available(W.nations[n]).all.slice(0,Math.max(0,Math.floor(count)));
+  if (!pool.length) return false;
+  const c=newCampaign(n,E.a,false,id,pool.length,W.nations[E.a].tiles);
+  if (!muster(c,pool)) return false;
+  on.intercepting(n,E.a,pool.length);
   return true;
 }
 
@@ -239,7 +287,7 @@ function refield(c: Campaign){
     fill(c.field,src,c.a,c.d,true,armyTiles(c,false),false,12); return;
   }
   const src=goalsOf(c);
-  if (!src.length){ sendHome(c, c.raid ? 'done' : 'won', c.raid && c.hostile); return; }
+  if (!src.length){ if (c.phase<2) sendHome(c, c.raid || c.target>=0 ? 'done' : 'won', (c.raid || c.target>=0) && c.hostile); return; }
   fill(c.field,src,c.a,c.d,false,armyTiles(c,true),false,24);
   if (c.field[tileOf(c.bx,c.by)]<0) sendHome(c,'cut');   // other kingdoms have closed every way on
 }
@@ -252,9 +300,11 @@ export function offerPeace(from: number, to: number){
 }
 export function refusePeace(from: number, to: number){ W.offers[from*W.M+to]=0; on.peaceRefused(from,to); }
 export function makePeace(a: number, b: number){
+  const M=W.M;
   for (const c of W.campaigns) if ((c.a===a && c.d===b) || (c.a===b && c.d===a)) sendHome(c,'peace',false);
-  W.offers[a*W.M+b]=W.offers[b*W.M+a]=0;
-  W.atWar[a*W.M+b]=W.atWar[b*W.M+a]=0;
+  // each side keeps the land it occupies
+  for (let t=0;t<NT;t++){ const o=occ[t]; if (o && ((o===a && owner[t]===b) || (o===b && owner[t]===a))) setOwner(t,o); }
+  for (const i of [a*M+b, b*M+a]){ W.offers[i]=0; W.atWar[i]=0; W.wars[i]=0; W.lost[i]=0; W.ready[i]=0; }
   on.peaceMade(a,b);
 }
 /** n wants the fighting with t to end: its raids turn for home, and any war gets a peace offer. */
@@ -265,7 +315,7 @@ export function endWar(n: number, t: number){
     if (c.a===n && c.d===t && c.raid){ if (c.phase<2) sendHome(c,'recall'); }
     else if ((c.a===n && c.d===t) || (c.a===t && c.d===n)) war=true;
   }
-  if (war) offerPeace(n,t);
+  if (war || W.wars[n*W.M+t]) offerPeace(n,t);
 }
 /** How the fighting with o is going for n: above 0 winning, below 0 losing. */
 export function outlook(n: Nation, o: number){
@@ -279,14 +329,14 @@ export function outlook(n: Nation, o: number){
 }
 /** Ticks since the fighting between a and b began (0 if they are at peace). */
 export function warAge(a: number, b: number){
-  let since=W.tickN;
+  let since=W.wars[a*W.M+b] ? W.warSince[a*W.M+b] : W.tickN;
   for (const c of W.campaigns) if (c.hostile && ((c.a===a && c.d===b) || (c.a===b && c.d===a))) since=Math.min(since,c.started);
   return W.tickN-since;
 }
 /** A bot weighing peace with o: it holds out while it thinks it can win, and gives in when it is
     in trouble; a long war wears it down. */
 export function wantsPeace(n: Nation, o: number){
-  return outlook(n,o) + (W.srand()-0.5)*0.5 - Math.min(0.4,warAge(n.id,o)/3000) < 0;
+  return outlook(n,o) + (W.srand()-0.5)*0.5 - Math.min(1,warAge(n.id,o)/6000) < 0;
 }
 /** Why a can't propose an alliance to b, or null. */
 export function allyProblem(a: number, b: number): string | null {
@@ -320,7 +370,7 @@ export function annex(loser: number, winner: number){
   L.capTile=-1;   // so taking the ground below doesn't count as an ordinary sack
   for (const h of W.humans){
     if (h.o!==loser) continue;
-    release(h); h.carry=-1; h.amount=0; h.o=winner; h.post=-1; h.site=-1; h.war=-1; h.foe=-1; h.aim=-1; h.loot=false;
+    release(h); h.carry=-1; h.amount=0; h.o=winner; h.post=-1; h.site=-1; h.war=-1; h.foe=-1; h.aim=-1; h.loot=false; h.brave=-1; h.calm=0;
     h.task=TASK_ROAM; h.path=[]; h.wait=0; h.tx=h.x; h.ty=h.y;
   }
   // buildings change hands before the ground does, so they don't burn
@@ -334,7 +384,8 @@ export function annex(loser: number, winner: number){
   W.campaigns=W.campaigns.filter(c => c.a!==loser);
   for (const c of W.campaigns) if (c.d===loser) sendHome(c,'won',false);
   L.gold=0; L.stock=[0,0,0];
-  for (let o=1;o<W.M;o++){ const i=loser*W.M+o, j=o*W.M+loser; W.ally[i]=W.ally[j]=W.offers[i]=W.offers[j]=W.atWar[i]=W.atWar[j]=0; }
+  for (let t=0;t<NT;t++) if (occ[t]===loser) liberate(t);   // what it held of others' land is free again
+  for (let o=1;o<W.M;o++){ const i=loser*W.M+o, j=o*W.M+loser; W.ally[i]=W.ally[j]=W.offers[i]=W.offers[j]=W.atWar[i]=W.atWar[j]=W.wars[i]=W.wars[j]=W.lost[i]=W.lost[j]=W.ready[i]=W.ready[j]=0; }
   for (let t=0;t<NT;t++) if (owner[t]===loser) setOwner(t,winner);   // the last tile eliminates it
   census();
   on.annexed(loser,winner);
@@ -349,7 +400,7 @@ function slotPos(c: Campaign, i: number, n: number): [number, number] {
 function advance(c: Campaign){
   const f=c.field, here=f[tileOf(c.bx,c.by)];
   if (here<0) return;
-  if (here<=1){ if (!c.raid && W.nations[c.d].capTile<0) c.fieldAt=-1e9; return; }   // there: siege, burn, or (no capital) find more land
+  if (here<=(c.target>=0 ? 3 : 1)){ if (!c.raid && c.target<0 && W.nations[c.d].capTile<0) c.fieldAt=-1e9; return; }   // there: siege, burn, close with the enemy, or (no capital) find more land
   const s=downhill(f,c.bx,c.by); if (!s) return;
   const dx=s[0]-c.bx, dy=s[1]-c.by, d=Math.hypot(dx,dy); if (d<1e-6) return;
   const st=Math.min(d,MARCH_SP*TICK); c.bx+=dx/d*st; c.by+=dy/d*st;
@@ -362,14 +413,15 @@ function runCampaign(c: Campaign, men: Human[]){
   men.sort((x,y)=>x.slot-y.slot || x.id-y.id); men.forEach((h,i) => h.slot=i);
   c.members=men.map(h => h.id);
   if (c.phase<2 && !W.nations[c.d].alive){ sendHome(c,'won',false); return; }
-  if (W.tickN-c.fieldAt>=REFIELD) refield(c);
+  if (c.phase<2 && c.target>=0){ const E=campaignById(c.target); if (!E || E.phase===2){ sendHome(c,'done'); return; } }
+  if (W.tickN-c.fieldAt>=(c.target>=0 ? REFIELD/2 : REFIELD)) refield(c);
   if (c.phase===2) return;
   let inPlace=0, near=0, busy=false;
   for (const h of men){
     const [sx,sy]=slotPos(c,h.slot,men.length), d2=(h.x-sx)**2+(h.y-sy)**2;
     if (d2<25) inPlace++; if (d2<400) near++; if (h.foe>=0) busy=true;
   }
-  if (c.phase===0){ if (inPlace>=men.length*0.7 || W.tickN-c.started>=MUSTER_TICKS){ c.phase=1; c.stall=0; } return; }
+  if (c.phase===0){ if (inPlace>=men.length*0.7 || W.tickN-c.started>=(c.target>=0 ? INTERCEPT_MUSTER : MUSTER_TICKS)){ c.phase=1; c.stall=0; } return; }
   // the banner waits for stragglers and for fights to end, but not for ever
   const wait=busy || inPlace<men.length*0.6;
   if (wait && c.stall<(near<men.length*0.5 ? STRAGGLE_TICKS : STALL_TICKS)){ c.stall++; return; }
@@ -380,53 +432,204 @@ function runCampaign(c: Campaign, men: Human[]){
 export function updateWar(){
   const M=W.M, N=W.nations, H=W.humans;
   byId.clear(); camps.clear(); troops.clear();
-  for (const h of H) byId.set(h.id,h);
+  for (const h of H){
+    byId.set(h.id,h);
+    const max=h.kind===H_SOLDIER ? SOLDIER_HP : VILLAGER_HP;
+    if (h.hp<max) h.hp=Math.min(max,h.hp+REGEN);   // everyone heals, slowly
+  }
   for (const c of W.campaigns){ camps.set(c.id,c); troops.set(c.id,[]); }
   for (const h of H) if (h.war>=0){ const men=troops.get(h.war); if (men) men.push(h); else { h.war=-1; backToRoam(h); } }
   for (const c of [...W.campaigns]) if (camps.has(c.id)) runCampaign(c, troops.get(c.id)!);
-  // kingdoms at war: an army between them is still fighting
+  // kingdoms at war: a war between them, or a raid still out
   W.atWar.fill(0);
+  for (let i=0;i<M*M;i++) if (W.wars[i]) W.atWar[i]=1;
   for (const c of W.campaigns) if (c.hostile){ W.atWar[c.a*M+c.d]=1; W.atWar[c.d*M+c.a]=1; }
-  if (warring.length!==M){ warring=new Uint8Array(M); besieged=new Uint8Array(M); } else { warring.fill(0); besieged.fill(0); }
-  for (const c of W.campaigns) if (c.hostile){
-    warring[c.a]=1; warring[c.d]=1;
-    const D=N[c.d];
-    if (!c.raid && c.phase===1 && D.capTile>=0){ const q=D.capPlot, x=(q%PW)*8+8, y=((q/PW)|0)*8+8; if ((c.bx-x)**2+(c.by-y)**2<SIEGE_R*SIEGE_R) besieged[c.d]=1; }
-  }
+  if (warring.length!==M) warring=new Uint8Array(M); else warring.fill(0);
+  for (let a=1;a<M;a++) for (let b=1;b<M;b++) if (W.atWar[a*M+b]){ warring[a]=1; break; }
   for (let i=0;i<W.offers.length;i++) if (W.offers[i] && (W.tickN-W.offers[i]>OFFER_TICKS || !W.atWar[i])) W.offers[i]=0;
+  // who can be fought: soldiers out of doors, and villagers who took up arms
   armies=N.map(() => []);
-  for (const h of H) if (h.kind===H_SOLDIER && h.hp>0 && !indoors(h)){
-    armies[h.o].push(h);
-    // a soldier holds the ground he stands on and next to
-    const t=tileOf(h.x,h.y);
-    if (owner[t]===h.o) for (let dy=-TW;dy<=TW;dy+=TW) for (let dx=-1;dx<=1;dx++){ const k=t+dy+dx; if (k>=0 && k<NT) held[k]=W.tickN; }
+  for (const h of H){
+    if (h.hp<=0 || indoors(h)) continue;
+    if (h.kind===H_SOLDIER){
+      armies[h.o].push(h);
+      // a soldier holds the ground he stands on and next to, if it is his side's
+      const t=tileOf(h.x,h.y);
+      if ((owner[t]===h.o && !occ[t]) || occ[t]===h.o) for (let dy=-TW;dy<=TW;dy+=TW) for (let dx=-1;dx<=1;dx++){ const k=t+dy+dx; if (k>=0 && k<NT){ heldAt[k]=W.tickN; heldBy[k]=h.o; } }
+    } else if (h.brave===1) armies[h.o].push(h);
   }
   posts=N.map(n => warring[n.id] ? barracksOf(n).map(frontOf) : []);
+  if (W.tickN%5===0) findRallies();
+  lineUp();
+  if (W.tickN%10===0) checkReconquest();
   towersFire();
 }
 
-/** Every watchtower of a kingdom at war shoots the nearest enemy soldier in range, or else the
-    nearest enemy villager, once per reload; so does the castle, further and faster. */
+/* ---------- the home guard ---------- */
+/** For each kingdom at war: where its home guard should stand. Facing the nearest enemy army
+    within THREAT_TILES of its land; else on its occupied land, the part nearest the capital. */
+function findRallies(){
+  const N=W.nations, M=W.M;
+  if (rallies.length!==M) rallies=new Array(M).fill(null);
+  for (let o=1;o<M;o++){
+    const n=N[o];
+    if (!warring[o] || !n.alive){ rallies[o]=null; continue; }
+    let best: Rally | null=null, bd=Infinity;
+    for (const c of W.campaigns){
+      if (!c.hostile || c.phase===2 || c.a===o || !W.atWar[c.a*M+o]) continue;
+      const bx=(c.bx/2)|0, by=(c.by/2)|0;
+      for (let y=Math.max(0,by-THREAT_TILES);y<=Math.min(TH-1,by+THREAT_TILES);y++) for (let x=Math.max(0,bx-THREAT_TILES);x<=Math.min(TW-1,bx+THREAT_TILES);x++){
+        if (owner[y*TW+x]!==o) continue;
+        const d=(x-bx)**2+(y-by)**2;
+        if (d<bd){ bd=d; const px=x*2+1, py=y*2+1, L=Math.hypot(c.bx-px,c.by-py)||1; best={ x:px, y:py, dx:(c.bx-px)/L, dy:(c.by-py)/L, threat:true, n:0 }; }
+      }
+    }
+    if (!best && W.tickN%20===0){
+      let lost=0; for (let b=1;b<M;b++) lost+=W.occCount[o*M+b];
+      if (lost){
+        const cx=n.capTile>=0 ? n.capTile%TW : n.ltx, cy=n.capTile>=0 ? (n.capTile/TW)|0 : n.lty;
+        // what the guard can walk to from the heart of the kingdom; pockets cut off from it, and
+        // from the enemy's army, can't be held by anyone and fall back to us
+        fillOwn(scratch,cy*TW+cx,o);
+        // a tile the guard can reach and stand on to take t back (within reclaim reach), or -1
+        const standFor=(t: number) => { const x=t%TW, y=(t/TW)|0; let bs=-1, bk=99;
+          for (let dy=-CAPTURE_R;dy<=CAPTURE_R;dy++) for (let dx=-CAPTURE_R;dx<=CAPTURE_R;dx++){
+            const k=Math.abs(dx)+Math.abs(dy), xx=x+dx, yy=y+dy;
+            if (k>CAPTURE_R+1 || xx<0||yy<0||xx>=TW||yy>=TH || scratch[yy*TW+xx]<0 || k>=bk) continue;
+            bk=k; bs=yy*TW+xx; }
+          return bs; };
+        for (let t=0;t<NT;t++){
+          if (owner[t]!==o || !occ[t]) continue;
+          const at=standFor(t);
+          if (at<0){ if (!(heldAt[t]===W.tickN && heldBy[t]===occ[t])) liberate(t); continue; }
+          const x=t%TW, y=(t/TW)|0, d=(x-cx)**2+(y-cy)**2;
+          if (d<bd){ bd=d; const L=Math.hypot(x-cx,y-cy)||1; best={ x:(at%TW)*2+1, y:((at/TW)|0)*2+1, dx:(x-cx)/L, dy:(y-cy)/L, threat:false, n:0 }; }
+        }
+      }
+    } else if (!best && rallies[o] && !rallies[o]!.threat){ best=rallies[o]; }   // keep marching on the occupied land between searches
+    rallies[o]=best;
+    if (best){
+      const t=tileOf(best.x,best.y);
+      if (homeFieldFor[o]!==t){ homeFieldFor[o]=t; fillOwn(homeField[o] ??= new Int16Array(NT), t, o); }
+    }
+  }
+}
+/** Steps to tile `src` over kingdom o's own land only. */
+function fillOwn(f: Int16Array, src: number, o: number){
+  f.fill(-1); f[src]=0;
+  const Q=queue, own=owner, tw=TW, nt=NT; let head=0, tail=0; Q[tail++]=src;
+  while (head<tail){
+    const t=Q[head++], nv=f[t]+1, x=t%tw;
+    let n=t-1;  if (x>0 && f[n]<0 && own[n]===o){ f[n]=nv; Q[tail++]=n; }
+    n=t+1;      if (x<tw-1 && f[n]<0 && own[n]===o){ f[n]=nv; Q[tail++]=n; }
+    n=t-tw;     if (t>=tw && f[n]<0 && own[n]===o){ f[n]=nv; Q[tail++]=n; }
+    n=t+tw;     if (t<nt-tw && f[n]<0 && own[n]===o){ f[n]=nv; Q[tail++]=n; }
+  }
+}
+/** Walks a home-guard member toward his place: along his land's way to the rally while far, straight once close. */
+function walkToLine(h: Human, gx: number, gy: number){
+  const f=homeField[h.o];
+  if (f && Math.hypot(gx-h.x,gy-h.y)>6 && f[tileOf(h.x,h.y)]>2){
+    const s=downhill(f,h.x,h.y);
+    if (s){ stepHome(h,s[0],s[1],0); return; }
+  }
+  stepHome(h,gx,gy,0.3);
+}
+/** Gives the home guard its places in the line: idle soldiers in front, armed villagers behind. */
+function lineUp(){
+  const lines=new Map<number, Human[][]>();
+  for (const h of W.humans){
+    const r=rallies[h.o]; if (!r || h.hp<=0 || indoors(h) || switching(h)) continue;
+    const guard = h.kind===H_SOLDIER ? h.war<0 && h.post<0 : h.brave===1;
+    if (!guard) continue;
+    let L=lines.get(h.o); if (!L){ L=[[],[]]; lines.set(h.o,L); }
+    L[h.kind===H_SOLDIER ? 0 : 1].push(h);
+  }
+  for (const [o,[sol,vil]] of lines){
+    sol.sort((a,b)=>a.id-b.id); vil.sort((a,b)=>a.id-b.id);
+    const all=[...sol,...vil]; all.forEach((h,i) => h.slot=i);
+    rallies[o]!.n=all.length;
+  }
+}
+function linePos(r: Rally, i: number): [number, number] {
+  const n=r.n, cols=Math.max(4,Math.min(12,Math.ceil(Math.sqrt(n*2.5)))), rank=(i/cols)|0, col=i%cols, inRank=Math.min(cols,n-rank*cols);
+  const across=(col-(inRank-1)/2)*SPACING, back=rank*SPACING+1.5;
+  return [r.x - r.dy*across - r.dx*back, r.y + r.dx*across - r.dy*back];
+}
+/** With all its land back from b after b had taken some, o's army is ready to counter-attack. */
+function checkReconquest(){
+  const M=W.M;
+  for (let o=1;o<M;o++) for (let b=1;b<M;b++){
+    const i=o*M+b;
+    if (!W.lost[i] || W.occCount[i]>0 || !W.wars[i]) continue;
+    if (W.campaigns.some(c => c.a===b && c.d===o && c.phase<2 && c.hostile)) continue;   // the invaders are still about
+    W.lost[i]=0; W.ready[i]=W.tickN;
+    on.counterReady(o,b);
+  }
+}
+
+/* ---------- occupation ---------- */
+/** Tile t, of owner[t]'s land, is occupied by `by`; what stands at a plot's heart there burns. */
+function occupy(t: number, by: number){
+  const o=owner[t], prev=occ[t], M=W.M;
+  if (prev===by || !o) return;
+  if (prev) W.occCount[o*M+prev]--;
+  occ[t]=by; W.occCount[o*M+by]++; W.lost[o*M+by]=1;
+  on.occupied(t);
+  const x=t%TW, y=(t/TW)|0;
+  if ((x&3)===2 && (y&3)===2){ const q=(y>>2)*PW+(x>>2); if (isStructure(pType[q]) && pOwner[q]===o && pBurn[q]<=0) ignite(q); }
+}
+function liberate(t: number){
+  const prev=occ[t]; if (!prev) return;
+  W.occCount[owner[t]*W.M+prev]--; occ[t]=0;
+  on.occupied(t);
+}
+/** An attacking soldier occupies the enemy's ground around him, unless a defender holds it. The castle holds until it is broken. */
+function capture(h: Human, c: Campaign){
+  const cx=(h.x/2)|0, cy=(h.y/2)|0, now=W.tickN;
+  for (let dy=-CAPTURE_R;dy<=CAPTURE_R;dy++) for (let dx=-CAPTURE_R;dx<=CAPTURE_R;dx++){
+    if (Math.abs(dx)+Math.abs(dy)>CAPTURE_R+1) continue;
+    const x=cx+dx, y=cy+dy; if (x<0||y<0||x>=TW||y>=TH) continue;
+    const t=y*TW+x; if (owner[t]!==c.d || (occ[t] && occ[t]!==c.a) || occ[t]===c.a || (heldAt[t]===now && heldBy[t]!==c.a)) continue;
+    const q=(y>>2)*PW+(x>>2); if ((pType[q]===B_CASTLE || pType[q]===B_CPART) && pOwner[q]===c.d) continue;
+    occupy(t,c.a);
+  }
+}
+/** A soldier on his kingdom's occupied land takes it back around him, unless the occupier holds it. */
+function reclaim(h: Human){
+  if ((h.id+W.tickN)%CAPTURE_EVERY) return;
+  const cx=(h.x/2)|0, cy=(h.y/2)|0, now=W.tickN;
+  for (let dy=-CAPTURE_R;dy<=CAPTURE_R;dy++) for (let dx=-CAPTURE_R;dx<=CAPTURE_R;dx++){
+    if (Math.abs(dx)+Math.abs(dy)>CAPTURE_R+1) continue;
+    const x=cx+dx, y=cy+dy; if (x<0||y<0||x>=TW||y>=TH) continue;
+    const t=y*TW+x; if (owner[t]!==h.o || !occ[t] || (heldAt[t]===now && heldBy[t]===occ[t])) continue;
+    liberate(t);
+  }
+}
+
+/** Every watchtower of a kingdom at war shoots the nearest enemy soldier on its kingdom's land and
+    in range, or else the nearest enemy villager there, once per reload; so does the castle. */
 function towersFire(){
   const N=W.nations, M=W.M;
-  const shoot=(i: number, x: number, y: number, range: number) => {
+  const shoot=(i: number, x: number, y: number, range: number, dmg: number) => {
     let target: Human | null=null, bd=Infinity, soldier=false;
     for (const h of W.humans){
       if (h.hp<=0 || !W.atWar[i*M+h.o] || indoors(h)) continue;
       const d=(h.x-x)**2+(h.y-y)**2; if (d>range*range) continue;
+      if (owner[tileOf(h.x,h.y)]!==i) continue;   // only at those who have come onto our land
       const s=h.kind===H_SOLDIER;
       if ((s && !soldier) || (s===soldier && (d<bd || (d===bd && target!==null && h.id<target.id)))){ target=h; bd=d; soldier=s; }
     }
-    if (target){ target.hp--; on.towerShot(x,y,target.x,target.y-2,target.hp<=0); }
+    if (target){ target.hp-=dmg; on.towerShot(x,y,target.x,target.y-2,target.hp<=0); }
   };
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive || !warring[i]) continue;
     for (const q of n.blds){
       if ((q+W.tickN)%TOWER_RELOAD || pType[q]!==B_TOWER || pOwner[q]!==i || pBurn[q]>0) continue;
-      shoot(i,(q%PW)*8+4,((q/PW)|0)*8+1,TOWER_RANGE);
+      shoot(i,(q%PW)*8+4,((q/PW)|0)*8+1,TOWER_RANGE,TOWER_DMG);
     }
     const q=n.capPlot;
-    if (n.capTile>=0 && (q+W.tickN)%CASTLE_RELOAD===0 && pBurn[q]<=0) shoot(i,(q%PW)*8+8,((q/PW)|0)*8+2,CASTLE_RANGE);
+    if (n.capTile>=0 && (q+W.tickN)%CASTLE_RELOAD===0 && pBurn[q]<=0) shoot(i,(q%PW)*8+8,((q/PW)|0)*8+2,CASTLE_RANGE,CASTLE_DMG);
   }
 }
 
@@ -434,8 +637,8 @@ function towersFire(){
 function strike(h: Human, e: Human){
   if (h.cool>0) return;
   h.cool=HIT_TICKS;
-  if (W.prand()<HIT_CHANCE){ e.hp-=HIT_DMG; on.hit(e.x,e.y-2,e.hp<=0); }
-  if (e.foe<0 && e.kind===H_SOLDIER) e.foe=h.id;   // he turns to fight back
+  if (W.prand()<HIT_CHANCE){ e.hp-=h.kind===H_SOLDIER ? HIT_DMG : MILITIA_DMG; on.hit(e.x,e.y-2,e.hp<=0); }
+  if (e.foe<0 && (e.kind===H_SOLDIER || e.brave===1)) e.foe=h.id;   // he turns to fight back
 }
 /** Steps toward (gx,gy): straight if the way is open, otherwise along the army's way. */
 function moveTo(h: Human, c: Campaign, gx: number, gy: number, stop=0){
@@ -447,14 +650,25 @@ function moveTo(h: Human, c: Campaign, gx: number, gy: number, stop=0){
   }
   const st=Math.min(d-stop,h.sp*TICK); h.x+=dx/d*st; h.y+=dy/d*st;
 }
+/** Steps toward (gx,gy) without leaving his own kingdom's land (sidestepping a corner if he can). */
+function stepHome(h: Human, gx: number, gy: number, stop: number, sp=h.sp){
+  const dx=gx-h.x, dy=gy-h.y, d=Math.hypot(dx,dy);
+  if (d<=stop+0.05) return;
+  const st=Math.min(d-stop,sp*TICK), a=Math.atan2(dy,dx);
+  for (const turn of [0,0.7,-0.7,1.5,-1.5]){
+    const nx=h.x+Math.cos(a+turn)*st, ny=h.y+Math.sin(a+turn)*st;
+    if (owner[tileOf(nx,ny)]===h.o){ h.x=nx; h.y=ny; return; }
+  }
+}
 /** Can c's soldiers attack building q? Raids burn anything but the castle; an attack goes for
-    watchtowers and, at the end, the castle. */
+    watchtowers and, at the end, the castle; interceptors only fight. */
 function targetable(q: number, c: Campaign){
   const ty=pType[q];
-  if (pOwner[q]!==c.d || pBurn[q]>0) return false;
+  if (c.target>=0 || pOwner[q]!==c.d || pBurn[q]>0) return false;
   return ty===B_CASTLE ? !c.raid : isStructure(ty) && ty!==B_PART && (c.raid || ty===B_TOWER);
 }
 function pickBuilding(h: Human, c: Campaign){
+  if (c.target>=0) return -1;
   const D=W.nations[c.d];
   if (!c.raid && D.capTile>=0){
     const q=D.capPlot, cx=(q%PW)*8+8, cy=((q/PW)|0)*8+8;
@@ -472,7 +686,7 @@ function pickBuilding(h: Human, c: Campaign){
   }
   return best;
 }
-/** A soldier in the field looks around: an enemy soldier nearby (sooner one fighting a comrade), else a building to attack. */
+/** A soldier in the field looks around: an enemy nearby (sooner one fighting a comrade), else a building to attack. */
 function choose(h: Human, c: Campaign){
   let best: Human | undefined, bs=Infinity;
   for (let o=1;o<W.M;o++){
@@ -500,17 +714,6 @@ function hitBuilding(h: Human, c: Campaign){
   ignite(q);
   if (c.raid) h.loot=true;   // plunder: one bag each
 }
-/** An attacking soldier takes the enemy's ground around him, unless a defender holds it. The castle holds until it is broken. */
-function capture(h: Human, c: Campaign){
-  const cx=(h.x/2)|0, cy=(h.y/2)|0;
-  for (let dy=-CAPTURE_R;dy<=CAPTURE_R;dy++) for (let dx=-CAPTURE_R;dx<=CAPTURE_R;dx++){
-    if (Math.abs(dx)+Math.abs(dy)>CAPTURE_R+1) continue;
-    const x=cx+dx, y=cy+dy; if (x<0||y<0||x>=TW||y>=TH) continue;
-    const t=y*TW+x; if (owner[t]!==c.d || held[t]===W.tickN) continue;
-    const q=(y>>2)*PW+(x>>2); if ((pType[q]===B_CASTLE || pType[q]===B_CPART) && pOwner[q]===c.d) continue;
-    setOwner(t,c.a);
-  }
-}
 function comeHome(h: Human){
   if (h.loot){ h.loot=false; W.nations[h.o].gold+=LOOT_GOLD; on.plunder(h.o,h.x,h.y,LOOT_GOLD); }
   h.war=-1; h.foe=-1; h.aim=-1; h.slot=0;
@@ -533,7 +736,8 @@ export function marchStep(h: Human){
   const c=camps.get(h.war); if (!c){ h.war=-1; backToRoam(h); return; }
   if (h.cool>0) h.cool--;
   if (c.phase===2){ homeward(h,c); return; }
-  if (!c.raid && c.phase===1 && (h.id+W.tickN)%CAPTURE_EVERY===0) capture(h,c);
+  if (!c.raid && c.target<0 && c.phase===1 && (h.id+W.tickN)%CAPTURE_EVERY===0) capture(h,c);
+  reclaim(h);   // passing by our own occupied land
   if ((h.id+W.tickN)%4===0) choose(h,c);
   let foe=h.foe>=0 ? byId.get(h.foe) : undefined;
   if (foe && (foe.hp<=0 || !atWar(h.o,foe.o) || indoors(foe) || (foe.x-c.bx)**2+(foe.y-c.by)**2>(LEASH*1.4)**2)){ foe=undefined; h.foe=-1; }
@@ -552,45 +756,113 @@ export function marchStep(h: Human){
   moveTo(h,c,sx,sy);
 }
 
-/** The post a soldier at home defends, and how far around it. With an army at the gates,
-    everyone not on guard defends the capital. */
+/** The post a soldier at home defends, and how far around it. */
 function postOf(h: Human): [number, number, number] {
   if (h.post>=0){ const [x,y]=frontOf(h.post); return [x,y,GUARD_R]; }
   const home=W.nations[h.o];
-  if (besieged[h.o] && home.capTile>=0){ const q=home.capPlot; return [(q%PW)*8+8,((q/PW)|0)*8+8,SIEGE_R]; }
   let best: [number, number] | null=null, bd=Infinity;
   for (const p of posts[h.o] ?? []){ const d=(p[0]-h.x)**2+(p[1]-h.y)**2; if (d<bd){ bd=d; best=p; } }
   if (best) return [best[0],best[1],BARRACKS_R];
   return home.capTile>=0 ? [...doorOf(home),CAPITAL_R] : [h.x,h.y,20];
 }
-/** The enemy soldier a defender goes for: the nearest near his post, sooner one attacking our buildings or people. */
-function threat(h: Human, ax: number, ay: number, R: number){
+/** The enemy a defender goes for: the nearest near (ax,ay), sooner one attacking our buildings or people. */
+function threat(h: Human, ax: number, ay: number, R: number, reach=Infinity){
   let best: Human | undefined, bs=Infinity;
   for (let o=1;o<W.M;o++){
     if (!W.atWar[h.o*W.M+o]) continue;
     for (const e of armies[o] ?? []){
       if (e.hp<=0 || (e.x-ax)**2+(e.y-ay)**2>R*R) continue;
-      const d=Math.hypot(e.x-h.x,e.y-h.y);
+      const d=Math.hypot(e.x-h.x,e.y-h.y); if (d>reach && e.foe!==h.id) continue;
       const s=d-(e.aim>=0 && pOwner[e.aim]===h.o ? 8 : 0)-(e.foe>=0 && byId.get(e.foe)?.o===h.o ? 4 : 0);
       if (s<bs || (s===bs && best && e.id<best.id)){ bs=s; best=e; }
     }
   }
   return best;
 }
-/** A soldier at home while his kingdom is at war: fights enemies who come near his post, never
-    leaving his own land. Returns true while he is fighting (his normal routine waits). */
+/** Fights foe if he is close enough, else closes in on him without leaving home ground. */
+function engage(h: Human, foe: Human){
+  h.foe=foe.id; h.path=[]; h.wait=0;
+  const d=Math.hypot(foe.x-h.x,foe.y-h.y);
+  if (d<=MELEE_R) strike(h,foe); else stepHome(h,foe.x,foe.y,1.6);
+}
+const valid = (h: Human, e: Human | undefined): e is Human => !!e && e.hp>0 && !indoors(e) && atWar(h.o,e.o);
+/** A place in the home guard's line: hold it, and fight enemies who come within reach of the line.
+    Armed villagers only fight whoever is on them; soldiers go out to meet the enemy near the line. */
+function holdLine(h: Human, r: Rally){
+  const soldier=h.kind===H_SOLDIER;
+  let foe=h.foe>=0 ? byId.get(h.foe) : undefined;
+  if (!valid(h,foe) || (foe.x-r.x)**2+(foe.y-r.y)**2>(DEFEND_R*1.5)**2) foe=undefined;
+  if (!foe && (h.id+W.tickN)%3===0) foe=threat(h,r.x,r.y,DEFEND_R,soldier ? Infinity : 4);
+  if (foe){ engage(h,foe); return; }
+  h.foe=-1;
+  // facing an army: a line; taking land back: a tight knot on the spot
+  const [sx,sy]=r.threat ? linePos(r,h.slot) : [r.x+Math.cos(h.slot*2.4)*Math.min(2,h.slot*0.4), r.y+Math.sin(h.slot*2.4)*Math.min(2,h.slot*0.4)];
+  walkToLine(h,sx,sy);
+}
+/** A soldier at home while his kingdom is at war. Idle soldiers turn out as the home guard when
+    an army nears the border or land is occupied; guards fight near their tower. Never leaves
+    his own land. Returns true while he is busy with it (his normal routine waits). */
 export function guardStep(h: Human): boolean {
-  if (!warring[h.o] || switching(h) || indoors(h)){ h.foe=-1; return false; }
+  if (!warring[h.o] || switching(h) || indoors(h)){
+    h.foe=-1;
+    if (h.calm){ h.calm=0; if (!switching(h) && !indoors(h)) backToRoam(h); }   // the war is over: back to the barracks
+    return false;
+  }
   if (h.cool>0) h.cool--;
+  reclaim(h);   // any of our occupied land within reach
+  const r = h.post<0 ? rallies[h.o] : null;
+  if (r){ h.calm=1; holdLine(h,r); return true; }
+  if (h.calm){ h.calm=0; h.foe=-1; backToRoam(h); return false; }   // the line is stood down
   const [ax,ay,R]=postOf(h);
   let foe=h.foe>=0 ? byId.get(h.foe) : undefined;
-  if (foe && (foe.hp<=0 || !atWar(h.o,foe.o) || indoors(foe) || (foe.x-ax)**2+(foe.y-ay)**2>(R*1.4)**2)) foe=undefined;
+  if (!valid(h,foe) || (foe.x-ax)**2+(foe.y-ay)**2>(R*1.4)**2) foe=undefined;
   if (!foe && (h.id+W.tickN)%3===0) foe=threat(h,ax,ay,R);
   if (!foe){ if (h.foe>=0){ h.foe=-1; backToRoam(h); } return false; }
-  h.foe=foe.id; h.path=[]; h.wait=0;
-  const dx=foe.x-h.x, dy=foe.y-h.y, d=Math.hypot(dx,dy);
-  if (d<=MELEE_R){ strike(h,foe); return true; }
-  const st=Math.min(d-1.6,h.sp*TICK);
-  if (st>0){ const nx=h.x+dx/d*st, ny=h.y+dy/d*st; if (owner[tileOf(nx,ny)]===h.o){ h.x=nx; h.y=ny; } }
+  engage(h,foe);
+  return true;
+}
+
+/* ---------- villagers in danger ---------- */
+/** The nearest enemy within r pixels of h. */
+function nearestEnemy(h: Human, r: number){
+  let best: Human | undefined, bd=r*r;
+  for (let o=1;o<W.M;o++){
+    if (!W.atWar[h.o*W.M+o]) continue;
+    for (const e of armies[o] ?? []){ if (e.hp<=0) continue; const d=(e.x-h.x)**2+(e.y-h.y)**2; if (d<bd || (d===bd && best && e.id<best.id)){ bd=d; best=e; } }
+  }
+  return best;
+}
+function calmDown(h: Human){ h.brave=-1; h.calm=0; h.foe=-1; backToRoam(h); }
+/** A villager of a kingdom at war with enemies close: the first time, he decides (even odds)
+    to run or to fight. Runners flee away from the danger, staying on their land; fighters join
+    the home guard's line, or go for the nearest enemy if there is no line. After a while with
+    no enemy near, he goes back to work. Returns true while he is caught up in it. */
+export function alarmStep(h: Human): boolean {
+  if (indoors(h) || switching(h)) return false;
+  if (!warring[h.o]){ if (h.brave>=0) calmDown(h); return false; }
+  if (h.cool>0) h.cool--;
+  if ((h.id+W.tickN)%4===0){
+    const e=nearestEnemy(h,DANGER_R);
+    if (e){
+      h.calm=0;
+      if (h.brave<0){
+        h.brave = h.beggar ? 0 : W.prand()<0.5 ? 1 : 0;
+        release(h); h.carry=-1; h.amount=0; h.task=TASK_ROAM; h.path=[]; h.wait=0;   // whatever he was doing, he drops it
+      }
+      if (h.brave===0) h.foe=e.id;   // the one he is running from
+    } else if (h.brave>=0) h.calm+=4;
+  }
+  if (h.brave<0) return false;
+  if (h.calm>CALM_TICKS){ calmDown(h); return false; }
+  if (h.brave===0){
+    const e=h.foe>=0 ? byId.get(h.foe) : undefined;
+    if (e){ const dx=h.x-e.x, dy=h.y-e.y, L=Math.hypot(dx,dy)||1; stepHome(h,h.x+dx/L*8,h.y+dy/L*8,0,h.sp*1.25); }
+    return true;
+  }
+  const r=rallies[h.o];
+  if (r){ holdLine(h,r); return true; }
+  let foe=h.foe>=0 ? byId.get(h.foe) : undefined;
+  if (!valid(h,foe)) foe=nearestEnemy(h,DANGER_R);
+  if (foe) engage(h,foe); else h.foe=-1;
   return true;
 }

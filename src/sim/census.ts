@@ -1,6 +1,6 @@
 /* ---------- census: contacts, counts, labels (once per second) ---------- */
 import { TW, TH, NP, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART } from '../core/constants';
-import { W, owner, isLand, pType, pOwner, pBuild, pCenter, pBurn, pTimer } from './state';
+import { W, owner, occ, isLand, pType, pOwner, pBuild, pCenter, pBurn, pTimer } from './state';
 import { on } from './events';
 import { isBld } from './buildings';
 
@@ -21,7 +21,7 @@ export function census(){
   scanContacts(true);
   for (const n of N){ n.plots.length=0; n.blds.length=0; n.houses=n.farms=n.towers=n.mines=n.barracks=n.minters=n.plantations=n.quarries=n.copperMines=0; n.bCount=0; }
   for (let q=0;q<NP;q++){
-    const o=owner[pCenter[q]]; if (o && pBuild[q]) N[o].plots.push(q);
+    const o=owner[pCenter[q]]; if (o && pBuild[q] && !occ[pCenter[q]]) N[o].plots.push(q);   // nobody builds on occupied ground
     const ty=pType[q];
     if (ty===B_RUINS){ pTimer[q]-=1; if (pTimer[q]<=0){ pType[q]=B_EMPTY; pOwner[q]=0; on.plotChanged(q); } continue; }
     if (isBld(ty) && pBurn[q]<=0){

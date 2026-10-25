@@ -45,12 +45,15 @@ export interface Human {
   foe: number;                       // soldiers: id of the enemy they are fighting, or -1
   aim: number;                       // soldiers: plot of the enemy building they are attacking, or -1
   cool: number;                      // ticks until they can strike again
-  slot: number;                      // place in the campaign's formation
+  slot: number;                      // place in the campaign's formation, or the home guard's line
+  brave: number;                     // villagers with enemies near: -1 not yet decided, 0 running away, 1 fighting
+  calm: number;                      // ticks since an enemy was last near
 }
 /** An army in the field: a war (taking land, pushing for the capital) or a raid (burning buildings). */
 export interface Campaign {
   id: number; a: number; d: number;  // attacker, defender
   raid: boolean;
+  target: number;                    // intercepts: id of the enemy campaign they go after (-1 for raids and attacks)
   hostile: boolean;                  // still fighting: false once peace is made and the army walks home
   members: number[];                 // ids of the soldiers still in it, rebuilt each tick
   phase: number;                     // 0 mustering, 1 marching, 2 going home
@@ -75,6 +78,7 @@ export type Command =
   | { type: 'ally'; nation: number; target: number }                  // propose an alliance
   | { type: 'war'; nation: number; target: number; raid: boolean; soldiers: number }
   | { type: 'endWar'; nation: number; target: number }                // recall a raid, or offer peace
+  | { type: 'intercept'; nation: number; campaign: number; soldiers: number }   // send soldiers after an enemy army
   | { type: 'peace'; nation: number; target: number };                // accept the target's peace offer
 
 export const elev = new Float32Array(NT), moist = new Float32Array(NT);
@@ -86,6 +90,7 @@ export const pType = new Uint8Array(NP), pOwner = new Uint8Array(NP), pVar = new
 export const pMain = new Int32Array(NP), pCenter = new Int32Array(NP), pBurn = new Float32Array(NP), pTimer = new Float32Array(NP);
 for (let q=0;q<NP;q++){ const px=q%PW, py=(q/PW)|0; pCenter[q]=(py*4+2)*TW+px*4+2; }
 export const pAband = new Uint8Array(NP);   // houses standing empty, run down
+export const occ = new Uint8Array(NT);      // a kingdom's land held by an enemy at war: the occupier (0 = free); the owner stays
 export const pHp = new Float32Array(NP);     // damage a building has taken (multi-plot buildings keep theirs on the main plot)
 export const pPrio = new Int32Array(NP);   // watchtowers calling for a garrison: order they asked in (0 = not asking)
 
@@ -101,4 +106,9 @@ export const W = {
   atWar: new Uint8Array(1),          // [a*M+b] 1 while any campaign runs between them, rebuilt each tick
   grudge: new Int32Array(1),         // [a*M+b] tick b last went to war against a
   offers: new Int32Array(1),         // [a*M+b] tick a offered b peace (0 = none)
+  wars: new Uint8Array(1),           // [a*M+b] 1 while a and b are at war: from an attack until peace, whatever the armies do
+  warSince: new Int32Array(1),       // [a*M+b] tick that war began
+  occCount: new Int32Array(1),       // [o*M+b] tiles of o's that b occupies
+  lost: new Uint8Array(1),           // [o*M+b] b has occupied some of o's land in this war (cleared when o has it all back)
+  ready: new Int32Array(1),          // [o*M+b] tick o's army took all its land back from b and stands ready to counter-attack (0 = not)
 };

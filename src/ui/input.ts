@@ -1,7 +1,7 @@
 /* ---------- input: pointer, wheel, keys, buttons, tooltip ---------- */
 import { TNAME, TMULT, PLAYER } from '../core/constants';
 import { fmt } from '../core/util';
-import { W, owner, terr, isLand } from '../sim/state';
+import { W, owner, occ, terr, isLand } from '../sim/state';
 import { allied, atWar } from '../sim/war';
 import { client } from '../client';
 import { view, cam, clampCam, zoomAt, tileAt } from '../render/camera';
@@ -10,7 +10,7 @@ import { ui, showHUD } from './hud';
 import { $ } from './dom';
 import { newGame, trySpawn, playerAttack, setRatio, setSoldierShare, centerHome, setPaused } from '../game';
 import { placeAt, clickOwnBuilding, stopPlacing, toggleBuildPanel } from './build';
-import { openDiplomacy, closeDiplomacy, diplomacyOpen } from './diplomacy';
+import { openDiplomacy, closeDiplomacy, diplomacyOpen, closePop } from './diplomacy';
 
 interface Drag { sx: number; sy: number; lx: number; ly: number; moved: boolean; button: number; }
 const pointers=new Map<number,{x: number; y: number}>(); let drag: Drag | null=null, pinch: {d: number; mx: number; my: number} | null=null;
@@ -24,6 +24,7 @@ function updateTip(e: PointerEvent){
   else { l1='Unclaimed land'; l2='1 gold a tile to settle'; }
   let l3=TNAME[tr]+(!o && TMULT[tr]>1.05?` · cost ×${TMULT[tr]}`:'');
   if (o && o!==PLAYER) l3+=allied(PLAYER,o) ? ' · your ally' : atWar(PLAYER,o) ? ' · at war with you' : ' · click for diplomacy';
+  if (occ[t]) l3+=` · occupied by ${occ[t]===PLAYER ? 'you' : W.nations[occ[t]].name}`;
   ui.tip.innerHTML=`<span class="t1"></span><span class="t2"></span><span class="t2"></span>`;
   ui.tip.children[0].textContent=l1; ui.tip.children[1].textContent=l2; ui.tip.children[2].textContent=l3;
   ui.tip.hidden=false;
@@ -110,7 +111,7 @@ export function bindInput(){
     else if (e.key===' ' && client.state==='play'){ e.preventDefault(); centerHome(); }
     else if (e.key==='p' || e.key==='P'){ if (client.state==='play') setPaused(!client.paused); }
     else if (e.key==='b' || e.key==='B'){ if (client.state==='play') toggleBuildPanel(); }
-    else if (e.key==='Escape'){ if (client.placing) stopPlacing(); else if (diplomacyOpen()) closeDiplomacy(); else toggleBuildPanel(false); }
+    else if (e.key==='Escape'){ closePop(); if (client.placing) stopPlacing(); else if (diplomacyOpen()) closeDiplomacy(); else toggleBuildPanel(false); }
     else if (e.key==='+' || e.key==='='){ zoomAt(1.3,view.width/2,view.height/2); }
     else if (e.key==='-'){ zoomAt(1/1.3,view.width/2,view.height/2); }
   });

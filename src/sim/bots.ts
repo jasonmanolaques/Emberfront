@@ -3,7 +3,7 @@ import { B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPER
 import { W, pType, pOwner, pPrio, type Nation } from './state';
 import { launch } from './territory';
 import { STRUCTURES, canAfford, placeProblem, build, togglePriority, anyWithin, isEnemyLand } from './buildings';
-import { allied, atWar, available, declare, routeOpen, raidTargets, endWar, refusePeace, makePeace, wantsPeace, outlook, warAge } from './war';
+import { allied, atWar, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge } from './war';
 
 /** What a bot would build next, most wanted first. */
 function wishlist(n: Nation, exposed: boolean){
@@ -52,14 +52,30 @@ function botBuild(n: Nation, exposed: boolean){
 /** What stands against an army: soldiers (some of them away or elsewhere), and watchtowers that shoot. */
 const defence = (D: Nation) => 0.7*D.soldiers + 2*D.towers + 2;
 
-/** War for a bot: answer peace offers, bring raids home and end wars that go badly, and now and
-    then send its free soldiers against the weakest kingdom in reach, at war if it shares a
-    border, raiding if not. Its personality (attackAt) sets how big an edge it wants. */
+/** War for a bot: answer peace offers, send idle soldiers to meet armies marching on it, counter-
+    attack once its land is back (or sue for peace if it can't), bring raids home and end wars that
+    go badly, and now and then send its free soldiers against the weakest kingdom in reach: at war
+    if it shares a border, raiding if not. Its personality (attackAt) sets how big an edge it wants. */
 function botWar(n: Nation){
   const srand=W.srand, M=W.M, id=n.id;
   for (let o=1;o<M;o++){
     if (!W.offers[o*M+id]) continue;
     if (wantsPeace(n,o)) makePeace(id,o); else refusePeace(o,id);
+  }
+  // an army is coming: meet it with about as many idle soldiers, if there are enough to matter
+  for (const E of W.campaigns){
+    if (E.d!==id || E.phase===2 || !E.hostile || E.target>=0) continue;
+    if (W.campaigns.some(c => c.a===id && c.target===E.id && c.phase<2)) continue;
+    const idle=available(n).idle.length, need=E.members.length;
+    if (idle>=3 && idle>=need*0.6) intercept(id,E.id,Math.min(idle,need+2));
+  }
+  // our land is back: strike back while the enemy is weak, or make peace
+  for (let o=1;o<M;o++){
+    if (!W.ready[id*M+o] || !atWar(id,o)) continue;
+    W.ready[id*M+o]=0;
+    const pool=available(n).all.length;
+    if (pool>=5 && outlook(n,o)>-0.3 && W.contact[id*M+o]) declare(id,o,false,pool);
+    else offerPeace(id,o);
   }
   let busy=false;
   for (const c of W.campaigns){
@@ -84,7 +100,7 @@ function botWar(n: Nation){
     const D=W.nations[o]; if (o===id || !D.alive || allied(id,o) || beset[o]>=2) continue;
     const border=W.contact[id*M+o]>0;
     if (!border && Math.hypot(D.ltx-n.ltx,D.lty-n.lty)>110) continue;   // too far to raid
-    const s=pool/defence(D)*(border ? 1 : 0.75)*(0.8+srand()*0.4);
+    const s=pool/defence(D)*(border ? 1 : 0.75)*(atWar(id,o) ? 1.4 : 1)*(0.8+srand()*0.4);   // an old enemy first
     if (s>bs){ bs=s; best=o; raid=!border; }
   }
   if (!best || (raid && (!raidTargets(best).length || !routeOpen(id,best)))) return;

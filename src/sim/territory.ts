@@ -1,6 +1,6 @@
 /* ---------- territory & combat ---------- */
 import { TW, NT, PW, PH, TMULT, B_TOWER, B_CASTLE, B_CPART, GOLD_PER_TILE, isStructure } from '../core/constants';
-import { W, owner, terr, isLand, frontMark, pType, pOwner, pBurn, type Attack } from './state';
+import { W, owner, occ, terr, isLand, frontMark, pType, pOwner, pBurn, type Attack } from './state';
 import { on } from './events';
 import { ignite } from './buildings';
 
@@ -25,6 +25,7 @@ export function tileCost(a: number, d: number, t: number){
 
 export function setOwner(t: number, o: number){
   const prev=owner[t]; if (prev===o) return;
+  if (occ[t]){ W.occCount[prev*W.M+occ[t]]--; occ[t]=0; }   // changing hands ends any occupation
   owner[t]=o;
   if (prev) W.nations[prev].tiles--;
   if (o) W.nations[o].tiles++;

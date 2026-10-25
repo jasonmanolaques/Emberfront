@@ -27,6 +27,10 @@ export interface SimEvents {
   plunder(id: number, x: number, y: number, gold: number): void;   // a raider got his loot home
   hit(x: number, y: number, killed: boolean): void;            // a blow landed in a fight
   bldHit(q: number): void;                                     // a soldier struck the building on plot q
+  died(x: number, y: number, o: number, id: number, kind: number): void;   // someone fell (kind 0 villager, 1 soldier, 2 beggar)
+  occupied(t: number): void;                                   // tile t was occupied or freed
+  counterReady(o: number, enemy: number): void;                // o's army has won its land back and is ready to counter-attack
+  intercepting(o: number, enemy: number, soldiers: number): void;   // o sent soldiers after an army of enemy's
 }
 
 const noop = () => {};
@@ -36,5 +40,6 @@ export const on: SimEvents = {
   resChanged: noop, stored: noop, towerShot: noop, produced: noop,
   warBegan: noop, armyHome: noop, armyGone: noop, peaceOffered: noop, peaceRefused: noop, peaceMade: noop,
   allied: noop, allyRefused: noop, allianceBroken: noop, annexed: noop, plunder: noop, hit: noop, bldHit: noop,
+  died: noop, occupied: noop, counterReady: noop, intercepting: noop,
 };
 export function listen(l: Partial<SimEvents>){ Object.assign(on, l); }

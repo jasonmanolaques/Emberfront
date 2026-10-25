@@ -4,7 +4,7 @@
    their colour on the edge and a softer line just inside. */
 import { TW, TH, NT, RS, RW, RH, T_DEEP, T_WATER, T_GRASS, T_DRY, T_FOREST, T_DESERT, T_HILLS, T_MOUNT, T_BEACH, T_SNOW } from '../core/constants';
 import { clamp, hexRGB, mixc, pack, type RGB } from '../core/util';
-import { W, owner, terr, isLand, elev, road } from '../sim/state';
+import { W, owner, occ, terr, isLand, elev, road } from '../sim/state';
 import { styleOf } from './style';
 
 export const SEA = '#173a57';   // the deep sea, also the colour behind the map
@@ -124,10 +124,13 @@ export function paintTile(t: number){
     const n=styleOf(o);
     const f=(dx: number, dy: number) => { const xx=x+dx, yy=y+dy; return xx<0||yy<0||xx>=TW||yy>=TH || owner[yy*TW+xx]!==o; };
     const L=f(-1,0), Rt=f(1,0), U=f(0,-1), D=f(0,1), UL=f(-1,-1), UR=f(1,-1), DL=f(-1,1), DR=f(1,1);
+    // occupied by an enemy: hatched with "/" lines in the occupier's colour
+    const oc=occ[t], hatch=oc ? styleOf(oc).bp : 0;
     for (let sy=0;sy<RS;sy++){
-      const i=i0+sy*RW;
+      const i=i0+sy*RW, Y=y*RS+sy;
       for (let sx=0;sx<RS;sx++){
-        const e=edgeDist(sx,sy,L,Rt,U,D,UL,UR,DL,DR), c=tint(base[i+sx],n.ia,n.fr,n.fg,n.fb);
+        const e=edgeDist(sx,sy,L,Rt,U,D,UL,UR,DL,DR); let c=tint(base[i+sx],n.ia,n.fr,n.fg,n.fb);
+        if (oc){ c = ((x*RS+sx+Y)&3)===0 ? mixP(c,hatch,0.8) : mixP(c,0xff000000,0.12); }
         wbuf[i+sx] = e===0 ? n.bp : e===1 ? mixP(c,n.bpIn,0.45) : c;
       }
     }

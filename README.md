@@ -52,7 +52,7 @@ Each kingdom starts with 250 gold and earns 5 a second plus 0.1 a second in tax 
 
 The capital releases one human every 10 seconds, 5% sooner per farm (`sim/population.ts`). Each one is a villager or a soldier, and the kingdom keeps the share of soldiers its slider asks for. Soldiers need a **barracks**: without one the slider is locked. With too few soldiers, newcomers are born soldiers at the barracks, and the villagers nearest a barracks walk in, spend 3 seconds inside, and come out as soldiers; with too many, the nearest soldiers walk in and come out as villagers.
 
-Villagers gather (see below). Soldiers never gather: they wait in front of their barracks, or guard a watchtower that calls for them, until they are sent to war. People only walk inside their own borders (armies in the field aside), go around the castle rather than over it, and die if another kingdom takes the ground they stand on, or they fall in battle (soldiers have 10 hit points, villagers 4).
+Villagers gather (see below). Soldiers never gather: they wait in front of their barracks, or guard a watchtower that calls for them, until they are sent to war. People only walk inside their own borders (armies in the field aside), go around the castle rather than over it, and die if another kingdom takes the ground they stand on, or they fall in battle (soldiers have 11 hit points, villagers 6; see below).
 
 ## Homes
 
@@ -70,7 +70,7 @@ Houses are built by villagers (above). Everything else is placed by the kingdom 
 |---|---|---|
 | Farm | 5 / 2 / 0 | New humans arrive 5% sooner per farm |
 | Barracks | 5 / 5 / 0 | Trains soldiers and is where they wait; needed to raise an army |
-| Watchtower | 2 / 5 / 1 | At war, shoots the nearest enemy soldier in range, or else the nearest enemy villager (1 damage every 1.5 s). Click it to toggle **!**: it then calls 5 idle soldiers to guard it. Several calling towers share the idle soldiers out one at a time in the order they called, so 5 soldiers for 2 towers go 3 and 2 |
+| Watchtower | 2 / 5 / 1 | At war, shoots the nearest enemy soldier in range on your land, or else the nearest enemy villager there (2 damage every 4 s). Click it to toggle **!**: it then calls 5 idle soldiers to guard it. Several calling towers share the idle soldiers out one at a time in the order they called, so 5 soldiers for 2 towers go 3 and 2 |
 | Coin minter | 5 / 5 / 5 | +10% gold income |
 | Plantation | 10 / 0 / 0 | 2×2 plots. Four saplings grow into trees over 30 s, then +5 wood |
 | Stone quarry | 3 / 5 / 0 | 2×2 plots. A pulley hauls stone out of the pit: +3 stone every 30 s |
@@ -85,15 +85,24 @@ Clicking another kingdom's land opens diplomacy (`ui/diplomacy.ts`, `sim/war.ts`
 - **Alliance.** A bot agrees unless it has 3 allies already, you attacked it in the last 90 seconds, or you are less than 0.4 of its strength. Allies are named in green, on the map and the leaderboard, and open their land to each other's armies. Declaring war on an ally ends the alliance.
 - **War.** A second screen picks how many soldiers go, from none to every soldier you have free: idle soldiers at the barracks first, then watchtower guards (a warning says when guards will leave their posts). Then choose:
   - **Raid**: needs a way to the target over unclaimed or allied land, so it works on kingdoms you don't border. The raiders burn buildings from the outskirts toward the centre. A raider who destroys one carries a loot bag (one each) and keeps raiding; if he gets it home it pays 50 gold. If other kingdoms close every way through, the raid turns back.
-  - **Attack**: needs a shared border. The army takes the enemy's ground as it marches (burning what stands there and killing villagers on it), knocks down watchtowers in its way, and pushes for the capital. Ground a defending soldier stands on can't be taken. Breaking the castle (400 blows) **annexes** the kingdom: its land, buildings and people become yours, and its gold and stockpile are lost.
+  - **Attack**: needs a shared border, and starts a **war** that lasts until peace, whatever happens to the armies. The army **occupies** the ground it marches over (hatched with "/" lines in the occupier's colour, burning what stands there), knocks down watchtowers in its way, and pushes for the capital. Ground a defending soldier stands on can't be taken. Occupied land still belongs to its kingdom, but nobody lives, gathers or builds there. Breaking the castle (400 blows) **annexes** the kingdom: its land, buildings and people become yours, and its gold and stockpile are lost.
 
-Two kingdoms are **at war** while an army between them is still fighting, and only then do soldiers fight and watchtowers shoot. Each war has a button at the top of the screen: for a raid it calls the raiders home (they avoid fights on the way, striking back only at whoever is on them); for a war it keeps fighting but offers peace. Bots weigh an offer by how the war is going (armies, land won or lost, how long it has lasted): they refuse while they think they can win and accept when they are in trouble. Bots also offer peace when they are losing; the button then accepts it. A war also ends when one side's army is gone.
+Two kingdoms are **at war** while a war between them lasts, or a raid between them is still out; only then do soldiers fight and watchtowers shoot. Each war has a button at the top of the screen:
 
-**Soldiers in the field** muster in a line behind a banner on their own border, then march in formation. The banner waits for stragglers and for fights to finish, but not for ever. Soldiers break off for enemies near the line (sooner one fighting a comrade), watchtowers shooting at them, and, on a raid, buildings to burn, then fall back into line. In melee a soldier strikes every 0.8 s, hitting 70% of the time for 2.
+- your raid: **recall** it (the raiders avoid fights on the way home, striking back only at whoever is on them);
+- a war: **offer peace**. Bots weigh an offer by how the war is going (armies, land, how long it has lasted): they refuse while they think they can win and accept when they are in trouble. At peace each side keeps the land it occupies. Bots also offer peace when losing; the button then accepts it;
+- an enemy army marching on you: **Respond** opens a menu under the button: request peace, or **intercept**. Intercept picks how many soldiers go out to meet that army in the field. The slider starts at as many as they send, as far as your idle soldiers go, and you can add watchtower guards beyond that. Interceptors come home once that army is beaten or gone;
+- your land all taken back after an invasion: **Counter-attack** opens the war screen with every free soldier, and keeps up as new soldiers are trained. Now you are the attacker, and they can intercept you.
 
-**At home**, soldiers at war fight enemies who come near their watchtower or barracks, sooner those attacking buildings or people, without leaving their own land. When an enemy army closes on the capital, every soldier not on guard rallies to it, and the castle shoots like a strong watchtower.
+**Soldiers in the field** muster in a line behind a banner on their own border, then march in formation. The banner waits for stragglers and for fights to finish, but not for ever. Soldiers break off for enemies near the line (sooner one fighting a comrade), watchtowers shooting at them, and, on a raid, buildings to burn, then fall back into line.
 
-**Bots** go to war when they have free soldiers to spare, choosing the weakest kingdom in reach (one already beset by two armies is left alone), attacking a neighbour or raiding one further off. They rest between campaigns, bring raids home when they have bled too much or been at it long enough, and sue for peace when a war goes badly.
+**At home**, when an enemy army comes within 12 tiles of the border, the idle soldiers turn out as a **home guard**: they form a line at the point it will cross, facing it, and fight it there without ever leaving their land. Once the invaders are beaten, the guard marches on to the occupied land (the part nearest the capital first) and takes it back; pockets cut off from both armies fall back on their own. When every tile is back, the kingdom is told its army is ready to counter-attack (bots then counter-attack if they can, or ask for peace). Watchtower guards stay by their towers, fighting enemies near them, first those attacking buildings or people.
+
+**Villagers** near an enemy decide, once, at even odds: run (they flee from the danger, staying on their land) or take up arms (a pitchfork). The armed ones fall in behind the soldiers of the home guard line, and fight only whoever comes at them; with no line, they go for the nearest enemy. Beggars always run. A while after the last enemy has gone, everyone goes back to work.
+
+**Fighting.** Soldiers have 11 hit points and villagers 6. A soldier strikes every 0.8 s, hitting 70% of the time for 1; a villager hits for 0.5. Watchtowers shoot every 4 s for 2 damage, the castle every 2 s; both shoot only at enemies standing on their own kingdom's land, soldiers before villagers. Everyone heals 0.1 a second. Wounds show: soldiers look hurt (blood, a dented helmet, torn mail) below 8 hit points and near death below 4, head sunk, leaving a short trail of blood; villagers look bloodied below 4. The fallen drop where they stood, in a spreading pool of blood, and fade after half a minute.
+
+**Bots** go to war when they have free soldiers to spare, choosing the weakest kingdom in reach (one already beset by two armies is left alone, an old enemy is preferred), attacking a neighbour or raiding one further off. They send idle soldiers to intercept armies marching on them, rest between campaigns, bring raids home when they have bled too much or been at it long enough, and sue for peace when a war goes badly.
 
 ## Resources
 
@@ -110,7 +119,7 @@ Building on a plot clears what stood there. Villagers work in a loop: pick a res
 
 ## The determinism test
 
-`tests/determinism.test.ts` plays three scripted 5-minute matches on the simulation alone and compares fingerprints of the full game state (ownership, troops, buildings, roads, fires, attacks) every 20 seconds of game time against `tests/golden.json`. A pass means the game still plays exactly as it did when the file was recorded. It was first recorded from the original single-file version, and re-recorded when the map grew to 400×248 tiles, when gold replaced troops, when the ocean shrank, and when war replaced buying enemy land (it now fingerprints the armies in the field too).
+`tests/determinism.test.ts` plays three scripted 5-minute matches on the simulation alone and compares fingerprints of the full game state (ownership, troops, buildings, roads, fires, attacks) every 20 seconds of game time against `tests/golden.json`. A pass means the game still plays exactly as it did when the file was recorded. It was first recorded from the original single-file version, and re-recorded when the map grew to 400×248 tiles, when gold replaced troops, when the ocean shrank, when war replaced buying enemy land (it now fingerprints the armies in the field too), and when wars became lasting with occupation.
 
 If you change gameplay on purpose, the test will fail. That's expected. Re-record the golden file with:
 
