@@ -6,6 +6,7 @@ import { client } from '../client';
 import { $ } from './dom';
 
 export const ui={ meTroops:$('meTroops'), meMax:$('meMax'), meRate:$('meRate'), meBar:$('meBar'), meLand:$('meLand'), meHouses:$('meHouses'), meFarms:$('meFarms'), meTowers:$('meTowers'),
+  meWood:$('meWood'), meStone:$('meStone'), meCopper:$('meCopper'),
   meVillagers:$('meVillagers'), meSoldiers:$('meSoldiers'), meTraining:$('meTraining'), meNext:$('meNext'),
   clock:$('clock'), boardList:$('boardList'), attacks:$('attacks'), log:$('log'), toast:$('toast'), tip:$('tip'), banner:$('banner') };
 
@@ -18,6 +19,7 @@ export function updateHUD(now: number){
   ui.meBar.style.width=clamp(me.troops/me.maxTroops*100,0,100).toFixed(1)+'%';
   ui.meLand.textContent=(me.tiles/landCount*100).toFixed(1)+'%';
   ui.meHouses.textContent=String(me.houses); ui.meFarms.textContent=String(me.farms); ui.meTowers.textContent=String(me.towers);
+  ui.meWood.textContent=fmt(me.stock[0]); ui.meStone.textContent=fmt(me.stock[1]); ui.meCopper.textContent=fmt(me.stock[2]);
   ui.meVillagers.textContent=String(me.villagers); ui.meSoldiers.textContent=String(me.soldiers); ui.meTraining.textContent=String(me.training);
   ui.meNext.textContent = me.alive && me.capTile>=0 ? `Next human in ${Math.max(0,Math.ceil((me.nextHuman-W.tickN)*TICK))}s` : 'No capital: no new humans';
   ui.clock.textContent=fmtTime(W.simTime);

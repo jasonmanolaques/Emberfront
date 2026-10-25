@@ -12,6 +12,7 @@ export interface Nation {
   soldierShare: number;              // share of the population the kingdom wants as soldiers (0..1)
   nextHuman: number;                 // tick when the capital releases its next human
   villagers: number; soldiers: number; training: number;   // headcount, updated every tick; training = switching role
+  stock: number[];                   // goods stored in the capital: [wood, stone, copper]
 }
 /** A person walking the map. Positions are in detail pixels (2 per tile). */
 export interface Human {
@@ -20,8 +21,10 @@ export interface Human {
   task: number;                      // TASK_* in population.ts
   x: number; y: number; tx: number; ty: number;
   path: number[];                    // waypoints before (tx,ty), flat x,y pairs: the way around the castle
-  wait: number;                      // ticks left to idle, or ticks left inside the capital
+  wait: number;                      // ticks left to idle, harvest, or spend inside the capital
   sp: number;                        // walking speed, pixels per second
+  res: number;                       // tile of the resource this villager has claimed, or -1
+  carry: number; amount: number;     // good being hauled home (G_* in resources.ts, -1 = nothing) and how much
 }
 export interface Attack { id: number; att: number; def: number; troops: number; front: number[]; done: boolean; }
 
@@ -32,6 +35,8 @@ export type Command =
   | { type: 'soldiers'; nation: number; share: number };
 
 export const elev = new Float32Array(NT), moist = new Float32Array(NT);
+// resources: at most one per tile (R_* in resources.ts), harvests left, claimed by a villager, tick it grows back
+export const resType = new Uint8Array(NT), resLeft = new Uint8Array(NT), resBusy = new Uint8Array(NT), resDue = new Int32Array(NT);
 export const terr = new Uint8Array(NT), isLand = new Uint8Array(NT), owner = new Uint8Array(NT), road = new Uint8Array(NT);
 export const frontMark = new Int32Array(NT);
 export const pType = new Uint8Array(NP), pOwner = new Uint8Array(NP), pVar = new Uint8Array(NP), pBuild = new Uint8Array(NP);
@@ -44,4 +49,5 @@ export const W = {
   commands: [] as Command[], simTime: 0, tickN: 0,
   prand: Math.random as Rng,         // separate stream for people, so they never shift the territory game's randomness
   humans: [] as Human[], humanSeq: 0,
+  depleted: [] as number[],          // resource tiles waiting to grow back
 };

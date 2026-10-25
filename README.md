@@ -45,6 +45,19 @@ People only walk inside their own borders, go around the castle rather than over
 
 People use their own random stream (`W.prand`), so adding them didn't change anything else in the game. The match recordings below still pass unchanged.
 
+## Resources
+
+`sim/resources.ts` scatters resources over the map by terrain, so every region has its own advantage:
+
+| Resource | Where | Per harvest | Harvests | Grows back |
+|---|---|---|---|---|
+| Healthy tree | dense in forests; some on grassland, hills, snow | 3 wood | 1 (felled to a stump) | 90 s |
+| Dry, twiggy tree | savanna, desert, beaches, hills | 1 wood | 1 | 90 s |
+| Rock | a little everywhere; plenty on hills and snow, most on and around mountains | 1 stone | 3 | 120 s |
+| Copper | rare everywhere; most in deserts, some in mountains | 1 copper | 3 | 150 s |
+
+Building on a plot clears what stood there. Villagers (`sim/population.ts`) work in a loop: pick a resource, walk to it, harvest, carry the load home above their head, store it in the capital, come back out and decide again. They lean toward whatever the kingdom has least of (counting loads already on the way), weighed against distance, and never claim a spot another villager has taken. Soldiers never gather; they patrol around the capital.
+
 ## The determinism test
 
 `tests/determinism.test.ts` plays three scripted 5-minute matches on the simulation alone and compares fingerprints of the full game state (ownership, troops, buildings, roads, fires, attacks) every 20 seconds of game time against `tests/golden.json`. A pass means the game still plays exactly as it did when the file was recorded. It was first recorded from the original single-file version, and re-recorded when the map grew to 400×248 tiles.

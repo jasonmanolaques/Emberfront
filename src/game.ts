@@ -7,7 +7,8 @@ import { newWorld, startMatch, bordersOn, queueCommand, tick } from './sim/sim';
 import { client } from './client';
 import { cam, fitCam, focusOn } from './render/camera';
 import { buildBase, paintAll, paintTile, paintRoad, repaint } from './render/terrain';
-import { genObjects, drawPlot } from './render/sprites';
+import { drawPlot } from './render/sprites';
+import { drawNature, redrawNature } from './render/nature';
 import { addFlash, fireBurst, gatePuff, floats, resetEffects } from './render/effects';
 import { resetStyles } from './render/style';
 import { resetLabels } from './render/render';
@@ -24,6 +25,7 @@ listen({
   capitalFell: onCapitalFell,
   eliminated: onEliminated,
   roleChanged: gatePuff,
+  resChanged: redrawNature,
 });
 
 export function newGame(seed?: number){
@@ -31,7 +33,7 @@ export function newGame(seed?: number){
   resetStyles(); resetLabels(); resetEffects();
   client.overShown=false; client.lastVillageLog=-99; client.paused=false; client.speed=1; $('speed').textContent='1×';
   setSoldierShare(0);
-  buildBase(); paintAll(); genObjects();
+  buildBase(); paintAll(); drawNature();
   fitCam();
 }
 

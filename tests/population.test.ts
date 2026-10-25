@@ -4,14 +4,14 @@ import { TW, TH, PW } from '../src/core/constants';
 import { W, owner, isLand } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { setOwner } from '../src/sim/territory';
-import { H_SOLDIER, H_VILLAGER, TASK_ROAM, TASK_TO_CAP, TASK_INSIDE, doorOf } from '../src/sim/population';
+import { H_SOLDIER, H_VILLAGER, TASK_ROAM, TASK_TO_CAP, TASK_INSIDE, doorOf, switching as isSwitching, indoors } from '../src/sim/population';
 
 const me = () => W.nations[1];
 const mine = () => W.humans.filter(h => h.o === 1);
 const count = (kind: number) => mine().filter(h => h.kind === kind).length;
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
 const setShare = (share: number) => queueCommand({ type: 'soldiers', nation: 1, share });
-const switching = () => mine().filter(h => h.task !== TASK_ROAM);   // walking to the capital or inside it
+const switching = () => mine().filter(isSwitching);   // walking to the capital to switch role, or inside training
 
 // grows the player's land into unclaimed ground (with no rivals there is nobody to fight)
 function expand(rounds: number){
@@ -31,7 +31,7 @@ function start(seed: number, rivals: number){
   throw new Error('no spawn spot');
 }
 // runs until nobody is switching role, then returns how many ticks that took
-function settle(max = 3000){ for (let i=0;i<max;i++){ if (!mine().some(h => h.task !== TASK_ROAM)) return i; tick(); } throw new Error('never settled'); }
+function settle(max = 3000){ for (let i=0;i<max;i++){ if (!mine().some(isSwitching)) return i; tick(); } throw new Error('never settled'); }
 
 describe('population', () => {
   beforeEach(() => start(12345, 0));
@@ -63,7 +63,7 @@ describe('population', () => {
         const walking = switching();
         expect(walking).toHaveLength(5);
         expect(walking.every(h => h.kind === H_VILLAGER)).toBe(true);
-        expect(Math.max(...walking.map(dist))).toBeLessThanOrEqual(Math.min(...mine().filter(h => h.task === TASK_ROAM).map(dist)));
+        expect(Math.max(...walking.map(dist))).toBeLessThanOrEqual(Math.min(...mine().filter(h => !isSwitching(h)).map(dist)));
       }
       // each one goes inside for exactly 3 s (30 ticks) and comes back out as a soldier
       for (const h of mine()){
@@ -122,7 +122,7 @@ describe('population', () => {
     setOwner(capTile, 0);           // capital lost
     expect(me().capTile).toBe(-1);
     tick();
-    expect(mine().every(h => h.task === TASK_ROAM)).toBe(true);
+    expect(mine().some(isSwitching)).toBe(false);
     const before = mine().length;
     run(500);
     expect(mine().length).toBeLessThanOrEqual(before);
@@ -136,7 +136,7 @@ describe('population', () => {
       if (i===1200) setShare(0.6);
       if (i===2200) setShare(0.1);
       tick();
-      for (const h of mine()){ if (h.task === TASK_INSIDE) continue; samples++;
+      for (const h of mine()){ if (indoors(h)) continue; samples++;
         if (h.x >= ox+1 && h.x < ox+15 && h.y >= oy+1 && h.y < oy+13) onWalls++; }
     }
     expect(samples).toBeGreaterThan(10000);

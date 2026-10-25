@@ -10,6 +10,7 @@ import { toRuins, growCities } from './buildings';
 import { scanContacts, census } from './census';
 import { botThink } from './bots';
 import { updatePopulation, HUMAN_EVERY } from './population';
+import { genResources, updateResources, clearPlot } from './resources';
 
 const SYL1 = ['Val','Mor','Ost','Kar','Bre','Thal','Ves','Dun','Ard','Sel','Hal','Ner','Cor','Ith','Rav','Lun','Gor','Eld','Tor','Fen','Ash','Ul','Bel','Kes','Myr','Oak','Sar','Wen'];
 const SYL2 = ['mark','heim','dor','gard','ia','or','wyn','vale','mere','rath','holm','ford','ain','esk','ora','burg','moor','reach','fell','haven'];
@@ -20,7 +21,7 @@ function blankNation(id: number, name: string, hex: string, isPlayer: boolean): 
     troops:0, maxTroops:0, rate:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
     plots:[], blds:[], houses:0, farms:0, towers:0, mines:0, bCount:0,
     sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0,
-    soldierShare:0, nextHuman:0, villagers:0, soldiers:0, training:0 };
+    soldierShare:0, nextHuman:0, villagers:0, soldiers:0, training:0, stock:[0,0,0] };
 }
 function makeNation(id: number, name: string, hex: string, isPlayer: boolean): Nation {
   const srand=W.srand;
@@ -59,7 +60,7 @@ function spawnNation(n: Nation, bx: number, by: number){
     if (isLand[t] && !owner[t]) setOwner(t,n.id);
   }
   const q=by*PW+bx; n.capPlot=q;
-  for (const k of [q,q+1,q+PW,q+PW+1]){ pType[k]=B_CPART; pOwner[k]=n.id; pMain[k]=q; pBurn[k]=0; }
+  for (const k of [q,q+1,q+PW,q+PW+1]){ pType[k]=B_CPART; pOwner[k]=n.id; pMain[k]=q; pBurn[k]=0; clearPlot(k); }
   pType[q]=B_CASTLE; on.plotChanged(q);
 }
 
@@ -70,6 +71,7 @@ export function newWorld(seed: number){
   W.srand=mulberry32(seed^0x5bd1e995);
   W.prand=mulberry32(seed^0x2f6b3a1d);
   genMap(seed);
+  genResources();
   owner.fill(0); road.fill(0); frontMark.fill(0);
   pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0);
   W.burning=[]; W.attacks=[]; W.attackSeq=0; W.commands.length=0;
@@ -151,5 +153,6 @@ export function tick(){
   if (W.tickN%10===0) census();
   if (W.tickN%8===4) growCities();
   for (let i=1;i<N.length;i++){ const n=N[i]; if (n.alive && !n.isPlayer && W.simTime>=n.nextThink) botThink(n); }
+  updateResources();
   updatePopulation();
 }

@@ -2,6 +2,7 @@
 import { TW, PW, PH, T_MOUNT, T_HILLS, T_GRASS, T_DRY, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS } from '../core/constants';
 import { W, owner, terr, isLand, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer } from './state';
 import { on } from './events';
+import { clearPlot } from './resources';
 
 export function ignite(q: number){ if (pBurn[q]>0) return; pBurn[q]=2.5+W.srand()*2.5; W.burning.push(q); on.plotIgnited(q); }
 export function toRuins(q: number){ pType[q]=B_RUINS; pOwner[q]=0; pVar[q]=(W.srand()*8)|0; pBurn[q]=0; pTimer[q]=35+W.srand()*30; on.plotChanged(q); }
@@ -59,6 +60,7 @@ function connectRoad(q: number, id: number, far: boolean){
 function placeBuilding(q: number, id: number, type: number, isNew: boolean){
   if (type===B_EMPTY) return;
   pType[q]=type; pOwner[q]=id; pVar[q]=(W.srand()*3)|0; pTimer[q]=0;
+  clearPlot(q);
   on.plotChanged(q);
   const n=W.nations[id]; n.bCount++;
   if (type!==B_FARM) connectRoad(q,id,isNew);

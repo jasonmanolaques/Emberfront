@@ -7,12 +7,16 @@ import { client, reduceMotion } from '../client';
 import { view, ctx, cam, stepCamAnim } from './camera';
 import { worldC, flushWorld } from './terrain';
 import { objC } from './sprites';
+import { natC } from './nature';
 import { styleOf } from './style';
 import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, floats, glints, updateEffects } from './effects';
-import { H_SOLDIER, TASK_INSIDE } from '../sim/population';
+import { H_SOLDIER, TASK_HARVEST, indoors } from '../sim/population';
+import { G_WOOD, G_STONE, G_COPPER } from '../sim/resources';
 
 const SKIN = ['#f1c9a5','#d9a679','#a8744f','#7a5236'];
 const HAIR = ['#3b2a1e','#7a4a24','#c9a060'];
+const CARGO: string[][] = [];   // top and bottom row of each good's load
+CARGO[G_WOOD]=['#b07a40','#7a4a24']; CARGO[G_STONE]=['#c4beb4','#8d867b']; CARGO[G_COPPER]=['#f0a060','#b8642a'];
 
 export const hover = { sx: -1, sy: -1, tile: -1, mouse: false };
 
@@ -46,13 +50,14 @@ export function render(now: number, dt: number){
     ctx.globalAlpha=0.85*(1-age/420); ctx.fillStyle=flO[i]?styleOf(flO[i]).light:'#ffffff'; ctx.fillRect(x,y,2,2);
   }
   ctx.globalAlpha=1;
+  ctx.drawImage(natC,0,0);
   ctx.drawImage(objC,0,0);
 
   // people, 2x4 pixels standing on (x,y): villagers in their kingdom's colour,
   // soldiers in a darker tunic with a helmet and a spear
   if (zc>=1.5){
     for (const p of W.humans){
-      if (p.task===TASK_INSIDE || p.x<vx0-3||p.y<vy0||p.x>vx1+3||p.y>vy1+5) continue;
+      if (indoors(p) || p.x<vx0-3||p.y<vy0||p.x>vx1+3||p.y>vy1+7) continue;
       const x=Math.round(p.x)-1, y=Math.floor(p.y), st=styleOf(p.o), skin=SKIN[(p.id*7)&3];
       ctx.fillStyle='rgba(16,28,8,.35)'; ctx.fillRect(x,y+1,3,1);
       if (p.kind===H_SOLDIER){
@@ -67,6 +72,10 @@ export function render(now: number, dt: number){
         ctx.fillStyle=skin;      ctx.fillRect(x,y-2,2,1);
         ctx.fillStyle=st.roof;   ctx.fillRect(x,y-1,2,1);
         ctx.fillStyle='#5a3c22'; ctx.fillRect(x,y,1,1); ctx.fillRect(x+1,y,1,1);
+        // working: a tool swings up and down beside them
+        if (p.task===TASK_HARVEST){ const up=((now/220+p.id)|0)&1; ctx.fillStyle='#6e5034'; ctx.fillRect(x+2,y-2+up,1,2); ctx.fillStyle='#c9cdd1'; ctx.fillRect(x+2,y-3+up,1,1); }
+        // hauling: the load held up above the head
+        if (p.carry>=0){ const c=CARGO[p.carry]; ctx.fillStyle=c[0]; ctx.fillRect(x,y-5,2,1); ctx.fillStyle=c[1]; ctx.fillRect(x,y-4,2,1); }
       }
     }
   }

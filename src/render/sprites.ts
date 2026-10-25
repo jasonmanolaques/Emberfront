@@ -1,8 +1,7 @@
 /* ---------- pixel sprites (drawn into the object layer) ---------- */
-import { TW, TH, DW, DH, PW, T_FOREST, T_GRASS, T_DRY, T_HILLS, T_MOUNT, T_DESERT, T_SNOW, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS } from '../core/constants';
-import { terr, isLand, pType, pOwner, pVar, pMain } from '../sim/state';
+import { DW, DH, PW, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS } from '../core/constants';
+import { pType, pOwner, pVar, pMain } from '../sim/state';
 import { styleOf, type NationStyle } from './style';
-import { hash2 } from './terrain';
 
 export const objC = document.createElement('canvas'); objC.width = DW; objC.height = DH;
 export const octx = objC.getContext('2d') as CanvasRenderingContext2D;
@@ -10,35 +9,6 @@ export const octx = objC.getContext('2d') as CanvasRenderingContext2D;
 function P(x: number, y: number, c: string){ octx.fillStyle=c; octx.fillRect(x,y,1,1); }
 function R(x: number, y: number, w: number, h: number, c: string){ octx.fillStyle=c; octx.fillRect(x,y,w,h); }
 const SH = 'rgba(16,28,8,.28)';
-
-function drawTree(x: number, y: number, k: number, h: number){
-  if (k===0){
-    const L=h<0.3?'#7cc954':'#6dbb47', Mi='#4c9a34', D='#2f6e25';
-    P(x+1,y,L); P(x,y+1,L); P(x+1,y+1,Mi); P(x+2,y+1,D); P(x,y+2,Mi); P(x+1,y+2,D); P(x+2,y+2,D); P(x+1,y+3,'#6a4528'); P(x+2,y+3,'rgba(0,0,0,.2)');
-  } else {
-    const A=k===2?'#e9f2f5':'#4f9a58', B=k===2?'#3f7c55':'#2f7440', C='#1f5531';
-    P(x+1,y,A); P(x,y+1,B); P(x+1,y+1,A); P(x+2,y+1,C); P(x,y+2,B); P(x+1,y+2,B); P(x+2,y+2,C); P(x+1,y+3,'#5a3c22');
-  }
-}
-function drawBush(x: number, y: number){ P(x,y,'#7d9a3c'); P(x+1,y,'#5f7a2c'); }
-function drawRock(x: number, y: number){ P(x,y,'#bdb6aa'); P(x+1,y,'#8d867b'); P(x+1,y+1,'#5f5a52'); }
-function drawCactus(x: number, y: number){ P(x,y+1,'#5f9a3c'); P(x,y+2,'#4c8030'); P(x,y+3,'#4c8030'); P(x-1,y+2,'#5f9a3c'); P(x+1,y+1,'#5f9a3c'); }
-
-/** Scatters trees, rocks and cacti over the map. Purely visual. */
-export function genObjects(){
-  octx.clearRect(0,0,DW,DH);
-  for (let y=1;y<TH;y++) for (let x=0;x<TW;x++){
-    const t=y*TW+x; if (!isLand[t]) continue;
-    const tr=terr[t], h=hash2(x*3+17,y*5+3), X=x*2-1+((h*997|0)&1), Y=y*2-2;
-    if (tr===T_FOREST){ if (h<0.6) drawTree(X,Y,h<0.1?1:0,h); }
-    else if (tr===T_GRASS){ if (h<0.022) drawTree(X,Y,0,h); }
-    else if (tr===T_DRY){ if (h<0.02) drawBush(X+1,Y+2); }
-    else if (tr===T_HILLS){ if (h<0.07) drawTree(X,Y,1,h); else if (h<0.1) drawRock(X+1,Y+2); }
-    else if (tr===T_MOUNT){ if (h<0.14) drawRock(X+1,Y+2); }
-    else if (tr===T_DESERT){ if (h<0.007) drawCactus(X+1,Y); }
-    else if (tr===T_SNOW){ if (h<0.03) drawTree(X,Y,2,h); }
-  }
-}
 
 export const CHIMNEY = [[5,0],[1,1],[5,0]];
 function drawHouse(ox: number, oy: number, n: NationStyle, v: number){
