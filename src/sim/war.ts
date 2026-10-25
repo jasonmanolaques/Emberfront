@@ -40,7 +40,7 @@ const ENGAGE_R = 16;                  // pixels around him a soldier in the fiel
 const LEASH = 34;                     // ...with enemies this close to his banner
 const RAID_R = 22;                    // pixels around the banner raiders spread out to burn
 const GUARD_R = 26, BARRACKS_R = 30, CAPITAL_R = 40;   // pixels around their post soldiers at home defend
-export const CASTLE_RANGE = 30, CASTLE_RELOAD = 20, CASTLE_DMG = 2;   // the castle shoots further and twice as often as a watchtower
+export const CASTLE_RANGE = 40, CASTLE_RELOAD = 20, CASTLE_DMG = 2;   // the castle shoots further and twice as often as a watchtower
 const THREAT_TILES = 12;              // an enemy banner this many tiles from our land, and the home guard turns out
 const DEFEND_R = 30;                  // pixels around its line the home guard fights
 export const DANGER_R = 26;           // pixels: an enemy this close alarms a villager
@@ -456,7 +456,7 @@ export function updateWar(){
       // a soldier holds the ground he stands on and next to, if it is his side's
       const t=tileOf(h.x,h.y);
       if ((owner[t]===h.o && !occ[t]) || occ[t]===h.o) for (let dy=-TW;dy<=TW;dy+=TW) for (let dx=-1;dx<=1;dx++){ const k=t+dy+dx; if (k>=0 && k<NT){ heldAt[k]=W.tickN; heldBy[k]=h.o; } }
-    } else if (h.brave===1) armies[h.o].push(h);
+    } else if (h.brave>=1) armies[h.o].push(h);   // armed villagers, and the mob
   }
   posts=N.map(n => warring[n.id] ? barracksOf(n).map(frontOf) : []);
   if (W.tickN%5===0) findRallies();
@@ -620,7 +620,7 @@ function towersFire(){
       const s=h.kind===H_SOLDIER;
       if ((s && !soldier) || (s===soldier && (d<bd || (d===bd && target!==null && h.id<target.id)))){ target=h; bd=d; soldier=s; }
     }
-    if (target){ target.hp-=dmg; on.towerShot(x,y,target.x,target.y-2,target.hp<=0); }
+    if (target){ target.hp-=dmg; on.towerShot(x,y,target.x,target.y-2,target.hp<=0,target.id); }
   };
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive || !warring[i]) continue;
@@ -637,8 +637,9 @@ function towersFire(){
 function strike(h: Human, e: Human){
   if (h.cool>0) return;
   h.cool=HIT_TICKS;
-  if (W.prand()<HIT_CHANCE){ e.hp-=h.kind===H_SOLDIER ? HIT_DMG : MILITIA_DMG; on.hit(e.x,e.y-2,e.hp<=0); }
-  if (e.foe<0 && (e.kind===H_SOLDIER || e.brave===1)) e.foe=h.id;   // he turns to fight back
+  on.swing(h.id,e.id);
+  if (W.prand()<HIT_CHANCE){ e.hp-=h.kind===H_SOLDIER ? HIT_DMG : MILITIA_DMG; on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id); }
+  if (e.foe<0 && (e.kind===H_SOLDIER || e.brave>=1)) e.foe=h.id;   // he turns to fight back
 }
 /** Steps toward (gx,gy): straight if the way is open, otherwise along the army's way. */
 function moveTo(h: Human, c: Campaign, gx: number, gy: number, stop=0){
@@ -833,16 +834,31 @@ function nearestEnemy(h: Human, r: number){
   return best;
 }
 function calmDown(h: Human){ h.brave=-1; h.calm=0; h.foe=-1; backToRoam(h); }
+export const MOB = 2;                // h.brave for a villager swept up in a mob
+const MOB_R = 60;                     // pixels around a mob's rallying point its villagers look for the enemy
+/** The villagers of kingdom o within `r` pixels of (x,y) rise as a mob and swarm the enemy (sim/story.ts
+    decides when). Returns how many; with `dry`, only counts them. */
+export function raiseMob(o: number, x: number, y: number, r: number, dry=false){
+  let k=0;
+  for (const h of W.humans){
+    if (h.o!==o || h.kind===H_SOLDIER || h.hp<=0 || indoors(h) || switching(h) || (h.x-x)**2+(h.y-y)**2>r*r) continue;
+    if (dry){ k++; continue; }
+    if (h.brave<0 || h.brave===0){ release(h); h.carry=-1; h.amount=0; h.task=TASK_ROAM; h.path=[]; h.wait=0; }
+    h.brave=MOB; h.calm=0; h.foe=-1; k++;
+  }
+  return k;
+}
 /** A villager of a kingdom at war with enemies close: the first time, he decides (even odds)
     to run or to fight. Runners flee away from the danger, staying on their land; fighters join
-    the home guard's line, or go for the nearest enemy if there is no line. After a while with
-    no enemy near, he goes back to work. Returns true while he is caught up in it. */
+    the home guard's line, or go for the nearest enemy if there is no line; a mob goes straight
+    for the nearest enemy. After a while with no enemy near, he goes back to work. Returns true
+    while he is caught up in it. */
 export function alarmStep(h: Human): boolean {
   if (indoors(h) || switching(h)) return false;
   if (!warring[h.o]){ if (h.brave>=0) calmDown(h); return false; }
   if (h.cool>0) h.cool--;
   if ((h.id+W.tickN)%4===0){
-    const e=nearestEnemy(h,DANGER_R);
+    const e=nearestEnemy(h,h.brave===MOB ? MOB_R : DANGER_R);
     if (e){
       h.calm=0;
       if (h.brave<0){
@@ -860,9 +876,9 @@ export function alarmStep(h: Human): boolean {
     return true;
   }
   const r=rallies[h.o];
-  if (r){ holdLine(h,r); return true; }
+  if (r && h.brave!==MOB){ holdLine(h,r); return true; }
   let foe=h.foe>=0 ? byId.get(h.foe) : undefined;
-  if (!valid(h,foe)) foe=nearestEnemy(h,DANGER_R);
+  if (!valid(h,foe) || (h.brave===MOB && (h.id+W.tickN)%6===0)) foe=nearestEnemy(h,h.brave===MOB ? MOB_R : DANGER_R) ?? (valid(h,foe) ? foe : undefined);
   if (foe) engage(h,foe); else h.foe=-1;
   return true;
 }

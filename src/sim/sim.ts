@@ -12,6 +12,7 @@ import { botThink } from './bots';
 import { updatePopulation } from './population';
 import { genResources, clearPlot } from './resources';
 import { resetWar, declare, intercept, proposeAlliance, endWar, makePeace } from './war';
+import { resetStories, updateStories } from './story';
 
 const SYL1 = ['Val','Mor','Ost','Kar','Bre','Thal','Ves','Dun','Ard','Sel','Hal','Ner','Cor','Ith','Rav','Lun','Gor','Eld','Tor','Fen','Ash','Ul','Bel','Kes','Myr','Oak','Sar','Wen'];
 const SYL2 = ['mark','heim','dor','gard','ia','or','wyn','vale','mere','rath','holm','ford','ain','esk','ora','burg','moor','reach','fell','haven'];
@@ -79,7 +80,7 @@ export function newWorld(seed: number){
   W.M=1; W.contact=new Int32Array(1);
   W.simTime=0; W.tickN=0;
   W.humans=[]; W.humanSeq=0;
-  resetWar(1);
+  resetWar(1); resetStories(1);
 }
 
 /** Founds the player's capital near tile t and places `rivals` bot kingdoms. Returns false if t has no room. */
@@ -92,7 +93,7 @@ export function startMatch(t: number, rivals: number){
   N.push(me);
   for (let i=0;i<rivals;i++) N.push(makeNation(i+2,nameGen(used),BOT_COLS[i%BOT_COLS.length],false));
   W.M=N.length; W.contact=new Int32Array(W.M*W.M);
-  resetWar(W.M);
+  resetWar(W.M); resetStories(W.M);
   spawnNation(me,b[0],b[1]);
   const caps=[me.capTile];
   for (let i=2;i<W.M;i++){
@@ -171,6 +172,7 @@ export function tick(){
   for (let i=1;i<N.length;i++){ const n=N[i]; if (n.alive && !n.isPlayer && W.simTime>=n.nextThink) botThink(n); }
   produce();
   updatePopulation();
+  updateStories();
   for (let i=1;i<N.length;i++){
     const n=N[i];
     n.strength = n.alive ? n.tiles*STR_TILE + n.villagers*STR_VILLAGER + n.soldiers*STR_SOLDIER + n.gold*STR_GOLD : 0;

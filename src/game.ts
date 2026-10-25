@@ -13,11 +13,12 @@ import { addFlash, fireBurst, gatePuff, addShot, addHit, dustPuff, addCorpse, fl
 import { GOOD_NAME } from './sim/resources';
 import { PW } from './core/constants';
 import { resetStyles } from './render/style';
-import { resetLabels, resetGhosts } from './render/render';
+import { resetLabels, resetGhosts, noteBlow, noteSwing, noteArrow } from './render/render';
+import { onStory } from './ui/story';
 import { resetPeople } from './render/people';
 import { setupBuildPanel, toggleBuildPanel } from './ui/build';
 import { ui, log, toast, showHUD, checkEnd, onEliminated, onCapitalFell, onBuildingPlaced } from './ui/hud';
-import { setupDiplomacy, resetDiplomacy } from './ui/diplomacy';
+import { setupDiplomacy, resetDiplomacy, noteDeath } from './ui/diplomacy';
 import { $ } from './ui/dom';
 
 // what the simulation does, shown on screen
@@ -31,12 +32,14 @@ listen({
   eliminated: onEliminated,
   roleChanged: gatePuff,
   resChanged: redrawNature,
-  towerShot: addShot,
+  towerShot: (x0,y0,x1,y1,kill,victim) => { addShot(x0,y0,x1,y1,kill); noteArrow(victim,x0,y0,x1,y1); },
   // "+5 wood" over your own plantations, quarries and mines when they deliver
   produced: (q,id,good,amount) => { if (id===PLAYER) floats.push({ x:(q%PW)*8+8, y:((q/PW)|0)*8-1, text:`+${amount} ${GOOD_NAME[good]}`, t0:performance.now(), c:GOOD_COL[good] }); },
   // war
-  hit: addHit,
-  died: addCorpse,
+  hit: (x,y,kill,victim,attacker) => { addHit(x,y,kill); noteBlow(victim,attacker); },
+  swing: noteSwing,
+  story: onStory,
+  died: (x,y,o,id,kind) => { addCorpse(x,y,o,id,kind); noteDeath(id,o,kind); },
   occupied: paintTile,
   bldHit: dustPuff,
   plunder: (id,x,y,gold) => { if (id===PLAYER) floats.push({ x, y:y-4, text:`+${gold} gold`, t0:performance.now(), c:'#ffe27a' }); },

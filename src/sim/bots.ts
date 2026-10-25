@@ -52,12 +52,36 @@ function botBuild(n: Nation, exposed: boolean){
 /** What stands against an army: soldiers (some of them away or elsewhere), and watchtowers that shoot. */
 const defence = (D: Nation) => 0.7*D.soldiers + 2*D.towers + 2;
 
+/** The share of its people a bot wants under arms: few in peace, so it grows; more with a much
+    stronger army next door; many at war, and nearly everyone when an enemy far outnumbers it. */
+function armyShare(n: Nation){
+  const M=W.M, id=n.id, peace=0.12+(n.attackAt-0.5)*0.5;   // 12% to 27% by temper
+  let enemies=0, war=false, incoming=0;
+  for (let o=1;o<M;o++) if (o!==id && atWar(id,o) && W.nations[o].alive){ war=true; enemies+=W.nations[o].soldiers; }
+  for (const c of W.campaigns) if (c.d===id && c.hostile && c.phase<2) incoming+=c.members.length;
+  if (!war){
+    let worst=0; for (let o=1;o<M;o++) if (o!==id && W.contact[id*M+o] && !allied(id,o) && W.nations[o].alive) worst=Math.max(worst,W.nations[o].soldiers);
+    return worst>n.soldiers*1.5+5 ? Math.max(peace,0.35) : peace;
+  }
+  const odds=(enemies+incoming)/(n.soldiers+2);
+  return Math.min(0.85,0.45+0.2*Math.min(2,odds));
+}
+/** True when the enemies n is at war with field far more soldiers than it does: time to dig in. */
+function outnumbered(n: Nation){
+  let enemies=0; for (let o=1;o<W.M;o++) if (o!==n.id && atWar(n.id,o)) enemies+=W.nations[o].soldiers;
+  return enemies>1.8*(n.soldiers+2);
+}
+
 /** War for a bot: answer peace offers, send idle soldiers to meet armies marching on it, counter-
     attack once its land is back (or sue for peace if it can't), bring raids home and end wars that
     go badly, and now and then send its free soldiers against the weakest kingdom in reach: at war
     if it shares a border, raiding if not. Its personality (attackAt) sets how big an edge it wants. */
 function botWar(n: Nation){
   const srand=W.srand, M=W.M, id=n.id;
+  // raise or stand down the army as the times demand (quickly up, slowly down)
+  const want=armyShare(n), d=want-n.soldierShare;
+  n.soldierShare=Math.min(1,Math.max(0,n.soldierShare+Math.max(-0.04,Math.min(0.1,d))));
+  const dug=outnumbered(n);
   for (let o=1;o<M;o++){
     if (!W.offers[o*M+id]) continue;
     if (wantsPeace(n,o)) makePeace(id,o); else refusePeace(o,id);
@@ -67,14 +91,14 @@ function botWar(n: Nation){
     if (E.d!==id || E.phase===2 || !E.hostile || E.target>=0) continue;
     if (W.campaigns.some(c => c.a===id && c.target===E.id && c.phase<2)) continue;
     const idle=available(n).idle.length, need=E.members.length;
-    if (idle>=3 && idle>=need*0.6) intercept(id,E.id,Math.min(idle,need+2));
+    if (idle>=3 && idle>=need*(dug ? 1 : 0.6)) intercept(id,E.id,Math.min(idle,need+2));   // outnumbered, only a fair fight
   }
   // our land is back: strike back while the enemy is weak, or make peace
   for (let o=1;o<M;o++){
     if (!W.ready[id*M+o] || !atWar(id,o)) continue;
     W.ready[id*M+o]=0;
     const pool=available(n).all.length;
-    if (pool>=5 && outlook(n,o)>-0.3 && W.contact[id*M+o]) declare(id,o,false,pool);
+    if (pool>=5 && !dug && outlook(n,o)>-0.3 && W.contact[id*M+o]) declare(id,o,false,pool);
     else offerPeace(id,o);
   }
   let busy=false;
@@ -90,7 +114,7 @@ function botWar(n: Nation){
   }
   // after a campaign it rests a while (the bold less), so a winner digests its gains first
   if (busy){ n.nextWar=Math.max(n.nextWar, W.simTime+50+(0.8-n.attackAt)*150); return; }
-  if (W.simTime<n.nextWar) return;
+  if (W.simTime<n.nextWar || dug) return;   // badly outnumbered: stay home and hold
   const pool=available(n).all.length; if (pool<6) return;
   const need=1.4-(n.attackAt-0.5)*2;   // 1.4 for the cautious, 0.8 for the bold
   // a kingdom two armies are already on is left to them

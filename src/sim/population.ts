@@ -39,7 +39,7 @@ const PATROL_R = 36;             // pixels around the capital door soldiers patr
 export const SOLDIER_HP = 11, VILLAGER_HP = 6;
 export const REGEN = 0.01;        // hit points everyone heals a tick (0.1 a second)
 export const GARRISON = 5;       // soldiers a watchtower calls for
-export const TOWER_RANGE = 24;   // pixels a watchtower can shoot
+export const TOWER_RANGE = 32;   // pixels a watchtower can shoot
 export const TOWER_RELOAD = 40;  // ticks between shots (4 s)
 export const TOWER_DMG = 2;
 const SEARCH_R = 40;             // tiles a villager looks around for work

@@ -43,6 +43,24 @@ const facing = new Map<number, boolean>();   // true = facing left
 // the badly wounded leave a short trail of blood: when it started, and when the last drop fell
 const bleeding = new Map<number, [number, number]>();
 const TRAIL_MS=3500, DROP_MS=260;
+// blows: who was hit and when (and by whom, or from where an arrow came), and who swung when
+const blows = new Map<number, { t: number; from: number; dx: number; dy: number }>();
+const swings = new Map<number, number>();
+const BLOW_MS=220, SWING_MS=240;
+export function noteBlow(victim: number, attacker: number){ blows.set(victim,{ t:performance.now(), from:attacker, dx:0, dy:0 }); }
+export function noteSwing(attacker: number){ swings.set(attacker,performance.now()); }
+/** An arrow from (x0,y0) to (x1,y1) (simulation pixels) hits `victim` when it lands. */
+export function noteArrow(victim: number, x0: number, y0: number, x1: number, y1: number){
+  const L=Math.hypot(x1-x0,y1-y0)*K;
+  blows.set(victim,{ t:performance.now()+Math.min(700,220+L*6), from:-1, dx:x1-x0, dy:y1-y0 });
+}
+// a white copy of each sprite, for the flash of a blow landing
+const flashes = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
+function flashOf(src: HTMLCanvasElement){
+  let c=flashes.get(src);
+  if (!c){ c=document.createElement('canvas'); c.width=src.width; c.height=src.height; const x=c.getContext('2d')!; x.drawImage(src,0,0); x.globalCompositeOperation='source-in'; x.fillStyle='#fff1e6'; x.fillRect(0,0,c.width,c.height); flashes.set(src,c); }
+  return c;
+}
 
 /** A box with a dark edge: loads, bags and planks carried above the head. */
 function box(x: number, y: number, w: number, h: number, c: string){ ctx.fillStyle=INK; ctx.fillRect(x-1,y-1,w+2,h+2); ctx.fillStyle=c; ctx.fillRect(x,y,w,h); }
@@ -63,7 +81,21 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
     else if (Math.abs(dx)>0.02) left = dx<0;
     facing.set(p.id,left);
     const kind = p.beggar ? 2 : p.kind===H_SOLDIER ? 1 : 0;
-    const striking = (kind===1 || p.brave===1) && p.cool>HIT_TICKS-3 && p.foe>=0 || (kind===1 && p.cool>HIT_TICKS-3 && p.aim>=0);
+    // a blow landing knocks him back a little and flashes him white; swinging, he lunges at his enemy
+    let px=0, py=0, flash=0;
+    const bl=blows.get(p.id);
+    if (bl){
+      const age=now-bl.t;
+      if (age>BLOW_MS) blows.delete(p.id);
+      else if (age>=0){
+        const at=bl.from>=0 ? byId.get(bl.from) : undefined, dx=at ? p.x-at.x : bl.dx, dy=at ? p.y-at.y : bl.dy, L=Math.hypot(dx,dy)||1, k=(1-age/BLOW_MS)*1.8;
+        px+=dx/L*k; py+=dy/L*k*0.6; flash=age<120 ? 1-age/120 : 0;
+      }
+    }
+    const sw=swings.get(p.id), swAge=sw===undefined ? 1e9 : now-sw;
+    if (swAge>SWING_MS) swings.delete(p.id);
+    else if (foe){ const dx=foe.x-p.x, dy=foe.y-p.y, L=Math.hypot(dx,dy)||1, k=Math.sin(swAge/SWING_MS*Math.PI)*1.8; px+=dx/L*k; py+=dy/L*k*0.6; }
+    const striking = swAge<SWING_MS*0.8 || (kind===1 && p.cool>HIT_TICKS-3 && p.aim>=0);
     const frame = striking && kind===1 ? 2 : moving ? (step ^ (p.id&1)) : 0;
     const look = ((p.id*7)&3) | (((p.id*13)%4)<<2);
     const wound = woundStage(kind===1 ? 1 : 0, p.hp);
@@ -73,11 +105,12 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
       if (moving && now-b[0]<TRAIL_MS && now-b[1]>DROP_MS){ b[1]=now; addDrip(p.x+(Math.random()-0.5)*0.8,p.y); }
     } else bleeding.delete(p.id);
     const spr = personSprite(p.o,kind,look,frame,left,wound);
-    const bx = Math.round(rx)-2, fy = Math.floor(ry)+1;   // body's left column, and its feet row
+    const bx = Math.round(rx+px)-2, fy = Math.floor(ry+py)+1;   // body's left column, and its feet row
     const sx = left ? bx-(spr.width-BODY_X-4) : bx-BODY_X;
     ctx.drawImage(spr, sx, fy-FEET_Y);
+    if (flash>0){ ctx.globalAlpha=flash*0.9; ctx.drawImage(flashOf(spr), sx, fy-FEET_Y); ctx.globalAlpha=1; }
     if (kind!==0) { if (p.loot) drawLoot(bx,fy); continue; }
-    if (p.brave===1){   // up in arms: a pitchfork
+    if (p.brave>=1){   // up in arms: a pitchfork
       const tx=left ? bx-1 : bx+4; ctx.fillStyle=INK; ctx.fillRect(tx-1,fy-9,3,9);
       ctx.fillStyle='#8a6a40'; ctx.fillRect(tx,fy-7,1,7); ctx.fillStyle='#c9cdd1'; ctx.fillRect(tx,fy-8,1,1); ctx.fillRect(tx-1,fy-9,1,1); ctx.fillRect(tx+1,fy-9,1,1);
       continue;
@@ -165,7 +198,7 @@ export function render(now: number, dt: number){
   }
   // conquest flashes
   for (let i=0;i<FL;i++){
-    const age=now-flTime[i]; if (age>420||age<0) continue;
+    const age=Math.max(0,now-flTime[i]); if (age>420 || !flTime[i]) continue;
     const t=flT[i], x=(t%TW)*RS, y=((t/TW)|0)*RS; if (x<vx0-RS||y<vy0-RS||x>vx1||y>vy1) continue;
     if (!W.nations[flO[i]]) continue;
     ctx.globalAlpha=0.8*(1-age/420); ctx.fillStyle=flO[i]?styleOf(flO[i]).light:'#ffffff'; ctx.fillRect(x,y,RS,RS);
@@ -210,9 +243,10 @@ export function render(now: number, dt: number){
   // arrows from watchtowers and castles: a flash on the battlements, a bright bolt arcing over
   // with a fading streak behind it, and a burst where it hits
   for (let i=shots.length-1;i>=0;i--){
-    const s=shots[i], age=now-s.t0;
+    // (the frame's clock can lag the moment a shot was made by a few milliseconds: count that as just made)
+    const s=shots[i], age=Math.max(0,now-s.t0);
     const x0=s.x0*K, y0=s.y0*K, x1=s.x1*K, y1=s.y1*K, L=Math.hypot(x1-x0,y1-y0)||1, fly=Math.min(700,220+L*6);
-    if (age>fly+260 || age<0){ shots.splice(i,1); continue; }
+    if (age>fly+260){ shots.splice(i,1); continue; }
     if (age<120){ ctx.globalAlpha=1-age/120; ctx.fillStyle='#fff2b0'; ctx.fillRect(Math.floor(x0)-1,Math.floor(y0)-1,3,3); ctx.globalAlpha=1; }
     if (age<fly){
       const at=(k: number): [number, number] => [x0+(x1-x0)*k, y0+(y1-y0)*k-Math.sin(k*Math.PI)*Math.min(14,L*0.25)];
@@ -232,7 +266,7 @@ export function render(now: number, dt: number){
   }
   // blows landing in a fight: a white spark, red when it kills
   for (let i=hits.length-1;i>=0;i--){
-    const s=hits[i], age=now-s.t0; if (age>280 || age<0){ hits.splice(i,1); continue; }
+    const s=hits[i], age=Math.max(0,now-s.t0); if (age>280){ hits.splice(i,1); continue; }
     ctx.globalAlpha=1-age/280; ctx.fillStyle=s.kill?'#ff3b2b':'#fff4d0';
     const x=Math.floor(s.x*K), y=Math.floor(s.y*K), r=age<140 ? 2 : 1;
     ctx.fillRect(x,y,1,1); ctx.fillRect(x-r,y-r,1,1); ctx.fillRect(x+r,y-r,1,1); ctx.fillRect(x-r,y+r,1,1); ctx.fillRect(x+r,y+r,1,1);

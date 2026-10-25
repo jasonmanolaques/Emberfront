@@ -4,8 +4,8 @@ import { PLAYER } from '../core/constants';
 import { fmt } from '../core/util';
 import { W } from '../sim/state';
 import { queueCommand } from '../sim/sim';
-import { allied, atWar, available, allyProblem, warProblem, interceptProblem, OFFER_TICKS } from '../sim/war';
-import type { Campaign } from '../sim/state';
+import { allied, atWar, available, allyProblem, warProblem, interceptProblem, OFFER_TICKS, LOOT_GOLD } from '../sim/war';
+import type { Campaign, Human } from '../sim/state';
 import { toast } from './hud';
 import { $ } from './dom';
 
@@ -114,9 +114,61 @@ function incomingFrom(o: number){
   for (const c of W.campaigns) if (c.a===o && c.d===PLAYER && c.hostile && c.phase<2 && c.target<0 && !interceptProblem(PLAYER,c.id) && (!best || c.members.length>best.members.length)) best=c;
   return best;
 }
+/* ---------- the balance of power: everyone who has fought in the current battle with o, and the fallen ----------
+   A battle starts when an army sets out between us after a lull, and counts everyone who joins
+   it: the armies, and anyone else pulled into the fight. Side 0 is us, side 1 them. */
+interface Battle { side: Map<number, number>; total: number[]; soldiers: number[]; villagers: number[]; active: boolean; }
+const battles=new Map<number, Battle>();
+const between=(c: Campaign, o: number) => (c.a===PLAYER && c.d===o) || (c.a===o && c.d===PLAYER);
+function track(o: number, byId: Map<number, Human>){
+  const active=W.campaigns.some(c => between(c,o) && c.hostile && c.phase<2);
+  let b=battles.get(o);
+  if (!b || (active && !b.active)){ b={ side:new Map(), total:[0,0], soldiers:[0,0], villagers:[0,0], active }; battles.set(o,b); }
+  b.active=active;
+  const sideOf=(h: Human) => h.o===PLAYER ? 0 : h.o===o ? 1 : -1;
+  const add=(h: Human) => { const s=sideOf(h); if (s<0 || b!.side.has(h.id)) return; b!.side.set(h.id,s); b!.total[s]++; };
+  const ids=new Set(W.campaigns.filter(c => between(c,o)).map(c => c.id));
+  for (const h of W.humans){
+    if (h.o!==PLAYER && h.o!==o) continue;
+    if (h.war>=0 && ids.has(h.war)) add(h);
+    else if (h.foe>=0 && h.brave!==0){ const e=byId.get(h.foe); if (e && sideOf(e)===1-sideOf(h)){ add(h); add(e); } }   // pulled into the fight
+  }
+  return b;
+}
+/** Counts someone among the fallen of any battle they fought in. */
+export function noteDeath(id: number, _o: number, kind: number){
+  for (const b of battles.values()){
+    const s=b.side.get(id); if (s===undefined) continue;
+    (kind===1 ? b.soldiers : b.villagers)[s]++; b.side.delete(id);
+  }
+}
+function lootOf(o: number){
+  const ids=new Set(W.campaigns.filter(c => between(c,o)).map(c => c.id)), g=[0,0];
+  for (const h of W.humans) if (h.loot && ids.has(h.war)) g[h.o===PLAYER ? 0 : 1]+=LOOT_GOLD;
+  return g;
+}
+/** Two colours pushing against each other, as wide as each side's share of everyone in the fight;
+    the fallen darken each side from its outer end, under a field of skulls. Then the numbers. */
+function powerBar(f: Front, b: Battle){
+  const all=b.total[0]+b.total[1]; if (!all) return '';
+  const loot=lootOf(f.o), L=f.a===PLAYER ? 0 : 1, R=1-L, ids=[PLAYER,f.o];
+  const seg=(s: number, cls: string) => {
+    const dead=b.soldiers[s]+b.villagers[s];
+    return `<i class="${cls}" style="width:${(b.total[s]/all*100).toFixed(1)}%;background:${W.nations[ids[s]].hex}"><s style="width:${b.total[s] ? (dead/b.total[s]*100).toFixed(1) : 0}%"></s></i>`;
+  };
+  const info=(s: number) => {
+    const dead=b.soldiers[s]+b.villagers[s];
+    return `<span><b style="color:${W.nations[ids[s]].hex}">${esc(nameOf(ids[s]))}</b> ${b.total[s]-dead} fighting`+
+      `<br>Dead: ${b.soldiers[s]} soldier${b.soldiers[s]===1?'':'s'}, ${b.villagers[s]} villager${b.villagers[s]===1?'':'s'}`+
+      (loot[s] ? `<br>Loot carried: ${loot[s]} gold` : '')+`</span>`;
+  };
+  return `<div class="pbar" title="Balance of power: everyone in the fight, the fallen under skulls">${seg(L,'l')}${seg(R,'r')}</div><div class="pinfo">${info(L)}${info(R)}</div>`;
+}
+
 let lastChips='';
 export function updateWarChips(){
-  const list=fronts();
+  const list=fronts(), byId=new Map<number, Human>();
+  for (const h of W.humans) byId.set(h.id,h);
   const html=list.map(f => {
     const kind=f.war ? 'War' : 'Raid', open=incomingFrom(f.o);
     const [label, act, off] =
@@ -130,7 +182,8 @@ export function updateWarChips(){
       ['Offer peace', 'end', false];
     const inc=f.incoming.reduce((k,c)=>k+c.members.length,0);
     const men=(inc ? ` · ${inc} coming` : '')+(f.intercepting ? ` · ${f.intercepting} intercepting` : '')+(f.men-f.intercepting>0 ? ` · ${f.men-f.intercepting} out` : '');
-    return `<button class="chip war${f.theyOffer||f.ready?' offer':''}${open?' threat':''}" data-o="${f.o}" data-act="${act}" ${off||!act?'disabled':''}><i style="background:${W.nations[f.a].hex}"></i>${esc(nameOf(f.a))} – ${esc(nameOf(f.d))} · ${kind}${men}<b>${label}</b></button>`;
+    const chip=`<button class="chip war${f.theyOffer||f.ready?' offer':''}${open?' threat':''}" data-o="${f.o}" data-act="${act}" ${off||!act?'disabled':''}><i style="background:${W.nations[f.a].hex}"></i>${esc(nameOf(f.a))} – ${esc(nameOf(f.d))} · ${kind}${men}<b>${label}</b></button>`;
+    return `<div class="front" data-o="${f.o}">${chip}${powerBar(f,track(f.o,byId))}</div>`;
   }).join('');
   if (html!==lastChips){ lastChips=html; wars.innerHTML=html; placePop(); }
   if (!pop.hidden){
@@ -142,7 +195,7 @@ const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;',
 /* ---------- the menu under a chip: ask for peace, or intercept the army ---------- */
 function placePop(){
   if (pop.hidden) return;
-  const chip=wars.querySelector(`button.chip[data-o="${popFor}"]`) as HTMLElement | null;
+  const chip=wars.querySelector(`.front[data-o="${popFor}"]`) as HTMLElement | null;
   if (!chip){ closePop(); return; }
   const g=$('game').getBoundingClientRect(), r=chip.getBoundingClientRect();
   pop.style.left=Math.max(8,Math.min(g.width-pop.offsetWidth-8,r.left-g.left+r.width/2-pop.offsetWidth/2))+'px';
@@ -204,4 +257,4 @@ export function setupDiplomacy(){
     closePop();
   };
 }
-export function resetDiplomacy(){ closeDiplomacy(); closePop(); wars.innerHTML=''; lastChips=''; }
+export function resetDiplomacy(){ closeDiplomacy(); closePop(); wars.innerHTML=''; lastChips=''; battles.clear(); }

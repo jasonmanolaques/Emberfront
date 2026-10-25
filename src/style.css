@@ -229,3 +229,15 @@ button:disabled:active{transform:none;box-shadow:2px 2px 0 var(--ink)}
 #wpSend label b{color:var(--gold);font-size:17px}
 #wpCount{--track:var(--bad);--fill:0%}
 .chip.war.threat{border-color:var(--bad)}
+
+/* Balance of power under each war chip */
+.front{display:grid;gap:3px;justify-items:stretch;pointer-events:auto;max-width:100%}
+.front .chip.war{justify-self:center}
+.pbar{display:flex;height:12px;border:2px solid var(--ink);box-shadow:0 0 0 2px var(--edge);background:#111;image-rendering:pixelated}
+.pbar i{position:relative;display:block;height:100%;min-width:2px;transition:width .4s steps(8)}
+.pbar i.l{border-right:1px solid var(--ink)}
+.pbar s{position:absolute;top:0;bottom:0;left:0;text-decoration:none;background:#120c0a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' shape-rendering='crispEdges'%3E%3Cpath fill='%23cfc8bc' d='M2 1h4v1h1v2H6v1H5v1H3V5H2V4H1V2h1z'/%3E%3Cpath fill='%23120c0a' d='M2 3h1v1H2zM5 3h1v1H5zM3 5h2v1H3z'/%3E%3C/svg%3E") repeat;background-size:8px 8px;opacity:.92}
+.pbar i.r s{left:auto;right:0}
+.pinfo{display:flex;justify-content:space-between;gap:10px;font-size:11px;line-height:1.25;color:var(--text);background:var(--plate);border:2px solid var(--edge);box-shadow:0 0 0 2px var(--ink);padding:3px 6px}
+.pinfo span:last-child{text-align:right}
+.pinfo b{font-weight:600}

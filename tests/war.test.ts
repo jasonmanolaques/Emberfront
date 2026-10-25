@@ -9,7 +9,7 @@ import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
 import { build, plotProblem, structureOf, togglePriority, finishHouse } from '../src/sim/buildings';
 import { H_SOLDIER, H_VILLAGER, TASK_STORE, SOLDIER_HP, VILLAGER_HP, makeHuman, doorOf, switching } from '../src/sim/population';
-import { allied, atWar, available, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R } from '../src/sim/war';
+import { allied, atWar, available, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB } from '../src/sim/war';
 
 const N = (i: number) => W.nations[i];
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
@@ -206,8 +206,9 @@ describe('at war', () => {
   });
 
   it('a raid burns buildings for loot, keeps at it until recalled, and pays 50 gold for each bag brought home', () => {
-    world(1); quiet();
-    for (const t of [B_FARM, B_FARM, B_HOUSE, B_HOUSE, B_FARM]) place(N(2),t);
+    world(1); quiet(); paintDisc(N(2),26);
+    // the farmsteads out on the edge, beyond the castle's arrows
+    for (const t of [B_FARM, B_FARM, B_HOUSE, B_HOUSE, B_FARM]) place(N(2),t,N(1).capTile);
     const men=soldiers(N(1),6);
     const plunder=collect('plunder');
     queueCommand({ type:'war', nation:1, target:2, raid:true, soldiers:6 }); tick();
@@ -344,12 +345,13 @@ describe('wounds and healing', () => {
 
 describe('villagers in danger', () => {
   it('either run or take up arms, about half each; runners get away, fighters go for the enemy', () => {
-    world(1); quiet(); place(N(1),B_FARM);
-    const [x,y]=doorOf(N(1)), folk: Human[]=[];
+    world(1); quiet(); place(N(1),B_FARM); paintDisc(N(1),30);
+    // out in the fields, well away from the castle (an enemy at the gate would raise a mob)
+    const c=N(1).capTile, x=(c%TW)*2+1+50, y=((c/TW)|0)*2+1, folk: Human[]=[];
     for (let i=0;i<60;i++){ const v=makeHuman(N(1),H_VILLAGER,x+(i%10)-5,y+((i/10)|0)*0.8); W.humans.push(v); folk.push(v); }
     soldiers(N(2),1); run(1);
     expect(declare(2,1,true,1)).toBe(true);
-    const e=W.humans.find(h => h.o===2 && h.war>=0)!; e.x=x; e.y=y+2; e.sp=0; e.hp=1000;   // an enemy at the gate who won't fall
+    const e=W.humans.find(h => h.o===2 && h.war>=0)!; e.x=x; e.y=y+2; e.sp=0; e.hp=1000;   // an enemy among them who won't fall
     run(8);
     const near=folk.filter(v => Math.hypot(v.x-e.x,v.y-e.y)<DANGER_R && W.humans.includes(v));
     const fight=near.filter(v => v.brave===1).length, flee=near.filter(v => v.brave===0).length;
@@ -434,5 +436,40 @@ describe('intercepting', () => {
     until(() => !W.campaigns.includes(E) || E.phase===2, 4000);
     expect(blows.length).toBeGreaterThan(0);
     until(() => !W.campaigns.includes(I), 3000);   // its job done, the rest come home
+  });
+});
+
+describe('story events', () => {
+  it('raises a mob when the enemy reaches the castle: the villagers nearby swarm him, and the log hears of it', () => {
+    world(1); quiet(); place(N(1),B_FARM);
+    const [x,y]=doorOf(N(1)), folk: Human[]=[];
+    for (let i=0;i<12;i++){ const v=makeHuman(N(1),H_VILLAGER,x+(i%6)*3-8,y+((i/6)|0)*3+4); W.humans.push(v); folk.push(v); }
+    soldiers(N(2),1); run(1);
+    expect(declare(2,1,true,1)).toBe(true);
+    const e=W.humans.find(h => h.o===2 && h.war>=0)!; e.x=x; e.y=y+1; e.sp=0; e.hp=1000;
+    const told=collect('story');
+    until(() => told.length>0, 30);
+    expect(told[0][0]).toBe('mob');
+    expect(told[0][1]).toBe(1);
+    expect(told[0][4]).toBe(2);
+    const mob=folk.filter(v => W.humans.includes(v) && v.brave===MOB);
+    expect(mob.length).toBeGreaterThanOrEqual(10);
+    const hp=e.hp; run(40);
+    expect(e.hp).toBeLessThan(hp);
+    run(200);
+    expect(told).toHaveLength(1);   // not again so soon
+  });
+});
+
+describe('bots arming', () => {
+  it('keep few soldiers in peace, and raise many when at war and outnumbered', () => {
+    world(1); quiet(); paintToward(1,2);
+    const bot=N(2); bot.nextThink=0; bot.soldierShare=0.5;
+    run(400);
+    expect(bot.soldierShare).toBeLessThan(0.3);            // peace: back to work
+    soldiers(N(1),20); run(1);
+    expect(declare(1,2,false,20)).toBe(true);
+    for (let i=0;i<40;i++){ bot.nextThink=0; tick(); }
+    expect(bot.soldierShare).toBeGreaterThan(0.6);        // war against a far bigger army: to arms
   });
 });
