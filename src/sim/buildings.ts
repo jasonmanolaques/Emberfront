@@ -1,7 +1,7 @@
 /* ---------- buildings: villagers build their own houses; farms, barracks, watchtowers and coin
    minters are placed by each kingdom and paid for from its stockpile. Also roads, fire & ruins. ---------- */
 import { TW, PW, PH, NP, T_MOUNT, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, isStructure } from '../core/constants';
-import { W, owner, terr, isLand, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, pMain, type Nation } from './state';
+import { W, owner, terr, isLand, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, pMain, pHp, type Nation } from './state';
 import { on } from './events';
 import { clearPlot } from './resources';
 
@@ -12,7 +12,7 @@ export function ignite(q: number){
   if (!size){ igniteOne(q); return; }
   for (const k of footprint(main,pType[main])) igniteOne(k);
 }
-export function toRuins(q: number){ pType[q]=B_RUINS; pOwner[q]=0; pVar[q]=(W.srand()*8)|0; pBurn[q]=0; pTimer[q]=35+W.srand()*30; pPrio[q]=0; pAband[q]=0; on.plotChanged(q); }
+export function toRuins(q: number){ pType[q]=B_RUINS; pOwner[q]=0; pVar[q]=(W.srand()*8)|0; pBurn[q]=0; pTimer[q]=35+W.srand()*30; pPrio[q]=0; pAband[q]=0; pHp[q]=0; on.plotChanged(q); }
 
 export function isBld(ty: number){ return isStructure(ty) || ty===B_CASTLE || ty===B_CPART; }
 function nbBuildings(q: number, id: number){
@@ -59,7 +59,7 @@ function connectRoad(q: number, id: number, far: boolean){
 }
 function placeBuilding(q: number, id: number, type: number, isNew: boolean){
   if (type===B_EMPTY) return;
-  pType[q]=type; pOwner[q]=id; pVar[q]=(W.srand()*3)|0; pTimer[q]=0; pPrio[q]=0; pAband[q]=0;
+  pType[q]=type; pOwner[q]=id; pVar[q]=(W.srand()*3)|0; pTimer[q]=0; pPrio[q]=0; pAband[q]=0; pHp[q]=0;
   clearPlot(q);
   on.plotChanged(q);
   const n=W.nations[id]; n.bCount++;
@@ -107,7 +107,7 @@ export const PRODUCES: Record<number, [number, number]> = { [B_PLANTATION]: [0,5
 export const STRUCTURES: Structure[] = [
   { type: B_FARM,     name: 'Farm',        cost: [5,2,0], info: 'Each farm brings new villagers 5% sooner.' },
   { type: B_BARRACKS, name: 'Barracks',    cost: [5,5,0], info: 'Trains your soldiers and is where they wait. You need one before you can raise an army.' },
-  { type: B_TOWER,    name: 'Watchtower',  cost: [2,5,1], info: 'Shoots enemy soldiers that come near and makes the land around it costlier to take. Click a placed tower to call up to 5 soldiers to guard it.' },
+  { type: B_TOWER,    name: 'Watchtower',  cost: [2,5,1], info: 'While you are at war, shoots enemy soldiers that come near, and their villagers. Click a placed tower to call up to 5 soldiers to guard it.' },
   { type: B_MINTER,   name: 'Coin minter', cost: [5,5,5], info: 'Raises your gold income by 10%.' },
   { type: B_PLANTATION, name: 'Plantation', cost: [10,0,0], info: 'Four plots of saplings that grow into trees: +5 wood every 30 seconds. Takes 2×2 plots.' },
   { type: B_QUARRY,     name: 'Stone quarry', cost: [3,5,0], info: 'A pit with a pulley hauling stone up: +3 stone every 30 seconds. Takes 2×2 plots.' },

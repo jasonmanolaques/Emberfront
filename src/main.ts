@@ -36,6 +36,7 @@ function toSpawn(){ if (client.state!=='spawn'){ $('intro').hidden=true; $('scri
   spawnAt:(tx: number,ty: number)=>{ toSpawn(); trySpawn(ty*TW+tx); },
   randomSpawn:()=>{ toSpawn(); for (let i=0;i<500 && client.state==='spawn';i++){ const t=W.landTiles[(Math.random()*W.landTiles.length)|0]; const b=findBlock(t%TW,(t/TW)|0,0); if (b) trySpawn(t); } },
   run:(n: number)=>{ for (let i=0;i<n;i++) step(); }, attack:(t: number)=>playerAttack(t), setRatio, setSoldierShare, command:(c: unknown)=>queueCommand(c as never), get humans(){return W.humans;}, get cam(){return cam;},
+  get campaigns(){return W.campaigns;}, get W(){return W;},
   newWorld:(seed?: number)=>newGame(seed),
   freePlots:()=>{ const n=W.nations[1], out: number[]=[]; if (n) for (let q=0;q<NP;q++) if (!plotProblem(n,q)) out.push(q); return out; },
-  dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, wbuf, obj:octx.getImageData(0,0,DW,DH).data, attacks:W.attacks, tickN:W.tickN }) };
+  dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, wbuf, obj:octx.getImageData(0,0,DW,DH).data, attacks:W.attacks, campaigns:W.campaigns, tickN:W.tickN }) };

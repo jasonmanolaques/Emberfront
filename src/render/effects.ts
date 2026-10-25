@@ -20,6 +20,11 @@ export function gatePuff(x: number, y: number, kind: number){
   for (let i=0;i<6;i++) emit(x-1+Math.random()*2, y-1, (Math.random()-0.5)*4, -(1.5+Math.random()*2.5), 0.5+Math.random()*0.4, kind ? 3 : 2);
 }
 export function fireBurst(q: number){ const ox=(q%PW)*8, oy=((q/PW)|0)*8; for (let i=0;i<10;i++) emitFire(ox,oy); }
+/** Splinters and dust where a soldier strikes the building on plot q. */
+export function dustPuff(q: number){
+  const ox=(q%PW)*8, oy=((q/PW)|0)*8;
+  for (let i=0;i<3;i++) emit(ox+1+Math.random()*6, oy+3+Math.random()*4, (Math.random()-0.5)*6, -(2+Math.random()*3), 0.4+Math.random()*0.3, 2);
+}
 
 /** Advances particles; spawns fire, smoke and chimney puffs for what's on screen. */
 export function updateEffects(dt: number, vx0: number, vy0: number, vx1: number, vy1: number, zc: number){
@@ -48,6 +53,11 @@ export interface Shot { x0: number; y0: number; x1: number; y1: number; t0: numb
 export const shots: Shot[]=[];
 export function addShot(x0: number, y0: number, x1: number, y1: number, kill: boolean){ shots.push({x0,y0,x1,y1,t0:performance.now(),kill}); if (shots.length>300) shots.shift(); }
 
+/* blows landing in a fight */
+export interface Hit { x: number; y: number; t0: number; kill: boolean; }
+export const hits: Hit[]=[];
+export function addHit(x: number, y: number, kill: boolean){ hits.push({x,y,t0:performance.now(),kill}); if (hits.length>300) hits.shift(); }
+
 /* floating "−gold" numbers after an attack order */
 export interface Float { x: number; y: number; text: string; t0: number; c: string; }
 export const floats: Float[]=[];
@@ -61,6 +71,6 @@ function initGlints(){
 }
 
 export function resetEffects(){
-  fx.pcount=0; floats.length=0; flTime.fill(0); shots.length=0;
+  fx.pcount=0; floats.length=0; flTime.fill(0); shots.length=0; hits.length=0;
   initGlints();
 }

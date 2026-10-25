@@ -2,7 +2,7 @@
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
 import { TW, TH, NT, PW, PH, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, BOT_COLS, PLAYER_COL, GOLD_START, GOLD_PER_SEC, TAX_PER_VILLAGER, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
 import { mulberry32 } from '../core/rng';
-import { W, owner, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, type Nation, type Command } from './state';
+import { W, owner, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, pHp, type Nation, type Command } from './state';
 import { on } from './events';
 import { genMap } from './mapgen';
 import { setOwner, stepAttack, launch, touches } from './territory';
@@ -11,6 +11,7 @@ import { scanContacts, census } from './census';
 import { botThink } from './bots';
 import { updatePopulation } from './population';
 import { genResources, clearPlot } from './resources';
+import { resetWar, declare, proposeAlliance, endWar, makePeace } from './war';
 
 const SYL1 = ['Val','Mor','Ost','Kar','Bre','Thal','Ves','Dun','Ard','Sel','Hal','Ner','Cor','Ith','Rav','Lun','Gor','Eld','Tor','Fen','Ash','Ul','Bel','Kes','Myr','Oak','Sar','Wen'];
 const SYL2 = ['mark','heim','dor','gard','ia','or','wyn','vale','mere','rath','holm','ford','ain','esk','ora','burg','moor','reach','fell','haven'];
@@ -20,13 +21,13 @@ function blankNation(id: number, name: string, hex: string, isPlayer: boolean): 
   return { id, name, hex, isPlayer,
     gold:0, income:0, strength:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
     plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0,
-    sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0,
+    sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0,
     soldierShare:0, humanProg:0, villagers:0, soldiers:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0 };
 }
 function makeNation(id: number, name: string, hex: string, isPlayer: boolean): Nation {
   const srand=W.srand;
   const n={ ...blankNation(id,name,hex,isPlayer), gold:GOLD_START, alive:true,
-    expandAt:0.22+srand()*0.25, attackAt:0.5+srand()*0.3, ratio:0.3+srand()*0.25, nextThink:1+srand()*2 };
+    expandAt:0.22+srand()*0.25, attackAt:0.5+srand()*0.3, ratio:0.3+srand()*0.25, nextThink:1+srand()*2, nextWar:100+srand()*100 };
   // the player starts with no soldiers requested; bots keep a fixed share of their own
   n.soldierShare = isPlayer ? 0 : 0.15+W.prand()*0.35;
   return n;
@@ -59,7 +60,7 @@ function spawnNation(n: Nation, bx: number, by: number){
     if (isLand[t] && !owner[t]) setOwner(t,n.id);
   }
   const q=by*PW+bx; n.capPlot=q;
-  for (const k of [q,q+1,q+PW,q+PW+1]){ pType[k]=B_CPART; pOwner[k]=n.id; pMain[k]=q; pBurn[k]=0; clearPlot(k); }
+  for (const k of [q,q+1,q+PW,q+PW+1]){ pType[k]=B_CPART; pOwner[k]=n.id; pMain[k]=q; pBurn[k]=0; pHp[k]=0; clearPlot(k); }
   pType[q]=B_CASTLE; on.plotChanged(q);
 }
 
@@ -72,12 +73,13 @@ export function newWorld(seed: number){
   genMap(seed);
   genResources();
   owner.fill(0); road.fill(0); frontMark.fill(0);
-  pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0); pPrio.fill(0); pAband.fill(0); W.prioSeq=0;
+  pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0); pPrio.fill(0); pAband.fill(0); pHp.fill(0); W.prioSeq=0;
   W.burning=[]; W.attacks=[]; W.attackSeq=0; W.commands.length=0;
   W.nations=[blankNation(0,'Unclaimed land','#cfc6a8',false)];
   W.M=1; W.contact=new Int32Array(1);
   W.simTime=0; W.tickN=0;
   W.humans=[]; W.humanSeq=0;
+  resetWar(1);
 }
 
 /** Founds the player's capital near tile t and places `rivals` bot kingdoms. Returns false if t has no room. */
@@ -90,6 +92,7 @@ export function startMatch(t: number, rivals: number){
   N.push(me);
   for (let i=0;i<rivals;i++) N.push(makeNation(i+2,nameGen(used),BOT_COLS[i%BOT_COLS.length],false));
   W.M=N.length; W.contact=new Int32Array(W.M*W.M);
+  resetWar(W.M);
   spawnNation(me,b[0],b[1]);
   const caps=[me.capTile];
   for (let i=2;i<W.M;i++){
@@ -121,8 +124,9 @@ export function queueCommand(c: Command){ W.commands.push(c); }
 // The simulation is the authority: a command is re-checked here, whatever the client saw.
 function applyCommand(c: Command){
   if (c.type==='attack'){
+    // gold settles unclaimed land; another kingdom's land is taken only by war (sim/war.ts)
     const n=W.nations[c.nation]; if (!n || !n.alive || c.tile<0 || !isLand[c.tile]) return;
-    const o=owner[c.tile]; if (o===c.nation) return;
+    const o=owner[c.tile]; if (o!==0) return;
     scanContacts(false);
     if (!W.contact[c.nation*W.M+o]) return;
     const send=n.gold*c.ratio;
@@ -135,6 +139,15 @@ function applyCommand(c: Command){
     const n=W.nations[c.nation]; if (n) build(n,c.plot,c.kind);
   } else if (c.type==='priority'){
     const n=W.nations[c.nation]; if (n && n.alive) togglePriority(n,c.plot);
+  } else if (c.type==='ally'){
+    proposeAlliance(c.nation,c.target);
+  } else if (c.type==='war'){
+    scanContacts(false);
+    declare(c.nation,c.target,c.raid,c.soldiers);
+  } else if (c.type==='endWar'){
+    endWar(c.nation,c.target);
+  } else if (c.type==='peace'){
+    const M=W.M; if (c.target>0 && c.target<M && W.offers[c.target*M+c.nation]) makePeace(c.nation,c.target);
   }
 }
 

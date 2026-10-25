@@ -174,3 +174,48 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--gold);outline-
   #banner{font-size:14px;white-space:normal;width:calc(100% - 32px);text-align:center}
 }
 @media (prefers-reduced-motion:reduce){#banner{animation:none}#log .entry{animation:none}}
+
+/* War chips: one per enemy, top centre; click to recall a raid or offer peace */
+#wars{position:absolute;top:16px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px;width:min(440px,calc(100% - 540px));min-width:220px;pointer-events:none;z-index:3}
+#wars:empty{display:none}
+.chip.war{pointer-events:auto;font-size:13px;padding:5px 8px;gap:8px;background:var(--plate);border-color:#8a3a2e;box-shadow:0 0 0 2px var(--ink),3px 3px 0 2px rgba(0,0,0,.3);max-width:100%;flex-wrap:wrap;justify-content:center}
+.chip.war b{font-weight:600;color:var(--gold);padding-left:8px;border-left:2px solid var(--edge);white-space:nowrap}
+.chip.war:disabled{cursor:default;opacity:.85}
+.chip.war:disabled b{color:var(--muted)}
+.chip.war.offer{border-color:var(--good);animation:pulse-good 1.2s steps(2) infinite}
+@keyframes pulse-good{50%{border-color:var(--gold)}}
+
+/* Diplomacy */
+#diplo{left:50%;top:50%;transform:translate(-50%,-60%);width:min(320px,calc(100% - 32px));padding:12px 14px 14px;display:grid;gap:10px;z-index:4}
+#diplo .dhead{display:flex;align-items:center;gap:8px}
+#diplo .dname{font-weight:700;font-size:18px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#diplo .x{width:30px;height:30px;padding:0;font-size:18px;line-height:1}
+#dTalk,#dWarView{display:grid;gap:10px}
+#diplo .dstats{grid-template-columns:repeat(3,1fr)}
+.drel{font-size:13px;color:var(--muted)}
+.drel.ally{color:var(--good)}
+.drel.war{color:var(--bad)}
+.drow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.drow button{padding:9px 8px;font-weight:600}
+button.danger{border-color:#8a3a2e;background:#3a1d1a}
+button.danger:hover{border-color:var(--bad)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:disabled:active{transform:none;box-shadow:2px 2px 0 var(--ink)}
+.dnote{font-size:12px;color:var(--muted);min-height:0}
+.dnote:empty{display:none}
+#dWarView label{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:14px}
+#dWarView label b{color:var(--gold);font-size:17px}
+#dCommit{--track:var(--bad);--fill:100%}
+.dsplit{font-size:12px;color:var(--muted)}
+.dwarn{font-size:12px;color:#2b1e02;background:var(--gold);padding:4px 7px;border:2px solid var(--gold-d)}
+#dBack{justify-self:start;padding:5px 10px;font-size:13px}
+
+#boardList li.ally .nm{color:var(--good)}
+#boardList li.war .nm{color:var(--bad)}
+
+@media (max-width:1100px){#wars{width:min(440px,calc(100% - 32px));top:auto;bottom:150px}}
+@media (max-width:640px){
+  #wars{bottom:196px;left:16px;right:70px;width:auto;min-width:0;transform:none;align-items:stretch}
+  #diplo{top:auto;bottom:196px;left:16px;width:calc(100% - 90px);transform:none}
+  #diplo:not([hidden]) + #wars{display:none}   /* the panel says it all while it is open */
+}

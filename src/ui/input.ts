@@ -2,7 +2,7 @@
 import { TNAME, TMULT, PLAYER } from '../core/constants';
 import { fmt } from '../core/util';
 import { W, owner, terr, isLand } from '../sim/state';
-import { towerCover, tileCost } from '../sim/territory';
+import { allied, atWar } from '../sim/war';
 import { client } from '../client';
 import { view, cam, clampCam, zoomAt, tileAt } from '../render/camera';
 import { hover } from '../render/render';
@@ -10,6 +10,7 @@ import { ui, showHUD } from './hud';
 import { $ } from './dom';
 import { newGame, trySpawn, playerAttack, setRatio, setSoldierShare, centerHome, setPaused } from '../game';
 import { placeAt, clickOwnBuilding, stopPlacing, toggleBuildPanel } from './build';
+import { openDiplomacy, closeDiplomacy, diplomacyOpen } from './diplomacy';
 
 interface Drag { sx: number; sy: number; lx: number; ly: number; moved: boolean; button: number; }
 const pointers=new Map<number,{x: number; y: number}>(); let drag: Drag | null=null, pinch: {d: number; mx: number; my: number} | null=null;
@@ -21,9 +22,8 @@ function updateTip(e: PointerEvent){
   let l1, l2;
   if (o){ const n=W.nations[o]; l1=n.name+(n.isPlayer?' (you)':''); l2=`Strength ${fmt(n.strength)} · ${(n.tiles/landCount*100).toFixed(1)}% of land`; }
   else { l1='Unclaimed land'; l2='1 gold a tile to settle'; }
-  let l3=TNAME[tr]+(TMULT[tr]>1.05?` · cost ×${TMULT[tr]}`:'');
-  if (o && o!==PLAYER && towerCover(o,t)) l3+=' · tower ×1.5';
-  if (o && o!==PLAYER){ const c=tileCost(PLAYER,o,t); l3+=` · ≈${c<10?c.toFixed(1):fmt(c)} gold a tile`; }
+  let l3=TNAME[tr]+(!o && TMULT[tr]>1.05?` · cost ×${TMULT[tr]}`:'');
+  if (o && o!==PLAYER) l3+=allied(PLAYER,o) ? ' · your ally' : atWar(PLAYER,o) ? ' · at war with you' : ' · click for diplomacy';
   ui.tip.innerHTML=`<span class="t1"></span><span class="t2"></span><span class="t2"></span>`;
   ui.tip.children[0].textContent=l1; ui.tip.children[1].textContent=l2; ui.tip.children[2].textContent=l3;
   ui.tip.hidden=false;
@@ -42,8 +42,10 @@ function endPointer(e: PointerEvent){
       const [sx,sy]=devXY(e), t=tileAt(sx,sy);
       if (client.state==='spawn') trySpawn(t);
       else if (client.state==='play'){
+        const o=t>=0 ? owner[t] : 0;
         if (client.placing) placeAt(t);
-        else if (!clickOwnBuilding(t)) playerAttack(t);
+        else if (o && o!==PLAYER) openDiplomacy(o);   // another kingdom: talk first
+        else if (!clickOwnBuilding(t)){ if (diplomacyOpen()) closeDiplomacy(); else playerAttack(t); }
       }
     }
     drag=null; view.classList.remove('dragging');
@@ -101,13 +103,14 @@ export function bindInput(){
   $('again').onclick=()=>{ $('over').hidden=true; $('scrim').hidden=true; showHUD(false); client.state='spawn'; newGame(); ui.banner.hidden=false; };
   $('watch').onclick=()=>{ $('over').hidden=true; $('scrim').hidden=true; };
   window.addEventListener('keydown',e=>{
-    if ((e.target as HTMLElement).tagName==='SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag=(e.target as HTMLElement).tagName;
+    if (tag==='SELECT' || (tag==='INPUT' && e.key!=='Escape') || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key>='1' && e.key<='9'){ setRatio(+e.key/10); }
     else if (e.key==='0'){ setRatio(1); }
     else if (e.key===' ' && client.state==='play'){ e.preventDefault(); centerHome(); }
     else if (e.key==='p' || e.key==='P'){ if (client.state==='play') setPaused(!client.paused); }
     else if (e.key==='b' || e.key==='B'){ if (client.state==='play') toggleBuildPanel(); }
-    else if (e.key==='Escape'){ if (client.placing) stopPlacing(); else toggleBuildPanel(false); }
+    else if (e.key==='Escape'){ if (client.placing) stopPlacing(); else if (diplomacyOpen()) closeDiplomacy(); else toggleBuildPanel(false); }
     else if (e.key==='+' || e.key==='='){ zoomAt(1.3,view.width/2,view.height/2); }
     else if (e.key==='-'){ zoomAt(1/1.3,view.width/2,view.height/2); }
   });

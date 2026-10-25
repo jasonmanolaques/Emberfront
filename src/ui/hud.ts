@@ -3,7 +3,9 @@ import { PLAYER, TICK } from '../core/constants';
 import { fmt, fmtTime } from '../core/util';
 import { HUMAN_EVERY, FARM_BONUS } from '../sim/population';
 import { W } from '../sim/state';
+import { allied, atWar } from '../sim/war';
 import { client } from '../client';
+import { updateWarChips, refreshDiplomacy } from './diplomacy';
 import { $ } from './dom';
 
 export const ui={ meGold:$('meGold'), meRate:$('meRate'), meLand:$('meLand'), meHouses:$('meHouses'), meStrength:$('meStrength'),
@@ -36,7 +38,8 @@ export function updateHUD(now: number){
     for (const n of list){
       if (shown>=6 && !n.isPlayer) continue; if (!n.alive && !n.isPlayer) continue;
       shown++;
-      html+=`<li class="${n.isPlayer?'you':''}${n.alive?'':' dead'}"><i style="background:${n.hex}"></i><span class="nm">${n.name}${n.isPlayer?' (you)':''}</span><span class="tr">${fmt(n.strength)}</span><span class="pc">${(n.tiles/landCount*100).toFixed(1)}%</span></li>`;
+      const rel=allied(PLAYER,n.id) ? ' ally' : atWar(PLAYER,n.id) ? ' war' : '';
+      html+=`<li class="${n.isPlayer?'you':''}${n.alive?'':' dead'}${rel}"><i style="background:${n.hex}"></i><span class="nm">${n.name}${n.isPlayer?' (you)':''}</span><span class="tr">${fmt(n.strength)}</span><span class="pc">${(n.tiles/landCount*100).toFixed(1)}%</span></li>`;
     }
     ui.boardList.innerHTML=html;
     let ah='';
@@ -44,6 +47,8 @@ export function updateHUD(now: number){
       ah+=`<span class="chip"><i style="background:${A.def?d.hex:'#cfc6a8'}"></i>${A.def?d.name:'Unclaimed land'} · ${fmt(A.gold)} gold</span>`; }
     ui.attacks.innerHTML=ah;
   }
+  updateWarChips();
+  refreshDiplomacy();
 }
 
 export function log(text: string, kind?: string){
@@ -81,7 +86,7 @@ export function onEliminated(id: number, by: number){
 }
 export function onCapitalFell(id: number, by: number){
   const n=W.nations[id];
-  if (id===PLAYER){ log('Your capital burned. A quarter of your army scattered.','bad'); toast('Your capital has fallen'); }
+  if (id===PLAYER){ log('Your capital burned and a quarter of your gold was lost','bad'); toast('Your capital has fallen'); }
   else log(`${by?W.nations[by].name:'Someone'} sacked the capital of ${n.name}`, by===PLAYER?'good':'');
 }
 export function onBuildingPlaced(_q: number, id: number, isNew: boolean){

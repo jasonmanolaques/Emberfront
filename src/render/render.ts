@@ -10,7 +10,8 @@ import { worldC, flushWorld } from './terrain';
 import { objC, drawIcon, drawWorking, BIG } from './sprites';
 import { natC } from './nature';
 import { styleOf } from './style';
-import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, floats, glints, shots, updateEffects } from './effects';
+import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, floats, glints, shots, hits, updateEffects } from './effects';
+import { allied, atWar } from '../sim/war';
 import { H_SOLDIER, TASK_HARVEST, TASK_HOME_GO, TASK_HOME_BUILD, indoors } from '../sim/population';
 import { G_WOOD, G_STONE, G_COPPER } from '../sim/resources';
 
@@ -105,6 +106,19 @@ export function render(now: number, dt: number){
         // hauling: the load held up above the head (builders on their way carry a plank)
         if (p.carry>=0 || p.task===TASK_HOME_GO){ const c=CARGO[p.carry>=0 ? p.carry : G_WOOD]; ctx.fillStyle=c[0]; ctx.fillRect(x,y-5,2,1); ctx.fillStyle=c[1]; ctx.fillRect(x,y-4,2,1); }
       }
+      // a raider with plunder: a loot bag over his shoulder, tied with a gold cord
+      if (p.loot){ ctx.fillStyle='#7a5228'; ctx.fillRect(x-1,y-6,3,2); ctx.fillRect(x,y-7,1,1); ctx.fillStyle='#ffd23f'; ctx.fillRect(x,y-6,1,1); }
+    }
+    // each army's banner on a pole, in its kingdom's colours
+    const wave=reduceMotion ? 0 : ((now/300)|0)&1;
+    for (const c of W.campaigns){
+      if (c.phase===2 || c.bx<vx0-4||c.by<vy0||c.bx>vx1+4||c.by>vy1+9) continue;
+      const st=styleOf(c.a), x=Math.round(c.bx), y=Math.round(c.by);
+      ctx.fillStyle='rgba(16,28,8,.35)'; ctx.fillRect(x-1,y+1,3,1);
+      ctx.fillStyle='#4a3626'; ctx.fillRect(x,y-8,1,9);
+      ctx.fillStyle=st.roof; ctx.fillRect(x+1,y-8,3,2); ctx.fillRect(x+1+wave,y-6,3-wave,1);
+      ctx.fillStyle=st.roofD; ctx.fillRect(x+1,y-6,1,1);
+      if (c.raid){ ctx.fillStyle='#1a1410'; ctx.fillRect(x+2,y-7,1,1); }   // a raid flies a black mark
     }
   }
   // particles
@@ -133,6 +147,14 @@ export function render(now: number, dt: number){
     if (age<250){ const k=age/250, x=s.x0+(s.x1-s.x0)*k, y=s.y0+(s.y1-s.y0)*k, dx=(s.x1-s.x0), dy=(s.y1-s.y0), L=Math.hypot(dx,dy)||1;
       ctx.fillStyle='#f4e6c8'; ctx.fillRect(Math.floor(x),Math.floor(y),1,1); ctx.fillStyle='#8a6a40'; ctx.fillRect(Math.floor(x-dx/L*1.5),Math.floor(y-dy/L*1.5),1,1); }
     else { ctx.globalAlpha=1-(age-250)/200; ctx.fillStyle=s.kill?'#ff3b2b':'#ff8a6a'; ctx.fillRect(Math.floor(s.x1)-1,Math.floor(s.y1)-1,s.kill?3:2,s.kill?3:2); ctx.globalAlpha=1; }
+  }
+  // blows landing in a fight: a white spark, red when it kills
+  for (let i=hits.length-1;i>=0;i--){
+    const s=hits[i], age=now-s.t0; if (age>260 || age<0){ hits.splice(i,1); continue; }
+    ctx.globalAlpha=1-age/260; ctx.fillStyle=s.kill?'#ff3b2b':'#fff4d0';
+    const x=Math.floor(s.x), y=Math.floor(s.y);
+    ctx.fillRect(x,y,1,1); if (age<120){ ctx.fillRect(x-1,y-1,1,1); ctx.fillRect(x+1,y-1,1,1); ctx.fillRect(x-1,y+1,1,1); ctx.fillRect(x+1,y+1,1,1); }
+    ctx.globalAlpha=1;
   }
   // hover marker / spawn ghost / building preview
   if (hover.tile>=0 && hover.mouse){
@@ -166,10 +188,12 @@ export function render(now: number, dt: number){
     const sx=((lx*2+1)-camX)*zoom, sy=((ly*2+1)-camY)*zoom-(nearCap?13*zoom:0);
     if (sx<-100||sy<-50||sx>w+100||sy>h+50) continue;
     ctx.font=`600 ${fs|0}px "Pixelify Sans", ui-monospace, monospace`;
-    ctx.lineWidth=Math.max(2,fs*0.2); ctx.strokeStyle='rgba(8,14,22,.85)'; ctx.fillStyle=n.isPlayer?'#ffe27a':'#ffffff';
+    // your name in gold, allies in green, kingdoms at war with you in red
+    const rel=allied(PLAYER,i) ? '#8fe39b' : atWar(PLAYER,i) ? '#ff9a8a' : null;
+    ctx.lineWidth=Math.max(2,fs*0.2); ctx.strokeStyle='rgba(8,14,22,.85)'; ctx.fillStyle=n.isPlayer?'#ffe27a':rel ?? '#ffffff';
     ctx.strokeText(n.name,sx,sy-fs*0.35); ctx.fillText(n.name,sx,sy-fs*0.35);
     const ts=(fs*0.72)|0; ctx.font=`500 ${ts}px "Pixelify Sans", ui-monospace, monospace`; ctx.lineWidth=Math.max(2,ts*0.22);
-    ctx.fillStyle=n.isPlayer?'#ffe27a':'#e9eef3';
+    ctx.fillStyle=n.isPlayer?'#ffe27a':rel ?? '#e9eef3';
     ctx.strokeText(fmt(n.strength),sx,sy+fs*0.55); ctx.fillText(fmt(n.strength),sx,sy+fs*0.55);
   }
   for (let i=floats.length-1;i>=0;i--){

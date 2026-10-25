@@ -13,12 +13,13 @@
     const d = api.dump();
     const nat = api.nations.slice(1).map(n => NKEYS.map(k => String(n[k])).join(','));
     const att = d.attacks.map(A => [A.id,A.att,A.def,A.gold,A.front.length,A.done].join(','));
+    const camps = (d.campaigns || []).map(c => [c.id,c.a,c.d,+c.raid,+c.hostile,c.phase,c.members.length,c.bx.toFixed(3),c.by.toFixed(3)].join(','));
     return {
       tick: d.tickN,
       simTime: String(api.simTime),
       owner: hashArr(d.owner), road: hashArr(d.road), pType: hashArr(d.pType), pOwner: hashArr(d.pOwner),
       pVar: hashArr(d.pVar), pBurn: hashArr(d.pBurn), pTimer: hashArr(d.pTimer),
-      nations: hashStr(nat.join('|')), attacks: hashStr(att.join('|')),
+      nations: hashStr(nat.join('|')), attacks: hashStr(att.join('|')), campaigns: hashStr(camps.join('|')),
     };
   }
   function renderPrint(api){ const d = api.dump(); return { world: hashArr(d.wbuf), objects: hashArr(d.obj) }; }

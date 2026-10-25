@@ -41,7 +41,7 @@
   </section>
 
   <section id="bar" class="plate" hidden aria-label="Attack and army">
-    <label for="ratio"><span>Each attack spends</span><b id="ratioVal">40%</b></label>
+    <label for="ratio"><span>Each expansion spends</span><b id="ratioVal">40%</b></label>
     <input type="range" id="ratio" min="5" max="100" step="5" value="40">
     <label for="soldiers" class="split"><span>People serving as soldiers</span><b id="soldiersVal">0%</b></label>
     <input type="range" id="soldiers" min="0" max="100" step="5" value="0">
@@ -64,6 +64,30 @@
     <div id="btip" class="plate" hidden role="tooltip"></div>
   </section>
 
+  <section id="diplo" class="plate" hidden aria-label="Diplomacy">
+    <div class="dhead"><span class="crest" id="dCrest"></span><span class="dname" id="dName">—</span><button id="dClose" class="x" aria-label="Close">×</button></div>
+    <div id="dTalk">
+      <dl class="stats dstats">
+        <div><dt>Strength</dt><dd id="dStrength">0</dd></div>
+        <div><dt>Soldiers</dt><dd id="dSoldiers">0</dd></div>
+        <div><dt>Land</dt><dd id="dLand">0%</dd></div>
+      </dl>
+      <div class="drel" id="dRel">Neutral</div>
+      <div class="drow"><button id="dAlly">Propose alliance</button><button id="dWar" class="danger">Declare war…</button></div>
+      <p class="dnote" id="dNote"></p>
+    </div>
+    <div id="dWarView" hidden>
+      <label for="dCommit"><span>Soldiers to send</span><b id="dCommitVal">0 / 0</b></label>
+      <input type="range" id="dCommit" min="0" max="0" step="1" value="0">
+      <div class="dsplit" id="dSplit"></div>
+      <div class="dwarn" id="dWarn" hidden></div>
+      <div class="drow"><button id="dRaid" title="Burn their buildings and bring the loot home: 50 gold a bag. Needs a way through unclaimed or allied land.">Raid</button><button id="dAttack" class="danger" title="Take their land and march on their capital. Needs a shared border.">Attack</button></div>
+      <p class="dnote" id="dWhy"></p>
+      <button id="dBack" class="ghost">← Back</button>
+    </div>
+  </section>
+  <div id="wars" aria-label="Wars"></div>
+
   <div id="log" aria-live="polite"></div>
   <div id="banner" class="plate" hidden>Tap open land to found your capital</div>
   <div id="toast" class="plate" hidden></div>
@@ -75,13 +99,14 @@
     <h1>Emberfront</h1>
     <p class="sub">A fast territory war where every kingdom builds itself.</p>
     <ul class="how">
-      <li><b>Click</b> unclaimed or enemy land to push your border. Settling costs <b>1 gold</b> a tile; enemy land costs more the stronger they are. The top slider sets how much of your gold each push spends.</li>
+      <li><b>Click</b> unclaimed land to push your border: settling costs <b>1 gold</b> a tile. The top slider sets how much of your gold each push spends.</li>
       <li>You earn <b>5 gold</b> a second, plus <b>0.1</b> in tax from every villager (soldiers pay none). Every 10 seconds a <b>human</b> walks out of your capital.</li>
       <li>Everyone needs a home: while you are short of houses, a newcomer first builds himself a hovel near the rest of town. Houses nobody needs for a while stand empty.</li>
       <li><b>Villagers</b> gather wood, stone and copper. Forests are rich in wood, mountains in stone, deserts in copper. Nothing grows back.</li>
       <li>Open <b>Buildings</b> (the hammer) to place farms, barracks, watchtowers and coin minters. The same buildings side by side join up.</li>
-      <li>A <b>barracks</b> lets you raise soldiers with the second slider. <b>Click a watchtower</b> to call 5 soldiers to guard it; towers shoot enemy soldiers nearby.</li>
-      <li><b>Strength</b> counts your land, people and gold. Captured towns burn; take an enemy <b>capital</b> and you loot a quarter of its gold.</li>
+      <li>A <b>barracks</b> lets you raise soldiers with the second slider. <b>Click a watchtower</b> to call 5 soldiers to guard it.</li>
+      <li><b>Click another kingdom</b> for diplomacy. <b>Allies</b> open their land to your soldiers. Go to <b>war</b> with as many soldiers as you choose: a <b>raid</b> burns their buildings for loot, an <b>attack</b> takes their land and marches on the capital. Break the castle and the whole kingdom is yours.</li>
+      <li>Only at war do soldiers fight and watchtowers shoot. Click the war at the top to recall a raid or offer peace.</li>
     </ul>
     <div class="row">
       <label class="tag" for="rivals">Rivals</label>
@@ -89,7 +114,7 @@
       <button id="newMap" class="ghost">New map</button>
     </div>
     <button id="start" class="primary">Choose your spawn</button>
-    <p class="keys">Drag to pan · scroll or pinch to zoom · keys 1–9 set the attack % · B opens buildings · Esc stops placing · Space centers on your capital · P pauses</p>
+    <p class="keys">Drag to pan · scroll or pinch to zoom · keys 1–9 set the expansion % · B opens buildings · Esc closes panels · Space centers on your capital · P pauses</p>
   </section>
 
   <section id="over" class="plate card" hidden aria-label="Match over">

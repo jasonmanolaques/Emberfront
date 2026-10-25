@@ -23,7 +23,7 @@ const api = {
     const me = W.nations[1]; if (!me || !me.alive || t<0 || !isLand[t] || owner[t]===1) return;
     queueCommand({ type: 'attack', nation: 1, tile: t, ratio });
   },
-  dump: () => ({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, attacks: W.attacks, tickN: W.tickN }),
+  dump: () => ({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, attacks: W.attacks, campaigns: W.campaigns, tickN: W.tickN }),
 };
 
 const run = (globalThis as any).efScenario as (api: unknown, opts: { seed: number }) => { spawned: boolean; checkpoints: object[] };
