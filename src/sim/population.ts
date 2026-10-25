@@ -4,12 +4,16 @@
    soldier share. When it has too few soldiers, newcomers are born soldiers at the barracks and
    the nearest villagers walk there to train; with too many, the nearest soldiers walk in and
    come back out as villagers.
-   Villagers are the kingdom's workers: each one picks a resource, walks to it, harvests it,
-   carries the load to the capital and stores it, then thinks about the next job.
+   Every person needs a home. While the kingdom has fewer houses than people, a villager's next
+   job is to pick a plot, walk there and build a hovel; once everyone is housed, villagers are the
+   kingdom's workers: each one picks a resource, walks to it, harvests it, carries the load to the
+   capital and stores it, then thinks about the next job. Houses nobody needs for a while stand
+   empty, the outermost first, and fill again from the centre as the kingdom grows.
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, and enemy watchtowers shoot at them. */
-import { TW, TH, PW, TICK, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER } from '../core/constants';
-import { W, owner, pType, pOwner, pBurn, pPrio, resType, resBusy, type Human, type Nation } from './state';
+import { TW, TH, PW, TICK, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE } from '../core/constants';
+import { W, owner, pType, pOwner, pBurn, pPrio, pAband, pCenter, resType, resBusy, type Human, type Nation } from './state';
+import { homeScore, startSite, cancelSite, finishHouse } from './buildings';
 import { on } from './events';
 import { GOOD_OF, YIELD, WORK_TICKS, available, harvest } from './resources';
 
@@ -20,7 +24,9 @@ export const TASK_ROAM = 0,      // between jobs: villagers think or stroll betw
              TASK_GATHER = 3,    // walking to a claimed resource
              TASK_HARVEST = 4,   // working at it
              TASK_HAUL = 5,      // carrying the load home
-             TASK_STORE = 6;     // inside the capital, putting the load away
+             TASK_STORE = 6,     // inside the capital, putting the load away
+             TASK_HOME_GO = 7,   // walking to the plot of the house they will build
+             TASK_HOME_BUILD = 8;// building it
 export const HUMAN_EVERY = 100;  // progress per new human: 100 ticks (10 s), each farm adds 5% speed
 export const FARM_BONUS = 0.05;
 const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 s)
@@ -31,6 +37,8 @@ export const GARRISON = 5;       // soldiers a watchtower calls for
 export const TOWER_RANGE = 24;   // pixels a watchtower can shoot
 export const TOWER_RELOAD = 15;  // ticks between shots (1.5 s)
 const SEARCH_R = 40;             // tiles a villager looks around for work
+export const BUILD_TICKS = 40;   // ticks to put up a house (4 s)
+export const ABANDON_TICKS = 200;// ticks with more houses than people before the extra ones stand empty (20 s)
 
 /** Switching role: walking to a barracks for it, or inside training. */
 export const switching = (h: Human) => h.task===TASK_TO_TRAIN || h.task===TASK_INSIDE;
@@ -189,7 +197,10 @@ function nearestResources(h: Human){
   return found;
 }
 
-function release(h: Human){ if (h.res>=0){ resBusy[h.res]=0; h.res=-1; } }
+function release(h: Human){
+  if (h.res>=0){ resBusy[h.res]=0; h.res=-1; }
+  if (h.home>=0){ cancelSite(h.home); h.home=-1; }   // an unfinished house is given up
+}
 function store(h: Human){
   if (h.carry<0) return;
   const n=W.nations[h.o];
@@ -197,10 +208,35 @@ function store(h: Human){
   h.carry=-1; h.amount=0;
 }
 
-/** A villager between jobs decides what to do next. */
+const housing: { people: number; builders: number }[]=[];   // per nation, updated each tick
+
+/** Short of homes: more people than houses, counting the ones already being built. */
+function needsHome(n: Nation){ const k=housing[n.id]; return !!k && k.people > n.houses + k.builders; }
+
+/** Picks a plot for a new house and sets off to build it. Returns false if there is nowhere suitable. */
+function goBuildHome(h: Human){
+  const n=W.nations[h.o], r=W.prand; if (!n.plots.length) return false;
+  const cands: [number, number][]=[];
+  for (let k=0;k<20;k++){
+    const q=n.plots[(r()*n.plots.length)|0], w=homeScore(n,q)*(0.5+r());
+    if (w>0 && !cands.some(c=>c[1]===q)) cands.push([w,q]);
+  }
+  cands.sort((a,b)=>b[0]-a[0] || a[1]-b[1]);
+  for (const [,q] of cands.slice(0,3)){
+    const [x,y]=frontOf(q);
+    h.tx=x; h.ty=y; h.task=TASK_HOME_GO;
+    // a roof matters more than looks: a builder may cut across the castle, but never leaves the kingdom's land
+    if (route(h)){ startSite(q,h.o); h.home=q; h.wait=0; housing[h.o].builders++; return true; }
+  }
+  h.task=TASK_ROAM;
+  return false;
+}
+
+/** A villager between jobs decides what to do next: first a roof over everyone's head, then work. */
 function think(h: Human){
   const n=W.nations[h.o];
   release(h); h.task=TASK_ROAM;
+  if (h.kind===H_VILLAGER && needsHome(n) && goBuildHome(h)) return;
   if (h.kind!==H_VILLAGER || n.capTile<0){ roamTarget(h); return; }   // nowhere to store anything without a capital
   const found=nearestResources(h), have=n.stock.map((s,g)=>s+(pending[h.o]?.[g] ?? 0));
   for (let tries=0;tries<3*CANDIDATES;tries++){
@@ -219,8 +255,9 @@ function think(h: Human){
 function spawnHuman(n: Nation, kind: number, barracks: number[]){
   const r=W.prand, [cx,cy]=doorOf(n), [x,y] = kind===H_SOLDIER ? frontOf(nearestPlot(barracks,cx,cy)) : [cx,cy];
   const h: Human={ id:++W.humanSeq, o:n.id, kind, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+r()*2,
-    res:-1, carry:-1, amount:0, hp:SOLDIER_HP, post:-1, site:-1 };
+    res:-1, carry:-1, amount:0, hp:SOLDIER_HP, post:-1, site:-1, home:-1 };
   W.humans.push(h);
+  if (housing[n.id]) housing[n.id].people++;   // counts himself before deciding whether he needs a home
   think(h); h.wait=0;
 }
 
@@ -245,7 +282,7 @@ function nearest(list: Human[], cx: number, cy: number){
 function balance(n: Nation, mine: Human[], barracks: number[]){
   if (n.capTile<0){
     // no capital: nowhere to store anything, so loads are dropped and gathering stops
-    for (const h of mine) if (h.kind===H_VILLAGER && !switching(h) && h.task!==TASK_ROAM){ h.carry=-1; h.amount=0; backToRoam(h); }
+    for (const h of mine) if (h.kind===H_VILLAGER && h.task>=TASK_GATHER && h.task<=TASK_STORE){ h.carry=-1; h.amount=0; backToRoam(h); }
   }
   if (!barracks.length){
     // no barracks: nobody can train; anyone on the way turns back, anyone inside walks back out
@@ -264,7 +301,7 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
   for (const h of mine){ if (!diff) return; if (h.task===TASK_TO_TRAIN && h.kind===want){ backToRoam(h); diff--; } }
   // then the people of the other role nearest a barracks; anyone carrying a load delivers it first
   const away=(h: Human)=>{ const [x,y]=frontOf(nearestPlot(barracks,h.x,h.y)); return (h.x-x)**2+(h.y-y)**2; };
-  const cands=mine.filter(h=>!switching(h) && h.task!==TASK_STORE && h.carry<0 && h.kind===from).sort((a,b)=>away(a)-away(b) || a.id-b.id);
+  const cands=mine.filter(h=>!switching(h) && h.task!==TASK_STORE && h.carry<0 && h.home<0 && h.kind===from).sort((a,b)=>away(a)-away(b) || a.id-b.id);
   for (const h of cands){ if (!diff) return; sendToTrain(h,barracks); diff--; }
 }
 
@@ -288,6 +325,25 @@ function garrison(n: Nation, mine: Human[]){
       h.post=q; count.set(q, count.get(q)!+1); backToRoam(h); progress=true;
     }
   }
+}
+
+/** Houses beyond what the people need stand empty after a while, the outermost first; as the
+    kingdom grows again, the innermost empty ones are lived in first. */
+function upkeepHouses(n: Nation, people: number){
+  const houses=n.blds.filter(q => standing(q,B_HOUSE,n.id));
+  const c = n.capTile>=0 ? n.capTile : n.lty*TW+n.ltx, cx=c%TW, cy=(c/TW)|0;
+  const away=(q: number)=>((pCenter[q]%TW)-cx)**2+(((pCenter[q]/TW)|0)-cy)**2;
+  houses.sort((a,b)=>away(a)-away(b) || a-b);   // innermost first
+  const excess=Math.max(0,houses.length-people);
+  let empty=houses.filter(q => pAband[q]).length;
+  // someone moved in: the innermost empty houses come back to life
+  for (const q of houses){ if (empty<=excess) break; if (pAband[q]){ pAband[q]=0; empty--; on.plotChanged(q); } }
+  if (excess>empty){
+    n.surplusTicks+=10;
+    if (n.surplusTicks>=ABANDON_TICKS)
+      for (let i=houses.length-1;i>=0 && empty<excess;i--){ const q=houses[i]; if (!pAband[q]){ pAband[q]=1; empty++; on.plotChanged(q); } }
+  } else n.surplusTicks=0;
+  n.abandoned=empty;
 }
 
 /** Every watchtower shoots the nearest enemy soldier in range, once per reload. */
@@ -328,6 +384,11 @@ function step(h: Human){
     return;
   }
   if (h.task===TASK_GATHER && (owner[h.res]!==h.o || !resType[h.res])){ think(h); return; }
+  if ((h.task===TASK_HOME_GO || h.task===TASK_HOME_BUILD) && (pType[h.home]!==B_SITE || owner[pCenter[h.home]]!==h.o)){ think(h); return; }   // the site was lost
+  if (h.task===TASK_HOME_BUILD){
+    if (--h.wait<=0){ const q=h.home; h.home=-1; finishHouse(q,h.o); think(h); }
+    return;
+  }
   if (h.wait>0){ h.wait--; return; }
   const way=h.path.length>0, gx=way?h.path[0]:h.tx, gy=way?h.path[1]:h.ty;
   const dx=gx-h.x, dy=gy-h.y, d=Math.sqrt(dx*dx+dy*dy);
@@ -337,6 +398,7 @@ function step(h: Human){
     h.x=gx; h.y=gy;
     if (h.task===TASK_TO_TRAIN){ h.task=TASK_INSIDE; h.wait=TRAIN_TICKS; return; }
     if (h.task===TASK_GATHER){ h.task=TASK_HARVEST; h.wait=WORK_TICKS[resType[h.res]]; return; }
+    if (h.task===TASK_HOME_GO){ h.task=TASK_HOME_BUILD; h.wait=BUILD_TICKS; return; }
     if (h.task===TASK_HAUL){ h.task=TASK_STORE; h.x=h.tx; h.y=h.ty; h.wait=STORE_TICKS; return; }
     think(h); return;
   }
@@ -363,6 +425,9 @@ export function updatePopulation(){
       else if (h.res>=0) p[GOOD_OF[resType[h.res]]]+=YIELD[resType[h.res]];
     }
     if (!n.alive) continue;
+    const k=housing[i] ??= { people:0, builders:0 };
+    k.people=mine.length; k.builders=0; for (const h of mine) if (h.home>=0) k.builders++;
+    if (W.tickN%10===3) upkeepHouses(n, mine.length);
     const barracks=barracksOf(n);
     if (n.capTile>=0 && (n.humanProg+=1+FARM_BONUS*n.farms)>=HUMAN_EVERY){
       n.humanProg-=HUMAN_EVERY;

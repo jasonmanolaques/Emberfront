@@ -1,7 +1,7 @@
 /* ---------- effects: conquest flashes, fire & smoke, sea glints, floating numbers ----------
    Cosmetic only. These use Math.random freely because they never feed back into the simulation. */
 import { TW, NT, PW, PH, B_HOUSE } from '../core/constants';
-import { W, isLand, pType, pBurn, pVar } from '../sim/state';
+import { W, isLand, pType, pBurn, pVar, pAband } from '../sim/state';
 import { CHIMNEY } from './sprites';
 
 export const FL=4096;
@@ -32,7 +32,7 @@ export function updateEffects(dt: number, vx0: number, vy0: number, vx1: number,
   if (zc>=2){
     const qx0=Math.max(0,Math.floor(vx0/8)), qy0=Math.max(0,Math.floor(vy0/8)), qx1=Math.min(PW-1,Math.floor(vx1/8)), qy1=Math.min(PH-1,Math.floor(vy1/8));
     for (let y=qy0;y<=qy1;y++) for (let x=qx0;x<=qx1;x++){
-      const q=y*PW+x; if (pType[q]!==B_HOUSE || pBurn[q]>0) continue;
+      const q=y*PW+x; if (pType[q]!==B_HOUSE || pBurn[q]>0 || pAband[q]) continue;   // empty houses are cold
       if (Math.random()<0.35*dt){ const c=CHIMNEY[pVar[q]%3]; emitSmoke(x*8+c[0]+0.5, y*8+c[1], 2); }
     }
   }

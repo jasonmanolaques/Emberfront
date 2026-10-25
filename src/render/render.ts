@@ -11,7 +11,7 @@ import { objC, drawIcon } from './sprites';
 import { natC } from './nature';
 import { styleOf } from './style';
 import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, floats, glints, shots, updateEffects } from './effects';
-import { H_SOLDIER, TASK_HARVEST, indoors } from '../sim/population';
+import { H_SOLDIER, TASK_HARVEST, TASK_HOME_GO, TASK_HOME_BUILD, indoors } from '../sim/population';
 import { G_WOOD, G_STONE, G_COPPER } from '../sim/resources';
 
 const SKIN = ['#f1c9a5','#d9a679','#a8744f','#7a5236'];
@@ -83,9 +83,9 @@ export function render(now: number, dt: number){
         ctx.fillStyle=st.roof;   ctx.fillRect(x,y-1,2,1);
         ctx.fillStyle='#5a3c22'; ctx.fillRect(x,y,1,1); ctx.fillRect(x+1,y,1,1);
         // working: a tool swings up and down beside them
-        if (p.task===TASK_HARVEST){ const up=((now/220+p.id)|0)&1; ctx.fillStyle='#6e5034'; ctx.fillRect(x+2,y-2+up,1,2); ctx.fillStyle='#c9cdd1'; ctx.fillRect(x+2,y-3+up,1,1); }
-        // hauling: the load held up above the head
-        if (p.carry>=0){ const c=CARGO[p.carry]; ctx.fillStyle=c[0]; ctx.fillRect(x,y-5,2,1); ctx.fillStyle=c[1]; ctx.fillRect(x,y-4,2,1); }
+        if (p.task===TASK_HARVEST || p.task===TASK_HOME_BUILD){ const up=((now/220+p.id)|0)&1; ctx.fillStyle='#6e5034'; ctx.fillRect(x+2,y-2+up,1,2); ctx.fillStyle='#c9cdd1'; ctx.fillRect(x+2,y-3+up,1,1); }
+        // hauling: the load held up above the head (builders on their way carry a plank)
+        if (p.carry>=0 || p.task===TASK_HOME_GO){ const c=CARGO[p.carry>=0 ? p.carry : G_WOOD]; ctx.fillStyle=c[0]; ctx.fillRect(x,y-5,2,1); ctx.fillStyle=c[1]; ctx.fillRect(x,y-4,2,1); }
       }
     }
   }

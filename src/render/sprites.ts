@@ -2,8 +2,8 @@
    Farms, barracks, watchtowers and coin minters are modular: each plot looks at its four
    neighbours, and plots of the same kind and owner join up, so fields merge into one farmland,
    barracks into one long hall, minters into one workshop, and towers link with walls. */
-import { DW, DH, PW, PH, NP, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER } from '../core/constants';
-import { pType, pOwner, pVar, pMain } from '../sim/state';
+import { DW, DH, PW, PH, NP, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE } from '../core/constants';
+import { pType, pOwner, pVar, pMain, pAband } from '../sim/state';
 import { styleOf, type NationStyle } from './style';
 
 export const objC = document.createElement('canvas'); objC.width = DW; objC.height = DH;
@@ -23,28 +23,48 @@ function joins(q: number){
 }
 const SH = 'rgba(16,28,8,.28)';
 
-export const CHIMNEY = [[5,0],[1,1],[5,0]];
-function drawHouse(ox: number, oy: number, n: NationStyle, v: number){
-  const W1='#eadfc4', W2='#c9b490', DR='#5b3b24', WI='#8fd3ff';
-  if (v===0){
-    R(ox+2,oy+7,5,1,SH);
-    R(ox+2,oy+4,4,3,W1); R(ox+6,oy+4,1,3,W2);
-    P(ox+3,oy+5,DR); P(ox+3,oy+6,DR); P(ox+5,oy+5,WI);
-    R(ox+2,oy+1,4,1,n.roofL); R(ox+1,oy+2,6,1,n.roof); R(ox+1,oy+3,7,1,n.roofD);
-    P(ox+5,oy+0,'#8b4a3a');
-  } else if (v===1){
-    R(ox+1,oy+7,7,1,SH);
-    R(ox+1,oy+4,6,3,W2); R(ox+6,oy+4,1,3,'#a8936f');
-    P(ox+2,oy+5,DR); P(ox+2,oy+6,DR); P(ox+4,oy+5,WI); P(ox+5,oy+5,WI);
-    R(ox+1,oy+2,6,1,n.roofL); R(ox+0,oy+3,8,1,n.roof);
-    P(ox+1,oy+1,'#8b4a3a');
-  } else {
-    R(ox+2,oy+7,5,1,SH);
-    R(ox+2,oy+3,4,4,W1); R(ox+5,oy+3,1,4,W2);
-    P(ox+3,oy+4,WI); P(ox+4,oy+4,WI); P(ox+3,oy+6,DR); P(ox+4,oy+6,DR);
-    R(ox+3,oy+0,2,1,n.roofL); R(ox+2,oy+1,4,1,n.roof); R(ox+1,oy+2,6,1,n.roofD);
-    P(ox+5,oy+0,'#8b4a3a');
+// smoke-hole above each hovel variant, where the cooking smoke rises
+export const CHIMNEY = [[4,2],[4,1],[3,2]];
+/** A rough, quickly built hovel: mud and wattle under uneven thatch, a rag in the kingdom's colour.
+    Abandoned, it keeps its shape but greys and sags: holes in the thatch, a boarded door, weeds. */
+function drawHouse(ox: number, oy: number, n: NationStyle, v: number, empty: boolean){
+  const wall = empty ? '#6e6252' : '#8f6d48', wallD = empty ? '#5a5044' : '#74563a';
+  const th = empty ? '#8c8160' : '#c9a24e', thD = empty ? '#726a50' : '#a8833a', thL = empty ? '#9c9272' : '#dcb866';
+  const door = empty ? '#8a7a62' : '#3b2a1e', hole='#2a2420', post='#5e4630';
+  R(ox+1,oy+7,6,1,SH);
+  if (v===0){            // lean-to against a post
+    R(ox+2,oy+5,4,2,wall); R(ox+5,oy+5,1,2,wallD);
+    P(ox+3,oy+6,door);
+    R(ox+1,oy+4,6,1,th); R(ox+2,oy+3,4,1,thD); P(ox+3,oy+2,th); P(ox+4,oy+2,thL);
+    P(ox+1,oy+5,thL); P(ox+6,oy+3,thL);                    // straw sticking out
+    if (!empty){ P(ox+6,oy+5,post); P(ox+6,oy+4,post); P(ox+6,oy+3,n.roof); }
+    else { P(ox+4,oy+3,hole); P(ox+2,oy+4,hole); }
+  } else if (v===1){     // round hut
+    R(ox+2,oy+5,4,2,wall); P(ox+2,oy+6,wallD); P(ox+5,oy+5,wallD);
+    P(ox+4,oy+6,door);
+    R(ox+2,oy+3,4,2,th); R(ox+1,oy+4,6,1,thD); R(ox+3,oy+2,2,1,thL); P(ox+4,oy+1,thD);
+    P(ox+6,oy+5,thL);
+    if (!empty){ P(ox+2,oy+3,n.roof); P(ox+3,oy+3,n.roofD); }
+    else { P(ox+3,oy+3,hole); P(ox+5,oy+4,hole); }
+  } else {               // stick frame with a hide thrown over
+    R(ox+2,oy+4,4,3,wall); R(ox+2,oy+6,4,1,wallD);
+    P(ox+3,oy+5,door); P(ox+3,oy+6,door);
+    R(ox+1,oy+3,6,1,thD); R(ox+2,oy+2,4,1,th); P(ox+1,oy+2,post); P(ox+6,oy+2,post); P(ox+1,oy+1,post);
+    if (!empty){ P(ox+4,oy+2,n.roof); P(ox+5,oy+2,n.roofL); }
+    else { P(ox+4,oy+2,hole); P(ox+2,oy+3,hole); }
   }
+  if (empty){
+    const nail='#4a4038'; P(ox+2+v%2,oy+5,nail);          // boards across the door
+    P(ox+1,oy+6,'#5f8a3a'); P(ox+6,oy+6,'#6f9a44'); P(ox+5,oy+7,'#5f8a3a');   // weeds round the walls
+  }
+}
+/** A house going up: stakes, a half-finished frame and a pile of sticks. */
+function drawSite(ox: number, oy: number, n: NationStyle){
+  const wood='#a07a4a', dark='#6e5034';
+  R(ox+2,oy+4,1,3,dark); R(ox+5,oy+4,1,3,dark);           // corner posts
+  R(ox+2,oy+4,4,1,wood); P(ox+3,oy+3,wood); P(ox+4,oy+3,wood);
+  P(ox+1,oy+7,wood); P(ox+2,oy+7,dark); P(ox+6,oy+7,wood); // sticks on the ground
+  P(ox+2,oy+3,n.roof);                                      // a marker in the kingdom's colour
 }
 function drawFarm(ox: number, oy: number, n: NationStyle, v: number, m: number){
   const crop=['#e3c45a','#9ccf4f','#cfd66a'][v], cropL=['#f6e08a','#c2ea78','#eef09a'][v];
@@ -129,7 +149,8 @@ export function drawPlot(q: number){
   if (ty===B_CASTLE){ octx.clearRect(ox,oy,16,16); drawCastle(ox,oy,styleOf(pOwner[q])); return; }
   octx.clearRect(ox,oy,8,8);
   const n=styleOf(pOwner[q]), v=pVar[q]%3;
-  if (ty===B_HOUSE) drawHouse(ox,oy,n,v);
+  if (ty===B_HOUSE) drawHouse(ox,oy,n,v,!!pAband[q]);
+  else if (ty===B_SITE) drawSite(ox,oy,n);
   else if (ty===B_FARM) drawFarm(ox,oy,n,pOwner[q]%3,joins(q));   // one crop per kingdom, so joined fields match
   else if (ty===B_TOWER) drawTower(ox,oy,n,joins(q));
   else if (ty===B_BARRACKS) drawBarracks(ox,oy,n,joins(q));

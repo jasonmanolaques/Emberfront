@@ -18,7 +18,7 @@ export function updateHUD(now: number){
   const landCount=W.landCount;
   ui.meGold.textContent=fmt(me.gold); ui.meRate.textContent='+'+(me.alive?me.income:0).toFixed(1)+'/s';
   ui.meLand.textContent=(me.tiles/landCount*100).toFixed(1)+'%';
-  ui.meHouses.textContent=String(me.houses); ui.meStrength.textContent=fmt(me.strength);
+  ui.meHouses.textContent=me.abandoned ? `${me.houses} · ${me.abandoned} empty` : String(me.houses); ui.meStrength.textContent=fmt(me.strength);
   ui.meWood.textContent=fmt(me.stock[0]); ui.meStone.textContent=fmt(me.stock[1]); ui.meCopper.textContent=fmt(me.stock[2]);
   ui.meVillagers.textContent=String(me.villagers); ui.meSoldiers.textContent=String(me.soldiers); ui.meTraining.textContent=String(me.training);
   const perTick=1+FARM_BONUS*me.farms;

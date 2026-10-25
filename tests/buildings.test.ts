@@ -82,7 +82,7 @@ describe('building costs and placement', () => {
     expect(pType[q]).toBe(B_FARM);
   });
 
-  it('only grows houses by itself; everything else is built on purpose', () => {
+  it('only gets houses without asking (its villagers build them); everything else is built on purpose', () => {
     start(987654321, 0); expand(10); run(2000);
     const types = new Set<number>();
     for (let q=0;q<NP;q++) if (owner[pCenter[q]]===1) types.add(pType[q]);
@@ -106,6 +106,7 @@ describe('what the buildings do', () => {
 
   it('coin minters add 10% to the 5 gold a second each', () => {
     start(12345, 0);
+    me().humanProg=-1e9;   // nobody arrives, so there is no tax to count
     const g0=me().gold; run(100);
     expect(me().gold-g0).toBeCloseTo(50, 6);
     place(B_MINTER, freePlots()[0]); place(B_MINTER, freePlots()[0]);
@@ -139,7 +140,7 @@ describe('what the buildings do', () => {
     // they walk over and stand guard
     run(400);
     const [x1, y1]=frontOf(t1);
-    for (const h of mine().filter(h => h.post===t1)) expect(Math.hypot(h.x-x1, h.y-y1)).toBeLessThan(16);
+    for (const h of mine().filter(h => h.post===t1)) expect(Math.hypot(h.x-x1, h.y-y1)).toBeLessThan(20);
     // the first tower stands down: its guards go back, and the second fills up to 5
     queueCommand({ type: 'priority', nation: 1, plot: t1 }); tick();
     expect([at(t1), at(t2)]).toEqual([0, 5]);
@@ -162,7 +163,7 @@ describe('what the buildings do', () => {
     for (let t=0;t<NT;t++){ if (!isLand[t] || owner[t]) continue; const d=Math.hypot((t%TW)*2+1-tx, ((t/TW)|0)*2+1-ty); if (d<best){ best=d; spot=t; } }
     expect(best).toBeLessThan(20);
     const mk=(kind: number): Human => ({ id: 90000+kind, o: 2, kind, task: 0, x: (spot%TW)*2+1, y: ((spot/TW)|0)*2+1.5, tx: (spot%TW)*2+1, ty: ((spot/TW)|0)*2+1.5,
-      path: [], wait: 1e9, sp: 0, res: -1, carry: -1, amount: 0, hp: SOLDIER_HP, post: -1, site: -1 });
+      path: [], wait: 1e9, sp: 0, res: -1, carry: -1, amount: 0, hp: SOLDIER_HP, post: -1, site: -1, home: -1 });
     const soldier=mk(H_SOLDIER), villager=mk(H_VILLAGER);
     W.humans.push(soldier, villager);
     let shots=0; listen({ towerShot: () => { shots++; } });

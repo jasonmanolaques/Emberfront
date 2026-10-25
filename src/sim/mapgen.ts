@@ -18,12 +18,12 @@ export function genMap(seed: number){
     const h=fbm(nE,u+wx*1.6,v+wy*1.6,6);
     const rg=1-Math.abs(fbm(nR,u*1.2+wx*2,v*1.2+wy*2,4)*2-1);
     const dx=(x/TW-0.5)*2, dy=(y/TH-0.5)*2, d=Math.sqrt(dx*dx*elong+dy*dy);
-    const mask=1-smooth(0.42,1.0,d), t=y*TW+x;
+    const mask=1-smooth(0.62,1.12,d), t=y*TW+x;   // the continent reaches close to the map edges
     elev[t]=h*0.62+mask*0.55+rg*rg*rg*0.26*mask;
     moist[t]=fbm(nM,u*0.7+50,v*0.7+50,4)+(h-0.5)*0.12;
   }
   const sorted = Float32Array.from(elev).sort();
-  const sea = sorted[(NT*0.54)|0];
+  const sea = sorted[(NT*0.34)|0];                // about a third of the map is sea
   for (let t=0;t<NT;t++){ const x=t%TW, y=(t/TW)|0; isLand[t] = elev[t]>sea && x>1 && y>1 && x<TW-2 && y<TH-2 ? 1 : 0; }
 
   // keep only the largest landmass so every kingdom can reach every other one

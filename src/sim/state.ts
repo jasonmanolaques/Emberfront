@@ -16,6 +16,8 @@ export interface Nation {
   humanProg: number;                 // progress toward the next human; one arrives at HUMAN_EVERY (farms speed it up)
   villagers: number; soldiers: number; training: number;   // headcount, updated every tick; training = switching role
   stock: number[];                   // goods stored in the capital: [wood, stone, copper]
+  abandoned: number;                 // houses standing empty
+  surplusTicks: number;              // how long the kingdom has had more houses than people
 }
 /** A person walking the map. Positions are in detail pixels (2 per tile). */
 export interface Human {
@@ -31,6 +33,7 @@ export interface Human {
   hp: number;                        // soldiers: hit points, lost to enemy watchtowers
   post: number;                      // soldiers: plot of the watchtower they guard, or -1 (waiting at a barracks)
   site: number;                      // plot of the barracks they are heading to or training in, or -1
+  home: number;                      // villagers: plot of the house they are building, or -1
 }
 export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; }   // gold still to spend on this front
 
@@ -50,6 +53,7 @@ export const frontMark = new Int32Array(NT);
 export const pType = new Uint8Array(NP), pOwner = new Uint8Array(NP), pVar = new Uint8Array(NP), pBuild = new Uint8Array(NP);
 export const pMain = new Int32Array(NP), pCenter = new Int32Array(NP), pBurn = new Float32Array(NP), pTimer = new Float32Array(NP);
 for (let q=0;q<NP;q++){ const px=q%PW, py=(q/PW)|0; pCenter[q]=(py*4+2)*TW+px*4+2; }
+export const pAband = new Uint8Array(NP);  // houses standing empty, run down
 export const pPrio = new Int32Array(NP);   // watchtowers calling for a garrison: order they asked in (0 = not asking)
 
 export const W = {

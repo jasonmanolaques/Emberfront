@@ -1,12 +1,12 @@
-/* ---------- buildings: houses grow on their own; farms, barracks, watchtowers and coin
+/* ---------- buildings: villagers build their own houses; farms, barracks, watchtowers and coin
    minters are placed by each kingdom and paid for from its stockpile. Also roads, fire & ruins. ---------- */
-import { TW, PW, PH, NP, T_MOUNT, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, isStructure } from '../core/constants';
-import { W, owner, terr, isLand, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, type Nation } from './state';
+import { TW, PW, PH, NP, T_MOUNT, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, isStructure } from '../core/constants';
+import { W, owner, terr, isLand, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, type Nation } from './state';
 import { on } from './events';
 import { clearPlot } from './resources';
 
 export function ignite(q: number){ if (pBurn[q]>0) return; pBurn[q]=2.5+W.srand()*2.5; W.burning.push(q); on.plotIgnited(q); }
-export function toRuins(q: number){ pType[q]=B_RUINS; pOwner[q]=0; pVar[q]=(W.srand()*8)|0; pBurn[q]=0; pTimer[q]=35+W.srand()*30; pPrio[q]=0; on.plotChanged(q); }
+export function toRuins(q: number){ pType[q]=B_RUINS; pOwner[q]=0; pVar[q]=(W.srand()*8)|0; pBurn[q]=0; pTimer[q]=35+W.srand()*30; pPrio[q]=0; pAband[q]=0; on.plotChanged(q); }
 
 export function isBld(ty: number){ return isStructure(ty) || ty===B_CASTLE || ty===B_CPART; }
 function nbBuildings(q: number, id: number){
@@ -27,7 +27,6 @@ const isOwnBld = (k: number, id: number) => isBld(pType[k]) && pOwner[k]===id;
 export const isEnemyLand = (k: number, id: number) => { const o=owner[pCenter[k]]; return o!==0 && o!==id; };
 export { anyWithin };
 
-// towns grow houses by themselves; everything else a kingdom chooses to build
 const houseFits = (q: number) => terr[pCenter[q]]!==T_MOUNT;
 
 function buildRoad(a: number, b: number){
@@ -54,7 +53,7 @@ function connectRoad(q: number, id: number, far: boolean){
 }
 function placeBuilding(q: number, id: number, type: number, isNew: boolean){
   if (type===B_EMPTY) return;
-  pType[q]=type; pOwner[q]=id; pVar[q]=(W.srand()*3)|0; pTimer[q]=0; pPrio[q]=0;
+  pType[q]=type; pOwner[q]=id; pVar[q]=(W.srand()*3)|0; pTimer[q]=0; pPrio[q]=0; pAband[q]=0;
   clearPlot(q);
   on.plotChanged(q);
   const n=W.nations[id]; n.bCount++;
@@ -62,29 +61,28 @@ function placeBuilding(q: number, id: number, type: number, isNew: boolean){
   n.blds.push(q);
   on.buildingPlaced(q,id,isNew);
 }
-export function growCities(){
-  const N=W.nations, srand=W.srand;
-  for (let i=1;i<N.length;i++){
-    const n=N[i]; if (!n.alive || !n.plots.length) continue;
-    if (n.bCount >= (n.plots.length*0.26|0)+4) continue;
-    const tries=1+Math.min(4,(n.tiles/1500)|0);
-    for (let k=0;k<tries;k++){
-      let best=-1, bw=0, bnb=0;
-      for (let s=0;s<12;s++){
-        const q=n.plots[(srand()*n.plots.length)|0], ty=pType[q];
-        if ((ty!==B_EMPTY && ty!==B_RUINS) || owner[pCenter[q]]!==n.id || !pBuild[q]) continue;
-        const nb=nbBuildings(q,n.id);
-        // towns grow outward from their edges; dense cores fill slowly; empty countryside seeds new villages
-        let w = nb>0 ? (nb<=3 ? 1+nb*1.4 : nb<=5 ? 1.6 : 0.35) : n.bCount<2 ? 0.3 : (!anyWithin(q,n.id,5,isOwnBld) ? 0.9 : 0.03);
-        if (ty===B_RUINS) w*=1.8;
-        if (terr[pCenter[q]]===T_FOREST) w*=0.5;
-        w*=0.5+srand();
-        if (w>bw){ bw=w; best=q; bnb=nb; }
-      }
-      if (best<0) continue;
-      placeBuilding(best,n.id,houseFits(best)?B_HOUSE:B_EMPTY,bnb===0);
-    }
-  }
+/* ---------- houses: each villager builds one when the kingdom is short of homes ---------- */
+/** How well plot q suits a new house: towns grow outward from their edges and along their roads,
+    dense cores fill slowly, and open countryside now and then seeds a new village. 0 = unsuitable. */
+export function homeScore(n: Nation, q: number){
+  if (plotProblem(n,q) || !houseFits(q)) return 0;
+  const nb=nbBuildings(q,n.id);
+  let w = nb>0 ? (nb<=3 ? 1+nb*1.4 : nb<=5 ? 1.6 : 0.35) : n.bCount<2 ? 0.3 : (!anyWithin(q,n.id,5,isOwnBld) ? 0.9 : 0.03);
+  if (pType[q]===B_RUINS) w*=1.8;   // rebuilding on the ashes
+  if (terr[pCenter[q]]===T_FOREST) w*=0.5;
+  // beside a road
+  const px=(q%PW)*4, py=((q/PW)|0)*4;
+  for (let i=-1;i<=4;i++) if (road[(py-1)*TW+px+i] || road[(py+4)*TW+px+i] || road[(py+i)*TW+px-1] || road[(py+i)*TW+px+4]){ w*=1.4; break; }
+  return w;
+}
+/** Marks plot q as a house site: the frame goes up while a villager works on it. */
+export function startSite(q: number, id: number){ pType[q]=B_SITE; pOwner[q]=id; pVar[q]=(W.srand()*3)|0; pAband[q]=0; clearPlot(q); on.plotChanged(q); }
+export function cancelSite(q: number){ if (pType[q]!==B_SITE) return; pType[q]=B_EMPTY; pOwner[q]=0; on.plotChanged(q); }
+export function finishHouse(q: number, id: number){
+  const isNew=nbBuildings(q,id)===0;
+  pType[q]=B_EMPTY;
+  placeBuilding(q,id,B_HOUSE,isNew);
+  W.nations[id].houses++;   // count it right away rather than at the next census
 }
 
 /* ---------- buildings a kingdom places ---------- */

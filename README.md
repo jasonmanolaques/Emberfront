@@ -36,7 +36,7 @@ That split is what makes online multiplayer possible later: every browser runs t
 
 ## Gold and strength
 
-Each kingdom starts with 250 gold and earns 5 a second (+10% per coin minter). Pushing the border spends gold from the treasury (the top slider sets how much each push takes): settling unclaimed land costs 1 gold a tile, and another kingdom's land costs more the stronger it is for its size, and 1.5× near its watchtowers. Unspent gold comes back when a push ends, and the defender loses some gold on every tile taken. Losing your capital loses a quarter of your gold.
+Each kingdom starts with 250 gold and earns 5 a second plus 0.1 a second in tax from each villager (soldiers pay none); each coin minter adds 10% to the total. Pushing the border spends gold from the treasury (the top slider sets how much each push takes): settling unclaimed land costs 1 gold a tile, and another kingdom's land costs more the stronger it is for its size, and 1.5× near its watchtowers. Unspent gold comes back when a push ends, and the defender loses some gold on every tile taken. Losing your capital loses a quarter of your gold.
 
 **Strength** is what the labels and leaderboard show: 1 per tile, 50 per villager, 100 per soldier and 3 per gold (`STR_*` in `core/constants.ts`).
 
@@ -46,9 +46,15 @@ The capital releases one human every 10 seconds, 5% sooner per farm (`sim/popula
 
 Villagers gather (see below). Soldiers never gather: they wait in front of their barracks, or guard a watchtower that calls for them. People only walk inside their own borders, go around the castle rather than over it, and die if another kingdom takes the ground they stand on, or a watchtower brings them down (soldiers have 10 hit points).
 
+## Homes
+
+Every person, villager or soldier, needs a home: one house each. Whenever the kingdom has fewer houses (counting ones being built) than people, a villager's next job is to build one, so a newcomer usually starts by building his own hovel before he goes to work. He picks the plot himself the way towns grow: beside other buildings and roads, outward from the edge of town, near the capital. He walks there carrying a plank, puts up a frame, works 4 seconds, and the hovel stands; new houses connect to the road network. If a house is already free (people died but their homes survived), a newcomer goes straight to work.
+
+With more houses than people for 20 seconds, the spare ones stand empty and run down, the farthest from the capital first; as people arrive again, the innermost empty houses are lived in first (`sim/population.ts`). Land caps housing: once a kingdom's plots are full, new people stay homeless until it expands.
+
 ## Buildings
 
-Houses still grow on their own. Everything else is placed by the kingdom from the buildings panel (the hammer button, or B) and paid for from its stockpile:
+Houses are built by villagers (above). Everything else is placed by the kingdom from the buildings panel (the hammer button, or B) and paid for from its stockpile:
 
 | Building | Cost (wood / stone / copper) | Does |
 |---|---|---|
@@ -74,7 +80,7 @@ Building on a plot clears what stood there. Villagers work in a loop: pick a res
 
 ## The determinism test
 
-`tests/determinism.test.ts` plays three scripted 5-minute matches on the simulation alone and compares fingerprints of the full game state (ownership, troops, buildings, roads, fires, attacks) every 20 seconds of game time against `tests/golden.json`. A pass means the game still plays exactly as it did when the file was recorded. It was first recorded from the original single-file version, and re-recorded when the map grew to 400×248 tiles and when gold replaced troops.
+`tests/determinism.test.ts` plays three scripted 5-minute matches on the simulation alone and compares fingerprints of the full game state (ownership, troops, buildings, roads, fires, attacks) every 20 seconds of game time against `tests/golden.json`. A pass means the game still plays exactly as it did when the file was recorded. It was first recorded from the original single-file version, and re-recorded when the map grew to 400×248 tiles, when gold replaced troops, and when the ocean shrank.
 
 If you change gameplay on purpose, the test will fail. That's expected. Re-record the golden file with:
 
