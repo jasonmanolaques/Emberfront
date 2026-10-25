@@ -8,11 +8,11 @@
   function hashArr(a){ return fnv(2166136261, new Uint8Array(a.buffer, a.byteOffset, a.byteLength)).toString(16); }
   function hashStr(s){ return fnv(2166136261, new TextEncoder().encode(s)).toString(16); }
 
-  const NKEYS = ['troops','maxTroops','rate','tiles','alive','capTile','capPlot','houses','farms','towers','mines','bCount','peak','ltx','lty','expandAt','attackAt','ratio','nextThink'];
+  const NKEYS = ['gold','income','strength','tiles','alive','capTile','capPlot','houses','farms','towers','barracks','minters','bCount','peak','ltx','lty','expandAt','attackAt','ratio','nextThink','villagers','soldiers','stock'];
   function simPrint(api){
     const d = api.dump();
     const nat = api.nations.slice(1).map(n => NKEYS.map(k => String(n[k])).join(','));
-    const att = d.attacks.map(A => [A.id,A.att,A.def,A.troops,A.front.length,A.done].join(','));
+    const att = d.attacks.map(A => [A.id,A.att,A.def,A.gold,A.front.length,A.done].join(','));
     return {
       tick: d.tickN,
       simTime: String(api.simTime),

@@ -15,14 +15,11 @@
 
   <section id="me" class="plate" hidden aria-label="Your kingdom">
     <div class="me-head"><span class="crest" id="meCrest"></span><span class="me-name" id="meName">—</span><span class="clock" id="clock">0:00</span></div>
-    <div class="troops"><span class="big" id="meTroops">0</span><span class="cap">/ <span id="meMax">0</span></span><span class="rate" id="meRate">+0/s</span></div>
-    <div class="meter" title="Troops grow fastest between the two marks"><i id="meBar"></i><b></b></div>
-    <div class="tag meter-cap">Growth is fastest between the marks</div>
-    <dl class="stats">
+    <div class="troops"><i class="ico gold"></i><span class="big" id="meGold">0</span><span class="cap">gold</span><span class="rate" id="meRate">+5/s</span></div>
+    <dl class="stats people">
       <div><dt>Land</dt><dd id="meLand">0%</dd></div>
       <div><dt>Houses</dt><dd id="meHouses">0</dd></div>
-      <div><dt>Farms</dt><dd id="meFarms">0</dd></div>
-      <div><dt>Towers</dt><dd id="meTowers">0</dd></div>
+      <div><dt title="1 per tile, 50 per villager, 100 per soldier, 3 per gold">Strength</dt><dd id="meStrength">0</dd></div>
     </dl>
     <dl class="stats goods" aria-label="Stockpile">
       <div><dt><i class="ico wood"></i>Wood</dt><dd id="meWood">0</dd></div>
@@ -38,15 +35,16 @@
   </section>
 
   <section id="board" class="plate" hidden aria-label="Kingdoms">
-    <div class="head"><span class="tag">Kingdoms</span><span class="tag">Land</span></div>
+    <div class="head"><span class="tag">Kingdoms</span><span class="tag"><span class="tr">Strength · </span>Land</span></div>
     <ol id="boardList"></ol>
   </section>
 
   <section id="bar" class="plate" hidden aria-label="Attack and army">
-    <label for="ratio"><span>Each attack sends</span><b id="ratioVal">40%</b></label>
+    <label for="ratio"><span>Each attack spends</span><b id="ratioVal">40%</b></label>
     <input type="range" id="ratio" min="5" max="100" step="5" value="40">
     <label for="soldiers" class="split"><span>People serving as soldiers</span><b id="soldiersVal">0%</b></label>
     <input type="range" id="soldiers" min="0" max="100" step="5" value="0">
+    <span class="hint" id="soldiersHint">Build a barracks to raise an army</span>
     <div id="attacks"></div>
   </section>
 
@@ -54,9 +52,16 @@
     <button id="zoomIn" title="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 9 9"><path fill="currentColor" d="M4 1h1v3h3v1H5v3H4V5H1V4h3z"/></svg></button>
     <button id="zoomOut" title="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 9 9"><path fill="currentColor" d="M1 4h7v1H1z"/></svg></button>
     <button id="home" title="Center on your capital (Space)" aria-label="Center on your capital"><svg viewBox="0 0 9 9"><path fill="currentColor" d="M1 3h1v1h1V3h1v1h1V3h1v1h1V3h1v5H1zM4 6v2h1V6z"/></svg></button>
+    <button id="build" title="Buildings (B)" aria-label="Buildings" aria-expanded="false" aria-controls="buildPanel"><svg viewBox="0 0 9 9"><path fill="currentColor" d="M1 1h7v2H5v5H4V3H1z"/></svg></button>
     <button id="speed" title="Game speed" aria-label="Game speed">1×</button>
     <button id="pause" title="Pause (P)" aria-label="Pause"><svg viewBox="0 0 9 9"><path fill="currentColor" d="M2 1h2v7H2zM5 1h2v7H5z"/></svg></button>
   </div>
+
+  <section id="buildPanel" class="plate" hidden aria-label="Buildings">
+    <div class="head"><span class="tag">Buildings</span><span class="tag" id="buildHint">Pick one, then click your land</span></div>
+    <div id="buildList"></div>
+    <div id="btip" class="plate" hidden role="tooltip"></div>
+  </section>
 
   <div id="log" aria-live="polite"></div>
   <div id="banner" class="plate" hidden>Tap open land to found your capital</div>
@@ -69,13 +74,12 @@
     <h1>Emberfront</h1>
     <p class="sub">A fast territory war where every kingdom builds itself.</p>
     <ul class="how">
-      <li><b>Click</b> unclaimed or enemy land to attack along your whole shared border.</li>
-      <li>The <b>slider</b> sets how much of your army each attack takes.</li>
-      <li>Troops regrow fastest around <b>half full</b>. Sitting at max wastes growth.</li>
-      <li>Villages, farms, mines and towers appear on their own. <b>Houses</b> raise your troop cap, <b>farms</b> speed up growth, <b>towers</b> make nearby land costly to take.</li>
-      <li>Captured towns burn. Take an enemy <b>capital</b> and a quarter of their army scatters.</li>
-      <li>Every 10 seconds a <b>human</b> walks out of your capital. The <b>soldier slider</b> sets how many of your people serve as soldiers: villagers walk into the capital to train, and newcomers fill the ranks first. Soldiers don't fight yet.</li>
-      <li><b>Villagers</b> gather wood, stone and copper and carry it to your capital. Forests are rich in wood, mountains in stone, deserts in copper.</li>
+      <li><b>Click</b> unclaimed or enemy land to push your border. Settling costs <b>1 gold</b> a tile; enemy land costs more the stronger they are. The top slider sets how much of your gold each push spends.</li>
+      <li>You earn <b>5 gold</b> a second. Every 10 seconds a <b>human</b> walks out of your capital.</li>
+      <li><b>Villagers</b> gather wood, stone and copper. Forests are rich in wood, mountains in stone, deserts in copper. Nothing grows back.</li>
+      <li>Open <b>Buildings</b> (the hammer) to place farms, barracks, watchtowers and coin minters. The same buildings side by side join up.</li>
+      <li>A <b>barracks</b> lets you raise soldiers with the second slider. <b>Click a watchtower</b> to call 5 soldiers to guard it; towers shoot enemy soldiers nearby.</li>
+      <li><b>Strength</b> counts your land, people and gold. Captured towns burn; take an enemy <b>capital</b> and you loot a quarter of its gold.</li>
     </ul>
     <div class="row">
       <label class="tag" for="rivals">Rivals</label>
@@ -83,7 +87,7 @@
       <button id="newMap" class="ghost">New map</button>
     </div>
     <button id="start" class="primary">Choose your spawn</button>
-    <p class="keys">Drag to pan · scroll or pinch to zoom · keys 1–9 set the attack % · Space centers on your capital · P pauses</p>
+    <p class="keys">Drag to pan · scroll or pinch to zoom · keys 1–9 set the attack % · B opens buildings · Esc stops placing · Space centers on your capital · P pauses</p>
   </section>
 
   <section id="over" class="plate card" hidden aria-label="Match over">

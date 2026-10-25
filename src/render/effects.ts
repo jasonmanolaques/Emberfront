@@ -43,7 +43,12 @@ export function updateEffects(dt: number, vx0: number, vy0: number, vx1: number,
   }
 }
 
-/* floating "−troops" numbers after an attack order */
+/* watchtower arrows */
+export interface Shot { x0: number; y0: number; x1: number; y1: number; t0: number; kill: boolean; }
+export const shots: Shot[]=[];
+export function addShot(x0: number, y0: number, x1: number, y1: number, kill: boolean){ shots.push({x0,y0,x1,y1,t0:performance.now(),kill}); if (shots.length>300) shots.shift(); }
+
+/* floating "−gold" numbers after an attack order */
 export interface Float { x: number; y: number; text: string; t0: number; c: string; }
 export const floats: Float[]=[];
 
@@ -56,6 +61,6 @@ function initGlints(){
 }
 
 export function resetEffects(){
-  fx.pcount=0; floats.length=0; flTime.fill(0);
+  fx.pcount=0; floats.length=0; flTime.fill(0); shots.length=0;
   initGlints();
 }

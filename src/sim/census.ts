@@ -1,5 +1,5 @@
 /* ---------- census: contacts, counts, labels (once per second) ---------- */
-import { TW, TH, NP, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CPART, B_RUINS } from '../core/constants';
+import { TW, TH, NP, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER } from '../core/constants';
 import { W, owner, isLand, pType, pOwner, pBuild, pCenter, pBurn, pTimer } from './state';
 import { on } from './events';
 import { isBld } from './buildings';
@@ -19,7 +19,7 @@ export function scanContacts(withSums: boolean){
 export function census(){
   const N=W.nations;
   scanContacts(true);
-  for (const n of N){ n.plots.length=0; n.blds.length=0; n.houses=n.farms=n.towers=n.mines=0; n.bCount=0; }
+  for (const n of N){ n.plots.length=0; n.blds.length=0; n.houses=n.farms=n.towers=n.mines=n.barracks=n.minters=0; n.bCount=0; }
   for (let q=0;q<NP;q++){
     const o=owner[pCenter[q]]; if (o && pBuild[q]) N[o].plots.push(q);
     const ty=pType[q];
@@ -28,11 +28,11 @@ export function census(){
       const n=N[pOwner[q]]; if (!n || !n.alive) continue;
       n.bCount++; if (ty!==B_CPART) n.blds.push(q);
       if (ty===B_HOUSE) n.houses++; else if (ty===B_FARM) n.farms++; else if (ty===B_TOWER) n.towers++; else if (ty===B_MINE) n.mines++;
+      else if (ty===B_BARRACKS) n.barracks++; else if (ty===B_MINTER) n.minters++;
     }
   }
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive) continue;
-    n.maxTroops = 1500 + n.tiles*22 + n.houses*380 + n.mines*260 + (n.capTile>=0 ? 1500 : 0);
     const pct=n.tiles/W.landCount; if (pct>n.peak) n.peak=pct;
     let lx=Math.round(n.sumX/Math.max(1,n.tiles)), ly=Math.round(n.sumY/Math.max(1,n.tiles));
     if (owner[ly*TW+lx]!==n.id){

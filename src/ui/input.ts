@@ -9,6 +9,7 @@ import { hover } from '../render/render';
 import { ui, showHUD } from './hud';
 import { $ } from './dom';
 import { newGame, trySpawn, playerAttack, setRatio, setSoldierShare, centerHome, setPaused } from '../game';
+import { placeAt, clickOwnBuilding, stopPlacing, toggleBuildPanel } from './build';
 
 interface Drag { sx: number; sy: number; lx: number; ly: number; moved: boolean; button: number; }
 const pointers=new Map<number,{x: number; y: number}>(); let drag: Drag | null=null, pinch: {d: number; mx: number; my: number} | null=null;
@@ -18,11 +19,11 @@ function updateTip(e: PointerEvent){
   if (!hover.mouse || client.state!=='play' || hover.tile<0 || !isLand[hover.tile] || drag?.moved){ ui.tip.hidden=true; return; }
   const t=hover.tile, o=owner[t], tr=terr[t], landCount=W.landCount;
   let l1, l2;
-  if (o){ const n=W.nations[o]; l1=n.name+(n.isPlayer?' (you)':''); l2=`${fmt(n.troops)} troops · ${(n.tiles/landCount*100).toFixed(1)}% of land`; }
-  else { l1='Unclaimed land'; l2='Costs troops to settle'; }
+  if (o){ const n=W.nations[o]; l1=n.name+(n.isPlayer?' (you)':''); l2=`Strength ${fmt(n.strength)} · ${(n.tiles/landCount*100).toFixed(1)}% of land`; }
+  else { l1='Unclaimed land'; l2='1 gold a tile to settle'; }
   let l3=TNAME[tr]+(TMULT[tr]>1.05?` · cost ×${TMULT[tr]}`:'');
   if (o && o!==PLAYER && towerCover(o,t)) l3+=' · tower ×1.5';
-  if (o && o!==PLAYER){ const c=tileCost(PLAYER,o,t); l3+=` · ≈${fmt(c)} per tile`; }
+  if (o && o!==PLAYER){ const c=tileCost(PLAYER,o,t); l3+=` · ≈${c<10?c.toFixed(1):fmt(c)} gold a tile`; }
   ui.tip.innerHTML=`<span class="t1"></span><span class="t2"></span><span class="t2"></span>`;
   ui.tip.children[0].textContent=l1; ui.tip.children[1].textContent=l2; ui.tip.children[2].textContent=l3;
   ui.tip.hidden=false;
@@ -39,7 +40,11 @@ function endPointer(e: PointerEvent){
   if (pointers.size===0){
     if (drag && !drag.moved && drag.button===0 && e.type==='pointerup'){
       const [sx,sy]=devXY(e), t=tileAt(sx,sy);
-      if (client.state==='spawn') trySpawn(t); else if (client.state==='play') playerAttack(t);
+      if (client.state==='spawn') trySpawn(t);
+      else if (client.state==='play'){
+        if (client.placing) placeAt(t);
+        else if (!clickOwnBuilding(t)) playerAttack(t);
+      }
     }
     drag=null; view.classList.remove('dragging');
   }
@@ -48,6 +53,7 @@ function endPointer(e: PointerEvent){
 export function bindInput(){
   view.addEventListener('contextmenu',e=>e.preventDefault());
   view.addEventListener('pointerdown',e=>{
+    if (e.button===2 && client.placing){ stopPlacing(); return; }   // right-click stops placing
     view.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if (pointers.size===1) drag={sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false,button:e.button};
@@ -89,6 +95,7 @@ export function bindInput(){
   $('home').onclick=centerHome;
   $('speed').onclick=()=>{ client.speed=client.speed>=3?1:client.speed+1; $('speed').textContent=client.speed+'×'; };
   $('pause').onclick=()=>setPaused(!client.paused);
+  $('build').onclick=()=>toggleBuildPanel();
   $('start').onclick=()=>{ $('intro').hidden=true; $('scrim').hidden=true; client.state='spawn'; ui.banner.hidden=false; };
   $('newMap').onclick=()=>newGame();
   $('again').onclick=()=>{ $('over').hidden=true; $('scrim').hidden=true; showHUD(false); client.state='spawn'; newGame(); ui.banner.hidden=false; };
@@ -99,6 +106,8 @@ export function bindInput(){
     else if (e.key==='0'){ setRatio(1); }
     else if (e.key===' ' && client.state==='play'){ e.preventDefault(); centerHome(); }
     else if (e.key==='p' || e.key==='P'){ if (client.state==='play') setPaused(!client.paused); }
+    else if (e.key==='b' || e.key==='B'){ if (client.state==='play') toggleBuildPanel(); }
+    else if (e.key==='Escape'){ if (client.placing) stopPlacing(); else toggleBuildPanel(false); }
     else if (e.key==='+' || e.key==='='){ zoomAt(1.3,view.width/2,view.height/2); }
     else if (e.key==='-'){ zoomAt(1/1.3,view.width/2,view.height/2); }
   });

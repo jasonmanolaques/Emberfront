@@ -1,15 +1,16 @@
 /* ---------- frame rendering: reads the simulation, never changes it ---------- */
-import { TW, PLAYER_COL } from '../core/constants';
+import { TW, PW, PH, PLAYER, PLAYER_COL, B_TOWER } from '../core/constants';
 import { clamp, fmt } from '../core/util';
-import { W, isLand } from '../sim/state';
+import { W, isLand, pType, pPrio } from '../sim/state';
 import { findBlock } from '../sim/sim';
+import { plotProblem, structureOf, canAfford } from '../sim/buildings';
 import { client, reduceMotion } from '../client';
 import { view, ctx, cam, stepCamAnim } from './camera';
 import { worldC, flushWorld } from './terrain';
-import { objC } from './sprites';
+import { objC, drawIcon } from './sprites';
 import { natC } from './nature';
 import { styleOf } from './style';
-import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, floats, glints, updateEffects } from './effects';
+import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, floats, glints, shots, updateEffects } from './effects';
 import { H_SOLDIER, TASK_HARVEST, indoors } from '../sim/population';
 import { G_WOOD, G_STONE, G_COPPER } from '../sim/resources';
 
@@ -19,6 +20,15 @@ const CARGO: string[][] = [];   // top and bottom row of each good's load
 CARGO[G_WOOD]=['#b07a40','#7a4a24']; CARGO[G_STONE]=['#c4beb4','#8d867b']; CARGO[G_COPPER]=['#f0a060','#b8642a'];
 
 export const hover = { sx: -1, sy: -1, tile: -1, mouse: false };
+
+// ghost previews of buildings while placing, in the player's colours
+const ghosts = new Map<number, HTMLCanvasElement>();
+function ghostOf(type: number){
+  let c=ghosts.get(type);
+  if (!c){ c=document.createElement('canvas'); c.width=c.height=8; drawIcon(c.getContext('2d')!,type,styleOf(PLAYER)); ghosts.set(type,c); }
+  return c;
+}
+export function resetGhosts(){ ghosts.clear(); }
 
 // smoothed label positions per nation (they glide toward the census anchor)
 const labX = new Float64Array(256).fill(-1), labY = new Float64Array(256);
@@ -88,10 +98,34 @@ export function render(now: number, dt: number){
     else ctx.fillStyle = f>0.5?'rgba(235,235,235,.55)':'rgba(235,235,235,.25)';
     ctx.fillRect(Math.floor(ppx[i]),Math.floor(ppy[i]),1,1);
   }
-  // hover marker / spawn ghost
+  // watchtowers calling for a garrison carry a "!"
+  {
+    const qx0=Math.max(0,Math.floor(vx0/8)), qy0=Math.max(0,Math.floor(vy0/8)), qx1=Math.min(PW-1,Math.floor(vx1/8)), qy1=Math.min(PH-1,Math.floor((vy1+8)/8));
+    const bob=reduceMotion ? 0 : ((now/400)|0)&1;
+    for (let y=qy0;y<=qy1;y++) for (let x=qx0;x<=qx1;x++){
+      const q=y*PW+x; if (pType[q]!==B_TOWER || !pPrio[q]) continue;
+      const ex=x*8+4, ey=y*8-7-bob;
+      ctx.fillStyle='rgba(20,12,8,.85)'; ctx.fillRect(ex-1,ey-1,3,7);
+      ctx.fillStyle='#ffd23f'; ctx.fillRect(ex,ey,1,3); ctx.fillRect(ex,ey+4,1,1);
+    }
+  }
+  // watchtower arrows in flight, and a red flash where they hit
+  for (let i=shots.length-1;i>=0;i--){
+    const s=shots[i], age=now-s.t0; if (age>450 || age<0){ shots.splice(i,1); continue; }
+    if (age<250){ const k=age/250, x=s.x0+(s.x1-s.x0)*k, y=s.y0+(s.y1-s.y0)*k, dx=(s.x1-s.x0), dy=(s.y1-s.y0), L=Math.hypot(dx,dy)||1;
+      ctx.fillStyle='#f4e6c8'; ctx.fillRect(Math.floor(x),Math.floor(y),1,1); ctx.fillStyle='#8a6a40'; ctx.fillRect(Math.floor(x-dx/L*1.5),Math.floor(y-dy/L*1.5),1,1); }
+    else { ctx.globalAlpha=1-(age-250)/200; ctx.fillStyle=s.kill?'#ff3b2b':'#ff8a6a'; ctx.fillRect(Math.floor(s.x1)-1,Math.floor(s.y1)-1,s.kill?3:2,s.kill?3:2); ctx.globalAlpha=1; }
+  }
+  // hover marker / spawn ghost / building preview
   if (hover.tile>=0 && hover.mouse){
     const hx=hover.tile%TW, hy=(hover.tile/TW)|0;
-    if (client.state==='spawn'){
+    if (client.state==='play' && client.placing){
+      const q=(hy>>2)*PW+(hx>>2), me=W.nations[PLAYER], s=structureOf(client.placing);
+      const ok=!!me && !!s && canAfford(me,s) && !plotProblem(me,q);
+      ctx.globalAlpha=0.7; ctx.drawImage(ghostOf(client.placing),(hx>>2)*8,(hy>>2)*8); ctx.globalAlpha=1;
+      ctx.strokeStyle=ok?'rgba(143,227,155,.95)':'rgba(255,90,70,.9)'; ctx.lineWidth=2*dpr/zoom;
+      ctx.strokeRect((hx>>2)*8,(hy>>2)*8,8,8);
+    } else if (client.state==='spawn'){
       const b=findBlock(hx,hy,0), bx=Math.round(hx/4)-1, by=Math.round(hy/4)-1;
       ctx.strokeStyle=b?'rgba(255,230,120,.95)':'rgba(255,90,70,.9)'; ctx.lineWidth=2*dpr/zoom;
       ctx.strokeRect(bx*8,by*8,16,16);
@@ -118,7 +152,7 @@ export function render(now: number, dt: number){
     ctx.strokeText(n.name,sx,sy-fs*0.35); ctx.fillText(n.name,sx,sy-fs*0.35);
     const ts=(fs*0.72)|0; ctx.font=`500 ${ts}px "Pixelify Sans", ui-monospace, monospace`; ctx.lineWidth=Math.max(2,ts*0.22);
     ctx.fillStyle=n.isPlayer?'#ffe27a':'#e9eef3';
-    ctx.strokeText(fmt(n.troops),sx,sy+fs*0.55); ctx.fillText(fmt(n.troops),sx,sy+fs*0.55);
+    ctx.strokeText(fmt(n.strength),sx,sy+fs*0.55); ctx.fillText(fmt(n.strength),sx,sy+fs*0.55);
   }
   for (let i=floats.length-1;i>=0;i--){
     const f=floats[i], age=(now-f.t0)/1000; if (age>1.3){ floats.splice(i,1); continue; }

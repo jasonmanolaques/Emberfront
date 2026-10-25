@@ -1,7 +1,8 @@
 /* ---------- Emberfront: boot & main loop ---------- */
-import { TW, TH, DW, DH, TICK } from './core/constants';
+import { TW, TH, DW, DH, NP, TICK } from './core/constants';
 import { W, owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer } from './sim/state';
-import { findBlock } from './sim/sim';
+import { findBlock, queueCommand } from './sim/sim';
+import { plotProblem } from './sim/buildings';
 import { client } from './client';
 import { view, resize, cam } from './render/camera';
 import { wbuf } from './render/terrain';
@@ -9,6 +10,7 @@ import { octx } from './render/sprites';
 import { render } from './render/render';
 import { updateHUD } from './ui/hud';
 import { bindInput } from './ui/input';
+import { refreshBuildPanel } from './ui/build';
 import { $ } from './ui/dom';
 import { newGame, step, trySpawn, playerAttack, setRatio, setSoldierShare } from './game';
 
@@ -18,7 +20,7 @@ function frame(now: number){
   const running = client.state==='play' && !client.paused;
   if (running){ acc+=dt*client.speed; let n=0; while (acc>=TICK && n<12){ step(); acc-=TICK; n++; } if (n>=12) acc=0; }
   render(now, running ? dt*client.speed : (client.state==='play' ? 0 : dt));
-  if (now>hudAt && client.state==='play'){ updateHUD(now); hudAt=now+200; }
+  if (now>hudAt && client.state==='play'){ updateHUD(now); refreshBuildPanel(); hudAt=now+200; }
   requestAnimationFrame(frame);
 }
 
@@ -33,6 +35,7 @@ function toSpawn(){ if (client.state!=='spawn'){ $('intro').hidden=true; $('scri
 (window as any).emberfront = { TW, TH, get state(){return client.state;}, get nations(){return W.nations;}, get simTime(){return W.simTime;}, get landCount(){return W.landCount;},
   spawnAt:(tx: number,ty: number)=>{ toSpawn(); trySpawn(ty*TW+tx); },
   randomSpawn:()=>{ toSpawn(); for (let i=0;i<500 && client.state==='spawn';i++){ const t=W.landTiles[(Math.random()*W.landTiles.length)|0]; const b=findBlock(t%TW,(t/TW)|0,0); if (b) trySpawn(t); } },
-  run:(n: number)=>{ for (let i=0;i<n;i++) step(); }, attack:(t: number)=>playerAttack(t), setRatio, setSoldierShare, get humans(){return W.humans;}, get cam(){return cam;},
+  run:(n: number)=>{ for (let i=0;i<n;i++) step(); }, attack:(t: number)=>playerAttack(t), setRatio, setSoldierShare, command:(c: unknown)=>queueCommand(c as never), get humans(){return W.humans;}, get cam(){return cam;},
   newWorld:(seed?: number)=>newGame(seed),
+  freePlots:()=>{ const n=W.nations[1], out: number[]=[]; if (n) for (let q=0;q<NP;q++) if (!plotProblem(n,q)) out.push(q); return out; },
   dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, wbuf, obj:octx.getImageData(0,0,DW,DH).data, attacks:W.attacks, tickN:W.tickN }) };

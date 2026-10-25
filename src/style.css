@@ -22,6 +22,7 @@ img{max-width:100%}
   --wood:#b07a40;
   --stone:#b8b2a8;
   --copper:#e08a48;
+  --coin:#ffd23f;
   --good:#8fe39b;
   --bad:#ff7562;
   --f-ui:"Pixelify Sans", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
@@ -50,18 +51,37 @@ body{height:100%;margin:0;background:var(--sea);color:var(--text);font-family:va
 .troops .cap{color:var(--muted);font-size:14px}
 .troops .rate{margin-left:auto;font-size:13px;color:var(--good)}
 .troops .rate.neg{color:var(--bad)}
-.meter{position:relative;height:12px;background:#0b141c;border:2px solid var(--edge)}
-.meter i{position:absolute;left:0;top:0;bottom:0;background:var(--gold);width:0}
-.meter b{position:absolute;top:-4px;bottom:-4px;left:30%;width:40%;border-left:2px solid rgba(255,255,255,.55);border-right:2px solid rgba(255,255,255,.55)}
-.meter-cap{margin:-2px 0 0}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0}
 .stats div{display:grid;gap:1px;min-width:0}
-.stats dt{font-family:var(--f-tag);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.stats dt{white-space:nowrap;font-family:var(--f-tag);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
 .stats dd{margin:0;font-size:15px;font-weight:600}
 .stats.people,.stats.goods{grid-template-columns:repeat(3,1fr)}
 .stats.goods{padding:6px 0;border-block:2px solid var(--edge)}
 .ico{display:inline-block;width:8px;height:8px;margin-right:4px;vertical-align:-1px;border:1px solid var(--ink)}
-.ico.wood{background:var(--wood)}.ico.stone{background:var(--stone)}.ico.copper{background:var(--copper)}
+.ico.wood{background:var(--wood)}.ico.stone{background:var(--stone)}.ico.copper{background:var(--copper)}.ico.gold{background:var(--coin);border-radius:50%;width:12px;height:12px;align-self:center;margin-right:0}
+#bar .hint{font-size:12px;color:var(--muted);margin-top:-2px}
+#bar .hint[hidden]{display:none}
+input[type=range]:disabled{opacity:.35;cursor:not-allowed}
+
+/* Buildings panel */
+#buildPanel{right:calc(max(16px,env(safe-area-inset-right,0px)) + 54px);bottom:16px;width:min(260px,calc(100% - 90px));padding:10px 10px 12px;display:grid;gap:8px;z-index:4}
+#buildPanel .head{display:flex;justify-content:space-between;gap:8px}
+#buildList{display:grid;gap:6px}
+.bld{display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px;align-items:center;text-align:left;width:100%;padding:5px 8px}
+.bld canvas{width:32px;height:32px;image-rendering:pixelated;background:#2a3a2a;border:1px solid var(--ink)}
+.bld .bn{display:flex;justify-content:space-between;gap:6px;font-weight:600}
+.bld .bn i{font-style:normal;color:var(--muted);font-weight:400}
+.bld .costs{display:flex;gap:8px;font-size:12px;color:var(--text)}
+.bld .costs span{display:inline-flex;align-items:center}
+.bld .costs .short{color:var(--bad)}
+.bld[aria-disabled=true]{filter:grayscale(1);opacity:.55}
+.bld[aria-disabled=true]:active{transform:none;box-shadow:2px 2px 0 var(--ink)}
+.bld.on{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-d),2px 2px 0 var(--ink)}
+#btip{position:absolute;right:calc(100% + 10px);width:230px;padding:8px 10px;display:grid;gap:4px;font-size:13px;pointer-events:none}
+#btip .t1{font-weight:600;color:var(--gold)}
+#btip .t3{color:var(--muted)}
+#btip .short{color:var(--bad)}
+#tools button[aria-expanded=true]{border-color:var(--gold)}
 
 /* Leaderboard */
 #board{top:16px;right:max(16px,env(safe-area-inset-right,0px));width:min(230px,calc(48% - 24px));padding:10px 12px;display:grid;gap:6px}
@@ -142,13 +162,14 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--gold);outline-
   .troops .big{font-size:20px}
   .stats{grid-template-columns:repeat(2,1fr);gap:4px 8px}
   .stats.people{grid-template-columns:repeat(2,1fr)}
-  .meter-cap{display:none}
   #board{padding:8px 10px}
   #boardList li{font-size:13px;grid-template-columns:10px minmax(0,1fr) auto}
-  #boardList .tr{display:none}
+  #boardList .tr,#board .head .tr{display:none}
   #boardList li:nth-child(n+5):not(.you){display:none}
   #bar{left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));width:auto;transform:none}
-  #tools{bottom:176px}
+  #tools{bottom:192px}
+  #buildPanel{bottom:192px}
+  #btip{right:auto;left:0;bottom:calc(100% + 8px);width:100%}
   #banner{font-size:14px;white-space:normal;width:calc(100% - 32px);text-align:center}
 }
 @media (prefers-reduced-motion:reduce){#banner{animation:none}#log .entry{animation:none}}

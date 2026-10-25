@@ -81,14 +81,14 @@ describe('harvesting', () => {
     expect(harvest(first(R_STONE))).toBe(1);
     expect(harvest(first(R_COPPER))).toBe(1);
   });
-  it('fells a tree in one harvest, takes three from a rock, and grows them back', () => {
+  it('fells a tree in one harvest, takes three from a rock, and never grows them back', () => {
     newWorld(5);
     const tree = resType.indexOf(R_TREE), rock = resType.indexOf(R_STONE);
     harvest(tree); expect(resLeft[tree]).toBe(0); expect(harvest(tree)).toBe(0);
     harvest(rock); harvest(rock); expect(resLeft[rock]).toBe(1); harvest(rock); expect(resLeft[rock]).toBe(0);
-    run(899); expect(resLeft[tree]).toBe(0);
-    run(1);   expect(resLeft[tree]).toBe(1);
-    run(300); expect(resLeft[rock]).toBe(3);
+    run(3000);
+    expect(resLeft[tree]).toBe(0); expect(resLeft[rock]).toBe(0);
+    expect(resType[tree]).toBe(R_TREE);   // the stump stays on the map
   });
 });
 

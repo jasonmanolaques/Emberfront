@@ -1,13 +1,26 @@
-/* ---------- pixel sprites (drawn into the object layer) ---------- */
-import { DW, DH, PW, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS } from '../core/constants';
+/* ---------- pixel sprites (drawn into the object layer) ----------
+   Farms, barracks, watchtowers and coin minters are modular: each plot looks at its four
+   neighbours, and plots of the same kind and owner join up, so fields merge into one farmland,
+   barracks into one long hall, minters into one workshop, and towers link with walls. */
+import { DW, DH, PW, PH, NP, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER } from '../core/constants';
 import { pType, pOwner, pVar, pMain } from '../sim/state';
 import { styleOf, type NationStyle } from './style';
 
 export const objC = document.createElement('canvas'); objC.width = DW; objC.height = DH;
 export const octx = objC.getContext('2d') as CanvasRenderingContext2D;
+let G = octx;   // where P and R draw: the map, or an icon
 
-function P(x: number, y: number, c: string){ octx.fillStyle=c; octx.fillRect(x,y,1,1); }
-function R(x: number, y: number, w: number, h: number, c: string){ octx.fillStyle=c; octx.fillRect(x,y,w,h); }
+function P(x: number, y: number, c: string){ G.fillStyle=c; G.fillRect(x,y,1,1); }
+function R(x: number, y: number, w: number, h: number, c: string){ G.fillStyle=c; G.fillRect(x,y,w,h); }
+
+export const MODULAR = [B_FARM, B_BARRACKS, B_TOWER, B_MINTER];
+const N_=1, E_=2, S_=4, W_=8;
+/** Which neighbours of plot q are the same kind of building with the same owner (N/E/S/W bits). */
+function joins(q: number){
+  const ty=pType[q], o=pOwner[q], x=q%PW, y=(q/PW)|0;
+  const same=(k: number)=>pType[k]===ty && pOwner[k]===o;
+  return (y>0&&same(q-PW)?N_:0) | (x<PW-1&&same(q+1)?E_:0) | (y<PH-1&&same(q+PW)?S_:0) | (x>0&&same(q-1)?W_:0);
+}
 const SH = 'rgba(16,28,8,.28)';
 
 export const CHIMNEY = [[5,0],[1,1],[5,0]];
@@ -33,21 +46,55 @@ function drawHouse(ox: number, oy: number, n: NationStyle, v: number){
     P(ox+5,oy+0,'#8b4a3a');
   }
 }
-function drawFarm(ox: number, oy: number, n: NationStyle, v: number){
-  const crop = v===0?'#e3c45a':v===1?'#9ccf4f':'#cfd66a', cropL = v===0?'#f6e08a':'#c2ea78';
-  R(ox+1,oy+1,6,6,'#8a6a3e');
-  for (let r=0;r<3;r++) R(ox+1,oy+1+r*2,6,1,crop);
-  for (let k=0;k<4;k++) P(ox+1+((v*3+k*5)%6), oy+1+((k*2)%6), cropL);
-  const post='#6e4f2e'; P(ox,oy,post); P(ox+7,oy,post); P(ox,oy+7,post); P(ox+7,oy+7,post);
-  P(ox+7,oy+1,n.roof);
+function drawFarm(ox: number, oy: number, n: NationStyle, v: number, m: number){
+  const crop=['#e3c45a','#9ccf4f','#cfd66a'][v], cropL=['#f6e08a','#c2ea78','#eef09a'][v];
+  const rail='#a8834f', post='#6e4f2e', x0=m&W_?0:1, x1=m&E_?8:7;
+  R(ox,oy,8,8,'#8a6a3e');                                    // tilled soil
+  for (let y=1;y<8;y+=2) if (y<7 || m&S_) R(ox+x0,oy+y,x1-x0,1,crop);   // rows run on into the next field
+  for (let k=0;k<3;k++) P(ox+x0+((k*5+(oy>>3)*3+(ox>>3))%(x1-x0)), oy+1+k*2, cropL);
+  // a fence only where the farmland ends
+  if (!(m&N_)) R(ox,oy,8,1,rail);
+  if (!(m&S_)) R(ox,oy+7,8,1,rail);
+  if (!(m&W_)) R(ox,oy,1,8,rail);
+  if (!(m&E_)) R(ox+7,oy,1,8,rail);
+  for (const [cx,cy,a,b] of [[0,0,N_,W_],[7,0,N_,E_],[0,7,S_,W_],[7,7,S_,E_]]) if (!(m&a) || !(m&b)) P(ox+cx,oy+cy,post);
+  // a scarecrow in the kingdom's colours at the field's north-west corner
+  if (!(m&N_) && !(m&W_)){ P(ox+3,oy+1,'#e9d7a0'); P(ox+2,oy+2,n.roof); P(ox+3,oy+2,n.roof); P(ox+4,oy+2,n.roof); P(ox+3,oy+3,post); }
 }
-function drawTower(ox: number, oy: number, n: NationStyle){
+function drawBarracks(ox: number, oy: number, n: NationStyle, m: number){
+  const x0=m&W_?0:1, x1=m&E_?8:7, w=x1-x0, wall='#b59a72', beam='#7e6646', dark='#3b2a1e';
+  R(ox+x0,oy+7,w,1,SH);
+  R(ox+x0,oy+4,w,3,wall); R(ox+x0,oy+6,w,1,beam);           // timber hall, one long building when joined
+  if (!(m&W_)) R(ox+x0,oy+4,1,3,beam);
+  if (!(m&E_)) R(ox+x1-1,oy+4,1,3,beam);
+  R(ox+x0,oy+3,w,1,n.roofD); R(ox+x0,oy+2,w,1,n.roof);
+  R(ox+x0+(m&W_?0:1),oy+1,w-(m&W_?0:1)-(m&E_?0:1),1,n.roofL);
+  R(ox+3,oy+5,2,2,dark);                                     // doors
+  P(ox+1+(m&W_?0:1),oy+5,'#d9d0bc'); P(ox+6-(m&E_?0:1),oy+5,'#d9d0bc');   // shields on the wall
+  if (!(m&W_)){ P(ox+1,oy,'#5a4030'); P(ox+2,oy,n.roof); P(ox+1,oy+1,'#5a4030'); }   // banner at the west end
+}
+function drawTower(ox: number, oy: number, n: NationStyle, m: number){
   const st='#b3aea3', sd='#7c776e', sl='#d6d1c5';
+  // walls toward neighbouring towers, with battlements
+  if (m&E_){ R(ox+5,oy+4,3,3,st); R(ox+5,oy+6,3,1,sd); P(ox+5,oy+3,st); P(ox+7,oy+3,st); }
+  if (m&W_){ R(ox,oy+4,3,3,st); R(ox,oy+6,3,1,sd); P(ox,oy+3,st); P(ox+2,oy+3,st); }
+  if (m&N_){ R(ox+3,oy,3,3,st); R(ox+5,oy,1,3,sd); }
+  if (m&S_){ R(ox+3,oy+7,3,1,st); R(ox+5,oy+7,1,1,sd); }
   R(ox+3,oy+7,4,1,SH);
   R(ox+3,oy+3,3,4,st); R(ox+5,oy+3,1,4,sd); P(ox+3,oy+3,sl);
   R(ox+2,oy+2,5,1,st); P(ox+2,oy+1,st); P(ox+6,oy+1,st);
   P(ox+4,oy+5,'#3b2e24'); P(ox+4,oy+6,'#3b2e24');
   P(ox+4,oy+0,'#4a3a2a'); P(ox+4,oy+1,'#4a3a2a'); P(ox+5,oy+0,n.roof); P(ox+6,oy+0,n.roofD);
+}
+function drawMinter(ox: number, oy: number, n: NationStyle, m: number){
+  const x0=m&W_?0:1, x1=m&E_?8:7, w=x1-x0;
+  R(ox+x0,oy+7,w,1,SH);
+  R(ox+x0,oy+4,w,3,'#a39e94'); R(ox+x0,oy+6,w,1,'#7c776e');  // stone workshop, one long building when joined
+  R(ox+x0,oy+3,w,1,'#3f4854'); R(ox+x0,oy+2,w,1,'#55606e');  // slate roof
+  R(ox+x0+(m&W_?0:1),oy+1,w-(m&W_?0:1)-(m&E_?0:1),1,n.roof); // ridge in the kingdom's colour
+  P(ox+3,oy+5,'#ffb24a'); P(ox+3,oy+6,'#d9602a');            // furnace glow
+  P(ox+5,oy+4,'#ffd23f'); P(ox+5,oy+5,'#c99a1c');            // coin sign
+  if (!(m&E_)){ R(ox+6,oy,1,2,'#6e6a62'); P(ox+6,oy,'#4a4740'); }   // chimney at the east end
 }
 function drawMine(ox: number, oy: number, n: NationStyle){
   R(ox+1,oy+5,6,2,'#9a958b'); R(ox+2,oy+4,4,1,'#aca79c'); R(ox+1,oy+7,6,1,SH);
@@ -83,9 +130,26 @@ export function drawPlot(q: number){
   octx.clearRect(ox,oy,8,8);
   const n=styleOf(pOwner[q]), v=pVar[q]%3;
   if (ty===B_HOUSE) drawHouse(ox,oy,n,v);
-  else if (ty===B_FARM) drawFarm(ox,oy,n,v);
-  else if (ty===B_TOWER) drawTower(ox,oy,n);
+  else if (ty===B_FARM) drawFarm(ox,oy,n,pOwner[q]%3,joins(q));   // one crop per kingdom, so joined fields match
+  else if (ty===B_TOWER) drawTower(ox,oy,n,joins(q));
+  else if (ty===B_BARRACKS) drawBarracks(ox,oy,n,joins(q));
+  else if (ty===B_MINTER) drawMinter(ox,oy,n,joins(q));
   else if (ty===B_MINE) drawMine(ox,oy,n);
   else if (ty===B_RUINS) drawRuins(ox,oy,pVar[q]);
   else if (ty===B_CPART){ /* part of a burned castle still standing: leave */ }
+}
+
+/** Redraws plot q and any modular neighbours whose joins it may have changed. */
+export function drawPlotAndNeighbours(q: number){
+  drawPlot(q);
+  const x=q%PW;
+  for (const k of [q-PW, x<PW-1?q+1:-1, q+PW, x>0?q-1:-1]) if (k>=0 && k<NP && MODULAR.includes(pType[k])) drawPlot(k);
+}
+
+/** Draws a building's sprite into an icon (8x8, unjoined) in the given kingdom colours. */
+export function drawIcon(ctx: CanvasRenderingContext2D, type: number, n: NationStyle){
+  G=ctx; ctx.clearRect(0,0,8,8);
+  if (type===B_FARM) drawFarm(0,0,n,1,0); else if (type===B_BARRACKS) drawBarracks(0,0,n,0);
+  else if (type===B_TOWER) drawTower(0,0,n,0); else if (type===B_MINTER) drawMinter(0,0,n,0);
+  G=octx;
 }

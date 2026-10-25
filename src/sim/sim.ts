@@ -1,16 +1,16 @@
 /* ---------- simulation entry points: worlds, matches, commands, ticks ----------
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
-import { TW, TH, NT, PW, PH, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, BOT_COLS, PLAYER_COL } from '../core/constants';
+import { TW, TH, NT, PW, PH, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, BOT_COLS, PLAYER_COL, GOLD_START, GOLD_PER_SEC, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
 import { mulberry32 } from '../core/rng';
-import { W, owner, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, type Nation, type Command } from './state';
+import { W, owner, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, type Nation, type Command } from './state';
 import { on } from './events';
 import { genMap } from './mapgen';
 import { setOwner, stepAttack, launch, touches } from './territory';
-import { toRuins, growCities } from './buildings';
+import { toRuins, growCities, build, togglePriority } from './buildings';
 import { scanContacts, census } from './census';
 import { botThink } from './bots';
-import { updatePopulation, HUMAN_EVERY } from './population';
-import { genResources, updateResources, clearPlot } from './resources';
+import { updatePopulation } from './population';
+import { genResources, clearPlot } from './resources';
 
 const SYL1 = ['Val','Mor','Ost','Kar','Bre','Thal','Ves','Dun','Ard','Sel','Hal','Ner','Cor','Ith','Rav','Lun','Gor','Eld','Tor','Fen','Ash','Ul','Bel','Kes','Myr','Oak','Sar','Wen'];
 const SYL2 = ['mark','heim','dor','gard','ia','or','wyn','vale','mere','rath','holm','ford','ain','esk','ora','burg','moor','reach','fell','haven'];
@@ -18,18 +18,17 @@ const SYL2 = ['mark','heim','dor','gard','ia','or','wyn','vale','mere','rath','h
 /* ---------- nations ---------- */
 function blankNation(id: number, name: string, hex: string, isPlayer: boolean): Nation {
   return { id, name, hex, isPlayer,
-    troops:0, maxTroops:0, rate:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
-    plots:[], blds:[], houses:0, farms:0, towers:0, mines:0, bCount:0,
+    gold:0, income:0, strength:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
+    plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0,
     sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0,
-    soldierShare:0, nextHuman:0, villagers:0, soldiers:0, training:0, stock:[0,0,0] };
+    soldierShare:0, humanProg:0, villagers:0, soldiers:0, training:0, stock:[0,0,0] };
 }
 function makeNation(id: number, name: string, hex: string, isPlayer: boolean): Nation {
   const srand=W.srand;
-  const n={ ...blankNation(id,name,hex,isPlayer), troops:3000, maxTroops:4500, alive:true,
+  const n={ ...blankNation(id,name,hex,isPlayer), gold:GOLD_START, alive:true,
     expandAt:0.22+srand()*0.25, attackAt:0.5+srand()*0.3, ratio:0.3+srand()*0.25, nextThink:1+srand()*2 };
   // the player starts with no soldiers requested; bots keep a fixed share of their own
   n.soldierShare = isPlayer ? 0 : 0.15+W.prand()*0.35;
-  n.nextHuman = W.tickN+HUMAN_EVERY;
   return n;
 }
 function nameGen(used: Set<string>){
@@ -73,7 +72,7 @@ export function newWorld(seed: number){
   genMap(seed);
   genResources();
   owner.fill(0); road.fill(0); frontMark.fill(0);
-  pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0);
+  pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0); pPrio.fill(0); W.prioSeq=0;
   W.burning=[]; W.attacks=[]; W.attackSeq=0; W.commands.length=0;
   W.nations=[blankNation(0,'Unclaimed land','#cfc6a8',false)];
   W.M=1; W.contact=new Int32Array(1);
@@ -126,12 +125,16 @@ function applyCommand(c: Command){
     const o=owner[c.tile]; if (o===c.nation) return;
     scanContacts(false);
     if (!W.contact[c.nation*W.M+o]) return;
-    const send=n.troops*c.ratio;
-    if (send<20) return;
+    const send=n.gold*c.ratio;
+    if (send<2) return;
     launch(c.nation,o,send);
   } else if (c.type==='soldiers'){
     const n=W.nations[c.nation]; if (!n || !n.alive) return;
     n.soldierShare=Math.min(1,Math.max(0,c.share));
+  } else if (c.type==='build'){
+    const n=W.nations[c.nation]; if (n) build(n,c.plot,c.kind);
+  } else if (c.type==='priority'){
+    const n=W.nations[c.nation]; if (n && n.alive) togglePriority(n,c.plot);
   }
 }
 
@@ -140,11 +143,10 @@ export function tick(){
   if (W.commands.length){ for (const c of W.commands) applyCommand(c); W.commands.length=0; }
   W.simTime+=TICK; W.tickN++;
   const N=W.nations;
+  // passive income; each coin minter adds 10%
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive) continue;
-    const r=0.07*(1+Math.min(0.6,n.farms*0.012));
-    const g=r*n.troops*(1-n.troops/n.maxTroops)+3;
-    n.rate=g; n.troops=Math.max(0,n.troops+g*TICK);
+    n.income=GOLD_PER_SEC*(1+0.1*n.minters); n.gold+=n.income*TICK;
   }
   for (const A of W.attacks) if (!A.done) stepAttack(A);
   if (W.tickN%2===0) W.attacks=W.attacks.filter(A=>!A.done);
@@ -153,6 +155,9 @@ export function tick(){
   if (W.tickN%10===0) census();
   if (W.tickN%8===4) growCities();
   for (let i=1;i<N.length;i++){ const n=N[i]; if (n.alive && !n.isPlayer && W.simTime>=n.nextThink) botThink(n); }
-  updateResources();
   updatePopulation();
+  for (let i=1;i<N.length;i++){
+    const n=N[i];
+    n.strength = n.alive ? n.tiles*STR_TILE + n.villagers*STR_VILLAGER + n.soldiers*STR_SOLDIER + n.gold*STR_GOLD : 0;
+  }
 }

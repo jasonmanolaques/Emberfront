@@ -1,8 +1,9 @@
 /* ---------- resources: trees, rocks and copper scattered by terrain ----------
    Every region has its own advantage: forests are full of timber, mountains of stone,
-   deserts hold the copper. Placement comes from the map seed alone, so every client agrees. */
+   deserts hold the copper. Placement comes from the map seed alone, so every client agrees.
+   Nothing grows back: once a region is stripped, a kingdom has to expand to find more. */
 import { TW, TH, NT, PW, T_MOUNT } from '../core/constants';
-import { W, terr, isLand, resType, resLeft, resBusy, resDue } from './state';
+import { W, terr, isLand, resType, resLeft, resBusy } from './state';
 import { on } from './events';
 
 export const R_NONE=0, R_TREE=1, R_TWIG=2, R_STONE=3, R_COPPER=4;   // what stands on a tile
@@ -10,9 +11,8 @@ export const G_WOOD=0, G_STONE=1, G_COPPER=2;                       // what goes
 export const GOOD_NAME = ['wood','stone','copper'];
 export const GOOD_OF   = [-1, G_WOOD, G_WOOD, G_STONE, G_COPPER];
 export const YIELD     = [0, 3, 1, 1, 1];        // goods per harvest: a healthy tree gives 3, a dry twiggy one 1
-const CHARGES          = [0, 1, 1, 3, 3];        // harvests before it is used up: trees are felled, rocks last 3
+const CHARGES          = [0, 1, 1, 3, 3];        // harvests before it is gone: trees are felled, rocks last 3
 export const WORK_TICKS= [0, 40, 25, 40, 50];    // how long one harvest takes
-const REGROW_TICKS     = [0, 900, 900, 1200, 1500];   // until a stump is a tree again, or a spent rock is back
 
 // chance per tile, by terrain:          deep wat shal beach grass dry   forest desert hills mount snow
 const P_COPPER = [0,0,0, 0.002, 0.003, 0.006, 0.002, 0.030, 0.006, 0.010, 0.002];
@@ -28,7 +28,7 @@ function rhash(x: number, y: number, salt: number){
 }
 
 export function genResources(){
-  resType.fill(0); resLeft.fill(0); resBusy.fill(0); resDue.fill(0); W.depleted=[];
+  resType.fill(0); resLeft.fill(0); resBusy.fill(0);
   for (let y=0;y<TH;y++) for (let x=0;x<TW;x++){
     const t=y*TW+x; if (!isLand[t]) continue;
     const tr=terr[t];
@@ -48,7 +48,7 @@ export const available = (t: number) => resLeft[t]>0 && !resBusy[t];
 /** One harvest at tile t. Returns the goods gained. */
 export function harvest(t: number){
   const type=resType[t]; if (!type || !resLeft[t]) return 0;
-  if (--resLeft[t]===0){ resDue[t]=W.tickN+REGROW_TICKS[type]; W.depleted.push(t); }
+  resLeft[t]--;   // at 0 a stump or bare gravel is left behind
   on.resChanged(t);
   return YIELD[type];
 }
@@ -59,15 +59,6 @@ export function clearPlot(q: number){
   for (let y=py;y<py+4;y++) for (let x=px;x<px+4;x++){
     const t=y*TW+x; if (!resType[t]) continue;
     resType[t]=0; resLeft[t]=0; resBusy[t]=0; on.resChanged(t);
-  }
-}
-
-export function updateResources(){
-  const D=W.depleted;
-  for (let i=D.length-1;i>=0;i--){
-    const t=D[i];
-    if (!resType[t]){ D[i]=D[D.length-1]; D.pop(); continue; }   // cleared for a building meanwhile
-    if (W.tickN>=resDue[t]){ resLeft[t]=CHARGES[resType[t]]; on.resChanged(t); D[i]=D[D.length-1]; D.pop(); }
   }
 }
 

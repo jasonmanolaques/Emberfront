@@ -7,18 +7,19 @@ import { newWorld, startMatch, bordersOn, queueCommand, tick } from './sim/sim';
 import { client } from './client';
 import { cam, fitCam, focusOn } from './render/camera';
 import { buildBase, paintAll, paintTile, paintRoad, repaint } from './render/terrain';
-import { drawPlot } from './render/sprites';
+import { drawPlotAndNeighbours } from './render/sprites';
 import { drawNature, redrawNature } from './render/nature';
-import { addFlash, fireBurst, gatePuff, floats, resetEffects } from './render/effects';
+import { addFlash, fireBurst, gatePuff, addShot, floats, resetEffects } from './render/effects';
 import { resetStyles } from './render/style';
-import { resetLabels } from './render/render';
+import { resetLabels, resetGhosts } from './render/render';
+import { setupBuildPanel, toggleBuildPanel } from './ui/build';
 import { ui, log, toast, showHUD, checkEnd, onEliminated, onCapitalFell, onBuildingPlaced } from './ui/hud';
 import { $ } from './ui/dom';
 
 // what the simulation does, shown on screen
 listen({
   tileChanged: (t,o) => { repaint(t); addFlash(t,o); },
-  plotChanged: q => drawPlot(q),
+  plotChanged: q => drawPlotAndNeighbours(q),
   roadBuilt: t => { paintRoad(t); paintTile(t); },
   plotIgnited: q => fireBurst(q),
   buildingPlaced: onBuildingPlaced,
@@ -26,11 +27,13 @@ listen({
   eliminated: onEliminated,
   roleChanged: gatePuff,
   resChanged: redrawNature,
+  towerShot: addShot,
 });
 
 export function newGame(seed?: number){
   newWorld(seed ?? (Math.random()*2147483647)|0);
-  resetStyles(); resetLabels(); resetEffects();
+  resetStyles(); resetLabels(); resetEffects(); resetGhosts();
+  toggleBuildPanel(false);
   client.overShown=false; client.lastVillageLog=-99; client.paused=false; client.speed=1; $('speed').textContent='1×';
   setSoldierShare(0);
   buildBase(); paintAll(); drawNature();
@@ -49,6 +52,7 @@ export function trySpawn(t: number){
   const me=W.nations[PLAYER];
   $('meName').textContent=me.name; $('meCrest').style.background=PLAYER_COL;
   client.state='play'; ui.banner.hidden=true; showHUD(true);
+  setupBuildPanel();
   focusOn(me.capTile, Math.max(cam.fitZ*2.2, 3.2*cam.dpr));
   log(`${me.name} is founded. Expand fast while the land is empty.`,'good');
 }
@@ -59,9 +63,9 @@ export function playerAttack(t: number){
   // the order always goes to the simulation, which has the final say; the checks here are only for feedback
   queueCommand({ type:'attack', nation:PLAYER, tile:t, ratio:client.ratio });
   if (!bordersOn(PLAYER,o)){ toast(o ? `You don't share a border with ${W.nations[o].name}` : 'Your border no longer touches unclaimed land'); return; }
-  const send=me.troops*client.ratio;
-  if (send<20){ toast('Not enough troops yet'); return; }
-  floats.push({x:(t%TW)*2+1, y:((t/TW)|0)*2, text:'−'+fmt(send), t0:performance.now(), c:o?'#ffb29e':'#ffe27a'});
+  const send=me.gold*client.ratio;
+  if (send<2){ toast('Not enough gold yet'); return; }
+  floats.push({x:(t%TW)*2+1, y:((t/TW)|0)*2, text:'−'+fmt(send)+' gold', t0:performance.now(), c:o?'#ffb29e':'#ffe27a'});
 }
 
 /** Asks the kingdom to keep `v` (0..1) of its people as soldiers. */
