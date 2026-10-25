@@ -1,6 +1,6 @@
 // Humans: spawning from the capital and switching between villager and soldier.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { TW, TH } from '../src/core/constants';
+import { TW, TH, PW } from '../src/core/constants';
 import { W, owner, isLand } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { setOwner } from '../src/sim/territory';
@@ -130,7 +130,7 @@ describe('population', () => {
 
   it('walks people around the castle walls instead of across them', () => {
     expand(8);   // the founding circle barely covers the castle's corners; give them room to walk round
-    const n = me(), ox = (n.capPlot%90)*8, oy = ((n.capPlot/90)|0)*8;
+    const n = me(), ox = (n.capPlot%PW)*8, oy = ((n.capPlot/PW)|0)*8;
     let onWalls = 0, samples = 0;
     for (let i=0;i<3000;i++){
       if (i===1200) setShare(0.6);

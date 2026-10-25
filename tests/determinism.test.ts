@@ -3,7 +3,7 @@
 // If you change gameplay on purpose, re-record with: UPDATE_GOLDEN=1 npm test
 import { describe, it, expect } from 'vitest';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { TW } from '../src/core/constants';
+import { TW, TH } from '../src/core/constants';
 import { W, owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import './scenario.js';
@@ -13,6 +13,7 @@ const golden = JSON.parse(readFileSync(goldenPath, 'utf8'));
 
 let state = 'spawn', ratio = 0.4;
 const api = {
+  TW, TH,
   get state(){ return state; }, get nations(){ return W.nations; }, get simTime(){ return W.simTime; },
   newWorld: (seed: number) => { newWorld(seed); state = 'spawn'; },
   spawnAt: (x: number, y: number) => { if (startMatch(y*TW+x, 9)) state = 'play'; },

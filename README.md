@@ -47,7 +47,7 @@ People use their own random stream (`W.prand`), so adding them didn't change any
 
 ## The determinism test
 
-`tests/determinism.test.ts` plays three scripted 5-minute matches on the simulation alone and compares fingerprints of the full game state (ownership, troops, buildings, roads, fires, attacks) every 20 seconds of game time against `tests/golden.json`. The golden file was recorded from the original single-file version, so a pass means the game still plays exactly as it did.
+`tests/determinism.test.ts` plays three scripted 5-minute matches on the simulation alone and compares fingerprints of the full game state (ownership, troops, buildings, roads, fires, attacks) every 20 seconds of game time against `tests/golden.json`. A pass means the game still plays exactly as it did when the file was recorded. It was first recorded from the original single-file version, and re-recorded when the map grew to 400×248 tiles.
 
 If you change gameplay on purpose, the test will fail. That's expected. Re-record the golden file with:
 

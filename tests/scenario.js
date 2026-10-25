@@ -2,7 +2,7 @@
 // across refactors. Works in the browser (script tag) and in Node (import).
 // `api` is window.emberfront or the headless equivalent.
 (function(){
-  const TW = 360, TH = 224;
+  let TW = 0, TH = 0;
 
   function fnv(h, bytes){ for (let i=0;i<bytes.length;i++){ h^=bytes[i]; h=Math.imul(h,16777619); } return h>>>0; }
   function hashArr(a){ return fnv(2166136261, new Uint8Array(a.buffer, a.byteOffset, a.byteLength)).toString(16); }
@@ -38,6 +38,7 @@
 
   globalThis.efScenario = function(api, opts){
     const { seed, steps = 150, every = 20, render = false } = opts;
+    TW = api.TW; TH = api.TH;
     api.newWorld(seed);
     // spawn at the first valid spot spiralling out from the map centre
     outer: for (let r=0;r<60;r++) for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){

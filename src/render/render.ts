@@ -12,6 +12,7 @@ import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, floats, glints,
 import { H_SOLDIER, TASK_INSIDE } from '../sim/population';
 
 const SKIN = ['#f1c9a5','#d9a679','#a8744f','#7a5236'];
+const HAIR = ['#3b2a1e','#7a4a24','#c9a060'];
 
 export const hover = { sx: -1, sy: -1, tile: -1, mouse: false };
 
@@ -47,20 +48,25 @@ export function render(now: number, dt: number){
   ctx.globalAlpha=1;
   ctx.drawImage(objC,0,0);
 
-  // people: villagers in their kingdom's colour; soldiers in a darker tunic with a helmet and spear
-  if (zc>=2.2){
+  // people, 2x4 pixels standing on (x,y): villagers in their kingdom's colour,
+  // soldiers in a darker tunic with a helmet and a spear
+  if (zc>=1.5){
     for (const p of W.humans){
-      if (p.task===TASK_INSIDE || p.x<vx0||p.y<vy0||p.x>vx1||p.y>vy1) continue;
-      const x=Math.floor(p.x), y=Math.floor(p.y), st=styleOf(p.o);
-      ctx.fillStyle='rgba(16,28,8,.35)'; ctx.fillRect(x,y+1,1,1);
+      if (p.task===TASK_INSIDE || p.x<vx0-3||p.y<vy0||p.x>vx1+3||p.y>vy1+5) continue;
+      const x=Math.round(p.x)-1, y=Math.floor(p.y), st=styleOf(p.o), skin=SKIN[(p.id*7)&3];
+      ctx.fillStyle='rgba(16,28,8,.35)'; ctx.fillRect(x,y+1,3,1);
       if (p.kind===H_SOLDIER){
-        ctx.fillStyle=st.roofD; ctx.fillRect(x,y,1,1);
-        ctx.fillStyle='#aeb7c0'; ctx.fillRect(x,y-1,1,1);
-        ctx.fillStyle='#6e5034'; ctx.fillRect(x+1,y-1,1,2);
-        ctx.fillStyle='#e4e0d4'; ctx.fillRect(x+1,y-2,1,1);
+        ctx.fillStyle='#aeb7c0'; ctx.fillRect(x,y-3,2,1);
+        ctx.fillStyle=skin;      ctx.fillRect(x,y-2,2,1);
+        ctx.fillStyle=st.roofD;  ctx.fillRect(x,y-1,2,1);
+        ctx.fillStyle='#3b3330'; ctx.fillRect(x,y,1,1); ctx.fillRect(x+1,y,1,1);
+        ctx.fillStyle='#6e5034'; ctx.fillRect(x+2,y-3,1,4);
+        ctx.fillStyle='#e4e0d4'; ctx.fillRect(x+2,y-4,1,1);
       } else {
-        ctx.fillStyle=st.roof; ctx.fillRect(x,y,1,1);
-        ctx.fillStyle=SKIN[(p.id*7)&3]; ctx.fillRect(x,y-1,1,1);
+        ctx.fillStyle=HAIR[(p.id*13)%3]; ctx.fillRect(x,y-3,2,1);
+        ctx.fillStyle=skin;      ctx.fillRect(x,y-2,2,1);
+        ctx.fillStyle=st.roof;   ctx.fillRect(x,y-1,2,1);
+        ctx.fillStyle='#5a3c22'; ctx.fillRect(x,y,1,1); ctx.fillRect(x+1,y,1,1);
       }
     }
   }

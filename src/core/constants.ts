@@ -1,5 +1,5 @@
 /* ---------- map & simulation constants ---------- */
-export const TW = 360, TH = 224;          // map size in tiles
+export const TW = 400, TH = 248;          // map size in tiles (multiples of 4: building plots are 4x4)
 export const S = 2;                       // detail pixels per tile (sprites are drawn at this resolution)
 export const DW = TW * S, DH = TH * S;
 export const PW = TW >> 2, PH = TH >> 2;  // building plots are 4x4 tiles

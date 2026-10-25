@@ -39,8 +39,16 @@ function crossesCastle(ox: number, oy: number, ax: number, ay: number, bx: numbe
 /** True if walking a→b stays inside kingdom o's borders. People never leave their own land:
     unclaimed ground can be taken by a neighbour at any moment, and anyone on it would die. */
 function safeWalk(o: number, ax: number, ay: number, bx: number, by: number){
-  const dx=bx-ax, dy=by-ay, L=Math.ceil(Math.max(Math.abs(dx),Math.abs(dy)));
-  for (let i=0;i<=L;i++){ const k=L?i/L:0; if (owner[tileOf(ax+dx*k,ay+dy*k)]!==o) return false; }
+  // visit every tile the line touches, so a diagonal can't clip the corner of foreign ground
+  const x0=ax/2, y0=ay/2, x1=bx/2, y1=by/2, dx=x1-x0, dy=y1-y0, sx=dx>0?1:-1, sy=dy>0?1:-1;
+  let tx=Math.floor(x0), ty=Math.floor(y0); const ex=Math.floor(x1), ey=Math.floor(y1);
+  const tdx=dx ? Math.abs(1/dx) : Infinity, tdy=dy ? Math.abs(1/dy) : Infinity;
+  let tmx=dx ? (sx>0 ? tx+1-x0 : x0-tx)*tdx : Infinity, tmy=dy ? (sy>0 ? ty+1-y0 : y0-ty)*tdy : Infinity;
+  for (let guard=0;guard<2000;guard++){
+    if (owner[ty*TW+tx]!==o) return false;
+    if (tx===ex && ty===ey) return true;
+    if (tmx<tmy){ tmx+=tdx; tx+=sx; } else { tmy+=tdy; ty+=sy; }
+  }
   return true;
 }
 /** Plans the walk to (tx,ty): straight if the castle isn't in the way, otherwise round its corners.
