@@ -1,5 +1,5 @@
 /* ---------- Emberfront: boot & main loop ---------- */
-import { TW, TH, DW, DH, NP, TICK } from './core/constants';
+import { TW, TH, RW, RH, NP, TICK } from './core/constants';
 import { W, owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer } from './sim/state';
 import { findBlock, queueCommand } from './sim/sim';
 import { plotProblem } from './sim/buildings';
@@ -39,4 +39,4 @@ function toSpawn(){ if (client.state!=='spawn'){ $('intro').hidden=true; $('scri
   get campaigns(){return W.campaigns;}, get W(){return W;},
   newWorld:(seed?: number)=>newGame(seed),
   freePlots:()=>{ const n=W.nations[1], out: number[]=[]; if (n) for (let q=0;q<NP;q++) if (!plotProblem(n,q)) out.push(q); return out; },
-  dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, wbuf, obj:octx.getImageData(0,0,DW,DH).data, attacks:W.attacks, campaigns:W.campaigns, tickN:W.tickN }) };
+  dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, wbuf, obj:octx.getImageData(0,0,RW,RH).data, attacks:W.attacks, campaigns:W.campaigns, tickN:W.tickN }) };

@@ -19,7 +19,7 @@ npm run build      # type-check and build a static site into dist/
 src/
   core/      constants, colour/number helpers, seeded random & noise
   sim/       the game itself: map generation, territory, buildings, people, war & diplomacy, bots
-  render/    camera, terrain & territory pixels, building sprites, effects, frame drawing
+  render/    camera, terrain & territory pixels, building, nature & people sprites, effects, frame drawing
   ui/        HUD, log & toasts, buildings panel, diplomacy & war chips, mouse/touch/keyboard input
   game.ts    connects the simulation to the screen (new game, spawn, player orders)
   main.ts    boot and the main loop
@@ -33,6 +33,14 @@ tests/       scripted matches checked against recorded results
 - reports what happened through **events** (`sim/events.ts`: tile changed, building placed, capital fell, …). Rendering and UI subscribe to these; with no subscribers (a server, a test) the simulation runs the same, just without visuals.
 
 That split is what makes online multiplayer possible later: every browser runs the same simulation and only commands go over the network.
+
+## How it looks
+
+The simulation works in 2 pixels per tile (where people stand). The renderer draws everything at twice that detail (`K`, `RS`, `PS` in `core/constants.ts`): 4×4 pixels per tile, 16×16 per building plot, people 4×8. The camera works in these render pixels. Drawing never changes the simulation, so the look can change freely without touching the determinism test.
+
+- **Terrain** (`render/terrain.ts`): a warm, slightly muted palette lit from the top-left; sea with wave dashes, a foam line and wet sand; grass tufts and the odd flower. Kingdoms get a double border: their colour on the edge and a paler line inside. Roads are two-pixel tracks with worn verges.
+- **Sprites** (`render/sprites.ts`, `render/nature.ts`, `render/people.ts`) are hand-placed pixel art, many drawn from text grids (`render/pixel.ts`), and outlined automatically where they meet open ground, so towns and crowds stay readable. Buildings and trees are drawn once into layers; people are made once per look and stamped each frame.
+- **People** face the way they walk and step as they go. Soldiers wear a tabard and helmet crest in their kingdom's colour and raise a spear, thrust forward on the tick they strike. Each figure is outlined in a dark shade of its kingdom's colour, so mixed crowds stay apart.
 
 ## Gold and strength
 

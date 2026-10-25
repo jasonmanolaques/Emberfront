@@ -1,5 +1,5 @@
 /* ---------- buildings panel: pick a building, then click your land to place it ---------- */
-import { PLAYER, TW, PW, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE } from '../core/constants';
+import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE } from '../core/constants';
 import type { Nation } from '../sim/state';
 import { W, owner, pType, pOwner, pPrio } from '../sim/state';
 import { queueCommand } from '../sim/sim';
@@ -22,7 +22,7 @@ export function setupBuildPanel(){
   list.textContent=''; rows.clear();
   for (const s of STRUCTURES){
     const b=document.createElement('button'); b.className='bld'; b.dataset.type=String(s.type);
-    const [fw,fh]=SIZE[s.type] ?? [1,1], c=document.createElement('canvas'); c.width=fw*8; c.height=fh*8; drawIcon(c.getContext('2d')!,s.type,styleOf(PLAYER));
+    const [fw,fh]=SIZE[s.type] ?? [1,1], c=document.createElement('canvas'); c.width=fw*PS; c.height=fh*PS; drawIcon(c.getContext('2d')!,s.type,styleOf(PLAYER));
     if (fh<fw) c.style.height='16px';   // keep the pixels square for a 2x1 building
     const body=document.createElement('span'); body.style.display='grid'; body.style.gap='3px'; body.style.minWidth='0';
     body.innerHTML=`<span class="bn"><span></span><i></i></span><span class="costs"></span>`;

@@ -1,7 +1,11 @@
 /* ---------- map & simulation constants ---------- */
 export const TW = 400, TH = 248;          // map size in tiles (multiples of 4: building plots are 4x4)
-export const S = 2;                       // detail pixels per tile (sprites are drawn at this resolution)
+export const S = 2;                       // simulation pixels per tile: where people stand, in sim units
 export const DW = TW * S, DH = TH * S;
+// rendering draws everything at twice that detail: 4 screen-art pixels per tile, 16 per building plot
+export const K = 2;                       // render pixels per simulation pixel
+export const RS = S * K, PS = 4 * RS;     // render pixels per tile, per building plot
+export const RW = TW * RS, RH = TH * RS;  // size of the rendered world
 export const PW = TW >> 2, PH = TH >> 2;  // building plots are 4x4 tiles
 export const NT = TW * TH, NP = PW * PH;
 export const TICK = 0.1;                  // simulation step in seconds

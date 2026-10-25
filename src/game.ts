@@ -6,7 +6,7 @@ import { listen } from './sim/events';
 import { newWorld, startMatch, bordersOn, queueCommand, tick } from './sim/sim';
 import { client } from './client';
 import { cam, fitCam, focusOn } from './render/camera';
-import { buildBase, paintAll, paintTile, paintRoad, repaint } from './render/terrain';
+import { buildBase, paintAll, paintRoad, repaint } from './render/terrain';
 import { drawPlotAndNeighbours } from './render/sprites';
 import { drawNature, redrawNature } from './render/nature';
 import { addFlash, fireBurst, gatePuff, addShot, addHit, dustPuff, floats, resetEffects } from './render/effects';
@@ -14,6 +14,7 @@ import { GOOD_NAME } from './sim/resources';
 import { PW } from './core/constants';
 import { resetStyles } from './render/style';
 import { resetLabels, resetGhosts } from './render/render';
+import { resetPeople } from './render/people';
 import { setupBuildPanel, toggleBuildPanel } from './ui/build';
 import { ui, log, toast, showHUD, checkEnd, onEliminated, onCapitalFell, onBuildingPlaced } from './ui/hud';
 import { setupDiplomacy, resetDiplomacy } from './ui/diplomacy';
@@ -23,7 +24,7 @@ import { $ } from './ui/dom';
 listen({
   tileChanged: (t,o) => { repaint(t); addFlash(t,o); },
   plotChanged: q => drawPlotAndNeighbours(q),
-  roadBuilt: t => { paintRoad(t); paintTile(t); },
+  roadBuilt: paintRoad,
   plotIgnited: q => fireBurst(q),
   buildingPlaced: onBuildingPlaced,
   capitalFell: onCapitalFell,
@@ -61,7 +62,7 @@ const GOOD_COL=['#e9b26a','#dcd6cc','#ffa060'];
 const nm = (id: number) => W.nations[id]?.name ?? 'Someone';
 export function newGame(seed?: number){
   newWorld(seed ?? (Math.random()*2147483647)|0);
-  resetStyles(); resetLabels(); resetEffects(); resetGhosts();
+  resetStyles(); resetLabels(); resetEffects(); resetGhosts(); resetPeople();
   toggleBuildPanel(false); resetDiplomacy();
   client.overShown=false; client.lastVillageLog=-99; client.paused=false; client.speed=1; $('speed').textContent='1×';
   setSoldierShare(0);
@@ -82,7 +83,7 @@ export function trySpawn(t: number){
   $('meName').textContent=me.name; $('meCrest').style.background=PLAYER_COL;
   client.state='play'; ui.banner.hidden=true; showHUD(true);
   setupBuildPanel(); setupDiplomacy();
-  focusOn(me.capTile, Math.max(cam.fitZ*2.2, 3.2*cam.dpr));
+  focusOn(me.capTile, Math.max(cam.fitZ*2.2, 1.8*cam.dpr));
   log(`${me.name} is founded. Expand fast while the land is empty.`,'good');
 }
 
