@@ -6,6 +6,7 @@ import { W } from '../sim/state';
 import { allied, atWar } from '../sim/war';
 import { client } from '../client';
 import { updateWarChips, refreshDiplomacy } from './diplomacy';
+import { refreshResearch } from './research';
 import { $ } from './dom';
 
 export const ui={ meGold:$('meGold'), meRate:$('meRate'), meLand:$('meLand'), meHouses:$('meHouses'), meStrength:$('meStrength'),
@@ -20,7 +21,9 @@ export function updateHUD(now: number){
   const landCount=W.landCount;
   ui.meGold.textContent=fmt(me.gold); ui.meRate.textContent='+'+(me.alive?me.income:0).toFixed(1)+'/s';
   ui.meLand.textContent=(me.tiles/landCount*100).toFixed(1)+'%';
-  ui.meHouses.textContent=me.abandoned ? `${me.houses} · ${me.abandoned} empty` : String(me.houses); ui.meStrength.textContent=fmt(me.strength);
+  ui.meHouses.textContent=String(me.houses);
+  const sub=[me.beds>me.houses ? `room for ${me.beds}` : '', me.abandoned ? `${me.abandoned} empty` : ''].filter(Boolean).join(' · ');
+  if (sub){ const sp=document.createElement('small'); sp.textContent=sub; ui.meHouses.append(sp); } ui.meStrength.textContent=fmt(me.strength);
   ui.meWood.textContent=fmt(me.stock[0]); ui.meStone.textContent=fmt(me.stock[1]); ui.meCopper.textContent=fmt(me.stock[2]);
   ui.meHomeless.hidden=!me.homeless;
   ui.meHomeless.textContent=`${me.homeless} homeless${me.beggars?` · ${me.beggars} begging`:''} · homeless villagers pay no tax`;
@@ -49,6 +52,7 @@ export function updateHUD(now: number){
   }
   updateWarChips();
   refreshDiplomacy();
+  refreshResearch();
 }
 
 export function log(text: string, kind?: string){

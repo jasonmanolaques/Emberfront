@@ -18,9 +18,9 @@ npm run build      # type-check and build a static site into dist/
 ```
 src/
   core/      constants, colour/number helpers, seeded random & noise
-  sim/       the game itself: map generation, territory, buildings, people, war & diplomacy, bots
+  sim/       the game itself: map generation, territory, buildings, people, research, war & diplomacy, bots
   render/    camera, terrain & territory pixels, building, nature & people sprites, effects, frame drawing
-  ui/        HUD, log & toasts, buildings panel, diplomacy & war chips, mouse/touch/keyboard input
+  ui/        HUD, log & toasts, buildings & research panels, diplomacy & war chips, mouse/touch/keyboard input
   game.ts    connects the simulation to the screen (new game, spawn, player orders)
   main.ts    boot and the main loop
 tests/       scripted matches checked against recorded results
@@ -44,7 +44,7 @@ The simulation works in 2 pixels per tile (where people stand). The renderer dra
 
 ## Gold and strength
 
-Each kingdom starts with 250 gold and earns 5 a second plus 0.1 a second in tax from each housed villager (soldiers, the homeless and beggars pay none); each coin minter adds 10% to the total. Clicking unclaimed land pushes the border there with gold from the treasury (the top slider sets how much each push takes): 1 gold a tile, more on rough ground. Unspent gold comes back when a push ends. Gold never buys another kingdom's land: that takes war (below). Raiders bring home 50 gold for each loot bag.
+Each kingdom starts with 250 gold and earns 5 a second plus 0.1 a second in tax from each housed villager (0.2 and 0.3 with taxation research; soldiers, the homeless and beggars pay none); each coin minter adds 10% to the total. Clicking unclaimed land pushes the border there with gold from the treasury (the top slider sets how much each push takes): 1 gold a tile, more on rough ground. Unspent gold comes back when a push ends. Gold never buys another kingdom's land: that takes war (below). Raiders bring home 50 gold for each loot bag.
 
 **Strength** is what the labels and leaderboard show: 1 per tile, 50 per villager, 100 per soldier and 3 per gold (`STR_*` in `core/constants.ts`). Beggars count for nothing.
 
@@ -56,9 +56,9 @@ Villagers gather (see below). Soldiers never gather: they wait in front of their
 
 ## Homes
 
-Every person, villager or soldier, needs a home: one house each. Whenever the kingdom has fewer houses (counting ones being built) than people, a villager's next job is to build one, so a newcomer usually starts by building his own hovel before he goes to work. He picks the plot himself the way towns grow: beside other buildings and roads, outward from the edge of town, near the capital. He walks there carrying a plank, puts up a frame, works 4 seconds, and the hovel stands; new houses connect to the road network. If a house is already free (people died but their homes survived), a newcomer goes straight to work.
+Every person, villager or soldier, needs a home: a hovel holds one, a stone house two, a manor three (below). Whenever the kingdom has less room in its houses (counting ones being built) than people, a villager's next job is to build one, so a newcomer usually starts by building his own hovel before he goes to work. He picks the plot himself the way towns grow: beside other buildings and roads, outward from the edge of town, near the capital. He walks there carrying a plank, puts up a frame, works 4 seconds, and the hovel stands; new houses connect to the road network. If a house is already free (people died but their homes survived), a newcomer goes straight to work.
 
-With more houses than people for 20 seconds, the spare ones stand empty and run down, the farthest from the capital first; as people arrive again, the innermost empty houses are lived in first (`sim/population.ts`). Land caps housing: once a kingdom's plots are full, new people stay homeless until it expands.
+With more room than people for 20 seconds, the spare houses stand empty and run down, the farthest from the capital first; as people arrive again, the innermost empty houses are lived in first (`sim/population.ts`). Land caps housing: once a kingdom's plots are full, new people stay homeless until it expands.
 
 The people who have lived in the kingdom longest get the houses, so the newest arrivals are the homeless ones, and whoever has been homeless longest moves in first when a house comes free. Homeless villagers pay no tax. A villager homeless for a minute turns **beggar**: he crawls slowly about town in rags, does no work, pays no tax and can't be recruited, until a home comes free for him and he goes back to work. Homeless soldiers stay soldiers.
 
@@ -75,8 +75,19 @@ Houses are built by villagers (above). Everything else is placed by the kingdom 
 | Plantation | 10 / 0 / 0 | 2×2 plots. Four saplings grow into trees over 30 s, then +5 wood |
 | Stone quarry | 3 / 5 / 0 | 2×2 plots. A pulley hauls stone out of the pit: +3 stone every 30 s |
 | Copper mine | 10 / 10 / 0 | 2×1 plots. A shaft glowing orange: +2 copper every 30 s |
+| Research station | 15 / 15 / 10 | +1 research point a second (below). Click it to open the research panel |
+| Builders guild | 10 / 20 / 5 | 2×1 plots. One villager becomes its builder, who improves houses (below) |
 
-Buildings run by themselves; none need workers. They are modular: a plot draws itself from its four neighbours, so fields of farms merge into one farmland with a single fence round the outside, barracks and minters next to each other become one long hall, and neighbouring watchtowers are joined by walls (`render/sprites.ts`). The production buildings cover several plots (the top-left plot holds the building, the rest point to it); if any of their plots is taken, the whole building burns. Bots build with simple priorities of their own (`sim/bots.ts`).
+Buildings run by themselves; only the builders guild needs a worker. They are modular: a plot draws itself from its four neighbours, so fields of farms merge into one farmland with a single fence round the outside, barracks and minters next to each other become one long hall, and neighbouring watchtowers are joined by walls (`render/sprites.ts`). The production buildings cover several plots (the top-left plot holds the building, the rest point to it); if any of their plots is taken, the whole building burns. Bots build with simple priorities of their own (`sim/bots.ts`).
+
+## Research and better homes
+
+Each research station earns 1 research point a second, and all of them go to the one topic the kingdom is studying: **housing** or **taxation** (`sim/research.ts`). Clicking a station opens the research panel: a button per topic with its tier, and a progress bar below; the lit one is being studied, and clicking the other switches (progress on both is kept). Housing is studied first, from the moment the first station stands. Both topics start at tier 1 and go up to tier 3: 50 points for tier 2, 100 more for tier 3. A finished topic gives way to the other. What is learned is kept for good, even if every station burns.
+
+- **Taxation** raises each villager's tax by 0.1 gold a second per tier: 0.1, 0.2, 0.3.
+- **Housing** lets the builders guild rebuild houses. The hovels villagers put up are tier 1 and they keep building hovels; at tier 2 the guild can turn them into **stone houses** (room for 2, three times the blows to burn), and at tier 3 into **manors** (room for 3, six times a hovel's).
+
+A **builders guild** takes the villager nearest it as its builder; he wears a leather cap. When housing research allows, he walks from house to house and rebuilds each one a tier for 3 wood and 3 stone, working 5 seconds with his hammer. He rebuilds the town from the castle outward, so it looks grown rather than planned: with manors allowed, the innermost 40% of houses (the edge left a little ragged) are to become manors and the rest stone houses, and the nearest house short of what it should be goes first. An improved house is as good as new. The builder runs or fights when enemies come like any villager; if he falls, another villager takes up his tools 5 seconds later. Several guilds work side by side. Bots build stations once they have found their feet, study whichever topic is behind, and build guilds once they can use them.
 
 ## Diplomacy and war
 

@@ -157,7 +157,7 @@ describe('homeless people and beggars', () => {
     until(() => !building().length);
     pBuild.fill(0);   // no room left anywhere to build another house
     const hs=houses(); for (const q of hs.slice(-2)){ pType[q]=B_EMPTY; pOwner[q]=0; }
-    me().houses-=2;
+    me().houses-=2; me().beds-=2;
     tick();
   }
 

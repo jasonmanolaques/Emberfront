@@ -19,6 +19,8 @@ import { resetPeople } from './render/people';
 import { setupBuildPanel, toggleBuildPanel } from './ui/build';
 import { ui, log, toast, showHUD, checkEnd, onEliminated, onCapitalFell, onBuildingPlaced } from './ui/hud';
 import { setupDiplomacy, resetDiplomacy, noteDeath } from './ui/diplomacy';
+import { refreshResearch, closeResearch } from './ui/research';
+import { TOPIC_NAME } from './sim/research';
 import { $ } from './ui/dom';
 
 // what the simulation does, shown on screen
@@ -66,14 +68,19 @@ listen({
     if (o===PLAYER) log(`${k} of your soldiers march out to meet ${nm(e)}'s army`,'good');
     else if (e===PLAYER) log(`${nm(o)} sends ${k} soldiers to meet your army`,'bad');
   },
+  // research and the builders guild
+  researched: (o,topic,tier) => { if (o===PLAYER){ log(`Your scholars reach ${TOPIC_NAME[topic].toLowerCase()} tier ${tier}: ${TIER_NEWS[topic][tier]}`,'good'); toast(`${TOPIC_NAME[topic]} tier ${tier}`); } refreshResearch(); },
+  upgraded: (q,o,tier) => { dustPuff(q); if (o===PLAYER) floats.push({ x:(q%PW)*8+4, y:((q/PW)|0)*8-1, text: tier===3 ? 'Manor' : 'Stone house', t0:performance.now(), c:'#f0e6c8' }); },
+  builderHired: (_q,o,replaced) => { if (o===PLAYER && replaced) log('A villager takes up the fallen builder\'s tools at the guild'); },
   annexed: (loser,winner) => { if (winner===PLAYER){ log(`You took the castle of ${nm(loser)}: its land and people are yours`,'good'); toast(`${nm(loser)} is yours`); } },
 });
 const GOOD_COL=['#e9b26a','#dcd6cc','#ffa060'];
+const TIER_NEWS=[['','','your builders guild can raise stone houses','your builders guild can raise manors'],['','','each villager pays 0.2 gold a second','each villager pays 0.3 gold a second']];
 const nm = (id: number) => W.nations[id]?.name ?? 'Someone';
 export function newGame(seed?: number){
   newWorld(seed ?? (Math.random()*2147483647)|0);
   resetStyles(); resetLabels(); resetEffects(); resetGhosts(); resetPeople();
-  toggleBuildPanel(false); resetDiplomacy();
+  toggleBuildPanel(false); resetDiplomacy(); closeResearch();
   client.overShown=false; client.lastVillageLog=-99; client.paused=false; client.speed=1; $('speed').textContent='1×';
   setSoldierShare(0);
   buildBase(); paintAll(); drawNature();

@@ -12,14 +12,20 @@
    The people who have lived in the kingdom longest get the houses. A villager left homeless for a
    minute turns beggar: he crawls about town, does no work, pays no tax and can't be recruited,
    until a home comes free for him.
+   A builders guild takes one villager as its builder. Once housing research allows it, he walks
+   from house to house, the castle's first, and rebuilds hovels as stone houses (room for 2) and
+   then manors (room for 3), the manors in the old heart of town and stone houses further out.
+   Each improvement costs 3 wood and 3 stone. He runs or fights like any villager, and if he
+   falls another villager takes up his tools 5 seconds later.
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, until the kingdom sends them to war (sim/war.ts). */
-import { TW, TH, PW, TICK, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE } from '../core/constants';
-import { W, owner, occ, pType, pOwner, pBurn, pPrio, pAband, pCenter, resType, resBusy, type Human, type Nation } from './state';
+import { TW, TH, PW, TICK, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD } from '../core/constants';
+import { W, owner, occ, pType, pOwner, pBurn, pPrio, pAband, pCenter, pTimer, pTier, pHp, resType, resBusy, type Human, type Nation } from './state';
 import { homeScore, startSite, cancelSite, finishHouse } from './buildings';
 import { on } from './events';
 import { GOOD_OF, YIELD, WORK_TICKS, available, harvest } from './resources';
 import { updateWar, marchStep, guardStep, alarmStep, mayStand } from './war';
+import { HOUSE_BEDS, R_HOUSING, MAX_TIER } from './research';
 
 export const H_VILLAGER = 0, H_SOLDIER = 1;
 export const TASK_ROAM = 0,      // between jobs: villagers think or stroll between buildings, soldiers patrol
@@ -30,7 +36,9 @@ export const TASK_ROAM = 0,      // between jobs: villagers think or stroll betw
              TASK_HAUL = 5,      // carrying the load home
              TASK_STORE = 6,     // inside the capital, putting the load away
              TASK_HOME_GO = 7,   // walking to the plot of the house they will build
-             TASK_HOME_BUILD = 8;// building it
+             TASK_HOME_BUILD = 8,// building it
+             TASK_FIX_GO = 9,    // builders: walking to the house they will improve
+             TASK_FIX = 10;      // improving it
 export const HUMAN_EVERY = 100;  // progress per new human: 100 ticks (10 s), each farm adds 5% speed
 export const FARM_BONUS = 0.05;
 const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 s)
@@ -46,6 +54,10 @@ const SEARCH_R = 40;             // tiles a villager looks around for work
 export const BUILD_TICKS = 40;   // ticks to put up a house (4 s)
 export const BEG_TICKS = 600;    // ticks homeless before a villager turns beggar (60 s)
 export const ABANDON_TICKS = 200;// ticks with more houses than people before the extra ones stand empty (20 s)
+export const FIX_TICKS = 50;     // ticks a builder works to raise a house a tier (5 s)
+export const FIX_COST = [3,3,0]; // what each improvement costs: [wood, stone, copper]
+export const REHIRE_TICKS = 50;  // ticks after a builder falls before another villager takes his place (5 s)
+const MANOR_SHARE = 0.4;         // with manors allowed, the innermost 40% of houses become manors
 
 /** Switching role: walking to a barracks for it, or inside training. */
 export const switching = (h: Human) => h.task===TASK_TO_TRAIN || h.task===TASK_INSIDE;
@@ -148,10 +160,11 @@ function roamTarget(h: Human){
     }
     h.wait=(b>=0 ? 3+r()*5 : 1+r()*3)/TICK; route(h); return;
   }
-  // villagers with nothing to do: stroll to a nearby building of their own kingdom
+  // villagers with nothing to do: stroll to a nearby building of their own kingdom (builders wait by their guild)
   let bx=h.x, by=h.y, bd=1e9, gate=false;
   h.tx=h.x; h.ty=h.y;
-  for (let k=0;k<6;k++){ if (!n.blds.length) break; const q=n.blds[(r()*n.blds.length)|0];
+  if (h.guild>=0){ const [x,y]=frontOf(h.guild+(r()<0.5 ? 1 : 0)); bx=x; by=y; bd=0; }
+  for (let k=0;k<6 && bd>0;k++){ if (!n.blds.length) break; const q=n.blds[(r()*n.blds.length)|0];
     const castle=pType[q]===B_CASTLE||pType[q]===B_CPART;
     if (castle && n.capTile<0) continue;
     const [x,y] = castle ? doorOf(n) : [(q%PW)*8+4, ((q/PW)|0)*8+7], d=Math.abs(x-h.x)+Math.abs(y-h.y);
@@ -209,6 +222,7 @@ function nearestResources(h: Human){
 export function release(h: Human){
   if (h.res>=0){ resBusy[h.res]=0; h.res=-1; }
   if (h.home>=0){ cancelSite(h.home); h.home=-1; }   // an unfinished house is given up
+  h.fix=-1;
 }
 function store(h: Human){
   if (h.carry<0) return;
@@ -220,7 +234,7 @@ function store(h: Human){
 const housing: { people: number; builders: number }[]=[];   // per nation, updated each tick
 
 /** Short of homes: more people than houses, counting the ones already being built. */
-function needsHome(n: Nation){ const k=housing[n.id]; return !!k && k.people > n.houses + k.builders; }
+function needsHome(n: Nation){ const k=housing[n.id]; return !!k && k.people > n.beds + k.builders; }
 
 /** Picks a plot for a new house and sets off to build it. Returns false if there is nowhere suitable. */
 function goBuildHome(h: Human){
@@ -246,6 +260,7 @@ function think(h: Human){
   const n=W.nations[h.o];
   release(h); h.task=TASK_ROAM;
   if (h.beggar){ roamTarget(h); return; }   // beggars just drift about town
+  if (h.guild>=0 && h.kind===H_VILLAGER){ if (!goImprove(h)) roamTarget(h); return; }   // builders improve houses, or wait by the guild
   if (h.kind===H_VILLAGER && needsHome(n) && goBuildHome(h)) return;
   if (h.kind!==H_VILLAGER || n.capTile<0){ roamTarget(h); return; }   // nowhere to store anything without a capital
   const found=nearestResources(h), have=n.stock.map((s,g)=>s+(pending[h.o]?.[g] ?? 0));
@@ -265,7 +280,7 @@ function think(h: Human){
 export function makeHuman(n: Nation, kind: number, x: number, y: number): Human {
   return { id:++W.humanSeq, o:n.id, kind, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+W.prand()*2,
     res:-1, carry:-1, amount:0, hp:kind===H_SOLDIER?SOLDIER_HP:VILLAGER_HP, post:-1, site:-1, home:-1, housed:false, homeless:0, beggar:false,
-    war:-1, loot:false, foe:-1, aim:-1, cool:0, slot:0, brave:-1, calm:0 };
+    war:-1, loot:false, foe:-1, aim:-1, cool:0, slot:0, brave:-1, calm:0, guild:-1, fix:-1 };
 }
 /** A new villager walks out of the capital; a new soldier out of the barracks nearest the capital. */
 function spawnHuman(n: Nation, kind: number, barracks: number[]){
@@ -317,7 +332,7 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
   for (const h of mine){ if (!diff) return; if (h.task===TASK_TO_TRAIN && h.kind===want){ backToRoam(h); diff--; } }
   // then the people of the other role nearest a barracks; anyone carrying a load delivers it first
   const away=(h: Human)=>{ const [x,y]=frontOf(nearestPlot(barracks,h.x,h.y)); return (h.x-x)**2+(h.y-y)**2; };
-  const cands=mine.filter(h=>!switching(h) && !h.beggar && h.task!==TASK_STORE && h.carry<0 && h.home<0 && h.war<0 && h.kind===from).sort((a,b)=>away(a)-away(b) || a.id-b.id);
+  const cands=mine.filter(h=>!switching(h) && !h.beggar && h.task!==TASK_STORE && h.carry<0 && h.home<0 && h.war<0 && h.guild<0 && h.kind===from).sort((a,b)=>away(a)-away(b) || a.id-b.id);
   for (const h of cands){ if (!diff) return; sendToTrain(h,barracks); diff--; }
 }
 
@@ -345,7 +360,7 @@ function garrison(n: Nation, mine: Human[]){
 
 /** Hands out the houses, longest-standing people first, and turns long-homeless villagers into beggars. */
 function house(n: Nation, mine: Human[]){
-  let free=n.houses;
+  let free=n.beds;
   for (const h of [...mine].sort((a,b)=>a.id-b.id)){
     h.housed = free>0; if (h.housed) free--;
     if (h.housed){
@@ -365,7 +380,9 @@ function upkeepHouses(n: Nation, people: number){
   const c = n.capTile>=0 ? n.capTile : n.lty*TW+n.ltx, cx=c%TW, cy=(c/TW)|0;
   const away=(q: number)=>((pCenter[q]%TW)-cx)**2+(((pCenter[q]/TW)|0)-cy)**2;
   houses.sort((a,b)=>away(a)-away(b) || a-b);   // innermost first
-  const excess=Math.max(0,houses.length-people);
+  // the innermost houses with room for everyone are lived in; the rest are spare
+  let lived=0; for (let room=0; lived<houses.length && room<people; lived++) room+=HOUSE_BEDS[pTier[houses[lived]]];
+  const excess=houses.length-lived;
   let empty=houses.filter(q => pAband[q]).length;
   // someone moved in: the innermost empty houses come back to life
   for (const q of houses){ if (empty<=excess) break; if (pAband[q]){ pAband[q]=0; empty--; on.plotChanged(q); } }
@@ -375,6 +392,69 @@ function upkeepHouses(n: Nation, people: number){
       for (let i=houses.length-1;i>=0 && empty<excess;i--){ const q=houses[i]; if (!pAband[q]){ pAband[q]=1; empty++; on.plotChanged(q); } }
   } else n.surplusTicks=0;
   n.abandoned=empty;
+}
+
+/* ---------- builders ---------- */
+const jitter = (q: number) => 0.8+0.4*((Math.imul(q,2654435761)>>>0)%1000)/1000;   // a fixed wobble per plot
+/** True if the house on plot q can still be raised a tier by kingdom n's builders. */
+function improvable(n: Nation, q: number){
+  return q>=0 && standing(q,B_HOUSE,n.id) && !occ[pCenter[q]] && pTier[q]<Math.min(n.tier[R_HOUSING],MAX_TIER);
+}
+/** The houses kingdom n's builders should improve, in order. The town is rebuilt from the castle
+    outward: with manors allowed, the innermost houses (the edge a little ragged) are to become
+    manors and the rest stone houses; the nearest house short of what it should be comes first. */
+export function improvements(n: Nation){
+  const top=Math.min(n.tier[R_HOUSING],MAX_TIER); if (top<2) return [];
+  const houses=n.blds.filter(q => standing(q,B_HOUSE,n.id) && !pAband[q] && !occ[pCenter[q]]);
+  const c = n.capTile>=0 ? n.capTile : n.lty*TW+n.ltx, cx=c%TW, cy=(c/TW)|0;
+  const away=(q: number)=>Math.sqrt(((pCenter[q]%TW)-cx)**2+(((pCenter[q]/TW)|0)-cy)**2)*jitter(q);
+  const d=new Map(houses.map(q => [q,away(q)]));
+  houses.sort((a,b)=>d.get(a)!-d.get(b)! || a-b);
+  const manors = top>=3 ? Math.ceil(houses.length*MANOR_SHARE) : 0;
+  return houses.filter((q,i) => pTier[q] < (i<manors ? 3 : 2));
+}
+/** A builder sets off to improve the next house on the list, if the kingdom can pay for it. */
+function goImprove(h: Human){
+  const n=W.nations[h.o];
+  if (!FIX_COST.every((c,g) => n.stock[g]>=c)) return false;
+  const taken=new Set<number>(); for (const o of W.humans) if (o.o===h.o && o.fix>=0) taken.add(o.fix);
+  let tries=0;
+  for (const q of improvements(n)){
+    if (taken.has(q)) continue;
+    const [x,y]=frontOf(q); h.tx=x; h.ty=y; h.task=TASK_FIX_GO;
+    if (route(h,true)){ h.fix=q; h.wait=0; return true; }
+    if (++tries>=3) break;
+  }
+  h.task=TASK_ROAM;
+  return false;
+}
+/** The builder finishes: the house goes up a tier, as good as new, if the kingdom can still pay. */
+function improve(n: Nation, q: number){
+  if (!FIX_COST.every((c,g) => n.stock[g]>=c)) return;
+  FIX_COST.forEach((c,g) => n.stock[g]-=c);
+  pTier[q]++; pHp[q]=0; n.beds+=HOUSE_BEDS[pTier[q]]-HOUSE_BEDS[pTier[q]-1];
+  on.plotChanged(q); on.upgraded(q,n.id,pTier[q]);
+}
+/** Every builders guild has one builder. A guild without one takes the villager nearest it,
+    straight away when it is new, a while after its builder fell. */
+function staffGuilds(n: Nation, mine: Human[]){
+  const staffed=new Set<number>();
+  for (const h of mine){
+    if (h.guild<0) continue;
+    if (!standing(h.guild,B_GUILD,n.id) || h.kind!==H_VILLAGER || h.beggar || staffed.has(h.guild)){ h.guild=-1; if (h.fix>=0) backToRoam(h); continue; }
+    staffed.add(h.guild);
+  }
+  if (staffed.size===n.guilds) return;
+  let free: Human[] | null=null;
+  for (const q of n.blds){
+    if (staffed.has(q) || !standing(q,B_GUILD,n.id)) continue;
+    if (pTimer[q]>1){ pTimer[q]--; continue; }   // his replacement is on the way
+    free ??= mine.filter(h => h.kind===H_VILLAGER && h.guild<0 && !h.beggar && !switching(h) && h.brave<0 && h.carry<0 && h.home<0 && h.task!==TASK_STORE);
+    const [x,y]=frontOf(q), h=nearest(free,x,y).shift(); if (!h) return;
+    const replaced=pTimer[q]===1; pTimer[q]=0;
+    release(h); h.guild=q; think(h); h.wait=0;
+    on.builderHired(q,n.id,replaced);
+  }
 }
 
 function step(h: Human){
@@ -403,6 +483,11 @@ function step(h: Human){
     if (--h.wait<=0){ const q=h.home; h.home=-1; finishHouse(q,h.o); think(h); }
     return;
   }
+  if ((h.task===TASK_FIX_GO || h.task===TASK_FIX) && !improvable(n,h.fix)){ think(h); return; }   // the house burned, was lost or is done
+  if (h.task===TASK_FIX){
+    if (--h.wait<=0){ improve(n,h.fix); think(h); }
+    return;
+  }
   if (h.wait>0){ h.wait--; return; }
   const way=h.path.length>0, gx=way?h.path[0]:h.tx, gy=way?h.path[1]:h.ty;
   const dx=gx-h.x, dy=gy-h.y, d=Math.sqrt(dx*dx+dy*dy);
@@ -413,6 +498,7 @@ function step(h: Human){
     if (h.task===TASK_TO_TRAIN){ h.task=TASK_INSIDE; h.wait=TRAIN_TICKS; return; }
     if (h.task===TASK_GATHER){ h.task=TASK_HARVEST; h.wait=WORK_TICKS[resType[h.res]]; return; }
     if (h.task===TASK_HOME_GO){ h.task=TASK_HOME_BUILD; h.wait=BUILD_TICKS; return; }
+    if (h.task===TASK_FIX_GO){ h.task=TASK_FIX; h.wait=FIX_TICKS; return; }
     if (h.task===TASK_HAUL){ h.task=TASK_STORE; h.x=h.tx; h.y=h.ty; h.wait=STORE_TICKS; return; }
     think(h); return;
   }
@@ -427,6 +513,7 @@ export function updatePopulation(){
     const h=H[i];
     if (!N[h.o].alive || !mayStand(h,owner[tileOf(h.x,h.y)]) || h.hp<=0){
       if (h.hp<=0 && N[h.o].alive) on.died(h.x,h.y,h.o,h.id,h.kind===H_SOLDIER ? 1 : h.beggar ? 2 : 0);   // they drop where they fell
+      if (h.guild>=0 && pType[h.guild]===B_GUILD) pTimer[h.guild]=REHIRE_TICKS+1;   // the guild waits a while for a new builder
       release(h); H[i]=H[H.length-1]; H.pop();
     }
   }
@@ -458,6 +545,7 @@ export function updatePopulation(){
     }
     balance(n, mine, barracks);
     garrison(n, mine);
+    staffGuilds(n, mine);
   }
   for (const h of H) if (h.war>=0) marchStep(h); else step(h);
   // headcount after everyone has moved, so it matches what is on the map this tick

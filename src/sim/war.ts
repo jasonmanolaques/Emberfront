@@ -21,12 +21,13 @@
    are beaten the line moves on to the occupied land and takes it back; with all of it back,
    the army reports ready to counter-attack. Guards stay by their watchtowers, and the castle
    shoots too. Everyone heals slowly. Allies open their land to each other's armies. */
-import { TW, TH, NT, NP, PW, PH, TICK, B_CASTLE, B_CPART, B_TOWER, B_HOUSE, B_FARM, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_MINE, isStructure } from '../core/constants';
-import { W, owner, occ, isLand, pType, pOwner, pBurn, pMain, pHp, pPrio, pCenter, type Campaign, type Human, type Nation } from './state';
+import { TW, TH, NT, NP, PW, PH, TICK, B_CASTLE, B_CPART, B_TOWER, B_HOUSE, B_FARM, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_MINE, B_RESEARCH, B_GUILD, isStructure } from '../core/constants';
+import { W, owner, occ, isLand, pType, pOwner, pBurn, pMain, pHp, pPrio, pCenter, pTier, type Campaign, type Human, type Nation } from './state';
 import { on } from './events';
 import { setOwner } from './territory';
 import { ignite, SIZE } from './buildings';
 import { census } from './census';
+import { HOUSE_TOUGH } from './research';
 import { H_SOLDIER, TASK_ROAM, TOWER_RANGE, TOWER_RELOAD, TOWER_DMG, SOLDIER_HP, VILLAGER_HP, REGEN, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf } from './population';
 
 export const LOOT_GOLD = 50;          // a raider's loot bag, paid when he gets it home
@@ -59,7 +60,9 @@ export const MAX_ALLIES = 3;
 const GRUDGE_TICKS = 900;             // a kingdom attacked in the last 90 s won't ally with its attacker
 /** Blows a building takes before it burns; the castle's are what stands between a kingdom and annexation. */
 export const BLD_HP: Record<number, number> = { [B_HOUSE]: 6, [B_FARM]: 5, [B_TOWER]: 16, [B_BARRACKS]: 12, [B_MINTER]: 10,
-  [B_PLANTATION]: 10, [B_QUARRY]: 10, [B_COPPERMINE]: 10, [B_MINE]: 8, [B_CASTLE]: 400 };
+  [B_PLANTATION]: 10, [B_QUARRY]: 10, [B_COPPERMINE]: 10, [B_MINE]: 8, [B_RESEARCH]: 10, [B_GUILD]: 10, [B_CASTLE]: 400 };
+/** Blows the building on plot q takes before it burns: stone houses 3 times a hovel's, manors 6 times. */
+export const bldHp = (q: number) => pType[q]===B_HOUSE ? BLD_HP[B_HOUSE]*HOUSE_TOUGH[pTier[q]] : (BLD_HP[pType[q]] ?? 8);
 
 export const allied = (a: number, b: number) => a!==b && W.ally[a*W.M+b]===1;
 export const atWar = (a: number, b: number) => W.atWar[a*W.M+b]===1;
@@ -370,7 +373,7 @@ export function annex(loser: number, winner: number){
   L.capTile=-1;   // so taking the ground below doesn't count as an ordinary sack
   for (const h of W.humans){
     if (h.o!==loser) continue;
-    release(h); h.carry=-1; h.amount=0; h.o=winner; h.post=-1; h.site=-1; h.war=-1; h.foe=-1; h.aim=-1; h.loot=false; h.brave=-1; h.calm=0;
+    release(h); h.carry=-1; h.amount=0; h.o=winner; h.post=-1; h.site=-1; h.war=-1; h.foe=-1; h.aim=-1; h.loot=false; h.brave=-1; h.calm=0; h.guild=-1;
     h.task=TASK_ROAM; h.path=[]; h.wait=0; h.tx=h.x; h.ty=h.y;
   }
   // buildings change hands before the ground does, so they don't burn
@@ -709,7 +712,7 @@ function hitBuilding(h: Human, c: Campaign){
   h.cool=HIT_TICKS;
   const q=h.aim, ty=pType[q];
   pHp[q]+=BLD_DMG; on.bldHit(q);
-  if (pHp[q]<(BLD_HP[ty] ?? 8)) return;
+  if (pHp[q]<bldHp(q)) return;
   h.aim=-1;
   if (ty===B_CASTLE){ annex(c.d,c.a); return; }
   ignite(q);

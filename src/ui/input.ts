@@ -11,6 +11,7 @@ import { $ } from './dom';
 import { newGame, trySpawn, playerAttack, setRatio, setSoldierShare, centerHome, setPaused } from '../game';
 import { placeAt, clickOwnBuilding, stopPlacing, toggleBuildPanel } from './build';
 import { openDiplomacy, closeDiplomacy, diplomacyOpen, closePop } from './diplomacy';
+import { researchOpen, closeResearch } from './research';
 
 interface Drag { sx: number; sy: number; lx: number; ly: number; moved: boolean; button: number; }
 const pointers=new Map<number,{x: number; y: number}>(); let drag: Drag | null=null, pinch: {d: number; mx: number; my: number} | null=null;
@@ -45,8 +46,8 @@ function endPointer(e: PointerEvent){
       else if (client.state==='play'){
         const o=t>=0 ? owner[t] : 0;
         if (client.placing) placeAt(t);
-        else if (o && o!==PLAYER) openDiplomacy(o);   // another kingdom: talk first
-        else if (!clickOwnBuilding(t)){ if (diplomacyOpen()) closeDiplomacy(); else playerAttack(t); }
+        else if (o && o!==PLAYER){ closeResearch(); openDiplomacy(o); }   // another kingdom: talk first
+        else if (!clickOwnBuilding(t)){ if (researchOpen()) closeResearch(); else if (diplomacyOpen()) closeDiplomacy(); else playerAttack(t); }
       }
     }
     drag=null; view.classList.remove('dragging');
@@ -111,7 +112,7 @@ export function bindInput(){
     else if (e.key===' ' && client.state==='play'){ e.preventDefault(); centerHome(); }
     else if (e.key==='p' || e.key==='P'){ if (client.state==='play') setPaused(!client.paused); }
     else if (e.key==='b' || e.key==='B'){ if (client.state==='play') toggleBuildPanel(); }
-    else if (e.key==='Escape'){ closePop(); if (client.placing) stopPlacing(); else if (diplomacyOpen()) closeDiplomacy(); else toggleBuildPanel(false); }
+    else if (e.key==='Escape'){ closePop(); if (client.placing) stopPlacing(); else if (researchOpen()) closeResearch(); else if (diplomacyOpen()) closeDiplomacy(); else toggleBuildPanel(false); }
     else if (e.key==='+' || e.key==='='){ zoomAt(1.3,view.width/2,view.height/2); }
     else if (e.key==='-'){ zoomAt(1/1.3,view.width/2,view.height/2); }
   });

@@ -10,7 +10,8 @@ export interface Nation {
   tiles: number; alive: boolean; capTile: number; capPlot: number;
   plots: number[]; blds: number[]; bCount: number;
   houses: number; farms: number; towers: number; mines: number; barracks: number; minters: number;
-  plantations: number; quarries: number; copperMines: number;
+  plantations: number; quarries: number; copperMines: number; labs: number; guilds: number;   // labs: research stations
+  beds: number;                      // people the houses can hold: a hovel 1, a stone house 2, a manor 3
   sumX: number; sumY: number; ltx: number; lty: number; peak: number;   // ltx/lty: where the kingdom's label sits
   expandAt: number; attackAt: number; ratio: number; nextThink: number;  // bot personality
   nextWar: number; nextOffer: number;   // bots: sim time before which they start no campaign, offer no peace
@@ -21,6 +22,9 @@ export interface Nation {
   stock: number[];                   // goods stored in the capital: [wood, stone, copper]
   abandoned: number;                 // houses standing empty
   surplusTicks: number;              // how long the kingdom has had more houses than people
+  study: number;                     // research topic being studied (R_* in research.ts)
+  tier: number[];                    // tier reached in each topic, 1..3: [housing, taxation]
+  xp: number[];                      // research toward each topic's next tier, in tenths of a point
 }
 /** A person walking the map. Positions are in detail pixels (2 per tile). */
 export interface Human {
@@ -48,6 +52,8 @@ export interface Human {
   slot: number;                      // place in the campaign's formation, or the home guard's line
   brave: number;                     // villagers with enemies near: -1 not yet decided, 0 running away, 1 fighting
   calm: number;                      // ticks since an enemy was last near
+  guild: number;                     // builders: plot of the builders guild they work for, or -1
+  fix: number;                       // builders: plot of the house they are improving, or -1
 }
 /** An army in the field: a war (taking land, pushing for the capital) or a raid (burning buildings). */
 export interface Campaign {
@@ -79,7 +85,8 @@ export type Command =
   | { type: 'war'; nation: number; target: number; raid: boolean; soldiers: number }
   | { type: 'endWar'; nation: number; target: number }                // recall a raid, or offer peace
   | { type: 'intercept'; nation: number; campaign: number; soldiers: number }   // send soldiers after an enemy army
-  | { type: 'peace'; nation: number; target: number };                // accept the target's peace offer
+  | { type: 'peace'; nation: number; target: number }                 // accept the target's peace offer
+  | { type: 'research'; nation: number; topic: number };              // study this topic next (R_* in research.ts)
 
 export const elev = new Float32Array(NT), moist = new Float32Array(NT);
 // resources: at most one per tile (R_* in resources.ts), harvests left, claimed by a villager
@@ -92,6 +99,7 @@ for (let q=0;q<NP;q++){ const px=q%PW, py=(q/PW)|0; pCenter[q]=(py*4+2)*TW+px*4+
 export const pAband = new Uint8Array(NP);   // houses standing empty, run down
 export const occ = new Uint8Array(NT);      // a kingdom's land held by an enemy at war: the occupier (0 = free); the owner stays
 export const pHp = new Float32Array(NP);     // damage a building has taken (multi-plot buildings keep theirs on the main plot)
+export const pTier = new Uint8Array(NP);   // houses: 1 hovel, 2 stone house, 3 manor (0 for anything else)
 export const pPrio = new Int32Array(NP);   // watchtowers calling for a garrison: order they asked in (0 = not asking)
 
 export const W = {

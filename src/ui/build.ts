@@ -1,7 +1,9 @@
 /* ---------- buildings panel: pick a building, then click your land to place it ---------- */
-import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE } from '../core/constants';
+import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_PART } from '../core/constants';
 import type { Nation } from '../sim/state';
-import { W, owner, pType, pOwner, pPrio } from '../sim/state';
+import { W, owner, pType, pOwner, pPrio, pMain } from '../sim/state';
+import { R_HOUSING } from '../sim/research';
+import { openResearch } from './research';
 import { queueCommand } from '../sim/sim';
 import { STRUCTURES, canAfford, placeProblem, structureOf, SIZE, type Structure } from '../sim/buildings';
 import { GOOD_NAME } from '../sim/resources';
@@ -14,7 +16,7 @@ import { $ } from './dom';
 const panel=$('buildPanel'), list=$('buildList'), tip=$('btip'), button=$('build');
 const ICO=['wood','stone','copper'];
 const owned = (n: Nation, type: number) => type===B_FARM ? n.farms : type===B_BARRACKS ? n.barracks : type===B_TOWER ? n.towers : type===B_MINTER ? n.minters
-  : type===B_PLANTATION ? n.plantations : type===B_QUARRY ? n.quarries : type===B_COPPERMINE ? n.copperMines : 0;
+  : type===B_PLANTATION ? n.plantations : type===B_QUARRY ? n.quarries : type===B_COPPERMINE ? n.copperMines : type===B_RESEARCH ? n.labs : type===B_GUILD ? n.guilds : 0;
 const rows=new Map<number, HTMLButtonElement>();
 
 /** Builds the panel's rows once a match starts, with icons in the player's colours. */
@@ -94,12 +96,22 @@ export function placeAt(t: number){
   queueCommand({ type:'build', nation:PLAYER, plot:q, kind:s.type });
 }
 
-/** A click on your own land outside placing: toggles a watchtower's call for a garrison. Returns true if it did. */
+/** A click on your own land outside placing: a watchtower toggles its call for a garrison, a research
+    station opens the research panel, a builders guild says what its builder is up to. Returns true if it did. */
 export function clickOwnBuilding(t: number){
-  const q=((t/TW|0)>>2)*PW+((t%TW)>>2);
-  if (owner[t]!==PLAYER || pType[q]!==B_TOWER || pOwner[q]!==PLAYER) return false;
-  queueCommand({ type:'priority', nation:PLAYER, plot:q });
+  let q=((t/TW|0)>>2)*PW+((t%TW)>>2);
+  if (pType[q]===B_PART) q=pMain[q];
+  if (owner[t]!==PLAYER || pOwner[q]!==PLAYER) return false;
   const me=W.nations[PLAYER]!;
+  if (pType[q]===B_RESEARCH){ openResearch(); return true; }
+  if (pType[q]===B_GUILD){
+    const b=W.humans.find(h => h.guild===q);
+    toast(!b ? 'The guild waits for a villager to take up the tools' : me.tier[R_HOUSING]<2 ? 'Your builder waits: research housing to build better homes'
+      : b.fix>=0 ? 'Your builder is improving a house' : me.stock[0]<3 || me.stock[1]<3 ? 'Your builder needs 3 wood and 3 stone for each house' : 'Your builder has no house left to improve');
+    return true;
+  }
+  if (pType[q]!==B_TOWER) return false;
+  queueCommand({ type:'priority', nation:PLAYER, plot:q });
   toast(pPrio[q] ? 'Watchtower no longer calls for a garrison' : me.barracks ? 'Watchtower calls for 5 soldiers' : 'Watchtower calls for soldiers: build a barracks to raise them');
   return true;
 }

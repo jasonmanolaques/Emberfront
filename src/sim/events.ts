@@ -33,6 +33,9 @@ export interface SimEvents {
   counterReady(o: number, enemy: number): void;                // o's army has won its land back and is ready to counter-attack
   intercepting(o: number, enemy: number, soldiers: number): void;   // o sent soldiers after an army of enemy's
   story(id: string, o: number, x: number, y: number, other: number): void;   // a story event in kingdom o at (x,y), sim/story.ts
+  researched(o: number, topic: number, tier: number): void;    // kingdom o reached `tier` in a research topic
+  upgraded(q: number, o: number, tier: number): void;          // a builder raised the house on plot q to `tier`
+  builderHired(q: number, o: number, replaced: boolean): void; // a villager took up the tools at the builders guild on plot q
 }
 
 const noop = () => {};
@@ -42,6 +45,6 @@ export const on: SimEvents = {
   resChanged: noop, stored: noop, towerShot: noop, produced: noop,
   warBegan: noop, armyHome: noop, armyGone: noop, peaceOffered: noop, peaceRefused: noop, peaceMade: noop,
   allied: noop, allyRefused: noop, allianceBroken: noop, annexed: noop, plunder: noop, hit: noop, bldHit: noop,
-  died: noop, occupied: noop, counterReady: noop, intercepting: noop, swing: noop, story: noop,
+  died: noop, occupied: noop, counterReady: noop, intercepting: noop, swing: noop, story: noop, researched: noop, upgraded: noop, builderHired: noop,
 };
 export function listen(l: Partial<SimEvents>){ Object.assign(on, l); }

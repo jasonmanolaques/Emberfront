@@ -1,7 +1,8 @@
 /* ---------- bots ---------- */
-import { B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, PW } from '../core/constants';
+import { B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, PW } from '../core/constants';
 import { W, pType, pOwner, pPrio, type Nation } from './state';
 import { launch } from './territory';
+import { R_HOUSING, R_TAXES, setStudy, maxed } from './research';
 import { STRUCTURES, canAfford, placeProblem, build, togglePriority, anyWithin, isEnemyLand } from './buildings';
 import { allied, atWar, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge } from './war';
 
@@ -12,6 +13,9 @@ function wishlist(n: Nation, exposed: boolean){
   if (exposed && n.towers < 1+(n.tiles/900|0)) w.push(B_TOWER);
   if (n.farms < 1+(n.tiles/600|0)) w.push(B_FARM);
   if (n.minters < 1+(n.tiles/1500|0)) w.push(B_MINTER);
+  // learning once the kingdom has found its feet, and a guild to build on what it learns
+  if (n.farms && n.tiles>=300 && !(maxed(n,R_HOUSING) && maxed(n,R_TAXES)) && n.labs < 1+(n.tiles/2500|0)) w.push(B_RESEARCH);
+  if (n.tier[R_HOUSING]>=2 && n.guilds < 1+(n.tiles/4000|0)) w.push(B_GUILD);
   // a steady supply of whatever the land is poorest in
   const [wood,stone,copper]=n.stock, few=Math.min(wood,stone,copper);
   if (copper===few && n.copperMines < 1+(n.tiles/2000|0)) w.push(B_COPPERMINE);
@@ -36,7 +40,11 @@ function pickPlot(n: Nation, type: number){
   return best;
 }
 
+/** Bots study whichever topic is behind, housing first. */
+function botStudy(n: Nation){ setStudy(n, n.tier[R_HOUSING]<=n.tier[R_TAXES] ? R_HOUSING : R_TAXES); }
+
 function botBuild(n: Nation, exposed: boolean){
+  botStudy(n);
   for (const type of wishlist(n,exposed)){
     const s=STRUCTURES.find(s=>s.type===type)!;
     if (!canAfford(n,s)) continue;

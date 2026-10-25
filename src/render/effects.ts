@@ -2,8 +2,8 @@
    Cosmetic only. These use Math.random freely because they never feed back into the simulation.
    Particles live in render pixels; shots, hits and floats keep the simulation's pixels they came in. */
 import { TW, NT, PW, PH, PS, RS, K, B_HOUSE } from '../core/constants';
-import { W, isLand, pType, pBurn, pVar, pAband } from '../sim/state';
-import { CHIMNEY } from './sprites';
+import { W, isLand, pType, pBurn, pVar, pAband, pTier } from '../sim/state';
+import { chimneyOf } from './sprites';
 
 export const FL=4096;
 export const flT=new Int32Array(FL), flO=new Uint8Array(FL), flTime=new Float64Array(FL); let flHead=0;
@@ -40,7 +40,7 @@ export function updateEffects(dt: number, vx0: number, vy0: number, vx1: number,
     const qx0=Math.max(0,Math.floor(vx0/PS)), qy0=Math.max(0,Math.floor(vy0/PS)), qx1=Math.min(PW-1,Math.floor(vx1/PS)), qy1=Math.min(PH-1,Math.floor(vy1/PS));
     for (let y=qy0;y<=qy1;y++) for (let x=qx0;x<=qx1;x++){
       const q=y*PW+x; if (pType[q]!==B_HOUSE || pBurn[q]>0 || pAband[q]) continue;   // empty houses are cold
-      if (Math.random()<0.35*dt){ const c=CHIMNEY[pVar[q]%3]; emitSmoke(x*PS+c[0]+0.5, y*PS+c[1], 2); }
+      if (Math.random()<0.35*dt){ const c=chimneyOf(pTier[q],pVar[q]); emitSmoke(x*PS+c[0]+0.5, y*PS+c[1], 2); }
     }
   }
   for (let i=fx.pcount-1;i>=0;i--){

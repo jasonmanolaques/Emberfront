@@ -1,6 +1,6 @@
 // Buildings a kingdom places, and the gold economy.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, GOLD_START, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
+import { TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, GOLD_START, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
 import { W, owner, isLand, pType, pCenter, pBuild, type Human } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { listen } from '../src/sim/events';
@@ -49,7 +49,9 @@ describe('building costs and placement', () => {
     expect(structureOf(B_PLANTATION)!.cost).toEqual([10,0,0]);
     expect(structureOf(B_QUARRY)!.cost).toEqual([3,5,0]);
     expect(structureOf(B_COPPERMINE)!.cost).toEqual([10,10,0]);
-    expect(STRUCTURES).toHaveLength(7);
+    expect(structureOf(B_RESEARCH)!.cost).toEqual([15,15,10]);
+    expect(structureOf(B_GUILD)!.cost).toEqual([10,20,5]);
+    expect(STRUCTURES).toHaveLength(9);
   });
 
   it('takes the resources and places the building, but only if they are all there', () => {

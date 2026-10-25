@@ -1,7 +1,7 @@
 /* ---------- buildings: villagers build their own houses; farms, barracks, watchtowers and coin
    minters are placed by each kingdom and paid for from its stockpile. Also roads, fire & ruins. ---------- */
-import { TW, PW, PH, NP, T_MOUNT, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, isStructure } from '../core/constants';
-import { W, owner, occ, terr, isLand, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, pMain, pHp, type Nation } from './state';
+import { TW, PW, PH, NP, T_MOUNT, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, isStructure } from '../core/constants';
+import { W, owner, occ, terr, isLand, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, pMain, pHp, pTier, type Nation } from './state';
 import { on } from './events';
 import { clearPlot } from './resources';
 
@@ -12,7 +12,7 @@ export function ignite(q: number){
   if (!size){ igniteOne(q); return; }
   for (const k of footprint(main,pType[main])) igniteOne(k);
 }
-export function toRuins(q: number){ pType[q]=B_RUINS; pOwner[q]=0; pVar[q]=(W.srand()*8)|0; pBurn[q]=0; pTimer[q]=35+W.srand()*30; pPrio[q]=0; pAband[q]=0; pHp[q]=0; on.plotChanged(q); }
+export function toRuins(q: number){ pType[q]=B_RUINS; pOwner[q]=0; pVar[q]=(W.srand()*8)|0; pBurn[q]=0; pTimer[q]=35+W.srand()*30; pPrio[q]=0; pAband[q]=0; pHp[q]=0; pTier[q]=0; on.plotChanged(q); }
 
 export function isBld(ty: number){ return isStructure(ty) || ty===B_CASTLE || ty===B_CPART; }
 function nbBuildings(q: number, id: number){
@@ -59,7 +59,7 @@ function connectRoad(q: number, id: number, far: boolean){
 }
 function placeBuilding(q: number, id: number, type: number, isNew: boolean){
   if (type===B_EMPTY) return;
-  pType[q]=type; pOwner[q]=id; pVar[q]=(W.srand()*3)|0; pTimer[q]=0; pPrio[q]=0; pAband[q]=0; pHp[q]=0;
+  pType[q]=type; pOwner[q]=id; pVar[q]=(W.srand()*3)|0; pTimer[q]=0; pPrio[q]=0; pAband[q]=0; pHp[q]=0; pTier[q]=type===B_HOUSE ? 1 : 0;
   clearPlot(q);
   on.plotChanged(q);
   const n=W.nations[id]; n.bCount++;
@@ -88,13 +88,13 @@ export function finishHouse(q: number, id: number){
   const isNew=nbBuildings(q,id)===0;
   pType[q]=B_EMPTY;
   placeBuilding(q,id,B_HOUSE,isNew);
-  W.nations[id].houses++;   // count it right away rather than at the next census
+  W.nations[id].houses++; W.nations[id].beds++;   // count it right away rather than at the next census
 }
 
 /* ---------- buildings a kingdom places ---------- */
 export interface Structure { type: number; name: string; cost: number[]; info: string; }   // cost: [wood, stone, copper]
 // buildings bigger than one plot: [width, height] in plots
-export const SIZE: Record<number, [number, number]> = { [B_PLANTATION]: [2,2], [B_QUARRY]: [2,2], [B_COPPERMINE]: [2,1] };
+export const SIZE: Record<number, [number, number]> = { [B_PLANTATION]: [2,2], [B_QUARRY]: [2,2], [B_COPPERMINE]: [2,1], [B_GUILD]: [2,1] };
 /** The plots a building of `type` anchored at plot q (its top-left) covers. */
 export function footprint(q: number, type: number){
   const [w,h]=SIZE[type] ?? [1,1], out: number[]=[];
@@ -112,6 +112,8 @@ export const STRUCTURES: Structure[] = [
   { type: B_PLANTATION, name: 'Plantation', cost: [10,0,0], info: 'Four plots of saplings that grow into trees: +5 wood every 30 seconds. Takes 2×2 plots.' },
   { type: B_QUARRY,     name: 'Stone quarry', cost: [3,5,0], info: 'A pit with a pulley hauling stone up: +3 stone every 30 seconds. Takes 2×2 plots.' },
   { type: B_COPPERMINE, name: 'Copper mine', cost: [10,10,0], info: 'A shaft into the rock with the furnace glowing inside: +2 copper every 30 seconds. Takes 2×1 plots.' },
+  { type: B_RESEARCH,   name: 'Research station', cost: [15,15,10], info: 'Scholars earn 1 research point a second; more stations, faster research. Click a placed station to choose what to study: housing or taxation.' },
+  { type: B_GUILD,      name: 'Builders guild', cost: [10,20,5], info: 'One villager becomes its builder. With housing research he turns hovels into stone houses and manors, from the castle outward, for 3 wood and 3 stone each. Takes 2×1 plots.' },
 ];
 export const structureOf = (type: number) => STRUCTURES.find(s => s.type===type);
 export const canAfford = (n: Nation, s: Structure) => s.cost.every((c,g) => n.stock[g]>=c);
@@ -149,6 +151,7 @@ export function build(n: Nation, q: number, type: number){
 export function countUp(n: Nation, type: number){
   if (type===B_FARM) n.farms++; else if (type===B_BARRACKS) n.barracks++; else if (type===B_TOWER) n.towers++; else if (type===B_MINTER) n.minters++;
   else if (type===B_PLANTATION) n.plantations++; else if (type===B_QUARRY) n.quarries++; else if (type===B_COPPERMINE) n.copperMines++;
+  else if (type===B_RESEARCH) n.labs++; else if (type===B_GUILD) n.guilds++;
 }
 
 /** Production buildings fill the stockpile every 30 seconds; pTimer counts their progress. */

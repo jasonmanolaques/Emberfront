@@ -14,7 +14,7 @@ import { natC } from './nature';
 import { styleOf } from './style';
 import { personSprite, corpseSprite, woundStage, BODY_X, FEET_Y } from './people';
 import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, psize, floats, glints, shots, hits, corpses, drips, addDrip, CORPSE_MS, DRIP_MS, updateEffects } from './effects';
-import { H_SOLDIER, TASK_HARVEST, TASK_HOME_GO, TASK_HOME_BUILD, indoors } from '../sim/population';
+import { H_SOLDIER, TASK_HARVEST, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, indoors } from '../sim/population';
 import { G_WOOD, G_STONE, G_COPPER } from '../sim/resources';
 import { allied, atWar, HIT_TICKS } from '../sim/war';
 
@@ -114,6 +114,19 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
       const tx=left ? bx-1 : bx+4; ctx.fillStyle=INK; ctx.fillRect(tx-1,fy-9,3,9);
       ctx.fillStyle='#8a6a40'; ctx.fillRect(tx,fy-7,1,7); ctx.fillStyle='#c9cdd1'; ctx.fillRect(tx,fy-8,1,1); ctx.fillRect(tx-1,fy-9,1,1); ctx.fillRect(tx+1,fy-9,1,1);
       continue;
+    }
+    // builders wear a leather cap; at work, a hammer rises and falls on the house
+    if (p.guild>=0){
+      ctx.fillStyle=INK; ctx.fillRect(bx-1,fy-8,6,2);
+      ctx.fillStyle='#d99a3e'; ctx.fillRect(bx,fy-8,4,1); ctx.fillRect(left ? bx-1 : bx+4,fy-7,1,1); ctx.fillStyle='#a8702a'; ctx.fillRect(bx,fy-7,4,1);
+      if (p.task===TASK_FIX){
+        const up=reduceMotion ? 0 : ((now/260+p.id)|0)&1, tx=left ? bx-2 : bx+4;
+        ctx.fillStyle=INK; ctx.fillRect(tx-1,fy-8+up*2,3,5);
+        ctx.fillStyle='#7a5634'; ctx.fillRect(tx,fy-6+up*2,1,3);
+        ctx.fillStyle='#9aa0a6'; ctx.fillRect(left ? tx-1 : tx,fy-7+up*2,2,1);
+        continue;
+      }
+      if (p.task===TASK_FIX_GO){ box(bx,fy-11,4,2,'#bdb6aa'); ctx.fillStyle='#d6d1c5'; ctx.fillRect(bx,fy-11,4,1); continue; }   // a dressed stone for the job
     }
     // working: a tool swings beside them
     if (p.task===TASK_HARVEST || p.task===TASK_HOME_BUILD){
