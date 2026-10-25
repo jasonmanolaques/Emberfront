@@ -8,7 +8,7 @@ import { view, cam, clampCam, zoomAt, tileAt } from '../render/camera';
 import { hover } from '../render/render';
 import { ui, showHUD } from './hud';
 import { $ } from './dom';
-import { newGame, trySpawn, playerAttack, setRatio, centerHome, setPaused } from '../game';
+import { newGame, trySpawn, playerAttack, setRatio, setSoldierShare, centerHome, setPaused } from '../game';
 
 interface Drag { sx: number; sy: number; lx: number; ly: number; moved: boolean; button: number; }
 const pointers=new Map<number,{x: number; y: number}>(); let drag: Drag | null=null, pinch: {d: number; mx: number; my: number} | null=null;
@@ -81,6 +81,8 @@ export function bindInput(){
   const ratioEl=$('ratio') as HTMLInputElement;
   ratioEl.addEventListener('input',()=>setRatio(+ratioEl.value/100));
   setRatio(0.4);
+  const soldiersEl=$('soldiers') as HTMLInputElement;
+  soldiersEl.addEventListener('input',()=>setSoldierShare(+soldiersEl.value/100));
 
   $('zoomIn').onclick=()=>zoomAt(1.5,view.width/2,view.height/2);
   $('zoomOut').onclick=()=>zoomAt(1/1.5,view.width/2,view.height/2);

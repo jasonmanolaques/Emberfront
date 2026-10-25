@@ -9,12 +9,27 @@ export interface Nation {
   plots: number[]; blds: number[]; houses: number; farms: number; towers: number; mines: number; bCount: number;
   sumX: number; sumY: number; ltx: number; lty: number; peak: number;   // ltx/lty: where the kingdom's label sits
   expandAt: number; attackAt: number; ratio: number; nextThink: number;  // bot personality
+  soldierShare: number;              // share of the population the kingdom wants as soldiers (0..1)
+  nextHuman: number;                 // tick when the capital releases its next human
+  villagers: number; soldiers: number; training: number;   // headcount, updated every tick; training = switching role
+}
+/** A person walking the map. Positions are in detail pixels (2 per tile). */
+export interface Human {
+  id: number; o: number;             // owning nation
+  kind: number;                      // H_VILLAGER | H_SOLDIER
+  task: number;                      // TASK_* in population.ts
+  x: number; y: number; tx: number; ty: number;
+  path: number[];                    // waypoints before (tx,ty), flat x,y pairs: the way around the castle
+  wait: number;                      // ticks left to idle, or ticks left inside the capital
+  sp: number;                        // walking speed, pixels per second
 }
 export interface Attack { id: number; att: number; def: number; troops: number; front: number[]; done: boolean; }
 
 /** A player action. Actions are queued and applied at the start of the next tick, so every
     client that receives the same actions in the same ticks runs the same game. */
-export type Command = { type: 'attack'; nation: number; tile: number; ratio: number };
+export type Command =
+  | { type: 'attack'; nation: number; tile: number; ratio: number }
+  | { type: 'soldiers'; nation: number; share: number };
 
 export const elev = new Float32Array(NT), moist = new Float32Array(NT);
 export const terr = new Uint8Array(NT), isLand = new Uint8Array(NT), owner = new Uint8Array(NT), road = new Uint8Array(NT);
@@ -27,4 +42,6 @@ export const W = {
   mapSeed: 1, srand: Math.random as Rng, seaLevel: 0, heightRange: 1, landCount: 1, landTiles: new Int32Array(0),
   nations: [] as Nation[], M: 1, contact: new Int32Array(1), attacks: [] as Attack[], burning: [] as number[], attackSeq: 0,
   commands: [] as Command[], simTime: 0, tickN: 0,
+  prand: Math.random as Rng,         // separate stream for people, so they never shift the territory game's randomness
+  humans: [] as Human[], humanSeq: 0,
 };

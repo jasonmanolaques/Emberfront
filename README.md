@@ -18,7 +18,7 @@ npm run build      # type-check and build a static site into dist/
 ```
 src/
   core/      constants, colour/number helpers, seeded random & noise
-  sim/       the game itself: map generation, territory & combat, troops, buildings, bots
+  sim/       the game itself: map generation, territory & combat, troops, buildings, people, bots
   render/    camera, terrain & territory pixels, building sprites, effects, frame drawing
   ui/        HUD, log & toasts, mouse/touch/keyboard input
   game.ts    connects the simulation to the screen (new game, spawn, player orders)
@@ -33,6 +33,17 @@ tests/       scripted matches checked against recorded results
 - reports what happened through **events** (`sim/events.ts`: tile changed, building placed, capital fell, …). Rendering and UI subscribe to these; with no subscribers (a server, a test) the simulation runs the same, just without visuals.
 
 That split is what makes online multiplayer possible later: every browser runs the same simulation and only commands go over the network.
+
+## People
+
+Every kingdom's capital releases one human every 10 seconds (`sim/population.ts`). Each one is a villager or a soldier, and the kingdom keeps the share of soldiers its slider asks for:
+
+- too few soldiers: newcomers are born soldiers, and the villagers nearest the capital walk in, spend 3 seconds inside, and come out as soldiers;
+- too many: the nearest soldiers walk in and come out as villagers.
+
+People only walk inside their own borders, go around the castle rather than over it, and die if another kingdom takes the ground they stand on. Without a capital, no new humans arrive and nobody can switch role. Soldiers don't fight yet; troop numbers still work as before.
+
+People use their own random stream (`W.prand`), so adding them didn't change anything else in the game. The match recordings below still pass unchanged.
 
 ## The determinism test
 

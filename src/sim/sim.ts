@@ -9,6 +9,7 @@ import { setOwner, stepAttack, launch, touches } from './territory';
 import { toRuins, growCities } from './buildings';
 import { scanContacts, census } from './census';
 import { botThink } from './bots';
+import { updatePopulation, HUMAN_EVERY } from './population';
 
 const SYL1 = ['Val','Mor','Ost','Kar','Bre','Thal','Ves','Dun','Ard','Sel','Hal','Ner','Cor','Ith','Rav','Lun','Gor','Eld','Tor','Fen','Ash','Ul','Bel','Kes','Myr','Oak','Sar','Wen'];
 const SYL2 = ['mark','heim','dor','gard','ia','or','wyn','vale','mere','rath','holm','ford','ain','esk','ora','burg','moor','reach','fell','haven'];
@@ -18,12 +19,17 @@ function blankNation(id: number, name: string, hex: string, isPlayer: boolean): 
   return { id, name, hex, isPlayer,
     troops:0, maxTroops:0, rate:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
     plots:[], blds:[], houses:0, farms:0, towers:0, mines:0, bCount:0,
-    sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0 };
+    sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0,
+    soldierShare:0, nextHuman:0, villagers:0, soldiers:0, training:0 };
 }
 function makeNation(id: number, name: string, hex: string, isPlayer: boolean): Nation {
   const srand=W.srand;
-  return { ...blankNation(id,name,hex,isPlayer), troops:3000, maxTroops:4500, alive:true,
+  const n={ ...blankNation(id,name,hex,isPlayer), troops:3000, maxTroops:4500, alive:true,
     expandAt:0.22+srand()*0.25, attackAt:0.5+srand()*0.3, ratio:0.3+srand()*0.25, nextThink:1+srand()*2 };
+  // the player starts with no soldiers requested; bots keep a fixed share of their own
+  n.soldierShare = isPlayer ? 0 : 0.15+W.prand()*0.35;
+  n.nextHuman = W.tickN+HUMAN_EVERY;
+  return n;
 }
 function nameGen(used: Set<string>){
   const srand=W.srand;
@@ -62,6 +68,7 @@ function spawnNation(n: Nation, bx: number, by: number){
 export function newWorld(seed: number){
   W.mapSeed=seed;
   W.srand=mulberry32(seed^0x5bd1e995);
+  W.prand=mulberry32(seed^0x2f6b3a1d);
   genMap(seed);
   owner.fill(0); road.fill(0); frontMark.fill(0);
   pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0);
@@ -69,6 +76,7 @@ export function newWorld(seed: number){
   W.nations=[blankNation(0,'Unclaimed land','#cfc6a8',false)];
   W.M=1; W.contact=new Int32Array(1);
   W.simTime=0; W.tickN=0;
+  W.humans=[]; W.humanSeq=0;
 }
 
 /** Founds the player's capital near tile t and places `rivals` bot kingdoms. Returns false if t has no room. */
@@ -119,6 +127,9 @@ function applyCommand(c: Command){
     const send=n.troops*c.ratio;
     if (send<20) return;
     launch(c.nation,o,send);
+  } else if (c.type==='soldiers'){
+    const n=W.nations[c.nation]; if (!n || !n.alive) return;
+    n.soldierShare=Math.min(1,Math.max(0,c.share));
   }
 }
 
@@ -140,4 +151,5 @@ export function tick(){
   if (W.tickN%10===0) census();
   if (W.tickN%8===4) growCities();
   for (let i=1;i<N.length;i++){ const n=N[i]; if (n.alive && !n.isPlayer && W.simTime>=n.nextThink) botThink(n); }
+  updatePopulation();
 }

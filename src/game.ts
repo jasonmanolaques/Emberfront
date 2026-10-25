@@ -8,7 +8,7 @@ import { client } from './client';
 import { cam, fitCam, focusOn } from './render/camera';
 import { buildBase, paintAll, paintTile, paintRoad, repaint } from './render/terrain';
 import { genObjects, drawPlot } from './render/sprites';
-import { addFlash, fireBurst, floats, resetEffects } from './render/effects';
+import { addFlash, fireBurst, gatePuff, floats, resetEffects } from './render/effects';
 import { resetStyles } from './render/style';
 import { resetLabels } from './render/render';
 import { ui, log, toast, showHUD, checkEnd, onEliminated, onCapitalFell, onBuildingPlaced } from './ui/hud';
@@ -23,12 +23,14 @@ listen({
   buildingPlaced: onBuildingPlaced,
   capitalFell: onCapitalFell,
   eliminated: onEliminated,
+  roleChanged: gatePuff,
 });
 
 export function newGame(seed?: number){
   newWorld(seed ?? (Math.random()*2147483647)|0);
   resetStyles(); resetLabels(); resetEffects();
   client.overShown=false; client.lastVillageLog=-99; client.paused=false; client.speed=1; $('speed').textContent='1×';
+  setSoldierShare(0);
   buildBase(); paintAll(); genObjects();
   fitCam();
 }
@@ -60,6 +62,12 @@ export function playerAttack(t: number){
   floats.push({x:(t%TW)*2+1, y:((t/TW)|0)*2, text:'−'+fmt(send), t0:performance.now(), c:o?'#ffb29e':'#ffe27a'});
 }
 
+/** Asks the kingdom to keep `v` (0..1) of its people as soldiers. */
+export function setSoldierShare(v: number){
+  v=clamp(v,0,1); soldiersEl.value=String(Math.round(v*100)); $('soldiersVal').textContent=Math.round(v*100)+'%'; soldiersEl.style.setProperty('--fill',(v*100)+'%');
+  if (W.nations[PLAYER]) queueCommand({ type:'soldiers', nation:PLAYER, share:v });
+}
+const soldiersEl=$('soldiers') as HTMLInputElement;
 const ratioEl=$('ratio') as HTMLInputElement;
 export function setRatio(v: number){ client.ratio=clamp(v,0.05,1); ratioEl.value=String(Math.round(client.ratio*100)); $('ratioVal').textContent=Math.round(client.ratio*100)+'%'; ratioEl.style.setProperty('--fill',((client.ratio*100-5)/95*100)+'%'); }
 

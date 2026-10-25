@@ -8,7 +8,10 @@ import { view, ctx, cam, stepCamAnim } from './camera';
 import { worldC, flushWorld } from './terrain';
 import { objC } from './sprites';
 import { styleOf } from './style';
-import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, vill, floats, glints, updateEffects } from './effects';
+import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, floats, glints, updateEffects } from './effects';
+import { H_SOLDIER, TASK_INSIDE } from '../sim/population';
+
+const SKIN = ['#f1c9a5','#d9a679','#a8744f','#7a5236'];
 
 export const hover = { sx: -1, sy: -1, tile: -1, mouse: false };
 
@@ -44,16 +47,29 @@ export function render(now: number, dt: number){
   ctx.globalAlpha=1;
   ctx.drawImage(objC,0,0);
 
-  // villagers
+  // people: villagers in their kingdom's colour; soldiers in a darker tunic with a helmet and spear
   if (zc>=2.2){
-    for (const v of vill){ if (v.x<vx0||v.y<vy0||v.x>vx1||v.y>vy1) continue; const x=Math.floor(v.x), y=Math.floor(v.y);
-      ctx.fillStyle=styleOf(v.o).roof; ctx.fillRect(x,y,1,1); ctx.fillStyle=v.skin; ctx.fillRect(x,y-1,1,1); }
+    for (const p of W.humans){
+      if (p.task===TASK_INSIDE || p.x<vx0||p.y<vy0||p.x>vx1||p.y>vy1) continue;
+      const x=Math.floor(p.x), y=Math.floor(p.y), st=styleOf(p.o);
+      ctx.fillStyle='rgba(16,28,8,.35)'; ctx.fillRect(x,y+1,1,1);
+      if (p.kind===H_SOLDIER){
+        ctx.fillStyle=st.roofD; ctx.fillRect(x,y,1,1);
+        ctx.fillStyle='#aeb7c0'; ctx.fillRect(x,y-1,1,1);
+        ctx.fillStyle='#6e5034'; ctx.fillRect(x+1,y-1,1,2);
+        ctx.fillStyle='#e4e0d4'; ctx.fillRect(x+1,y-2,1,1);
+      } else {
+        ctx.fillStyle=st.roof; ctx.fillRect(x,y,1,1);
+        ctx.fillStyle=SKIN[(p.id*7)&3]; ctx.fillRect(x,y-1,1,1);
+      }
+    }
   }
   // particles
   for (let i=0;i<fx.pcount;i++){
     const f=plife[i]/pmax[i], k=pkind[i];
     if (k===0) ctx.fillStyle = f>0.65?'#fff3b0':f>0.4?'#ffc23d':f>0.2?'#ff6a2b':'#b8381f';
     else if (k===1) ctx.fillStyle = f>0.6?'rgba(64,58,54,.75)':f>0.3?'rgba(84,78,74,.5)':'rgba(110,104,100,.28)';
+    else if (k===3) ctx.fillStyle = f>0.5?'rgba(200,215,230,.85)':'rgba(200,215,230,.4)';   // gate dust, soldier out
     else ctx.fillStyle = f>0.5?'rgba(235,235,235,.55)':'rgba(235,235,235,.25)';
     ctx.fillRect(Math.floor(ppx[i]),Math.floor(ppy[i]),1,1);
   }

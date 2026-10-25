@@ -3,14 +3,14 @@ import { TW, DW, DH, TICK } from './core/constants';
 import { W, owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer } from './sim/state';
 import { findBlock } from './sim/sim';
 import { client } from './client';
-import { view, resize } from './render/camera';
+import { view, resize, cam } from './render/camera';
 import { wbuf } from './render/terrain';
 import { octx } from './render/sprites';
 import { render } from './render/render';
 import { updateHUD } from './ui/hud';
 import { bindInput } from './ui/input';
 import { $ } from './ui/dom';
-import { newGame, step, trySpawn, playerAttack, setRatio } from './game';
+import { newGame, step, trySpawn, playerAttack, setRatio, setSoldierShare } from './game';
 
 let acc=0, last=performance.now(), hudAt=0;
 function frame(now: number){
@@ -33,6 +33,6 @@ function toSpawn(){ if (client.state!=='spawn'){ $('intro').hidden=true; $('scri
 (window as any).emberfront = { get state(){return client.state;}, get nations(){return W.nations;}, get simTime(){return W.simTime;}, get landCount(){return W.landCount;},
   spawnAt:(tx: number,ty: number)=>{ toSpawn(); trySpawn(ty*TW+tx); },
   randomSpawn:()=>{ toSpawn(); for (let i=0;i<500 && client.state==='spawn';i++){ const t=W.landTiles[(Math.random()*W.landTiles.length)|0]; const b=findBlock(t%TW,(t/TW)|0,0); if (b) trySpawn(t); } },
-  run:(n: number)=>{ for (let i=0;i<n;i++) step(); }, attack:(t: number)=>playerAttack(t), setRatio,
+  run:(n: number)=>{ for (let i=0;i<n;i++) step(); }, attack:(t: number)=>playerAttack(t), setRatio, setSoldierShare, get humans(){return W.humans;}, get cam(){return cam;},
   newWorld:(seed?: number)=>newGame(seed),
   dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, wbuf, obj:octx.getImageData(0,0,DW,DH).data, attacks:W.attacks, tickN:W.tickN }) };
