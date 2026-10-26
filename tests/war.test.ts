@@ -10,7 +10,8 @@ import { census } from '../src/sim/census';
 import { build, plotProblem, structureOf, togglePriority, finishHouse } from '../src/sim/buildings';
 import { H_SOLDIER, H_VILLAGER, TASK_STORE, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, switching, pace } from '../src/sim/population';
 import { UNIT_SIZE, buildUnits, station, unitAt } from '../src/sim/army';
-import { allied, atWar, available, ready, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread } from '../src/sim/war';
+import { allied, atWar, available, ready, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
+  RANKS, rankFor, leaderlessIn, M_MARCH, M_HOLD, M_ASSAULT, M_FALLBACK, M_REGROUP, M_BLIND, HOLD_BELOW, READY_AT, BREAK_AT, RETREAT_CHANCE } from '../src/sim/war';
 
 const N = (i: number) => W.nations[i];
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
@@ -85,6 +86,8 @@ function collect<K extends keyof typeof on>(name: K){
   listen({ [name]: (...a: never[]) => { got.push(a as never); } } as never);
   return got;
 }
+/** Kingdom o raises no more soldiers: nobody left to sign up, and the wages paid. */
+const noDraft = (o=1) => { W.humans=W.humans.filter(h => h.o!==o || h.kind===H_SOLDIER); N(o).soldierShare=1; N(o).humanProg=-1e9; N(o).gold=1e6; };
 const quiet = () => listen({ warBegan(){}, armyHome(){}, armyGone(){}, peaceOffered(){}, peaceRefused(){}, peaceMade(){}, allied(){}, allyRefused(){}, allianceBroken(){}, annexed(){}, plunder(){}, hit(){}, bldHit(){} });
 
 describe('clicking another kingdom', () => {
@@ -540,11 +543,168 @@ describe('occupation', () => {
   });
 });
 
+describe('army leaders', () => {
+  const byId = (id: number) => W.humans.find(h => h.id===id);
+  const tileAt = (h: { x: number; y: number }) => ((h.y/2)|0)*TW+((h.x/2)|0);
+  /** Kingdom 1 attacks kingdom 2 (land 26 tiles round its castle, out of the castle's reach at the border) with k soldiers. */
+  function attack(k: number){
+    world(1); quiet(); paintDisc(N(2),26); paintToward(1,2);
+    const men=soldiers(N(1),k); run(1);
+    expect(declare(1,2,false,k)).toBe(true);
+    return { c: W.campaigns[0], men };
+  }
+  /** k new soldiers at home, in the barracks of army c. */
+  function recruits(c: (typeof W.campaigns)[number], k: number){
+    const u=unitAt(c.unit)!, [x,y]=doorOf(N(1)), out: Human[]=[];
+    for (let i=0;i<k;i++){ const h=makeHuman(N(1),H_SOLDIER,x+(i%5)-2,y+1); h.base=u.plots[0]; W.humans.push(h); out.push(h); }
+    return out;
+  }
+  const kill = (c: (typeof W.campaigns)[number], keep: number) => {   // all but `keep` of its men, never the leader
+    let left=c.members.length;
+    for (const id of c.members){ if (left<=keep) break; if (id!==c.leader){ byId(id)!.hp=0; left--; } }
+  };
+
+  it('are ranked by the size of the army: none up to 5, a leader to 15, a general to 30, a captain to 50, a commander to 80, a grand marshal beyond', () => {
+    const at=[1,5,6,15,16,30,31,50,51,80,81,100,250].map(rankFor);
+    expect(at).toEqual([0,0,1,1,2,2,3,3,4,4,5,5,5]);
+    expect(RANKS.slice(1)).toEqual(['Leader','General','Captain','Commander','Grand Marshal']);
+    expect([HOLD_BELOW, READY_AT, BREAK_AT, RETREAT_CHANCE]).toEqual([0.3, 0.6, 0.2, 0.75]);
+  });
+
+  it('5 soldiers have none; 6 or more are led by the best armoured of them, who gives the order to march', () => {
+    world(1); quiet(); paintToward(1,2);
+    soldiers(N(1),5); run(1);
+    expect(declare(1,2,false,5)).toBe(true);
+    expect([W.campaigns[0].leader, W.campaigns[0].rank]).toEqual([-1,0]);
+    const orders=collect('order');
+    const { c, men }=attack(20);
+    expect(c.rank).toBe(2);   // a general
+    expect(c.leader).toBe(Math.min(...men.map(h => h.id)));   // all tier 1: the longest serving
+    expect(orders.map(o => [o[0],o[3],o[4]])).toEqual([['march',2,c.leader]]);
+    world(1); quiet(); paintToward(1,2);
+    const six=soldiers(N(1),6); six[4].tier=2; run(1);
+    expect(declare(1,2,false,6)).toBe(true);
+    expect([W.campaigns[0].rank, W.campaigns[0].leader]).toEqual([1, six[4].id]);
+  });
+
+  it('the leader marches behind the last rank of his army', () => {
+    const { c }=attack(12);
+    noDraft();   // (fresh men running up from home would be behind him)
+    until(() => c.phase===1, 400); run(150);
+    const along = (h: Human) => (h.x-c.bx)*c.dx+(h.y-c.by)*c.dy;   // how far ahead of the banner, along the march
+    let behind=0, samples=0;
+    for (let i=0;i<20;i++){
+      run(5); if (c.mode!==M_MARCH) break;
+      const lead=byId(c.leader)!, rest=c.members.filter(id => id!==c.leader).map(id => along(byId(id)!));
+      samples++; if (along(lead)<Math.min(...rest)) behind++;
+    }
+    expect(samples).toBeGreaterThan(5);
+    expect(behind).toBeGreaterThanOrEqual(samples-1);
+  });
+
+  it('at the border with under 30% of the army that set out, he holds until reinforcements bring it to 60%, then attacks', () => {
+    const { c }=attack(10);
+    const orders=collect('order');
+    noDraft();
+    run(2); kill(c,2);                          // 2 of 10 left
+    until(() => c.mode!==M_MARCH, 4000);
+    expect(c.mode).toBe(M_HOLD);
+    expect(orders.map(o => o[0])).toEqual(['hold']);
+    const [bx,by]=[c.bx,c.by];
+    run(200);
+    expect([c.bx,c.by]).toEqual([bx,by]);       // he waits
+    expect(c.mode).toBe(M_HOLD);
+    recruits(c,5);                              // the barracks sends more men
+    until(() => c.mode===M_ASSAULT, 3000);
+    expect(orders.map(o => o[0])).toEqual(['hold','assault']);
+    expect(c.members.filter(id => { const h=byId(id)!; return (h.x-c.bx)**2+(h.y-c.by)**2<40*40; }).length).toBeGreaterThanOrEqual(6);
+    run(100);
+    expect(owner[tileAt({ x:c.bx, y:c.by })]).toBe(2);           // and goes in
+  });
+
+  it('holding, he takes the army home after two minutes without reinforcements', () => {
+    const { c }=attack(10);
+    const orders=collect('order');
+    noDraft();
+    run(2); kill(c,2);
+    until(() => c.mode===M_HOLD, 4000);
+    until(() => c.phase===2, 1300);
+    expect(orders.map(o => o[0])).toEqual(['hold','home']);
+  });
+
+  it('bled to 20% in the attack, he falls back out of their land three times in four, regroups, and goes in again at 60%; or else fights to the death', () => {
+    const prand=W.prand;
+    try {
+      for (const roll of [0.5, 0.9]){
+        const { c }=attack(10);
+        const orders=collect('order');
+        noDraft();
+        until(() => c.mode===M_ASSAULT, 4000);
+        run(20); kill(c,2);
+        W.prand=() => roll; tick(); tick(); W.prand=prand;
+        if (roll<RETREAT_CHANCE){
+          expect(c.mode).toBe(M_FALLBACK);
+          expect(orders.map(o => o[0])).toEqual(['assault','retreat']);
+          until(() => c.mode===M_REGROUP, 2000);
+          expect(owner[tileAt({ x:c.bx, y:c.by })]).not.toBe(2);   // outside their border
+          expect(orders.map(o => o[0])).toEqual(['assault','retreat','regroup']);
+          run(100); expect(c.mode).toBe(M_REGROUP);
+          recruits(c,5);
+          until(() => c.mode===M_ASSAULT, 3000);
+          expect(orders.map(o => o[0])).toEqual(['assault','retreat','regroup','assault']);
+        } else {
+          expect(c.stand).toBe(true);
+          expect(c.mode).toBe(M_ASSAULT);
+          expect(orders.map(o => o[0])).toEqual(['assault','stand']);
+          kill(c,1); run(5);
+          expect(orders.map(o => o[0])).toEqual(['assault','stand']);   // no second thoughts
+        }
+      }
+    } finally { W.prand=prand; }
+  });
+
+  it('if he falls, his barracks\' army is leaderless for the rest of the war: its new men charge on their own, one by one', () => {
+    const { c }=attack(10);
+    const orders=collect('order');
+    noDraft();
+    until(() => c.phase===1, 400); run(20);
+    byId(c.leader)!.hp=0; run(2);
+    expect(orders.map(o => o[0])).toEqual(['fell']);
+    expect([c.leader, c.mode]).toEqual([-1, M_BLIND]);
+    expect(leaderlessIn(1,c.unit)).toBe(2);
+    // the rest fall too; then each new man the barracks raises sets off alone, with no leader
+    const key=c.unit;
+    kill(c,0); run(2);
+    expect(W.campaigns.filter(k => k.a===1)).toHaveLength(0);
+    const [h]=recruits(c,1);
+    run(12);
+    const k=W.campaigns.find(k => k.a===1)!;
+    expect([k.unit, k.mode, k.leader, k.rank, h.war]).toEqual([key, M_BLIND, -1, 0, k.id]);
+    const far=(N(2).capTile%TW-tileAt(h)%TW)**2+(((N(2).capTile/TW)|0)-((tileAt(h)/TW)|0))**2;
+    run(150);
+    const now=(N(2).capTile%TW-tileAt(h)%TW)**2+(((N(2).capTile/TW)|0)-((tileAt(h)/TW)|0))**2;
+    expect(now).toBeLessThan(far);              // straight for the enemy, formation or not
+    // peace ends it
+    makePeace(1,2);
+    expect(leaderlessIn(1,key)).toBe(-1);
+  });
+
+  it('a leader who gets home ahead of his army is not mourned', () => {
+    const { c }=attack(10);
+    const orders=collect('order');
+    until(() => c.phase===1, 400); run(30);
+    makePeace(1,2);
+    until(() => !W.campaigns.includes(c), 3000);
+    expect(orders.filter(o => o[0]==='fell' || o[0]==='slain')).toHaveLength(0);
+  });
+});
+
 describe('intercepting', () => {
   it('sends soldiers after an enemy army, once, and brings them home when it is gone', () => {
     world(1); quiet(); paintToward(1,2);
     soldiers(N(1),8); soldiers(N(2),6); run(1);
     expect(declare(2,1,false,6)).toBe(true);
+    noDraft(2);   // (no reinforcements for it)
     const E=W.campaigns[0], blows=collect('hit');
     queueCommand({ type:'intercept', nation:1, campaign:E.id, soldiers:6 }); tick();
     const I=W.campaigns.find(c => c.a===1)!;

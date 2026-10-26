@@ -9,13 +9,21 @@ import { reduceMotion } from '../client';
 export const LINES: Record<string, string[]> = {
   // soldiers marching in a counter-attack
   revenge: ['Once more into the breach!', 'They will pay for that mistake!', 'Now you will see our wrath!', "Gather up! It's time for revenge!"],
+  // an army's leader giving his orders (sim order events)
+  march: ['Form ranks! Forward, march!', 'Keep the line and follow me!', 'Banners high! On to their border!'],
+  hold: ['Halt! We are too few.', 'Hold here until more men come up!', 'Not yet. We wait for reinforcements.'],
+  assault: ['Charge!', 'Into their land! Break them!', 'Forward, all of you! Attack!', 'Now! For the crown!'],
+  retreat: ['Fall back! Fall back!', 'Retreat to the border and regroup!', 'Pull back, we need more men!'],
+  stand: ['No retreat! We fight to the last!', 'Stand your ground! To the death!', 'We will not run from them!'],
+  regroup: ['Regroup here! Fresh men are coming.', 'Close ranks and catch your breath.', 'We wait here until we are strong again.'],
+  home: ['No help is coming. Back home, all of you.', 'Enough. We march home.'],
 };
 const SHOW_MS = 2600, FADE_MS = 250;
 interface Bubble { text: string; t0: number; }
 const bubbles = new Map<number, Bubble>();   // person id -> what they are saying
 let lastTalk = 0;
 
-const pick = <T,>(a: T[]) => a[(Math.random()*a.length)|0];
+export const pick = <T,>(a: T[]) => a[(Math.random()*a.length)|0];
 /** Person `id` says `text` for a couple of seconds. */
 export function say(id: number, text: string, now=performance.now()){ bubbles.set(id,{ text, t0:now }); }
 

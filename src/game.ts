@@ -16,7 +16,8 @@ import { resetStyles } from './render/style';
 import { resetLabels, resetGhosts, noteBlow, noteSwing, noteArrow } from './render/render';
 import { onStory } from './ui/story';
 import { resetPeople } from './render/people';
-import { resetSpeech } from './render/speech';
+import { resetSpeech, say, pick, LINES } from './render/speech';
+import { RANKS } from './sim/war';
 import { setupBuildPanel, toggleBuildPanel } from './ui/build';
 import { ui, log, toast, showHUD, checkEnd, onEliminated, onCapitalFell, onBuildingPlaced } from './ui/hud';
 import { setupDiplomacy, resetDiplomacy, noteDeath } from './ui/diplomacy';
@@ -86,9 +87,40 @@ listen({
     floats.push({ x, y:y-6, text: gold ? `+${gold} gold` : 'Deserted', t0:performance.now(), c: gold ? '#ffe27a' : '#ff9a8a' });
   },
   armored: (id,x,y,tier) => { gatePuff(x,y-2,1); if (W.humans.find(h => h.id===id)?.o===PLAYER) floats.push({ x, y:y-6, text:`Armour ${TIER_NAME[tier]}`, t0:performance.now(), c:'#dfe6ec' }); },
+  // an army's leader gives his orders aloud, and the log tells of those that matter to you
+  order: (kind,a,d,rank,id,x,y) => {
+    const r=RANKS[rank].toLowerCase();
+    if (kind==='fell' || kind==='slain'){
+      // whoever is nearest cries it out
+      let best=-1, bd=40*40; for (const h of W.humans) if (h.o===a && h.kind===1 && h.hp>0 && h.id!==id){ const e=(h.x-x)**2+(h.y-y)**2; if (e<bd){ bd=e; best=h.id; } }
+      if (best>=0) say(best,`The ${r} has fallen!`);
+    } else if (LINES[kind]) say(id,pick(LINES[kind]));
+    const t=ORDER_LOG[kind]; if (!t) return;
+    if (a===PLAYER){ const [text,mood]=t.mine(r,nm(d)); log(text,mood); if (kind==='fell' || kind==='slain' || kind==='retreat') toast(text.split(':')[0]); }
+    else if (d===PLAYER && t.theirs){ const [text,mood]=t.theirs(r,nm(a)); log(text,mood); }
+  },
   annexed: (loser,winner) => { if (winner===PLAYER){ log(`You took the castle of ${nm(loser)}: its land and people are yours`,'good'); toast(`${nm(loser)} is yours`); } },
 });
 const GOOD_COL=['#e9b26a','#dcd6cc','#ffa060'];
+type Mood = 'good' | 'bad' | undefined;
+const ORDER_LOG: Record<string, { mine: (r: string, foe: string) => [string, Mood]; theirs?: (r: string, foe: string) => [string, Mood] }> = {
+  hold: { mine: (r,f) => [`Your ${r} halts at the border of ${f}: too few men to attack, he waits for reinforcements`,'bad'],
+          theirs: (r,f) => [`The ${r} of ${f}'s army halts at your border, waiting for reinforcements`,'good'] },
+  assault: { mine: (r,f) => [`Your ${r} gives the order: into ${f}, attack!`,'good'],
+             theirs: (r,f) => [`An army of ${f} under its ${r} crosses into your land`,'bad'] },
+  retreat: { mine: (r,f) => [`Your army in ${f} is bled white: its ${r} falls back to make good the losses`,'bad'],
+             theirs: (r,f) => [`${f}'s army falls back from your land to regroup`,'good'] },
+  stand: { mine: (r,f) => [`Your ${r} refuses to retreat: your army in ${f} fights to the death!`,'good'],
+           theirs: (r,f) => [`${f}'s ${r} refuses to retreat: his army fights to the death`,'bad'] },
+  regroup: { mine: (r,f) => [`Your ${r} regroups outside ${f}: he attacks again once 60% of his army is back`,undefined],
+             theirs: (_r,f) => [`${f}'s army regroups at your border`,'bad'] },
+  home: { mine: (r,f) => [`No reinforcements came: your ${r} takes the army home from ${f}`,'bad'],
+          theirs: (_r,f) => [`${f}'s army gives up and goes home`,'good'] },
+  fell: { mine: (r,f) => [`Your ${r} has fallen: for the rest of the war with ${f}, his barracks' soldiers charge leaderless, one by one`,'bad'],
+          theirs: (r,f) => [`You killed the ${r} of ${f}'s army: its soldiers fight on leaderless`,'good'] },
+  slain: { mine: (r,f) => [`Your ${r} has fallen fighting ${f}`,'bad'],
+           theirs: (r,f) => [`You killed the ${r} of ${f}'s army`,'good'] },
+};
 const TIER_NEWS=[['','','your builders guild can raise stone houses','your builders guild can raise manors'],['','','each villager pays 0.2 gold a second','each villager pays 0.3 gold a second'],
   ['','','your blacksmith can forge reinforced armour','your blacksmith can forge heavy armour'],
   ['','','your builders can rebuild watchtowers stronger','your builders can rebuild watchtowers into keeps'],

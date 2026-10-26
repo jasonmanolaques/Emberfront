@@ -18,7 +18,7 @@ import { H_SOLDIER, TASK_HARVEST, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TA
 import { units, unitLabel } from '../sim/army';
 import { chatter, drawSpeech } from './speech';
 import { G_WOOD, G_STONE, G_COPPER } from '../sim/resources';
-import { allied, atWar, HIT_TICKS } from '../sim/war';
+import { allied, atWar, HIT_TICKS, RANKS } from '../sim/war';
 
 const CARGO: string[][] = [];   // light, mid and dark of each good's load
 CARGO[G_WOOD]=['#d09a58','#a8743c','#6e4a26']; CARGO[G_STONE]=['#dcd6cc','#b0aa9e','#7c766c']; CARGO[G_COPPER]=['#ffbe80','#e08a48','#9c5426'];
@@ -67,8 +67,27 @@ function flashOf(src: HTMLCanvasElement){
 /** A box with a dark edge: loads, bags and planks carried above the head. */
 function box(x: number, y: number, w: number, h: number, c: string){ ctx.fillStyle=INK; ctx.fillRect(x-1,y-1,w+2,h+2); ctx.fillStyle=c; ctx.fillRect(x,y,w,h); }
 
+/** Each army's leader (person id) and his rank. */
+function leaders(){ const m=new Map<number, number>(); for (const c of W.campaigns) if (c.leader>=0) m.set(c.leader,c.rank); return m; }
+/** The leader's standard on his back, in his kingdom's colours, and his rank in gold pips above it. */
+function drawStandard(o: number, rank: number, bx: number, fy: number, left: boolean, now: number){
+  const st=styleOf(o), x=left ? bx+4 : bx-1, wave=reduceMotion ? 0 : ((now/300)|0)&1;
+  ctx.fillStyle=INK; ctx.fillRect(x-1,fy-17,3,14);
+  ctx.fillStyle='#6a4a2c'; ctx.fillRect(x,fy-16,1,13);
+  ctx.fillStyle='#e8c860'; ctx.fillRect(x,fy-17,1,1);   // the finial
+  const fx=left ? x+1 : x-4;                              // the flag streams behind him
+  ctx.fillStyle=INK; ctx.fillRect(fx-1,fy-17,5,6);
+  ctx.fillStyle=st.roof; ctx.fillRect(fx,fy-16,4,4);
+  ctx.fillStyle=st.roofL; ctx.fillRect(fx,fy-16,4,1);
+  ctx.fillStyle=INK; ctx.fillRect(left ? fx+3 : fx,fy-15+wave,1,1);
+  const w=rank*2+1, px=Math.round(bx+2-w/2);
+  ctx.fillStyle=INK; ctx.fillRect(px,fy-21,w,3);
+  ctx.fillStyle='#ffd23f'; for (let i=0;i<rank;i++) ctx.fillRect(px+1+i*2,fy-20,1,1);
+}
+
 function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
   const byId = new Map<number, Human>(); for (const p of W.humans) byId.set(p.id,p);
+  const lead = leaders();
   const nextX = new Map<number, number>(), nextY = new Map<number, number>();
   const step = reduceMotion ? 0 : ((now/170)|0)&1;
   // draw from the back row forward, so people nearer the bottom of the screen stand in front
@@ -111,7 +130,7 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
     const sx = left ? bx-(spr.width-BODY_X-4) : bx-BODY_X;
     ctx.drawImage(spr, sx, fy-FEET_Y);
     if (flash>0){ ctx.globalAlpha=flash*0.9; ctx.drawImage(flashOf(spr), sx, fy-FEET_Y); ctx.globalAlpha=1; }
-    if (kind!==0) { if (p.loot) drawLoot(bx,fy); continue; }
+    if (kind!==0) { if (p.loot) drawLoot(bx,fy); const r=lead.get(p.id); if (r) drawStandard(p.o,r,bx,fy,left,now); continue; }
     if (p.brave>=1){   // up in arms: a pitchfork
       const tx=left ? bx-1 : bx+4; ctx.fillStyle=INK; ctx.fillRect(tx-1,fy-9,3,9);
       ctx.fillStyle='#8a6a40'; ctx.fillRect(tx,fy-7,1,7); ctx.fillStyle='#c9cdd1'; ctx.fillRect(tx,fy-8,1,1); ctx.fillRect(tx-1,fy-9,1,1); ctx.fillRect(tx+1,fy-9,1,1);
@@ -354,6 +373,18 @@ export function render(now: number, dt: number){
       ctx.fillStyle='rgba(8,14,22,.9)'; ctx.fillRect(sx-tw/2-sq-5*dpr,sy-sq/2-1*dpr,sq+2*dpr,sq+2*dpr);
       ctx.fillStyle=N[i].hex; ctx.fillRect(sx-tw/2-sq-4*dpr,sy-sq/2,sq,sq);   // the kingdom's colour
       ctx.fillStyle=i===PLAYER ? '#ffe27a' : '#f2f5f8'; ctx.strokeText(text,sx,sy); ctx.fillText(text,sx,sy);
+    }
+  }
+  // each army's leader by rank, under his feet, once close enough
+  if (zs>=2.5){
+    const fs=Math.round(11*dpr); ctx.font=`600 ${fs}px "Pixelify Sans", ui-monospace, monospace`; ctx.lineWidth=Math.max(2,fs*0.25);
+    for (const c of W.campaigns){
+      if (c.leader<0) continue;
+      const p=W.humans.find(h => h.id===c.leader); if (!p || p.hp<=0 || indoors(p)) continue;
+      const sx=(p.x*K-camX)*zoom, sy=(p.y*K-camY)*zoom+3*zoom+fs*0.6;
+      if (sx<-60||sy<-20||sx>w+60||sy>h+20) continue;
+      ctx.strokeStyle='rgba(8,14,22,.9)'; ctx.fillStyle=c.a===PLAYER ? '#ffe27a' : '#f2f5f8';
+      ctx.strokeText(RANKS[c.rank],sx,sy); ctx.fillText(RANKS[c.rank],sx,sy);
     }
   }
   // people talking, once close enough to see who

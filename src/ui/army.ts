@@ -5,6 +5,7 @@ import { PLAYER, PS, B_BARRACKS } from '../core/constants';
 import { W, pType, pOwner } from '../sim/state';
 import { unitAt, units, armorWanted, TIER_NAME, UNIT_SIZE } from '../sim/army';
 import { R_INFANTRY } from '../sim/research';
+import { RANKS, M_HOLD, M_ASSAULT, M_FALLBACK, M_REGROUP, M_BLIND, leaderlessIn } from '../sim/war';
 import { drawIcon } from '../render/sprites';
 import { styleOf } from '../render/style';
 import { armyName } from './armies';
@@ -25,6 +26,23 @@ export function openArmy(q: number){
 export function closeArmy(){ panel.hidden=true; plot=-1; }
 $('aClose').addEventListener('click', closeArmy);
 
+const nm = (id: number) => W.nations[id]?.name ?? 'the enemy';
+/** What this barracks' army is doing out there, and who leads it. */
+function fieldReport(key: number){
+  const c=W.campaigns.find(c => c.a===PLAYER && c.unit===key && c.phase<2);
+  const lost=leaderlessIn(PLAYER,key);
+  if (!c) return lost>=0 ? `Leaderless in the war with ${nm(lost)}: new soldiers charge on their own` : 'At home';
+  const what=c.raid ? `raiding ${nm(c.d)}` : c.target>=0 ? `intercepting ${nm(c.d)}'s army`
+    : c.mode===M_BLIND ? `charging ${nm(c.d)} leaderless, one by one`
+    : c.mode===M_HOLD ? `holding at ${nm(c.d)}'s border for reinforcements`
+    : c.mode===M_REGROUP ? `regrouping outside ${nm(c.d)}`
+    : c.mode===M_FALLBACK ? `falling back from ${nm(c.d)}`
+    : c.mode===M_ASSAULT ? (c.stand ? `fighting to the death in ${nm(c.d)}` : `attacking ${nm(c.d)}`)
+    : `marching on ${nm(c.d)}`;
+  const who=c.leader>=0 ? `${RANKS[c.rank]}, ` : c.rank && c.mode!==M_BLIND ? 'Leaderless, ' : '';
+  return `${who}${c.members.length} men ${what}`;
+}
+
 const pieces = (n: number[]) => [3,2].filter(t => n[t]).map(t => `${n[t]} ${TIER_NAME[t]}`).join(' · ') || 'none';
 
 /** Brings the panel up to date (cheap; skipped while it is closed). */
@@ -36,6 +54,7 @@ export function refreshArmy(){
   $('aHome').textContent=`${u.home}/${u.cap}`;
   $('aAway').textContent=String(u.members.length-u.home);
   $('aMods').textContent=String(u.plots.length);
+  $('aField').textContent=fieldReport(u.key);
   $('aTiers').textContent=[1,2,3].map(t => `${u.tiers[t]} ${TIER_NAME[t]}`).join(' · ');
   $('aWorn').textContent=pieces(u.tiers);
   $('aRacks').textContent=pieces(u.stored);

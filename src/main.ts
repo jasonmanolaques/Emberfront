@@ -13,6 +13,7 @@ import { updateHUD } from './ui/hud';
 import { bindInput } from './ui/input';
 import { refreshBuildPanel } from './ui/build';
 import { $ } from './ui/dom';
+import { openArmy } from './ui/army';
 import { newGame, step, trySpawn, playerAttack, setInvest, setSoldierShare } from './game';
 
 let acc=0, last=performance.now(), hudAt=0;
@@ -39,7 +40,7 @@ function toSpawn(){ if (client.state!=='spawn'){ $('intro').hidden=true; $('scri
   run:(n: number)=>{ for (let i=0;i<n;i++) step(); }, attack:(t: number, r?: number)=>playerAttack(t,r), setInvest, setSoldierShare, command:(c: unknown)=>queueCommand(c as never), get humans(){return W.humans;}, get cam(){return cam;},
   get campaigns(){return W.campaigns;}, get W(){return W;},
   get shots(){return shots;},
-  setHp:(q: number, v: number)=>{ pHp[q]=v; }, redraw:(q: number)=>drawPlotAndNeighbours(q),
+  setHp:(q: number, v: number)=>{ pHp[q]=v; }, redraw:(q: number)=>drawPlotAndNeighbours(q), openArmy,
   newWorld:(seed?: number)=>newGame(seed),
   freePlots:()=>{ const n=W.nations[1], out: number[]=[]; if (n) for (let q=0;q<NP;q++) if (!plotProblem(n,q)) out.push(q); return out; },
   dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, wbuf, obj:octx.getImageData(0,0,RW,RH).data, attacks:W.attacks, campaigns:W.campaigns, tickN:W.tickN }) };

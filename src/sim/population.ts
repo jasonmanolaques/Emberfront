@@ -27,7 +27,7 @@ import { W, owner, occ, pType, pOwner, pBurn, pPrio, pAband, pCenter, pTimer, pT
 import { homeScore, startSite, cancelSite, finishHouse } from './buildings';
 import { on } from './events';
 import { GOOD_OF, YIELD, WORK_TICKS, available, harvest } from './resources';
-import { updateWar, marchStep, guardStep, alarmStep, mayStand, spread } from './war';
+import { updateWar, reinforce, marchStep, guardStep, alarmStep, mayStand, spread } from './war';
 import { HOUSE_BEDS, R_HOUSING, R_TOWERS, MAX_TIER } from './research';
 import { gained, spent, mayInvest } from './ledger';
 import { TOWER_COST } from './defense';
@@ -662,6 +662,7 @@ export function updatePopulation(){
     garrison(n, mine);
     staffGuilds(n, mine);
   }
+  if (W.tickN%10===5) reinforce();   // soldiers at their barracks join its army in the field
   for (const h of H) if (h.war>=0) marchStep(h); else step(h);
   spread();   // fighters keep a little room between them
   // headcount after everyone has moved, so it matches what is on the map this tick

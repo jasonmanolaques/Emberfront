@@ -82,6 +82,10 @@ export interface Campaign {
   why: string;                       // why it is going home: 'recall', 'peace', 'cut', 'done', 'won'
   unit: number;                      // the barracks (a plot of it) whose army this is, or -1
   inspired: boolean;                 // a counter-attack: thirsty for revenge, it hits harder and marches faster
+  leader: number;                    // id of the soldier leading it, or -1 (none for 5 or fewer, or he fell)
+  rank: number;                      // the leader's rank by the army's size when it set out (RANKS in war.ts; 0 none)
+  mode: number;                      // attacks: marching, holding at the border, assault, falling back, regrouping or charging leaderless (M_* in war.ts)
+  stand: boolean;                    // its leader chose to fight to the death: no more retreats
 }
 export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; }   // gold still to spend on this front
 
@@ -133,4 +137,5 @@ export const W = {
   occCount: new Int32Array(1),       // [o*M+b] tiles of o's that b occupies
   lost: new Uint8Array(1),           // [o*M+b] b has occupied some of o's land in this war (cleared when o has it all back)
   ready: new Int32Array(1),          // [o*M+b] tick o's army took all its land back from b and stands ready to counter-attack (0 = not)
+  orphans: [] as number[],           // barracks whose army lost its leader in a war still going: flat [kingdom, barracks plot, enemy]
 };
