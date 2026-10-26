@@ -1,6 +1,6 @@
 /* ---------- simulation entry points: worlds, matches, commands, ticks ----------
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
-import { TW, TH, NT, PW, PH, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, BOT_COLS, PLAYER_COL, GOLD_START, GOLD_PER_SEC, TAX_PER_VILLAGER, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
+import { TW, TH, NT, PW, PH, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, BOT_COLS, PLAYER_COL, GOLD_START, GOLD_PER_SEC, TAX_PER_VILLAGER, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
 import { mulberry32 } from '../core/rng';
 import { W, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, pHp, pTier, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
@@ -23,9 +23,9 @@ function blankNation(id: number, name: string, hex: string, isPlayer: boolean): 
   return { id, name, hex, isPlayer,
     gold:0, income:0, strength:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
     plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, beds:0,
-    sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0, nextWave:0,
+    sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0, nextWave:0, unpaid:0,
     soldierShare:0, humanProg:0, villagers:0, soldiers:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0,
-    study:R_HOUSING, tier:[1,1,1], xp:[0,0,0] };
+    study:R_HOUSING, tier:[1,1,1,1,1], xp:[0,0,0,0,0] };
 }
 function makeNation(id: number, name: string, hex: string, isPlayer: boolean): Nation {
   const srand=W.srand;
@@ -159,14 +159,17 @@ function applyCommand(c: Command){
 }
 
 /* ---------- simulation tick ---------- */
+/** Gold a second before wages: the passive income and the villagers' tax, with the minters' share. */
+export const grossIncome = (n: Nation) => (GOLD_PER_SEC+TAX_PER_VILLAGER*n.tier[R_TAXES]*n.taxpayers)*(1+0.1*n.minters);
 export function tick(){
   if (W.commands.length){ for (const c of W.commands) applyCommand(c); W.commands.length=0; }
   W.simTime+=TICK; W.tickN++;
   const N=W.nations;
-  // passive income plus each villager's tax (more with taxation research); each coin minter adds 10% to the total
+  // passive income plus each villager's tax (more with taxation research), each coin minter adding
+  // 10% to that, less the soldiers' wages; the treasury can go below zero
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive) continue;
-    n.income=(GOLD_PER_SEC+TAX_PER_VILLAGER*n.tier[R_TAXES]*n.taxpayers)*(1+0.1*n.minters); n.gold+=n.income*TICK;   // only housed, working villagers pay
+    n.income=grossIncome(n)-WAGE*n.soldiers; n.gold+=n.income*TICK;   // only housed, working villagers pay
   }
   for (const A of W.attacks) if (!A.done) stepAttack(A);
   if (W.tickN%2===0) W.attacks=W.attacks.filter(A=>!A.done);
@@ -180,6 +183,6 @@ export function tick(){
   updateStories();
   for (let i=1;i<N.length;i++){
     const n=N[i];
-    n.strength = n.alive ? n.tiles*STR_TILE + n.villagers*STR_VILLAGER + n.soldiers*STR_SOLDIER + n.gold*STR_GOLD : 0;
+    n.strength = n.alive ? n.tiles*STR_TILE + n.villagers*STR_VILLAGER + n.soldiers*STR_SOLDIER + Math.max(0,n.gold)*STR_GOLD : 0;
   }
 }

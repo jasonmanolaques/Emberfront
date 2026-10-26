@@ -1,8 +1,9 @@
 /* ---------- bots ---------- */
-import { B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, PW, NP } from '../core/constants';
+import { B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, PW, NP, WAGE } from '../core/constants';
 import { W, pType, pOwner, pPrio, type Nation } from './state';
 import { launch } from './territory';
-import { R_HOUSING, R_TAXES, R_INFANTRY, TOPICS, setStudy, maxed } from './research';
+import { grossIncome } from './sim';
+import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, TOPICS, setStudy, maxed } from './research';
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, canAfford, placeProblem, build, togglePriority, anyWithin, isEnemyLand } from './buildings';
 import { allied, atWar, ready, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge } from './war';
@@ -58,14 +59,16 @@ function pickPlot(n: Nation, type: number){
   return best;
 }
 
-/** Bots study whichever topic is furthest behind: housing first, then infantry, then taxation. */
-function botStudy(n: Nation){
-  let best=R_HOUSING; for (const t of [R_HOUSING, R_INFANTRY, R_TAXES]) if (n.tier[t]<n.tier[best]) best=t;
+/** Bots study whichever topic is furthest behind: housing first, then infantry, the watchtowers,
+    the castle and taxation; a kingdom with enemies on its border puts its towers before its houses. */
+function botStudy(n: Nation, exposed: boolean){
+  const order=exposed ? [R_TOWERS, R_HOUSING, R_INFANTRY, R_CASTLE, R_TAXES] : [R_HOUSING, R_INFANTRY, R_TOWERS, R_CASTLE, R_TAXES];
+  let best=order[0]; for (const t of order) if (n.tier[t]<n.tier[best]) best=t;
   setStudy(n,best);
 }
 
 function botBuild(n: Nation, exposed: boolean){
-  botStudy(n);
+  botStudy(n,exposed);
   for (const type of wishlist(n,exposed)){
     const s=STRUCTURES.find(s=>s.type===type)!;
     if (!canAfford(n,s)) continue;
@@ -83,7 +86,15 @@ const defence = (D: Nation) => 0.7*D.soldiers + 2*D.towers + 2;
 
 /** The share of its people a bot wants under arms: few in peace, so it grows; more with a much
     stronger army next door; many at war, and nearly everyone when an enemy far outnumbers it. */
-function armyShare(n: Nation){
+function armyShare(n: Nation){ return Math.min(wantedShare(n), affordable(n)); }
+/** The share of its people a bot can pay as soldiers: wages up to 85% of its income (more while its
+    treasury is full, none to spare while it is empty). */
+function affordable(n: Nation){
+  const people=n.villagers+n.soldiers+n.beggars; if (!people) return 1;
+  const budget=grossIncome(n)*(n.gold<0 ? 0.6 : n.gold>400 ? 1.3 : 0.85);
+  return budget/WAGE/people;
+}
+function wantedShare(n: Nation){
   const M=W.M, id=n.id, peace=0.12+(n.attackAt-0.5)*0.5;   // 12% to 27% by temper
   let enemies=0, war=false, incoming=0;
   for (let o=1;o<M;o++) if (o!==id && atWar(id,o) && W.nations[o].alive){ war=true; enemies+=W.nations[o].soldiers; }

@@ -30,9 +30,9 @@ import { on } from './events';
 import { setOwner } from './territory';
 import { ignite, SIZE } from './buildings';
 import { census } from './census';
-import { HOUSE_TOUGH } from './research';
+import { BLD_HP, bldHp, wear, towerTier, castleTier, TOWER_RELOADS, TOWER_DMGS, CASTLE_MEND } from './defense';
 import { SOLDIER_DMG, units, unitAt, type Unit } from './army';
-import { H_SOLDIER, TASK_ROAM, TOWER_RANGE, TOWER_RELOAD, TOWER_DMG, maxHp, REGEN, pace, onCastle, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf } from './population';
+import { H_SOLDIER, TASK_ROAM, TOWER_RANGE, maxHp, REGEN, pace, onCastle, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf } from './population';
 
 export const LOOT_GOLD = 50;          // a raider's loot bag, paid when he gets it home
 export const MELEE_R = 2.6;           // pixels: close enough to strike
@@ -45,7 +45,7 @@ const ENGAGE_R = 16;                  // pixels around him a soldier in the fiel
 const LEASH = 34;                     // ...with enemies this close to his banner
 const RAID_R = 22;                    // pixels around the banner raiders spread out to burn
 const GUARD_R = 26, BARRACKS_R = 30, CAPITAL_R = 40;   // pixels around their post soldiers at home defend
-export const CASTLE_RANGE = 40, CASTLE_RELOAD = 20, CASTLE_DMG = 2;   // the castle shoots further and twice as often as a watchtower
+export const CASTLE_RANGE = 40;       // the castle shoots further than a watchtower (and twice as often: sim/defense.ts)
 const THREAT_TILES = 12;              // an enemy banner this many tiles from our land, and the home guard turns out
 const DEFEND_R = 30;                  // pixels around its line the home guard fights
 export const DANGER_R = 26;           // pixels: an enemy this close alarms a villager
@@ -65,11 +65,7 @@ const STRAGGLE_TICKS = 300;           // ...or, with most of the army still far 
 export const OFFER_TICKS = 300;       // a peace offer stands 30 s
 export const MAX_ALLIES = 3;
 const GRUDGE_TICKS = 900;             // a kingdom attacked in the last 90 s won't ally with its attacker
-/** Blows a building takes before it burns; the castle's are what stands between a kingdom and annexation. */
-export const BLD_HP: Record<number, number> = { [B_HOUSE]: 6, [B_FARM]: 5, [B_TOWER]: 16, [B_BARRACKS]: 12, [B_MINTER]: 10,
-  [B_PLANTATION]: 10, [B_QUARRY]: 10, [B_COPPERMINE]: 10, [B_MINE]: 8, [B_RESEARCH]: 10, [B_GUILD]: 10, [B_CASTLE]: 400 };
-/** Blows the building on plot q takes before it burns: stone houses 3 times a hovel's, manors 6 times. */
-export const bldHp = (q: number) => pType[q]===B_HOUSE ? BLD_HP[B_HOUSE]*HOUSE_TOUGH[pTier[q]] : (BLD_HP[pType[q]] ?? 8);
+export { BLD_HP, bldHp };
 
 export const allied = (a: number, b: number) => a!==b && W.ally[a*W.M+b]===1;
 export const atWar = (a: number, b: number) => W.atWar[a*W.M+b]===1;
@@ -681,6 +677,10 @@ function reclaim(h: Human){
     in range, or else the nearest enemy villager there, once per reload; so does the castle. */
 function towersFire(){
   const N=W.nations, M=W.M;
+  for (let i=1;i<N.length;i++){
+    const n=N[i], q=n.capPlot; if (!n.alive || n.capTile<0 || pHp[q]<=0) continue;
+    const was=wear(q); pHp[q]=Math.max(0,pHp[q]-CASTLE_MEND); if (wear(q)!==was) on.plotChanged(q);
+  }
   const shoot=(i: number, x: number, y: number, range: number, dmg: number) => {
     let target: Human | null=null, bd=Infinity, soldier=false;
     for (const h of W.humans){
@@ -694,12 +694,14 @@ function towersFire(){
   };
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive || !warring[i]) continue;
+    const tr=TOWER_RELOADS[towerTier(i)], td=TOWER_DMGS[towerTier(i)];
     for (const q of n.blds){
-      if ((q+W.tickN)%TOWER_RELOAD || pType[q]!==B_TOWER || pOwner[q]!==i || pBurn[q]>0) continue;
-      shoot(i,(q%PW)*8+4,((q/PW)|0)*8+1,TOWER_RANGE,TOWER_DMG);
+      if ((q+W.tickN)%tr || pType[q]!==B_TOWER || pOwner[q]!==i || pBurn[q]>0) continue;
+      shoot(i,(q%PW)*8+4,((q/PW)|0)*8+1,TOWER_RANGE,td);
     }
-    const q=n.capPlot;
-    if (n.capTile>=0 && (q+W.tickN)%CASTLE_RELOAD===0 && pBurn[q]<=0) shoot(i,(q%PW)*8+8,((q/PW)|0)*8+2,CASTLE_RANGE,CASTLE_DMG);
+    // the castle mends itself; it shoots like two towers of its tier: twice as often, as hard
+    const q=n.capPlot, ct=castleTier(i), cr=TOWER_RELOADS[ct], t=q+W.tickN;
+    if (n.capTile>=0 && pBurn[q]<=0 && (t%cr===0 || (t+(cr>>1))%cr===0)) shoot(i,(q%PW)*8+8,((q/PW)|0)*8+2,CASTLE_RANGE,TOWER_DMGS[ct]);
   }
 }
 
@@ -762,9 +764,9 @@ function pickBuilding(h: Human, c: Campaign){
   let best=-1, bs=Infinity;
   for (let y=qy0;y<=qy1;y++) for (let x=qx0;x<=qx1;x++){
     const q=mainOf(y*PW+x); if (!targetable(q,c) || pType[q]===B_CASTLE) continue;
-    const [x0,y0,x1,y1]=rectOf(q), d=Math.hypot(clamp(h.x,x0,x1)-h.x, clamp(h.y,y0,y1)-h.y);
-    if (d>ENGAGE_R+8) continue;
-    const s=d-(pType[q]===B_TOWER ? 10 : 0);   // towers first: they are shooting at us
+    const [x0,y0,x1,y1]=rectOf(q), d=Math.hypot(clamp(h.x,x0,x1)-h.x, clamp(h.y,y0,y1)-h.y), tower=pType[q]===B_TOWER;
+    if (d>(tower ? TOWER_RANGE+4 : ENGAGE_R+8)) continue;
+    const s=d-(tower ? 40 : 0);   // a tower that can shoot us comes first: it bleeds the whole army while it stands
     if (s<bs || (s===bs && q<best)){ bs=s; best=q; }
   }
   return best;
@@ -788,15 +790,17 @@ function choose(h: Human, c: Campaign){
   }
   if (best){ h.foe=best.id; h.aim=-1; return; }
   h.foe=-1;
-  if (h.aim>=0 && targetable(h.aim,c)) return;
-  h.aim=pickBuilding(h,c);
+  if (h.aim>=0 && targetable(h.aim,c) && pType[h.aim]===B_TOWER) return;   // busy with a tower: stay on it
+  const q=pickBuilding(h,c);
+  if (q>=0 || !(h.aim>=0 && targetable(h.aim,c))) h.aim=q;   // a tower in reach takes over from anything else
 }
 function hitBuilding(h: Human, c: Campaign){
   if (h.cool>0) return;
   h.cool=HIT_TICKS;
   const q=h.aim, ty=pType[q];
+  const was=wear(q);
   pHp[q]+=BLD_DMG; on.bldHit(q);
-  if (pHp[q]<bldHp(q)) return;
+  if (pHp[q]<bldHp(q)){ if (wear(q)!==was) on.plotChanged(q); return; }   // it looks the worse for it
   h.aim=-1;
   if (ty===B_CASTLE){ annex(c.d,c.a); return; }
   ignite(q);

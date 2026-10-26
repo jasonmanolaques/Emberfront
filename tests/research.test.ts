@@ -43,8 +43,8 @@ describe('research', () => {
   it('earns a point a second per station, for housing first, and goes up a tier at 50 then 100', () => {
     start(12345); run(20);
     expect(me().study).toBe(R_HOUSING);
-    expect(me().tier).toEqual([1,1,1]);
-    run(100); expect(me().xp).toEqual([0,0,0]);   // nothing without a station
+    expect(me().tier).toEqual([1,1,1,1,1]);
+    run(100); expect(me().xp).toEqual([0,0,0,0,0]);   // nothing without a station
     place(B_RESEARCH); run(100);                // 10 s
     expect(me().xp[R_HOUSING]).toBe(100);       // 10 points, in tenths
     place(B_RESEARCH); run(100);                // two stations: twice as fast
@@ -66,19 +66,19 @@ describe('research', () => {
     start(12345); run(20);
     place(B_RESEARCH); run(200);
     queueCommand({ type:'research', nation:1, topic:R_TAXES }); run(100);
-    expect(me().xp).toEqual([200,100,0]);
+    expect(me().xp).toEqual([200,100,0,0,0]);
     queueCommand({ type:'research', nation:1, topic:R_HOUSING }); run(1);
     expect(me().study).toBe(R_HOUSING);
   });
 
   it('moves on to the other topic when one is done, and keeps its tiers if the stations burn', () => {
     start(12345); run(20);
-    me().tier=[3,1,1]; me().study=R_HOUSING;
+    me().tier=[3,1,1,1,1]; me().study=R_HOUSING;
     const q=place(B_RESEARCH); run(10);
     expect(me().study).toBe(R_TAXES);
     pType[q]=0; pOwner[q]=0; run(20);
     expect(me().labs).toBe(0);
-    expect(me().tier).toEqual([3,1,1]);
+    expect(me().tier).toEqual([3,1,1,1,1]);
   });
 
   it('raises each villager\'s tax by 0.1 a tier', () => {

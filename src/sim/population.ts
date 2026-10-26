@@ -22,7 +22,7 @@
    to the barracks that needs it most nearly (sim/army.ts says which armour each one wants).
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, until the kingdom sends them to war (sim/war.ts). */
-import { TW, TH, PW, TICK, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY } from '../core/constants';
+import { TW, TH, PW, TICK, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY } from '../core/constants';
 import { W, owner, occ, pType, pOwner, pBurn, pPrio, pAband, pCenter, pTimer, pTier, pHp, pArmor, resType, resBusy, type Human, type Nation } from './state';
 import { homeScore, startSite, cancelSite, finishHouse } from './buildings';
 import { on } from './events';
@@ -57,8 +57,6 @@ export const HOME_PACE = 1.15;   // soldiers on their own kingdom's land move 15
 export const REGEN = 0.01;        // hit points everyone heals a tick (0.1 a second)
 export const GARRISON = 5;       // soldiers a watchtower calls for
 export const TOWER_RANGE = 32;   // pixels a watchtower can shoot
-export const TOWER_RELOAD = 40;  // ticks between shots (4 s)
-export const TOWER_DMG = 2;
 const SEARCH_R = 40;             // tiles a villager looks around for work
 export const BUILD_TICKS = 40;   // ticks to put up a house (4 s)
 export const BEG_TICKS = 600;    // ticks homeless before a villager turns beggar (60 s)
@@ -344,6 +342,7 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
   const target=Math.round(n.soldierShare*mine.length);
   let diff=target-soldiers;
   if (!diff) return;
+  if (diff>0 && n.gold<0) return;   // nobody signs up while there is no money for wages
   const want=diff>0 ? H_SOLDIER : H_VILLAGER, from=diff>0 ? H_VILLAGER : H_SOLDIER;
   diff=Math.abs(diff);
   // first turn back anyone still walking to switch the other way
@@ -479,6 +478,24 @@ function staffGuilds(n: Nation, mine: Human[]){
     release(h); h.work=q; think(h); h.wait=0;
     on.builderHired(q,n.id,replaced);
   }
+}
+
+/* ---------- wages ---------- */
+/** With the treasury below zero for 10 seconds, unpaid soldiers start laying down their arms where
+    they stand, one every 3 seconds: the least armoured first, those at home before those away.
+    A deserter's armour is scrapped, and the kingdom gets 30 gold for each tier of it. */
+function payroll(n: Nation, mine: Human[]){
+  if (n.gold>=0){ n.unpaid=0; return; }
+  if (++n.unpaid<UNPAID_TICKS || (n.unpaid-UNPAID_TICKS)%DESERT_TICKS) return;
+  const home=(h: Human) => owner[tileOf(h.x,h.y)]===h.o ? 0 : 1;
+  const h=mine.filter(h => h.kind===H_SOLDIER && h.hp>0 && !indoors(h)).sort((a,b) => a.tier-b.tier || home(a)-home(b) || a.id-b.id)[0];
+  if (!h) return;
+  const tier=h.tier, gold=tier>=2 ? SCRAP_GOLD*tier : 0, f=h.hp/maxHp(h);
+  n.gold+=gold;
+  release(h); h.kind=H_VILLAGER; h.sp-=1; h.tier=0; h.base=-1; h.post=-1; h.site=-1; h.war=-1; h.foe=-1; h.aim=-1; h.loot=false; h.slot=0; h.brave=-1; h.calm=0;
+  h.hp=Math.max(0.5,VILLAGER_HP*f);
+  backToRoam(h);
+  on.deserted(n.id,h.x,h.y,tier,gold);
 }
 
 /* ---------- blacksmiths ---------- */
@@ -621,10 +638,11 @@ export function updatePopulation(){
       // newcomers fill the ranks first while the kingdom is short of soldiers (if it has a barracks)
       let soldiers=0;
       for (const h of mine) soldiers += switching(h) ? +(h.kind===H_VILLAGER) : +(h.kind===H_SOLDIER);
-      const soldier = barracks.length>0 && soldiers<Math.round(n.soldierShare*(mine.length+1));
+      const soldier = barracks.length>0 && n.gold>=0 && soldiers<Math.round(n.soldierShare*(mine.length+1));
       spawnHuman(n, soldier ? H_SOLDIER : H_VILLAGER, barracks);
       mine.push(H[H.length-1]);
     }
+    payroll(n, mine);
     balance(n, mine, barracks);
     for (const h of station(n, mine, switching)) if (!indoors(h) && !switching(h) && h.task===TASK_ROAM) backToRoam(h);   // off to his barracks
     armUp(n, switching);

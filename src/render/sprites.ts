@@ -7,6 +7,7 @@
 import { RW, RH, PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY } from '../core/constants';
 import { pType, pOwner, pVar, pMain, pAband, pTier } from '../sim/state';
 import { styleOf, type NationStyle } from './style';
+import { towerTier, castleTier, wear } from '../sim/defense';
 import { rows, outline, type Pal } from './pixel';
 
 export const objC = document.createElement('canvas'); objC.width = RW; objC.height = RH;
@@ -162,22 +163,63 @@ function drawBarracks(ox: number, oy: number, n: NationStyle, m: number){
   if (!(m&E_)){ for (const sx of [13,14]){ R(ox+sx,oy+9,1,5,C.woodD); P(ox+sx,oy+8,'#dcdcd0'); } }   // spears at the east end
 }
 
-/* ---------- watchtowers ---------- */
-function drawTower(ox: number, oy: number, n: NationStyle, m: number){
-  const st=C.st, sd=C.stD, sl=C.stL;
+/* ---------- watchtowers ----------
+   Tier 1 a plain stone tower; tier 2 taller, with a timber gallery and a pointed roof in the
+   kingdom's colours; tier 3 a broad pale keep with a spire, banners and braziers. From half its
+   blows a tower looks battered: battlements and roof knocked off, cracks, soot and rubble. */
+function drawTower(ox: number, oy: number, n: NationStyle, m: number, tier=1, worn=0){
+  const st=tier===3 ? '#cfc8ba' : C.st, sd=tier===3 ? '#9a9387' : C.stD, sl=tier===3 ? '#ebe5d8' : C.stL;
   // walls toward neighbouring towers, with battlements
   if (m&E_){ R(ox+10,oy+8,6,6,st); R(ox+10,oy+12,6,2,sd); for (let x=11;x<16;x+=2) R(ox+x,oy+6,1,2,st); R(ox+10,oy+8,6,1,sl); }
   if (m&W_){ R(ox,oy+8,6,6,st); R(ox,oy+12,6,2,sd); for (let x=0;x<5;x+=2) R(ox+x,oy+6,1,2,st); R(ox,oy+8,6,1,sl); }
   if (m&N_){ R(ox+6,oy,4,6,st); R(ox+9,oy,1,6,sd); }
   if (m&S_){ R(ox+6,oy+14,4,2,st); R(ox+9,oy+14,1,2,sd); }
-  R(ox+5,oy+14,7,1,SH);
-  R(ox+5,oy+5,6,10,st); R(ox+5,oy+5,1,10,sl); R(ox+10,oy+5,1,10,sd);   // the tower, lit from the left
-  for (let y=7;y<15;y+=3) R(ox+6,oy+y,4,1,'#a7a194');                    // courses of stone
-  R(ox+4,oy+4,8,1,sd); R(ox+4,oy+3,8,1,st);                              // the platform
-  for (const x of [4,6,9,11]) R(ox+x,oy+1,1,2,st);                       // battlements
-  R(ox+7,oy+7,2,2,'#2a211b');                                            // arrow slit
-  R(ox+7,oy+11,2,4,C.door);
-  R(ox+8,oy-0,1,3,'#4a3a2a'); R(ox+9,oy,3,2,n.roof); P(ox+11,oy+1,n.roofD);   // flag
+  if (tier===1){
+    R(ox+5,oy+14,7,1,SH);
+    R(ox+5,oy+5,6,10,st); R(ox+5,oy+5,1,10,sl); R(ox+10,oy+5,1,10,sd);   // the tower, lit from the left
+    for (let y=7;y<15;y+=3) R(ox+6,oy+y,4,1,'#a7a194');                    // courses of stone
+    R(ox+4,oy+4,8,1,sd); R(ox+4,oy+3,8,1,st);                              // the platform
+    for (const x of [4,6,9,11]) R(ox+x,oy+1,1,2,st);                       // battlements
+    R(ox+7,oy+7,2,2,'#2a211b');                                            // arrow slit
+    R(ox+7,oy+11,2,4,C.door);
+    R(ox+8,oy-0,1,3,'#4a3a2a'); R(ox+9,oy,3,2,n.roof); P(ox+11,oy+1,n.roofD);   // flag
+  } else if (tier===2){
+    R(ox+4,oy+14,9,1,SH);
+    R(ox+4,oy+6,8,9,st); R(ox+4,oy+6,1,9,sl); R(ox+11,oy+6,1,9,sd);
+    for (let y=8;y<15;y+=3) R(ox+5,oy+y,6,1,'#a7a194');
+    R(ox+3,oy+4,10,2,C.wood); for (let x=4;x<13;x+=2) P(ox+x,oy+5,C.woodD); R(ox+3,oy+4,10,1,C.woodL);   // the timber gallery
+    R(ox+3,oy+3,10,1,n.roofD); R(ox+4,oy+2,8,1,n.roof); R(ox+5,oy+1,6,1,n.roof); R(ox+6,oy,4,1,n.roofL);   // a pointed roof
+    P(ox+4,oy+2,n.roofL); P(ox+11,oy+3,'#3b2a1e');
+    R(ox+6,oy+8,1,2,'#2a211b'); R(ox+9,oy+8,1,2,'#2a211b');                // two arrow slits
+    R(ox+7,oy+11,2,4,C.door); P(ox+7,oy+11,'#4a3424');
+  } else {
+    R(ox+3,oy+14,11,1,SH);
+    R(ox+3,oy+6,10,9,st); R(ox+3,oy+6,1,9,sl); R(ox+12,oy+6,1,9,sd);
+    for (let y=9;y<15;y+=3) R(ox+4,oy+y,8,1,'#b9b2a4');
+    R(ox+2,oy+5,12,1,sd); for (let x=2;x<14;x+=2) R(ox+x,oy+4,1,1,st);   // the corbelled walk and its battlements
+    R(ox+5,oy+3,6,1,n.roofD); R(ox+6,oy+2,4,1,n.roof); R(ox+6,oy+1,4,1,n.roof); R(ox+7,oy,2,1,n.roofL); P(ox+6,oy+1,n.roofL);   // the spire
+    P(ox+2,oy+3,'#ff9a3c'); P(ox+13,oy+3,'#ff9a3c');                       // braziers burning on the walk
+    R(ox+4,oy+7,1,3,n.roof); P(ox+4,oy+10,n.roofD); R(ox+11,oy+7,1,3,n.roof); P(ox+11,oy+10,n.roofD);   // banners
+    R(ox+7,oy+7,2,2,'#ffd86b'); P(ox+7,oy+7,'#fff1b0');                    // a lit window
+    R(ox+6,oy+10,1,2,'#2a211b'); R(ox+9,oy+10,1,2,'#2a211b');
+    R(ox+7,oy+11,2,4,C.door); R(ox+7,oy+11,2,1,'#e8c45a');                 // a gilded lintel
+  }
+  if (worn) batter(ox,oy,TOWER_SCARS[tier],[[6,9]],[[tier===3 ? 9 : 8,12-tier,2,2]]);
+}
+// what a battered tower has lost: [pixels knocked out], [crack], [rubble]
+const TOWER_SCARS: number[][][][] = [[], 
+  [[[4,1],[11,1],[11,2],[9,1],[10,4]], [[6,6],[7,7],[6,8],[7,9],[8,10]], [[3,14],[4,13],[12,14],[13,13]]],
+  [[[10,1],[11,2],[10,2],[12,3],[9,0],[3,4]], [[5,7],[6,8],[5,9],[6,10],[9,10],[10,11]], [[2,14],[3,13],[13,14],[14,13]]],
+  [[[11,4],[12,4],[13,4],[8,1],[9,2],[2,3]], [[4,8],[5,9],[4,10],[10,9],[11,10],[10,11],[11,12]], [[1,14],[2,13],[14,14],[15,13],[13,13]]],
+];
+/** Battle damage on a building drawn at (ox,oy): pixels knocked out of it, a crack, soot, rubble at
+    its foot, and breaches [x, y, w, h] smashed into its walls. */
+function batter(ox: number, oy: number, [gone, crack, rubble]: number[][][], soot: number[][]=[], breach: number[][]=[]){
+  for (const [x,y] of gone) G.clearRect(ox+x,oy+y,1,1);
+  for (const [x,y,w,h] of breach){ R(ox+x,oy+y,w,h,'#3a2e26'); R(ox+x,oy+y+h-1,w,1,'#241b16'); P(ox+x+w,oy+y+1,'#6f695f'); }
+  for (const [x,y] of soot){ G.fillStyle='rgba(30,24,20,.4)'; G.fillRect(ox+x,oy+y,3,2); G.fillRect(ox+x+1,oy+y-1,1,1); }
+  for (const [x,y] of crack){ P(ox+x,oy+y,'#5a5048'); }
+  for (const [x,y] of rubble){ P(ox+x,oy+y,'#8d867b'); P(ox+x+1,oy+y,'#6f695f'); P(ox+x,oy+y-1,'#a49d90'); }
 }
 
 /* ---------- coin minters ---------- */
@@ -252,34 +294,76 @@ function drawGuild(ox: number, oy: number, n: NationStyle){
   R(ox+29,oy,1,3,'#4a3a2a'); R(ox+30,oy,2,2,n.roof);         // the guild's pennant
 }
 
-/* ---------- the castle (2×2 plots) ---------- */
-function drawCastle(ox: number, oy: number, n: NationStyle){
-  const st=C.st, sd=C.stD, sl=C.stL, dk='#2e241c';
+/* ---------- the castle (2×2 plots) ----------
+   Tier 1 a keep within a curtain wall; tier 2 a fortress, its corner towers taller and roofed,
+   a turret rising from the keep; tier 3 a pale citadel trimmed in gold, a spire on the keep and
+   banners on every tower. Damaged, it loses battlements and cracks; badly damaged, its roofs are
+   broken, fires burn in it and rubble lies at its feet. */
+function drawCastle(ox: number, oy: number, n: NationStyle, tier=1, worn=0){
+  const pale=tier===3, st=pale ? '#d8d1c3' : C.st, sd=pale ? '#a39c8f' : C.stD, sl=pale ? '#f1ebdf' : C.stL, course=pale ? '#c4bdaf' : '#a7a194';
+  const dk='#2e241c', gold='#e8c45a', lit='#ffd86b';
   R(ox+2,oy+30,28,1,SH);
-  // curtain wall with battlements
-  R(ox+4,oy+18,24,12,st); R(ox+4,oy+28,24,2,sd); R(ox+4,oy+18,24,1,sl);
-  for (let x=5;x<27;x+=2) R(ox+x,oy+16,1,2,st);
-  for (let y=21;y<28;y+=3) R(ox+6,oy+y,20,1,'#a7a194');
-  // corner towers with pointed roofs
+  // curtain wall with battlements (a gilded string course on the citadel)
+  const wallTop=tier===1 ? 18 : 17;
+  R(ox+4,oy+wallTop,24,30-wallTop,st); R(ox+4,oy+28,24,2,sd); R(ox+4,oy+wallTop,24,1,sl);
+  for (let x=5;x<27;x+=2) R(ox+x,oy+wallTop-2,1,2,st);
+  for (let y=wallTop+3;y<28;y+=3) R(ox+6,oy+y,20,1,course);
+  if (pale) R(ox+4,oy+wallTop+1,24,1,gold);
+  // corner towers: pointed roofs; taller and crenellated for a fortress; flags on the citadel's
+  const tTop=tier===1 ? 11 : 9;
   for (const tx of [0,25]){
-    R(ox+tx,oy+11,7,19,st); R(ox+tx,oy+11,1,19,sl); R(ox+tx+6,oy+11,1,19,sd);
-    R(ox+tx,oy+10,7,1,sd);
-    R(ox+tx+1,oy+8,5,2,n.roofD); R(ox+tx+2,oy+6,3,2,n.roof); P(ox+tx+3,oy+5,n.roofL); P(ox+tx+3,oy+4,'#4a3a2a');
+    R(ox+tx,oy+tTop,7,30-tTop,st); R(ox+tx,oy+tTop,1,30-tTop,sl); R(ox+tx+6,oy+tTop,1,30-tTop,sd);
+    R(ox+tx,oy+tTop-1,7,1,sd);
+    if (tier===1){ R(ox+tx+1,oy+8,5,2,n.roofD); R(ox+tx+2,oy+6,3,2,n.roof); P(ox+tx+3,oy+5,n.roofL); P(ox+tx+3,oy+4,'#4a3a2a'); }
+    else {
+      R(ox+tx,oy+6,7,1,n.roofD); R(ox+tx+1,oy+4,5,2,n.roofD); R(ox+tx+2,oy+2,3,2,n.roof); P(ox+tx+3,oy+1,n.roofL); P(ox+tx+2,oy+3,n.roofL);
+      for (const bx of [0,2,4,6]) P(ox+tx+bx,oy+tTop-2,st);
+      if (pale){ R(ox+tx,oy+7,7,1,gold); P(ox+tx+3,oy,gold); }
+    }
     R(ox+tx+3,oy+14,1,2,dk); R(ox+tx+3,oy+22,1,2,dk);
   }
   // the keep
-  R(ox+10,oy+6,12,16,sl); R(ox+10,oy+6,1,16,'#ece7dc'); R(ox+21,oy+6,1,16,sd);
-  for (let y=10;y<22;y+=4) R(ox+11,oy+y,10,1,'#c8c2b6');
-  R(ox+9,oy+5,14,1,sd);
-  R(ox+10,oy+3,12,2,n.roofD); R(ox+11,oy+2,10,1,n.roof); R(ox+12,oy+1,8,1,n.roof); R(ox+13,oy,6,1,n.roofL);
-  for (const [x,y] of [[13,8],[18,8],[13,13],[18,13]]){ R(ox+x,oy+y,2,3,'#ffd86b'); P(ox+x,oy+y,'#fff1b0'); }
+  const kTop=tier===1 ? 6 : 8;
+  R(ox+10,oy+kTop,12,22-kTop,sl); R(ox+10,oy+kTop,1,22-kTop,pale ? '#fbf8f1' : '#ece7dc'); R(ox+21,oy+kTop,1,22-kTop,sd);
+  for (let y=kTop+4;y<22;y+=4) R(ox+11,oy+y,10,1,pale ? '#ddd6c8' : '#c8c2b6');
+  R(ox+9,oy+kTop-1,14,1,sd);
+  if (tier===1){
+    R(ox+10,oy+3,12,2,n.roofD); R(ox+11,oy+2,10,1,n.roof); R(ox+12,oy+1,8,1,n.roof); R(ox+13,oy,6,1,n.roofL);
+    for (const [x,y] of [[13,8],[18,8],[13,13],[18,13]]){ R(ox+x,oy+y,2,3,lit); P(ox+x,oy+y,'#fff1b0'); }
+  } else {
+    for (let x=9;x<23;x+=2) P(ox+x,oy+kTop-2,sl);                         // the keep's battlements
+    // a turret rising from the keep, roofed (a spire on the citadel)
+    R(ox+13,oy+3,6,kTop-3,sl); R(ox+18,oy+3,1,kTop-3,sd); R(ox+15,oy+4,2,2,lit);
+    R(ox+12,oy+2,8,1,n.roofD); R(ox+13,oy+1,6,1,n.roof); R(ox+14,oy,4,1,n.roofL);
+    if (pale){ R(ox+12,oy+3,8,1,gold); P(ox+15,oy,gold); P(ox+16,oy,gold); }
+    for (const [x,y] of [[12,10],[18,10],[12,15],[18,15]]){ R(ox+x,oy+y,2,3,lit); P(ox+x,oy+y,'#fff1b0'); }
+    if (pale) for (const [x,y] of [[15,11],[15,16]]){ R(ox+x,oy+y,2,2,lit); }
+  }
   // gate
   R(ox+13,oy+22,6,8,dk); R(ox+14,oy+21,4,1,dk);
-  for (let x=14;x<18;x+=2) R(ox+x,oy+22,1,7,'#5a4a3a');
+  for (let x=14;x<18;x+=2) R(ox+x,oy+22,1,7,tier===1 ? '#5a4a3a' : '#6a5a42');
   R(ox+13,oy+25,6,1,'#5a4a3a');
+  if (tier>=2){ R(ox+12,oy+21,1,9,sd); R(ox+19,oy+21,1,9,sd); }
+  if (pale) R(ox+13,oy+20,6,1,gold);
   // hanging banners
-  for (const bx of [7,23]){ R(ox+bx,oy+19,2,5,n.roof); P(ox+bx,oy+24,n.roofD); P(ox+bx+1,oy+24,n.roofD); P(ox+bx,oy+19,n.roofL); }
+  const bh=tier===1 ? 5 : 7;
+  for (const bx of [7,23]){ R(ox+bx,oy+19,2,bh,n.roof); P(ox+bx,oy+19+bh,n.roofD); P(ox+bx+1,oy+19+bh,n.roofD); P(ox+bx,oy+19,n.roofL); if (pale) R(ox+bx,oy+18,2,1,gold); }
+  if (worn===1) batter(ox,oy,CASTLE_SCARS[tier][0],[[19,12],[6,22]],[[24,21,2,2]]);
+  if (worn===2){
+    batter(ox,oy,CASTLE_SCARS[tier][1],[[12,12],[20,18],[5,22],[24,24],[15,7]],[[24,20,3,3],[5,23,2,3],[19,13,2,2]]);
+    G.clearRect(ox+25,oy+1,4,4); G.clearRect(ox+20,oy+kTop-2,3,2);   // a tower's roof and part of the keep's top gone
+    for (const [x,y] of [[11,8],[26,11],[3,20],[20,kTop]]){ P(ox+x,oy+y,'#ff9a3c'); P(ox+x,oy+y-1,'#ffd27a'); P(ox+x+1,oy+y,'#e0602a'); P(ox+x,oy+y-2,'#fff0a0'); }   // fires burning in the breaches
+  }
 }
+// damaged and badly damaged, by tier: [pixels knocked out], [cracks], [rubble]
+const CASTLE_SCARS: number[][][][][] = [[],
+  [ [[[6,16],[9,16],[25,16],[27,11],[16,1]], [[14,9],[15,10],[14,11],[15,12],[7,20],[8,21],[7,22]], [[1,30],[29,30]]],
+    [[[6,16],[9,16],[13,16],[21,16],[25,16],[27,11],[1,8],[2,9],[3,10],[16,0],[17,1],[18,2],[19,3],[20,3]], [[14,9],[15,10],[14,11],[15,12],[14,13],[7,20],[8,21],[7,22],[8,23],[24,21],[23,22],[24,23],[19,14],[20,15]], [[1,30],[3,29],[28,30],[29,29],[10,30],[21,30]]] ],
+  [ [[[5,15],[9,15],[27,7],[16,0],[1,7]], [[13,11],[14,12],[13,13],[7,19],[8,20],[7,21]], [[1,30],[29,30]]],
+    [[[5,15],[9,15],[13,15],[21,15],[25,15],[27,7],[29,4],[28,5],[1,7],[2,6],[16,0],[17,0],[18,1],[19,2],[13,3]], [[13,11],[14,12],[13,13],[14,14],[7,19],[8,20],[7,21],[8,22],[24,20],[23,21],[24,22],[19,16],[20,17]], [[1,30],[3,29],[28,30],[29,29],[10,30],[21,30]]] ],
+  [ [[[5,15],[9,15],[27,7],[15,0],[1,7]], [[13,11],[14,12],[13,13],[7,19],[8,20],[7,21]], [[1,30],[29,30]]],
+    [[[5,15],[9,15],[13,15],[21,15],[25,15],[27,7],[29,4],[28,5],[1,7],[2,6],[15,0],[16,0],[18,1],[19,2],[13,3],[12,2]], [[13,11],[14,12],[13,13],[14,14],[7,19],[8,20],[7,21],[8,22],[24,20],[23,21],[24,22],[19,16],[20,17]], [[1,30],[3,29],[28,30],[29,29],[10,30],[21,30]]] ],
+];
 
 /* ---------- ruins ---------- */
 function drawRuins(ox: number, oy: number, v: number){
@@ -298,14 +382,14 @@ export function drawPlot(q: number){
   if (ty===B_PART){ const m=pMain[q]; if (BIG[pType[m]]){ drawPlot(m); return; } octx.clearRect(ox,oy,PS,PS); return; }
   const n=styleOf(pOwner[q]);
   if (BIG[ty]){ const [w,h]=BIG[ty]; stamp(ox,oy,w*PS,h*PS,()=>drawBig(0,0,ty,n)); return; }
-  if (ty===B_CASTLE){ stamp(ox,oy,2*PS,2*PS,()=>drawCastle(0,0,n)); return; }
+  if (ty===B_CASTLE){ const t=castleTier(pOwner[q]), w=wear(q); stamp(ox,oy,2*PS,2*PS,()=>drawCastle(0,0,n,t,w)); return; }
   const v=pVar[q]%3;
   if (ty===B_HOUSE){ const t=pTier[q]; stamp(ox,oy,PS,PS,()=>drawHouse(0,0,n,t>=2 ? pVar[q] : v,!!pAband[q],t)); }
   else if (ty===B_RESEARCH) stamp(ox,oy,PS,PS,()=>drawResearch(0,0,n));
   else if (ty===B_SMITHY) stamp(ox,oy,PS,PS,()=>drawSmithy(0,0,n));
   else if (ty===B_SITE) stamp(ox,oy,PS,PS,()=>drawSite(0,0,n));
   else if (ty===B_FARM){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawFarm(0,0,n,pOwner[q]%3,m)); }   // one crop per kingdom, so joined fields match
-  else if (ty===B_TOWER){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawTower(0,0,n,m)); }
+  else if (ty===B_TOWER){ const m=joins(q), t=towerTier(pOwner[q]), w=wear(q); stamp(ox,oy,PS,PS,()=>drawTower(0,0,n,m,t,w)); }
   else if (ty===B_BARRACKS){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawBarracks(0,0,n,m)); }
   else if (ty===B_MINTER){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawMinter(0,0,n,m)); }
   else if (ty===B_MINE) stamp(ox,oy,PS,PS,()=>drawMine(0,0,n));

@@ -1,12 +1,12 @@
 /* ---------- Emberfront: boot & main loop ---------- */
 import { TW, TH, RW, RH, NP, TICK } from './core/constants';
-import { W, owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer } from './sim/state';
+import { W, owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, pHp } from './sim/state';
 import { findBlock, queueCommand } from './sim/sim';
 import { plotProblem } from './sim/buildings';
 import { client } from './client';
 import { view, resize, cam } from './render/camera';
 import { wbuf } from './render/terrain';
-import { octx } from './render/sprites';
+import { octx, drawPlotAndNeighbours } from './render/sprites';
 import { render } from './render/render';
 import { shots } from './render/effects';
 import { updateHUD } from './ui/hud';
@@ -39,6 +39,7 @@ function toSpawn(){ if (client.state!=='spawn'){ $('intro').hidden=true; $('scri
   run:(n: number)=>{ for (let i=0;i<n;i++) step(); }, attack:(t: number)=>playerAttack(t), setRatio, setSoldierShare, command:(c: unknown)=>queueCommand(c as never), get humans(){return W.humans;}, get cam(){return cam;},
   get campaigns(){return W.campaigns;}, get W(){return W;},
   get shots(){return shots;},
+  setHp:(q: number, v: number)=>{ pHp[q]=v; }, redraw:(q: number)=>drawPlotAndNeighbours(q),
   newWorld:(seed?: number)=>newGame(seed),
   freePlots:()=>{ const n=W.nations[1], out: number[]=[]; if (n) for (let q=0;q<NP;q++) if (!plotProblem(n,q)) out.push(q); return out; },
   dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, wbuf, obj:octx.getImageData(0,0,RW,RH).data, attacks:W.attacks, campaigns:W.campaigns, tickN:W.tickN }) };

@@ -1,5 +1,5 @@
 /* ---------- HUD: kingdom card, leaderboard, attack chips, log, toasts, end card ---------- */
-import { PLAYER, TICK } from '../core/constants';
+import { PLAYER, TICK, WAGE, UNPAID_TICKS } from '../core/constants';
 import { fmt, fmtTime } from '../core/util';
 import { HUMAN_EVERY, FARM_BONUS } from '../sim/population';
 import { W } from '../sim/state';
@@ -12,7 +12,7 @@ import { $ } from './dom';
 
 export const ui={ meGold:$('meGold'), meRate:$('meRate'), meLand:$('meLand'), meHouses:$('meHouses'), meStrength:$('meStrength'),
   meWood:$('meWood'), meStone:$('meStone'), meCopper:$('meCopper'),
-  meVillagers:$('meVillagers'), meHomeless:$('meHomeless'), meSoldiers:$('meSoldiers'), meTraining:$('meTraining'), meNext:$('meNext'),
+  meVillagers:$('meVillagers'), meWages:$('meWages'), meHomeless:$('meHomeless'), meSoldiers:$('meSoldiers'), meTraining:$('meTraining'), meNext:$('meNext'),
   soldiers:$('soldiers') as HTMLInputElement, soldiersHint:$('soldiersHint'),
   clock:$('clock'), boardList:$('boardList'), attacks:$('attacks'), log:$('log'), toast:$('toast'), tip:$('tip'), banner:$('banner') };
 
@@ -20,7 +20,13 @@ let lastBoard=0;
 export function updateHUD(now: number){
   const me=W.nations[PLAYER]; if (!me) return;
   const landCount=W.landCount;
-  ui.meGold.textContent=fmt(me.gold); ui.meRate.textContent='+'+(me.alive?me.income:0).toFixed(1)+'/s';
+  ui.meGold.textContent=fmt(me.gold); const inc=me.alive?me.income:0;
+  ui.meRate.textContent=(inc<0?'':'+')+inc.toFixed(1)+'/s'; ui.meRate.classList.toggle('neg',inc<0); ui.meGold.classList.toggle('neg',me.gold<0);
+  // soldiers' wages, and what happens when they go unpaid
+  ui.meWages.hidden=!me.soldiers;
+  ui.meWages.classList.toggle('ok',me.gold>=0);
+  ui.meWages.textContent = me.gold>=0 ? `Soldiers' wages ${(me.soldiers*WAGE).toFixed(1)} gold/s`
+    : me.unpaid<UNPAID_TICKS ? `No gold for wages: soldiers desert in ${Math.ceil((UNPAID_TICKS-me.unpaid)*TICK)}s` : 'Unpaid soldiers are deserting, one every 3 s';
   ui.meLand.textContent=(me.tiles/landCount*100).toFixed(1)+'%';
   ui.meHouses.textContent=String(me.houses);
   const sub=[me.beds>me.houses ? `room for ${me.beds}` : '', me.abandoned ? `${me.abandoned} empty` : ''].filter(Boolean).join(' · ');

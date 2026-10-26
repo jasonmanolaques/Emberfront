@@ -58,6 +58,8 @@ body{height:100%;margin:0;background:var(--sea);color:var(--text);font-family:va
 .stats.people,.stats.goods{grid-template-columns:repeat(3,1fr)}
 .stats.goods{padding:6px 0;border-block:2px solid var(--edge)}
 .stats dd small{display:block;font-size:10px;font-weight:400;color:var(--muted);white-space:nowrap}
+.troops .big.neg{color:var(--bad)}
+.tag.homeless.ok{color:var(--muted)}
 .tag.homeless{color:var(--bad);text-transform:none;letter-spacing:0;font-size:11px}
 .ico{display:inline-block;width:8px;height:8px;margin-right:4px;vertical-align:-1px;border:1px solid var(--ink)}
 .ico.wood{background:var(--wood)}.ico.stone{background:var(--stone)}.ico.copper{background:var(--copper)}.ico.gold{background:var(--coin);border-radius:50%;width:12px;height:12px;align-self:center;margin-right:0}

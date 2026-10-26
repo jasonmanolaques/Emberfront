@@ -1,5 +1,5 @@
 /* ---------- game flow: ties the simulation to this browser's screen ---------- */
-import { TW, PLAYER, PLAYER_COL, B_SMITHY } from './core/constants';
+import { TW, PLAYER, PLAYER_COL, B_SMITHY, B_TOWER } from './core/constants';
 import { clamp, fmt } from './core/util';
 import { W, owner, isLand, pType } from './sim/state';
 import { listen } from './sim/events';
@@ -23,6 +23,7 @@ import { setupDiplomacy, resetDiplomacy, noteDeath } from './ui/diplomacy';
 import { refreshResearch, closeResearch } from './ui/research';
 import { closeArmy } from './ui/army';
 import { TIER_NAME } from './sim/army';
+import { R_TOWERS, R_CASTLE } from './sim/research';
 import { TOPIC_NAME } from './sim/research';
 import { $ } from './ui/dom';
 
@@ -73,16 +74,25 @@ listen({
     else if (e===PLAYER) log(`${nm(o)} sends ${k} soldiers to meet your army`,'bad');
   },
   // research and the builders guild
-  researched: (o,topic,tier) => { if (o===PLAYER){ log(`Your scholars reach ${TOPIC_NAME[topic].toLowerCase()} tier ${tier}: ${TIER_NEWS[topic][tier]}`,'good'); toast(`${TOPIC_NAME[topic]} tier ${tier}`); } refreshResearch(); },
+  researched: (o,topic,tier) => {
+    if (topic===R_TOWERS || topic===R_CASTLE){ const n=W.nations[o]; for (const q of n.blds) if (pType[q]===B_TOWER) drawPlotAndNeighbours(q); if (n.capTile>=0) drawPlotAndNeighbours(n.capPlot); }   // new towers, a new castle
+    if (o===PLAYER){ log(`Your scholars reach ${TOPIC_NAME[topic].toLowerCase()} tier ${tier}: ${TIER_NEWS[topic][tier]}`,'good'); toast(`${TOPIC_NAME[topic]} tier ${tier}`); } refreshResearch(); },
   upgraded: (q,o,tier) => { dustPuff(q); if (o===PLAYER) floats.push({ x:(q%PW)*8+4, y:((q/PW)|0)*8-1, text: tier===3 ? 'Manor' : 'Stone house', t0:performance.now(), c:'#f0e6c8' }); },
   builderHired: (q,o,replaced) => { if (o===PLAYER && replaced) log(pType[q]===B_SMITHY ? 'A villager takes up the fallen smith\'s hammer' : 'A villager takes up the fallen builder\'s tools at the guild'); },
   forged: (q,o,tier) => { if (o===PLAYER) floats.push({ x:(q%PW)*8+4, y:((q/PW)|0)*8-1, text:`Armour ${TIER_NAME[tier]}`, t0:performance.now(), c:'#dfe6ec' }); },
+  deserted: (o,x,y,tier,gold) => {
+    if (o!==PLAYER) return;
+    log(gold ? `Unpaid, a soldier lays down his arms; his armour is scrapped for ${gold} gold` : 'Unpaid, a soldier lays down his arms and goes back to work','bad');
+    floats.push({ x, y:y-6, text: gold ? `+${gold} gold` : 'Deserted', t0:performance.now(), c: gold ? '#ffe27a' : '#ff9a8a' });
+  },
   armored: (id,x,y,tier) => { gatePuff(x,y-2,1); if (W.humans.find(h => h.id===id)?.o===PLAYER) floats.push({ x, y:y-6, text:`Armour ${TIER_NAME[tier]}`, t0:performance.now(), c:'#dfe6ec' }); },
   annexed: (loser,winner) => { if (winner===PLAYER){ log(`You took the castle of ${nm(loser)}: its land and people are yours`,'good'); toast(`${nm(loser)} is yours`); } },
 });
 const GOOD_COL=['#e9b26a','#dcd6cc','#ffa060'];
 const TIER_NEWS=[['','','your builders guild can raise stone houses','your builders guild can raise manors'],['','','each villager pays 0.2 gold a second','each villager pays 0.3 gold a second'],
-  ['','','your blacksmith can forge reinforced armour','your blacksmith can forge heavy armour']];
+  ['','','your blacksmith can forge reinforced armour','your blacksmith can forge heavy armour'],
+  ['','','your watchtowers are rebuilt stronger','your watchtowers are rebuilt into keeps'],
+  ['','','your castle is rebuilt into a fortress','your castle is rebuilt into a citadel']];
 const nm = (id: number) => W.nations[id]?.name ?? 'Someone';
 export function newGame(seed?: number){
   newWorld(seed ?? (Math.random()*2147483647)|0);

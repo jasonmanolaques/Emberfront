@@ -16,6 +16,7 @@ export interface Nation {
   expandAt: number; attackAt: number; ratio: number; nextThink: number;  // bot personality
   nextWar: number; nextOffer: number;   // bots: sim time before which they start no campaign, offer no peace
   nextWave: number;                  // bots: sim time before which they send no more armies to a war under way
+  unpaid: number;                    // ticks the treasury has been below zero, soldiers unpaid
   soldierShare: number;              // share of the population the kingdom wants as soldiers (0..1)
   humanProg: number;                 // progress toward the next human; one arrives at HUMAN_EVERY (farms speed it up)
   villagers: number; soldiers: number; training: number;   // headcount, updated every tick; training = switching role

@@ -38,6 +38,7 @@ export interface SimEvents {
   builderHired(q: number, o: number, replaced: boolean): void; // a villager took up the tools at the builders guild or blacksmith on plot q
   forged(q: number, o: number, tier: number): void;            // a blacksmith left armour of `tier` at the barracks plot q
   armored(id: number, x: number, y: number, tier: number): void;   // soldier id put on armour of `tier`
+  deserted(o: number, x: number, y: number, tier: number, gold: number): void;   // an unpaid soldier of tier `tier` went back to work; his armour scrapped for `gold`
 }
 
 const noop = () => {};
@@ -47,6 +48,6 @@ export const on: SimEvents = {
   resChanged: noop, stored: noop, towerShot: noop, produced: noop,
   warBegan: noop, armyHome: noop, armyGone: noop, peaceOffered: noop, peaceRefused: noop, peaceMade: noop,
   allied: noop, allyRefused: noop, allianceBroken: noop, annexed: noop, plunder: noop, hit: noop, bldHit: noop,
-  died: noop, occupied: noop, counterReady: noop, intercepting: noop, swing: noop, story: noop, researched: noop, upgraded: noop, builderHired: noop, forged: noop, armored: noop,
+  died: noop, occupied: noop, counterReady: noop, intercepting: noop, swing: noop, story: noop, researched: noop, upgraded: noop, builderHired: noop, forged: noop, armored: noop, deserted: noop,
 };
 export function listen(l: Partial<SimEvents>){ Object.assign(on, l); }
