@@ -90,16 +90,19 @@ function send(raid: boolean){
 
 /* ---------- war chips: one per enemy ---------- */
 interface Front { o: number; a: number; d: number; war: boolean; myRaids: number; men: number; theyOffer: boolean; iOffer: boolean;
-  incoming: Campaign[]; intercepting: number; ready: boolean; }
+  incoming: Campaign[]; fleeing: number; intercepting: number; ready: boolean; }
 function fronts(){
   const M=W.M, map=new Map<number, Front>();
-  const front=(o: number, a: number, d: number) => { let f=map.get(o); if (!f){ f={ o, a, d, war:!!W.wars[PLAYER*M+o], myRaids:0, men:0, theyOffer:false, iOffer:false, incoming:[], intercepting:0, ready:false }; map.set(o,f); } return f; };
+  const front=(o: number, a: number, d: number) => { let f=map.get(o); if (!f){ f={ o, a, d, war:!!W.wars[PLAYER*M+o], myRaids:0, men:0, theyOffer:false, iOffer:false, incoming:[], fleeing:0, intercepting:0, ready:false }; map.set(o,f); } return f; };
   for (let o=1;o<M;o++) if (o!==PLAYER && W.wars[PLAYER*M+o] && W.nations[o].alive) front(o,PLAYER,o);
   for (const c of W.campaigns){
     if (!c.hostile || (c.a!==PLAYER && c.d!==PLAYER)) continue;
     const o=c.a===PLAYER ? c.d : c.a, f=front(o,c.a,c.d);
     if (c.a===PLAYER){ f.men+=c.members.length; if (c.raid && c.phase<2) f.myRaids++; if (c.target>=0 && c.phase<2) f.intercepting+=c.members.length; }
-    else { if (c.phase<2 && c.target<0){ f.incoming.push(c); f.a=c.a; f.d=c.d; } }   // their army on the march names the front
+    else if (c.target<0){
+      if (c.phase<2){ f.incoming.push(c); f.a=c.a; f.d=c.d; }   // their army on the march names the front
+      else if (c.raid){ f.fleeing+=c.members.length; if (!f.incoming.length){ f.a=c.a; f.d=c.d; } }   // recalled raiders, still the enemy
+    }
   }
   for (const f of map.values()){
     const at=W.offers[f.o*M+PLAYER]; f.theyOffer=!!at && W.tickN-at<=OFFER_TICKS;
@@ -108,10 +111,12 @@ function fronts(){
   }
   return [...map.values()];
 }
-/** The enemy army from o that most needs meeting: the biggest one marching on us that nobody is after yet. */
+/** The enemy army from o that most needs meeting: the biggest one marching on us that nobody is
+    after yet, or else raiders on their way home with our loot. */
 function incomingFrom(o: number){
   let best: Campaign | undefined;
-  for (const c of W.campaigns) if (c.a===o && c.d===PLAYER && c.hostile && c.phase<2 && c.target<0 && !interceptProblem(PLAYER,c.id) && (!best || c.members.length>best.members.length)) best=c;
+  const rank=(c: Campaign) => (c.phase<2 ? 1e6 : 0)+c.members.length;
+  for (const c of W.campaigns) if (c.a===o && c.d===PLAYER && c.hostile && c.target<0 && !interceptProblem(PLAYER,c.id) && (!best || rank(c)>rank(best))) best=c;
   return best;
 }
 /* ---------- the balance of power: everyone who has fought in the current battle with o, and the fallen ----------
@@ -178,10 +183,11 @@ export function updateWarChips(){
       f.myRaids && !f.war ? ['Recall raid', 'end', false] :
       f.myRaids ? ['Recall raid · offer peace', 'end', f.iOffer] :
       f.iOffer ? ['Peace offered…', '', true] :
-      !f.war && f.a===PLAYER ? ['Raiders heading home', '', true] :
+      // a raid has no peace: it is over when the raiders are dead or home
+      !f.war ? [f.a===PLAYER ? 'Raiders heading home' : f.fleeing ? 'Raiders fleeing' : 'Under attack', '', true] :
       ['Offer peace', 'end', false];
     const inc=f.incoming.reduce((k,c)=>k+c.members.length,0);
-    const men=(inc ? ` · ${inc} coming` : '')+(f.intercepting ? ` · ${f.intercepting} intercepting` : '')+(f.men-f.intercepting>0 ? ` · ${f.men-f.intercepting} out` : '');
+    const men=(inc ? ` · ${inc} coming` : '')+(f.fleeing ? ` · ${f.fleeing} fleeing` : '')+(f.intercepting ? ` · ${f.intercepting} intercepting` : '')+(f.men-f.intercepting>0 ? ` · ${f.men-f.intercepting} out` : '');
     const chip=`<button class="chip war${f.theyOffer||f.ready?' offer':''}${open?' threat':''}" data-o="${f.o}" data-act="${act}" ${off||!act?'disabled':''}><i style="background:${W.nations[f.a].hex}"></i>${esc(nameOf(f.a))} – ${esc(nameOf(f.d))} · ${kind}${men}<b>${label}</b></button>`;
     return `<div class="front" data-o="${f.o}">${chip}${powerBar(f,track(f.o,byId))}</div>`;
   }).join('');
@@ -203,7 +209,10 @@ function placePop(){
 }
 function openPop(o: number){
   popFor=o; popCamp=-1; pop.hidden=false; popMenu.hidden=false; popSend.hidden=true;
-  ($('wpTitle')).textContent=`${W.nations[o].name}'s army is coming`;
+  const E=incomingFrom(o), war=!!W.wars[PLAYER*W.M+o];
+  ($('wpTitle')).textContent = !E || E.phase<2 ? `${W.nations[o].name}'s ${E?.raid ? 'raiders are' : 'army is'} coming` : `${W.nations[o].name}'s raiders are fleeing`;
+  $('wpPeace').hidden=!war;   // raiders can't be bargained with, only fought
+  popMenu.classList.toggle('one',!war);
   placePop();
 }
 export function closePop(){ pop.hidden=true; popFor=0; popCamp=-1; }
@@ -217,7 +226,7 @@ function showIntercept(){
 }
 function refreshPop(){
   const me=W.nations[PLAYER], E=W.campaigns.find(c => c.id===popCamp);
-  if (!me || !E || E.phase===2){ closePop(); return; }
+  if (!me || !E || interceptProblem(PLAYER,E.id)){ closePop(); return; }
   const pool=available(me), max=pool.all.length;
   if (+popCount.max!==max){ popCount.max=String(max); if (+popCount.value>max) popCount.value=String(max); }
   const k=+popCount.value, fromGuards=Math.max(0,k-pool.idle.length);

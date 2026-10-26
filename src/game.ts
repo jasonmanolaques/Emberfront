@@ -51,10 +51,11 @@ listen({
     else log(`${nm(a)} ${raid?'raids':'goes to war with'} ${nm(d)}`);
   },
   armyHome: (a,d,raid,why) => {
+    if (d===PLAYER && raid && why==='recall'){ log(`${nm(a)} calls its raiders home: catch them before they get there`); return; }
     if (a!==PLAYER) return;
     if (why==='cut'){ log(`The way to ${nm(d)} is blocked: your ${raid?'raiders':'army'} turn back`,'bad'); toast(`Your ${raid?'raid':'attack'} on ${nm(d)} was cut off`); }
     else if (why==='done') log(`Nothing left to burn in ${nm(d)}: your raiders head home`,'good');
-    else if (why==='recall') log(`Your raiders head home from ${nm(d)}`);
+    else if (why==='recall') log(`Your raiders head home from ${nm(d)}: they can still be caught on the way`);
   },
   armyGone: (a,d,_raid,why) => { if (a===PLAYER && why==='lost') log(`Your army in ${nm(d)} has been wiped out`,'bad'); },
   peaceOffered: (from,to) => { if (to===PLAYER){ log(`${nm(from)} offers peace: click the war at the top to accept`,'good'); toast(`${nm(from)} offers peace`); } },

@@ -8,8 +8,8 @@ import { listen, on } from '../src/sim/events';
 import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
 import { build, plotProblem, structureOf, togglePriority, finishHouse } from '../src/sim/buildings';
-import { H_SOLDIER, H_VILLAGER, TASK_STORE, SOLDIER_HP, VILLAGER_HP, makeHuman, doorOf, switching } from '../src/sim/population';
-import { allied, atWar, available, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB } from '../src/sim/war';
+import { H_SOLDIER, H_VILLAGER, TASK_STORE, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, switching, pace } from '../src/sim/population';
+import { allied, atWar, available, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, spread } from '../src/sim/war';
 
 const N = (i: number) => W.nations[i];
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
@@ -306,6 +306,58 @@ describe('peace', () => {
     expect(W.offers[1*W.M+2]).toBe(0);   // no peace offer needed: we are only raiding
     until(() => !W.campaigns.length, 2000);
     expect(atWar(1,2)).toBe(false);
+  });
+});
+
+describe('raids have no peace', () => {
+  it('neither side can offer peace; recalled raiders stay the enemy until home, and can be intercepted on the way', () => {
+    world(1); quiet(); paintDisc(N(2),26);
+    for (const t of [B_FARM, B_FARM, B_HOUSE]) place(N(2),t,N(1).capTile);
+    soldiers(N(1),6);
+    expect(declare(1,2,true,6)).toBe(true);
+    const c=W.campaigns[0];
+    until(() => c.phase===1, 2000); run(60);
+    endWar(2,1); tick();                           // the raided kingdom asks for peace: there is none to make
+    expect(W.offers[2*W.M+1]).toBe(0);
+    expect(c.phase).toBe(1);
+    queueCommand({ type:'endWar', nation:1, target:2 }); tick();
+    expect(c.phase).toBe(2);                       // recalled: off home at once...
+    expect(W.offers[1*W.M+2]).toBe(0);
+    expect(c.hostile).toBe(true);                  // ...but still the enemy
+    expect(atWar(1,2)).toBe(true);
+    soldiers(N(2),8); tick();
+    expect(interceptProblem(2,c.id)).toBeNull();
+    expect(intercept(2,c.id,8)).toBe(true);
+    const I=W.campaigns.find(k => k.a===2)!;
+    until(() => !W.campaigns.includes(c), 4000);   // the raiders are home or dead
+    until(() => !W.campaigns.includes(I) || !I.hostile, 50);
+    expect(I.hostile).toBe(false);                 // the chase is over, and so is the raid
+    until(() => !atWar(1,2), 3000);
+  });
+});
+
+describe('soldiers on the move', () => {
+  it('move 15% faster on their own land', () => {
+    world(1);
+    const [h]=soldiers(N(1),1), v=makeHuman(N(1),H_VILLAGER,h.x,h.y);
+    expect(pace(h)).toBeCloseTo(h.sp*HOME_PACE);
+    expect(HOME_PACE).toBeCloseTo(1.15);
+    expect(pace(v)).toBe(v.sp);                    // villagers don't
+    h.x=2; h.y=2;                                  // out on unclaimed ground
+    expect(pace(h)).toBe(h.sp);
+  });
+
+  it('keep some room between them in a fight instead of piling onto one spot', () => {
+    world(1); quiet(); paintToward(1,2);
+    soldiers(N(2),4); tick();
+    expect(declare(2,1,false,4)).toBe(true); tick();
+    const [x,y]=doorOf(N(1)), men=soldiers(N(1),6);
+    for (const h of men){ h.x=x; h.y=y+4; }   // all on one spot just outside the gate
+    for (let i=0;i<20;i++) spread();
+    let closest=Infinity;
+    for (const a of men) for (const b of men) if (a!==b) closest=Math.min(closest,Math.hypot(a.x-b.x,a.y-b.y));
+    expect(closest).toBeGreaterThan(1.8);
+    expect(men.every(h => owner[((h.y/2)|0)*TW+((h.x/2)|0)]===1)).toBe(true);   // and stay on their own land
   });
 });
 

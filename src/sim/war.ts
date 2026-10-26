@@ -12,7 +12,9 @@
      buildings and people go to the winner, and its gold and stockpile are lost.
    - an intercept sends soldiers after one enemy army, wherever it is, to fight it in the field.
    Two kingdoms are at war while a war between them lasts, or a raid between them is still
-   out. Only then do soldiers fight and watchtowers shoot (at enemies on their own land).
+   out. A raid has no peace: it ends when the raiders are all dead or home. Recalled raiders
+   stop burning and head straight home, but they are still the enemy until they get there:
+   defenders fight them, towers shoot them, and an army can be sent after them. Only then do soldiers fight and watchtowers shoot (at enemies on their own land).
    An army musters in a line behind a banner on its own border, then marches in formation: the
    banner waits for stragglers and for fights to finish, and soldiers break off for enemies and
    buildings near the line and come back to it. At home, when an enemy army comes near the
@@ -28,7 +30,7 @@ import { setOwner } from './territory';
 import { ignite, SIZE } from './buildings';
 import { census } from './census';
 import { HOUSE_TOUGH } from './research';
-import { H_SOLDIER, TASK_ROAM, TOWER_RANGE, TOWER_RELOAD, TOWER_DMG, SOLDIER_HP, VILLAGER_HP, REGEN, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf } from './population';
+import { H_SOLDIER, TASK_ROAM, TOWER_RANGE, TOWER_RELOAD, TOWER_DMG, SOLDIER_HP, VILLAGER_HP, REGEN, pace, onCastle, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf } from './population';
 
 export const LOOT_GOLD = 50;          // a raider's loot bag, paid when he gets it home
 export const MELEE_R = 2.6;           // pixels: close enough to strike
@@ -48,6 +50,8 @@ export const DANGER_R = 26;           // pixels: an enemy this close alarms a vi
 export const CALM_TICKS = 120;        // ticks without an enemy near before an alarmed villager goes back to work
 const INTERCEPT_MUSTER = 60;          // interceptors form up quickly
 const SPACING = 4;                    // pixels between soldiers in the line, and between ranks
+const ROOM = 2.4;                     // pixels fighters keep between them, so a crowd can't pile onto one spot
+const CROWD = 5;                      // a foe already fought by others counts this many pixels further away per fighter
 export const MARCH_SP = 3.2;          // pixels a second the banner moves
 export const CAPTURE_EVERY = 5;       // ticks between land grabs by each soldier of an attack
 const CAPTURE_R = 2;                  // tiles around him
@@ -189,11 +193,17 @@ function nearestTile(d: number, x: number, y: number, by: number){
     intercept, the army it is after. */
 function goalsOf(c: Campaign){
   if (c.raid) return raidTargets(c.d).map(q => pCenter[q]);
-  if (c.target>=0){ const E=campaignById(c.target); return E && E.phase<2 ? [tileOf(E.bx,E.by)] : []; }
+  if (c.target>=0){ const E=campaignById(c.target); if (!E || !E.hostile) return []; const [x,y]=armyAt(E); return [tileOf(x,y)]; }
   const D=W.nations[c.d];
   c.goal = D.capTile>=0 ? D.capTile : nearestTile(c.d,c.bx,c.by,c.a);
   if (c.goal<0 && D.alive){ annex(c.d,c.a); return []; }   // no capital and every last field occupied: the kingdom is ours
   return c.goal>=0 ? [c.goal] : [];
+}
+/** Where an army is: its banner on the march, the middle of its men on the way home. */
+function armyAt(c: Campaign): [number, number] {
+  if (c.phase<2) return [c.bx,c.by];
+  let x=0, y=0, k=0; for (const id of c.members){ const h=byId.get(id); if (h){ x+=h.x; y+=h.y; k++; } }
+  return k ? [x/k,y/k] : [c.bx,c.by];
 }
 const campaignById = (id: number) => camps.get(id) ?? W.campaigns.find(c => c.id===id);
 /** True if a's army could reach something of d's to raid, crossing only unclaimed, allied or d's land. */
@@ -259,7 +269,7 @@ function muster(c: Campaign, pool: Human[]){
 /** Why n can't send soldiers after enemy army `id`, or null. */
 export function interceptProblem(n: number, id: number): string | null {
   const E=campaignById(id);
-  if (!E || E.phase===2 || !E.hostile || E.d!==n || E.target>=0) return 'That army is gone';
+  if (!E || !E.hostile || E.d!==n || E.target>=0) return 'That army is gone';   // raiders on their way home can still be caught
   if (W.campaigns.some(c => c.a===n && c.target===id && c.phase<2)) return 'You are already after that army';
   return null;
 }
@@ -298,7 +308,7 @@ function refield(c: Campaign){
 /* ---------- peace and alliances ---------- */
 /** Kingdom `from` asks `to` for peace. Bots answer when they next think; the player from the war chip. */
 export function offerPeace(from: number, to: number){
-  if (!atWar(from,to) || W.offers[from*W.M+to]) return;
+  if (!W.wars[from*W.M+to] || W.offers[from*W.M+to]) return;   // a raid has no peace to make: it ends when the raiders are gone
   W.offers[from*W.M+to]=W.tickN; on.peaceOffered(from,to);
 }
 export function refusePeace(from: number, to: number){ W.offers[from*W.M+to]=0; on.peaceRefused(from,to); }
@@ -310,15 +320,11 @@ export function makePeace(a: number, b: number){
   for (const i of [a*M+b, b*M+a]){ W.offers[i]=0; W.atWar[i]=0; W.wars[i]=0; W.lost[i]=0; W.ready[i]=0; }
   on.peaceMade(a,b);
 }
-/** n wants the fighting with t to end: its raids turn for home, and any war gets a peace offer. */
+/** n wants the fighting with t to end: its raids turn for home (still hostile until they get
+    there), and a war gets a peace offer. */
 export function endWar(n: number, t: number){
-  let war=false;
-  for (const c of W.campaigns){
-    if (!c.hostile) continue;
-    if (c.a===n && c.d===t && c.raid){ if (c.phase<2) sendHome(c,'recall'); }
-    else if ((c.a===n && c.d===t) || (c.a===t && c.d===n)) war=true;
-  }
-  if (war || W.wars[n*W.M+t]) offerPeace(n,t);
+  for (const c of W.campaigns) if (c.hostile && c.a===n && c.d===t && c.raid && c.phase<2) sendHome(c,'recall');
+  if (W.wars[n*W.M+t]) offerPeace(n,t);
 }
 /** How the fighting with o is going for n: above 0 winning, below 0 losing. */
 export function outlook(n: Nation, o: number){
@@ -394,6 +400,36 @@ export function annex(loser: number, winner: number){
   on.annexed(loser,winner);
 }
 
+/* ---------- fighters keep their room ---------- */
+const fighting = new Map<number, number>();   // enemy id -> how many are fighting him, rebuilt each tick
+/** How many others are already fighting e (not counting h). */
+const crowdOn = (e: Human, h: Human) => (fighting.get(e.id) ?? 0) - (h.foe===e.id ? 1 : 0);
+/** In kingdoms at war, soldiers (and armed villagers) closer than ROOM to a comrade step apart, each where he may
+    stand, so a crowd spreads into ranks rather than piling onto one spot. */
+export function spread(){
+  const cell=new Map<number, Human[]>(), key=(x: number, y: number) => ((y/4)|0)*1000+((x/4)|0);
+  const fights=(h: Human) => h.hp>0 && !indoors(h) && warring[h.o]===1 && (h.kind===H_SOLDIER || h.brave>=1);
+  for (const h of W.humans){
+    if (!fights(h)) continue;
+    const k=key(h.x,h.y); let L=cell.get(k); if (!L){ L=[]; cell.set(k,L); } L.push(h);
+  }
+  for (const h of W.humans){
+    if (!fights(h)) continue;
+    let px=0, py=0;
+    const cx=(h.x/4)|0, cy=(h.y/4)|0;
+    for (let y=cy-1;y<=cy+1;y++) for (let x=cx-1;x<=cx+1;x++) for (const e of cell.get(y*1000+x) ?? []){
+      if (e===h || e.o!==h.o) continue;
+      let dx=h.x-e.x, dy=h.y-e.y; const d=Math.hypot(dx,dy); if (d>=ROOM) continue;
+      if (d<1e-3){ const a=((h.id*2654435761)>>>0)/4294967296*6.283; dx=Math.cos(a); dy=Math.sin(a); } else { dx/=d; dy/=d; }   // exactly on top: apart along a fixed way
+      px+=dx*(ROOM-d)*0.5; py+=dy*(ROOM-d)*0.5;
+    }
+    if (!px && !py) continue;
+    const L=Math.hypot(px,py), m=Math.min(L,0.6)/L, nx=h.x+px*m, ny=h.y+py*m, t=tileOf(nx,ny);
+    if (nx<0 || ny<0 || nx>=TW*2 || ny>=TH*2 || !isLand[t] || (owner[t] && onCastle(W.nations[owner[t]],nx,ny))) continue;
+    if (h.war>=0 ? mayStand(h,owner[t]) : owner[t]===h.o){ h.x=nx; h.y=ny; }   // armies where they may go, everyone else at home
+  }
+}
+
 /* ---------- the armies, each tick ---------- */
 function slotPos(c: Campaign, i: number, n: number): [number, number] {
   const cols=Math.max(4,Math.min(12,Math.ceil(Math.sqrt(n*2.5)))), rank=(i/cols)|0, col=i%cols, inRank=Math.min(cols,n-rank*cols);
@@ -416,7 +452,7 @@ function runCampaign(c: Campaign, men: Human[]){
   men.sort((x,y)=>x.slot-y.slot || x.id-y.id); men.forEach((h,i) => h.slot=i);
   c.members=men.map(h => h.id);
   if (c.phase<2 && !W.nations[c.d].alive){ sendHome(c,'won',false); return; }
-  if (c.phase<2 && c.target>=0){ const E=campaignById(c.target); if (!E || E.phase===2){ sendHome(c,'done'); return; } }
+  if (c.phase<2 && c.target>=0){ const E=campaignById(c.target); if (!E || !E.hostile){ sendHome(c,'done',false); return; } }   // they are beaten, home, or at peace
   if (W.tickN-c.fieldAt>=(c.target>=0 ? REFIELD/2 : REFIELD)) refield(c);
   if (c.phase===2) return;
   let inPlace=0, near=0, busy=false;
@@ -461,6 +497,8 @@ export function updateWar(){
       if ((owner[t]===h.o && !occ[t]) || occ[t]===h.o) for (let dy=-TW;dy<=TW;dy+=TW) for (let dx=-1;dx<=1;dx++){ const k=t+dy+dx; if (k>=0 && k<NT){ heldAt[k]=W.tickN; heldBy[k]=h.o; } }
     } else if (h.brave>=1) armies[h.o].push(h);   // armed villagers, and the mob
   }
+  fighting.clear();
+  for (const h of H) if (h.foe>=0 && h.hp>0) fighting.set(h.foe,(fighting.get(h.foe) ?? 0)+1);
   posts=N.map(n => warring[n.id] ? barracksOf(n).map(frontOf) : []);
   if (W.tickN%5===0) findRallies();
   lineUp();
@@ -479,12 +517,12 @@ function findRallies(){
     if (!warring[o] || !n.alive){ rallies[o]=null; continue; }
     let best: Rally | null=null, bd=Infinity;
     for (const c of W.campaigns){
-      if (!c.hostile || c.phase===2 || c.a===o || !W.atWar[c.a*M+o]) continue;
-      const bx=(c.bx/2)|0, by=(c.by/2)|0;
+      if (!c.hostile || c.a===o || !W.atWar[c.a*M+o] || (c.phase===2 && !c.raid)) continue;
+      const [ax,ay]=armyAt(c), bx=(ax/2)|0, by=(ay/2)|0;
       for (let y=Math.max(0,by-THREAT_TILES);y<=Math.min(TH-1,by+THREAT_TILES);y++) for (let x=Math.max(0,bx-THREAT_TILES);x<=Math.min(TW-1,bx+THREAT_TILES);x++){
         if (owner[y*TW+x]!==o) continue;
         const d=(x-bx)**2+(y-by)**2;
-        if (d<bd){ bd=d; const px=x*2+1, py=y*2+1, L=Math.hypot(c.bx-px,c.by-py)||1; best={ x:px, y:py, dx:(c.bx-px)/L, dy:(c.by-py)/L, threat:true, n:0 }; }
+        if (d<bd){ bd=d; const px=x*2+1, py=y*2+1, L=Math.hypot(ax-px,ay-py)||1; best={ x:px, y:py, dx:(ax-px)/L, dy:(ay-py)/L, threat:true, n:0 }; }
       }
     }
     if (!best && W.tickN%20===0){
@@ -652,10 +690,10 @@ function moveTo(h: Human, c: Campaign, gx: number, gy: number, stop=0){
     const s=downhill(c.field,h.x,h.y);
     if (s){ dx=s[0]-h.x; dy=s[1]-h.y; d=Math.hypot(dx,dy); stop=0; if (d<1e-6) return; }
   }
-  const st=Math.min(d-stop,h.sp*TICK); h.x+=dx/d*st; h.y+=dy/d*st;
+  const st=Math.min(d-stop,pace(h)*TICK); h.x+=dx/d*st; h.y+=dy/d*st;
 }
 /** Steps toward (gx,gy) without leaving his own kingdom's land (sidestepping a corner if he can). */
-function stepHome(h: Human, gx: number, gy: number, stop: number, sp=h.sp){
+function stepHome(h: Human, gx: number, gy: number, stop: number, sp=pace(h)){
   const dx=gx-h.x, dy=gy-h.y, d=Math.hypot(dx,dy);
   if (d<=stop+0.05) return;
   const st=Math.min(d-stop,sp*TICK), a=Math.atan2(dy,dx);
@@ -691,14 +729,19 @@ function pickBuilding(h: Human, c: Campaign){
   return best;
 }
 /** A soldier in the field looks around: an enemy nearby (sooner one fighting a comrade), else a building to attack. */
+/** A soldier in the field picks his enemy: one near his own place in the line (or one on him),
+    the nearest first, but one his comrades are already fighting counts as further off, so the
+    line meets the enemy along its front instead of piling onto one man. */
 function choose(h: Human, c: Campaign){
   let best: Human | undefined, bs=Infinity;
+  const [sx,sy]=slotPos(c,h.slot,c.members.length);
   for (let o=1;o<W.M;o++){
     if (!W.atWar[c.a*W.M+o]) continue;
     for (const e of armies[o] ?? []){
       if (e.hp<=0) continue;
-      const d=Math.hypot(e.x-h.x,e.y-h.y); if (d>ENGAGE_R || (e.x-c.bx)**2+(e.y-c.by)**2>LEASH*LEASH) continue;
-      const s=d-(e.foe>=0 && byId.get(e.foe)?.war===c.id ? 6 : 0);
+      const d=Math.hypot(e.x-h.x,e.y-h.y), onMe=e.foe===h.id;
+      if (!onMe && (Math.hypot(e.x-sx,e.y-sy)>ENGAGE_R || (e.x-c.bx)**2+(e.y-c.by)**2>LEASH*LEASH)) continue;
+      const s=d+CROWD*crowdOn(e,h)-(onMe ? 4 : 0);
       if (s<bs || (s===bs && best && e.id<best.id)){ bs=s; best=e; }
     }
   }
@@ -733,7 +776,7 @@ function homeward(h: Human, c: Campaign){
   const s=downhill(c.field,h.x,h.y), n=W.nations[h.o];
   const [gx,gy] = s ?? (n.capTile>=0 ? doorOf(n) : [n.ltx*2+1, n.lty*2+1]);
   const dx=gx-h.x, dy=gy-h.y, d=Math.hypot(dx,dy); if (d<1e-6) return;
-  const st=Math.min(d,h.sp*TICK); h.x+=dx/d*st; h.y+=dy/d*st;
+  const st=Math.min(d,pace(h)*TICK); h.x+=dx/d*st; h.y+=dy/d*st;
 }
 /** One tick for a soldier in a campaign. */
 export function marchStep(h: Human){
@@ -777,7 +820,7 @@ function threat(h: Human, ax: number, ay: number, R: number, reach=Infinity){
     for (const e of armies[o] ?? []){
       if (e.hp<=0 || (e.x-ax)**2+(e.y-ay)**2>R*R) continue;
       const d=Math.hypot(e.x-h.x,e.y-h.y); if (d>reach && e.foe!==h.id) continue;
-      const s=d-(e.aim>=0 && pOwner[e.aim]===h.o ? 8 : 0)-(e.foe>=0 && byId.get(e.foe)?.o===h.o ? 4 : 0);
+      const s=d-(e.aim>=0 && pOwner[e.aim]===h.o ? 8 : 0)-(e.foe>=0 && byId.get(e.foe)?.o===h.o ? 4 : 0)+CROWD*crowdOn(e,h);
       if (s<bs || (s===bs && best && e.id<best.id)){ bs=s; best=e; }
     }
   }

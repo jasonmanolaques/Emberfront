@@ -24,7 +24,7 @@ import { W, owner, occ, pType, pOwner, pBurn, pPrio, pAband, pCenter, pTimer, pT
 import { homeScore, startSite, cancelSite, finishHouse } from './buildings';
 import { on } from './events';
 import { GOOD_OF, YIELD, WORK_TICKS, available, harvest } from './resources';
-import { updateWar, marchStep, guardStep, alarmStep, mayStand } from './war';
+import { updateWar, marchStep, guardStep, alarmStep, mayStand, spread } from './war';
 import { HOUSE_BEDS, R_HOUSING, MAX_TIER } from './research';
 
 export const H_VILLAGER = 0, H_SOLDIER = 1;
@@ -45,6 +45,7 @@ const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 
 const STORE_TICKS = 10;          // ticks inside the capital to store a load (1 s)
 const PATROL_R = 36;             // pixels around the capital door soldiers patrol when there is no barracks
 export const SOLDIER_HP = 11, VILLAGER_HP = 6;
+export const HOME_PACE = 1.15;   // soldiers on their own kingdom's land move 15% faster
 export const REGEN = 0.01;        // hit points everyone heals a tick (0.1 a second)
 export const GARRISON = 5;       // soldiers a watchtower calls for
 export const TOWER_RANGE = 32;   // pixels a watchtower can shoot
@@ -71,6 +72,8 @@ export const tileOf = (x: number, y: number) => ((y/2)|0)*TW+((x/2)|0);
 const ownFree = (o: number, x: number, y: number) => { const t=tileOf(x,y); return owner[t]===o && !occ[t]; };
 /** Pixel position at the front of building plot q (barracks door, foot of a watchtower). */
 export const frontOf = (q: number): [number, number] => [(q%PW)*8+4, ((q/PW)|0)*8+7.5];
+/** How fast h walks, pixels a second: soldiers are quicker at home, so defenders can catch invaders. */
+export const pace = (h: Human) => h.kind===H_SOLDIER && owner[tileOf(h.x,h.y)]===h.o ? h.sp*HOME_PACE : h.sp;
 const standing = (q: number, type: number, id: number) => pType[q]===type && pOwner[q]===id && pBurn[q]<=0;
 /** The kingdom's barracks, by plot. */
 export const barracksOf = (n: Nation) => n.blds.filter(q => standing(q,B_BARRACKS,n.id));
@@ -85,7 +88,7 @@ export const workSpot = (t: number): [number, number] => [(t%TW)*2+1.5, ((t/TW)|
 // the castle covers a 16x16 pixel block; people walk around its walls, not across its roof.
 // The row just below the walls, where the gate opens, stays walkable.
 const wallX0=-0.5, wallX1=16.5, wallY0=-0.25, wallY1=14.5;   // the top edge stays clear of the doorstep of a building on the plot above
-function onCastle(n: Nation, x: number, y: number){
+export function onCastle(n: Nation, x: number, y: number){
   if (n.capTile<0) return false;
   const q=n.capPlot, ox=(q%PW)*8, oy=((q/PW)|0)*8;
   return x>=ox+wallX0 && x<=ox+wallX1 && y>=oy+wallY0 && y<=oy+wallY1;
@@ -502,7 +505,7 @@ function step(h: Human){
     if (h.task===TASK_HAUL){ h.task=TASK_STORE; h.x=h.tx; h.y=h.ty; h.wait=STORE_TICKS; return; }
     think(h); return;
   }
-  const sp=h.carry>=0 ? h.sp*0.85 : h.sp;   // a little slower under a load
+  const sp=h.carry>=0 ? h.sp*0.85 : pace(h);   // a little slower under a load
   const st=Math.min(d,sp*TICK); h.x+=dx/d*st; h.y+=dy/d*st;
 }
 
@@ -548,6 +551,7 @@ export function updatePopulation(){
     staffGuilds(n, mine);
   }
   for (const h of H) if (h.war>=0) marchStep(h); else step(h);
+  spread();   // fighters keep a little room between them
   // headcount after everyone has moved, so it matches what is on the map this tick
   for (const n of N){ n.villagers=0; n.soldiers=0; n.training=0; n.beggars=0; n.homeless=0; n.taxpayers=0; }
   for (const h of H){
