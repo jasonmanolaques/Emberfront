@@ -5,7 +5,7 @@ import { launch } from './territory';
 import { R_HOUSING, R_TAXES, R_INFANTRY, TOPICS, setStudy, maxed } from './research';
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, canAfford, placeProblem, build, togglePriority, anyWithin, isEnemyLand } from './buildings';
-import { allied, atWar, ready, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge } from './war';
+import { allied, atWar, ready, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge } from './war';
 
 /** What a bot would build next, most wanted first. */
 function wishlist(n: Nation, exposed: boolean){
@@ -101,6 +101,16 @@ function outnumbered(n: Nation){
   return enemies>1.8*(n.soldiers+2);
 }
 
+const MIN_ARMY = 3;   // bots don't send out an army smaller than this
+/** The bot's biggest army at home (as a barracks plot), or -1 if none is worth sending. */
+function biggest(n: Nation){
+  let best=-1, bk=MIN_ARMY-1;
+  for (const a of available(n)) if (a.men.length>bk){ bk=a.men.length; best=a.unit.key; }
+  return best;
+}
+/** Seconds between the armies a bot sends to a war under way: the bold sooner. */
+const waveGap = (n: Nation) => 18+(1-n.attackAt)*30+W.srand()*10;
+
 /** War for a bot: answer peace offers, send idle soldiers to meet armies marching on it, counter-
     attack once its land is back (or sue for peace if it can't), bring raids home and end wars that
     go badly, and now and then send its free soldiers against the weakest kingdom in reach: at war
@@ -127,7 +137,8 @@ function botWar(n: Nation){
     if (!W.ready[id*M+o] || !atWar(id,o)) continue;
     W.ready[id*M+o]=0;
     const pool=ready(n);
-    if (pool>=5 && !dug && outlook(n,o)>-0.3 && W.contact[id*M+o]) declare(id,o,false,pool);
+    const army=biggest(n);
+    if (pool>=5 && army>=0 && !dug && outlook(n,o)>-0.3 && W.contact[id*M+o]){ declare(id,o,false,[army]); n.nextWave=W.simTime+waveGap(n); }
     else offerPeace(id,o);
   }
   let busy=false;
@@ -140,6 +151,12 @@ function botWar(n: Nation){
   if (W.simTime>=n.nextOffer) for (let o=1;o<M;o++){
     if (o===id || !atWar(id,o) || W.offers[id*M+o] || warAge(id,o)<300 || outlook(n,o)>-0.4) continue;
     endWar(id,o); n.nextOffer=W.simTime+30;   // losing for a while: raids turn home and wars get a peace offer, at most every 30 s
+  }
+  // an attack under way gets the next army as a wave, one at a time, while the war goes its way
+  if (W.simTime>=n.nextWave && !dug){
+    const front=W.campaigns.find(c => c.a===id && !c.raid && c.target<0 && c.hostile && c.phase===1);
+    const army=front ? biggest(n) : -1;
+    if (front && army>=0 && outlook(n,front.d)>-0.3){ declare(id,front.d,false,[army]); n.nextWave=W.simTime+waveGap(n); }
   }
   // after a campaign it rests a while (the bold less), so a winner digests its gains first
   if (busy){ n.nextWar=Math.max(n.nextWar, W.simTime+50+(0.8-n.attackAt)*150); return; }
@@ -157,8 +174,9 @@ function botWar(n: Nation){
     if (s>bs){ bs=s; best=o; raid=!border; }
   }
   if (!best || (raid && (!raidTargets(best).length || !routeOpen(id,best)))) return;
-  const send=raid ? Math.max(4,Math.ceil(pool*(0.4+srand()*0.3))) : Math.ceil(pool*(0.7+srand()*0.3));
-  declare(id,best,raid,send);
+  // the biggest army goes first (a raid sends just that one); the rest follow in waves
+  const army=biggest(n); if (army<0) return;
+  declare(id,best,raid,[army]); n.nextWave=W.simTime+waveGap(n);
 }
 
 export function botThink(n: Nation){

@@ -14,6 +14,11 @@ const TELLINGS: Record<string, Telling> = {
     theirs: (o) => `The villagers of ${name(o)} rise as a mob and swarm your soldiers`,
     shout: 'Mob!',
   },
+  revenge: {
+    mine: () => 'Your troops are inspired and thirsty for revenge',
+    theirs: (o) => `${name(o)} strikes back, its troops thirsty for revenge`,
+    shout: 'Revenge!',
+  },
 };
 
 export function onStory(id: string, o: number, x: number, y: number, other: number){

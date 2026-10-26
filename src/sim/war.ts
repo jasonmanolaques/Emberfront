@@ -57,6 +57,7 @@ const CROWD = 5;                      // a foe already fought by others counts t
 export const MARCH_SP = 3.2;          // pixels a second the banner moves
 export const CAPTURE_EVERY = 5;       // ticks between land grabs by each soldier of an attack
 const CAPTURE_R = 2;                  // tiles around him
+export const REVENGE_DMG = 1.25, REVENGE_PACE = 1.1;   // a counter-attack's soldiers hit 25% harder and march 10% faster
 const REFIELD = 20;                   // ticks between working out the way again (2 s)
 export const MUSTER_TICKS = 200;      // longest an army waits at the muster point (20 s)
 const STALL_TICKS = 60;               // longest the banner waits for stragglers and fights (6 s)...
@@ -251,15 +252,17 @@ export function warProblem(a: number, d: number, raid: boolean): string | null {
 export function declare(a: number, d: number, raid: boolean, pick: number | number[]){
   if (warProblem(a,d,raid)) return false;
   const A=W.nations[a], D=W.nations[d];
-  let sent=0;
+  const M=W.M, counter=!raid && W.ready[a*M+d]>0;   // our land is back: this one is for revenge
+  let sent=0, first: Campaign | undefined;
   for (const { unit, men } of pickArmies(A,pick)){
     const c=newCampaign(a,d,raid,-1,men.length,D.tiles,unit.key);
-    if (muster(c,men,unit)) sent++;
+    c.inspired=counter;
+    if (muster(c,men,unit)){ sent++; first??=c; }
   }
   if (!sent) return false;
   if (allied(a,d)){ W.ally[a*W.M+d]=W.ally[d*W.M+a]=0; on.allianceBroken(a,d); }
   W.grudge[d*W.M+a]=W.tickN;
-  const M=W.M;
+  if (counter) on.story('revenge',a,first!.bx,first!.by,d);
   if (!raid){
     if (!W.wars[a*M+d]){ W.wars[a*M+d]=W.wars[d*M+a]=1; W.warSince[a*M+d]=W.warSince[d*M+a]=W.tickN; }
     W.ready[a*M+d]=0;   // the counter-attack it was ready for is under way
@@ -270,7 +273,7 @@ export function declare(a: number, d: number, raid: boolean, pick: number | numb
 }
 function newCampaign(a: number, d: number, raid: boolean, target: number, size: number, tiles: number, unit: number): Campaign {
   return { id:++W.campSeq, a, d, raid, target, hostile:true, members:[], phase:0, bx:0, by:0, dx:1, dy:0, rx:0, ry:0, goal:-1,
-    field:new Int16Array(NT), fieldAt:W.tickN, started:W.tickN, startSoldiers:size, startTiles:tiles, stall:0, why:'', unit };
+    field:new Int16Array(NT), fieldAt:W.tickN, started:W.tickN, startSoldiers:size, startTiles:tiles, stall:0, why:'', unit, inspired:false };
 }
 /** Works out the way and calls the soldiers to form up in front of their barracks (or, if the way
     can't reach it, on our own ground nearest the goal). */
@@ -468,7 +471,7 @@ function advance(c: Campaign){
   if (here<=(c.target>=0 ? 3 : 1)){ if (!c.raid && c.target<0 && W.nations[c.d].capTile<0) c.fieldAt=-1e9; return; }   // there: siege, burn, close with the enemy, or (no capital) find more land
   const s=downhill(f,c.bx,c.by); if (!s) return;
   const dx=s[0]-c.bx, dy=s[1]-c.by, d=Math.hypot(dx,dy); if (d<1e-6) return;
-  const st=Math.min(d,MARCH_SP*TICK); c.bx+=dx/d*st; c.by+=dy/d*st;
+  const st=Math.min(d,MARCH_SP*(c.inspired ? REVENGE_PACE : 1)*TICK); c.bx+=dx/d*st; c.by+=dy/d*st;
   // the line turns gradually toward where it is going
   c.dx+=(dx/d-c.dx)*0.08; c.dy+=(dy/d-c.dy)*0.08; const L=Math.hypot(c.dx,c.dy)||1; c.dx/=L; c.dy/=L;
 }
@@ -705,18 +708,30 @@ function strike(h: Human, e: Human){
   if (h.cool>0) return;
   h.cool=HIT_TICKS;
   on.swing(h.id,e.id);
-  if (W.prand()<HIT_CHANCE){ e.hp-=h.kind===H_SOLDIER ? HIT_DMG[h.tier] : MILITIA_DMG; on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id); }
+  if (W.prand()<HIT_CHANCE){ e.hp-=(h.kind===H_SOLDIER ? HIT_DMG[h.tier] : MILITIA_DMG)*(revenge(h) ? REVENGE_DMG : 1); on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id); }
   if (e.foe<0 && (e.kind===H_SOLDIER || e.brave>=1)) e.foe=h.id;   // he turns to fight back
 }
 /** Steps toward (gx,gy): straight if the way is open, otherwise along the army's way. */
-function moveTo(h: Human, c: Campaign, gx: number, gy: number, stop=0){
+/** Is h marching in a counter-attack? */
+const revenge = (h: Human) => h.war>=0 && !!camps.get(h.war)?.inspired;
+/** How fast h marches with his army: a counter-attack's men a little faster. */
+const marchPace = (h: Human, c: Campaign) => pace(h)*(c.inspired ? REVENGE_PACE : 1);
+/** Steps toward (gx,gy): straight if the way is open, otherwise along the army's way. Going back to
+    his place in the line (`toLine`), he heads for his own army's banner instead, and if he has got
+    ahead of it he waits for his army to come up rather than march on alone. */
+function moveTo(h: Human, c: Campaign, gx: number, gy: number, stop=0, toLine=false){
   let dx=gx-h.x, dy=gy-h.y, d=Math.hypot(dx,dy);
   if (d<=stop+0.05) return;
   if (d>2 && !clearWay(c.field,h.x,h.y,gx,gy)){
-    const s=downhill(c.field,h.x,h.y);
-    if (s){ dx=s[0]-h.x; dy=s[1]-h.y; d=Math.hypot(dx,dy); stop=0; if (d<1e-6) return; }
+    const here=c.field[tileOf(h.x,h.y)], flag=c.field[tileOf(c.bx,c.by)];
+    if (toLine && Math.hypot(c.bx-h.x,c.by-h.y)>2 && clearWay(c.field,h.x,h.y,c.bx,c.by)){ dx=c.bx-h.x; dy=c.by-h.y; d=Math.hypot(dx,dy); stop=0; }
+    else if (toLine && here>=0 && flag>=0 && here<flag) return;
+    else {
+      const s=downhill(c.field,h.x,h.y);
+      if (s){ dx=s[0]-h.x; dy=s[1]-h.y; d=Math.hypot(dx,dy); stop=0; if (d<1e-6) return; }
+    }
   }
-  const st=Math.min(d-stop,pace(h)*TICK); h.x+=dx/d*st; h.y+=dy/d*st;
+  const st=Math.min(d-stop,marchPace(h,c)*TICK); h.x+=dx/d*st; h.y+=dy/d*st;
 }
 /** Steps toward (gx,gy) without leaving his own kingdom's land (sidestepping a corner if he can). */
 function stepHome(h: Human, gx: number, gy: number, stop: number, sp=pace(h)){
@@ -826,7 +841,7 @@ export function marchStep(h: Human){
     return;
   }
   const [sx,sy]=slotPos(c,h.slot,c.members.length);
-  moveTo(h,c,sx,sy);
+  moveTo(h,c,sx,sy,0,true);
 }
 
 /** The post a soldier at home defends, and how far around it. */

@@ -10,7 +10,7 @@ import { census } from '../src/sim/census';
 import { build, plotProblem, structureOf, togglePriority, finishHouse } from '../src/sim/buildings';
 import { H_SOLDIER, H_VILLAGER, TASK_STORE, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, switching, pace } from '../src/sim/population';
 import { UNIT_SIZE, buildUnits, station, unitAt } from '../src/sim/army';
-import { allied, atWar, available, ready, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, spread } from '../src/sim/war';
+import { allied, atWar, available, ready, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread } from '../src/sim/war';
 
 const N = (i: number) => W.nations[i];
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
@@ -243,9 +243,9 @@ describe('at war', () => {
     world(1); quiet(); paintDisc(N(2),26);
     // the farmsteads out on the edge, beyond the castle's arrows
     for (const t of [B_FARM, B_FARM, B_HOUSE, B_HOUSE, B_FARM]) place(N(2),t,N(1).capTile);
-    const men=soldiers(N(1),6);
+    const men=soldiers(N(1),10);
     const plunder=collect('plunder');
-    queueCommand({ type:'war', nation:1, target:2, raid:true, soldiers:6 }); tick();
+    queueCommand({ type:'war', nation:1, target:2, raid:true, soldiers:10 }); tick();
     const c=W.campaigns[0];
     until(() => men.some(h => h.loot), 4000);
     // it goes on raiding while it is not recalled
@@ -490,10 +490,27 @@ describe('occupation', () => {
     until(() => ready.length>0, 50);
     expect(ready[0]).toEqual([1,2]);
     expect(W.ready[1*W.M+2]).toBeGreaterThan(0);
-    // the counter-attack: the defender becomes the attacker
+    // the counter-attack: the defender becomes the attacker, its troops thirsty for revenge
+    const told=collect('story');
     queueCommand({ type:'war', nation:1, target:2, raid:false, soldiers:10 }); tick();
     expect(W.ready[1*W.M+2]).toBe(0);
-    expect(W.campaigns.some(k => k.a===1 && k.d===2 && !k.raid && k.target<0)).toBe(true);
+    const k=W.campaigns.find(k => k.a===1 && k.d===2 && !k.raid && k.target<0)!;
+    expect(k.inspired).toBe(true);
+    expect(told.map(t => [t[0],t[1],t[4]])).toEqual([['revenge',1,2]]);
+    // inspired, they hit a quarter harder and march a tenth faster
+    expect([REVENGE_DMG, REVENGE_PACE]).toEqual([1.25, 1.1]);
+    const h=W.humans.find(h => h.war===k.id)!, e=makeHuman(N(2),H_SOLDIER,h.x+1,h.y); W.humans.push(e);
+    const hp=e.hp, hits=collect('hit'); h.cool=0; h.foe=e.id;
+    for (let i=0;i<40 && !hits.length;i++){ h.cool=0; tick(); }
+    expect(hp-e.hp).toBeCloseTo(HIT_DMG[1]*REVENGE_DMG*hits.filter(x => x[3]===e.id).length, 1);
+  });
+
+  it('an ordinary attack is not a counter-attack', () => {
+    world(1); quiet(); paintToward(1,2);
+    soldiers(N(1),5); const told=collect('story');
+    expect(declare(1,2,false,5)).toBe(true);
+    expect(W.campaigns[0].inspired).toBe(false);
+    expect(told).toHaveLength(0);
   });
 
   it('sends the idle soldiers to form a line where an enemy army is about to cross the border', () => {

@@ -16,6 +16,7 @@ import { personSprite, corpseSprite, woundStage, BODY_X, FEET_Y } from './people
 import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, psize, floats, glints, shots, hits, corpses, drips, addDrip, CORPSE_MS, DRIP_MS, updateEffects } from './effects';
 import { H_SOLDIER, TASK_HARVEST, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, TASK_FORGE, indoors, maxHp } from '../sim/population';
 import { units, unitLabel } from '../sim/army';
+import { chatter, drawSpeech } from './speech';
 import { G_WOOD, G_STONE, G_COPPER } from '../sim/resources';
 import { allied, atWar, HIT_TICKS } from '../sim/war';
 
@@ -355,6 +356,8 @@ export function render(now: number, dt: number){
       ctx.fillStyle=i===PLAYER ? '#ffe27a' : '#f2f5f8'; ctx.strokeText(text,sx,sy); ctx.fillText(text,sx,sy);
     }
   }
+  // people talking, once close enough to see who
+  if (zs>=1.5){ chatter(now); drawSpeech(ctx,now,camX,camY,zoom,dpr,w,h); }
   for (let i=floats.length-1;i>=0;i--){
     const f=floats[i], age=(now-f.t0)/1000; if (age>1.3){ floats.splice(i,1); continue; }
     const sx=(f.x*K-camX)*zoom, sy=(f.y*K-camY)*zoom-age*36*dpr, fs=(16*dpr)|0;

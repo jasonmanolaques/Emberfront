@@ -15,6 +15,7 @@ export interface Nation {
   sumX: number; sumY: number; ltx: number; lty: number; peak: number;   // ltx/lty: where the kingdom's label sits
   expandAt: number; attackAt: number; ratio: number; nextThink: number;  // bot personality
   nextWar: number; nextOffer: number;   // bots: sim time before which they start no campaign, offer no peace
+  nextWave: number;                  // bots: sim time before which they send no more armies to a war under way
   soldierShare: number;              // share of the population the kingdom wants as soldiers (0..1)
   humanProg: number;                 // progress toward the next human; one arrives at HUMAN_EVERY (farms speed it up)
   villagers: number; soldiers: number; training: number;   // headcount, updated every tick; training = switching role
@@ -77,6 +78,7 @@ export interface Campaign {
   stall: number;                     // ticks the banner has waited for stragglers
   why: string;                       // why it is going home: 'recall', 'peace', 'cut', 'done', 'won'
   unit: number;                      // the barracks (a plot of it) whose army this is, or -1
+  inspired: boolean;                 // a counter-attack: thirsty for revenge, it hits harder and marches faster
 }
 export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; }   // gold still to spend on this front
 

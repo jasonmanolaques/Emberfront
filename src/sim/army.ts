@@ -69,7 +69,8 @@ export function buildUnits(){
 }
 
 /** Gives kingdom n's soldiers their places: each keeps his barracks while it has room for him,
-    and the soldiers without one fill free places, the nearest first (watchtower guards last).
+    and free places (a soldier fell, or a new barracks) go to new recruits: the newest soldiers
+    without one, never a watchtower's guards.
     Returns the soldiers who just joined an army, so they can walk over. */
 export function station(n: Nation, mine: Human[], switching: (h: Human) => boolean){
   const U=units[n.id] ?? [], joined: Human[]=[];
@@ -81,11 +82,11 @@ export function station(n: Nation, mine: Human[], switching: (h: Human) => boole
   }
   for (const u of U){
     if (u.members.length>=u.cap) continue;
-    const free=mine.filter(h => h.kind===H_SOLDIER && h.base<0 && h.war<0 && h.hp>0 && !switching(h));
-    free.sort((a,b) => (+(a.post>=0) - +(b.post>=0)) || ((a.x-u.x)**2+(a.y-u.y)**2)-((b.x-u.x)**2+(b.y-u.y)**2) || a.id-b.id);
+    const free=mine.filter(h => h.kind===H_SOLDIER && h.base<0 && h.post<0 && h.war<0 && h.hp>0 && !switching(h));
+    free.sort((a,b) => b.id-a.id);   // the newest recruits first
     for (const h of free){
       if (u.members.length>=u.cap) break;
-      h.base=u.plots[u.members.length%u.plots.length]; h.post=-1;   // spread along the modules
+      h.base=u.plots[u.members.length%u.plots.length];   // spread along the modules
       u.members.push(h); joined.push(h);
     }
   }

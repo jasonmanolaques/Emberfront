@@ -77,6 +77,23 @@ describe('barracks armies', () => {
   });
 });
 
+describe('filling the ranks', () => {
+  it('gives a fallen soldier\'s place to a new recruit, never to a watchtower guard', () => {
+    start(12345); expand(6);
+    place(B_BARRACKS); const t=place(B_TOWER);
+    const men=soldiers(8); run(2);
+    queueCommand({ type:'priority', nation:1, plot:t }); run(2);
+    const army=men.filter(h => h.base>=0), guards=men.filter(h => h.post===t);
+    expect([army.length, guards.length]).toEqual([5, 3]);
+    army[0].hp=0; run(5);
+    expect(guards.every(h => h.base<0 && h.post===t)).toBe(true);   // the guards stay at their tower
+    expect(units[1][0].members).toHaveLength(4);
+    const [x,y]=doorOf(me()), recruit=makeHuman(me(),H_SOLDIER,x,y+1); W.humans.push(recruit); run(2);
+    expect(recruit.base).toBeGreaterThanOrEqual(0);                    // the new recruit takes the place
+    expect(units[1][0].members).toHaveLength(5);
+  });
+});
+
 describe('soldier tiers and the blacksmith', () => {
   function armoury(k: number){
     start(12345); expand(8);

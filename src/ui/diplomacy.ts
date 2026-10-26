@@ -15,6 +15,7 @@ const pop=$('warPop'), popMenu=$('wpMenu'), popSend=$('wpSend');
 const picker=new ArmyPicker($('dArmies'), () => refreshWar(false)), popPicker=new ArmyPicker($('wpArmies'), () => refreshPop());
 let target=0;
 let popFor=0, popCamp=-1;   // the enemy whose army the menu is about, and that army
+let popCounter=false;       // the menu is for our land being free again: counter-attack or peace
 // raid routes take a search of the map: worked out at most once a second while the war screen is open
 let raidWhy: string | null = null, raidAt = -1e9;
 
@@ -173,7 +174,7 @@ export function updateWarChips(){
     const kind=f.war ? 'War' : 'Raid', open=incomingFrom(f.o);
     const [label, act, off] =
       f.theyOffer ? ['Accept peace', 'peace', false] :
-      f.ready ? ['Counter-attack…', 'counter', false] :
+      f.ready ? ['Counter-attack or peace ▾', 'counter', false] :
       open ? ['Respond ▾', 'respond', false] :
       f.myRaids && !f.war ? ['Recall raid', 'end', false] :
       f.myRaids ? ['Recall raid · offer peace', 'end', f.iOffer] :
@@ -188,7 +189,8 @@ export function updateWarChips(){
   }).join('');
   if (html!==lastChips){ lastChips=html; wars.innerHTML=html; placePop(); }
   if (!pop.hidden){
-    if (!incomingFrom(popFor) && popCamp<0) closePop(); else if (!popSend.hidden) refreshPop();
+    if (popCounter){ if (!W.ready[PLAYER*W.M+popFor]) closePop(); }
+    else if (!incomingFrom(popFor) && popCamp<0) closePop(); else if (!popSend.hidden) refreshPop();
   }
 }
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]!);
@@ -202,15 +204,19 @@ function placePop(){
   pop.style.left=Math.max(8,Math.min(g.width-pop.offsetWidth-8,r.left-g.left+r.width/2-pop.offsetWidth/2))+'px';
   pop.style.top=(r.bottom-g.top+6)+'px';
 }
-function openPop(o: number){
-  popFor=o; popCamp=-1; pop.hidden=false; popMenu.hidden=false; popSend.hidden=true;
+function openPop(o: number, counter=false){
+  popFor=o; popCamp=-1; popCounter=counter; pop.hidden=false; popMenu.hidden=false; popSend.hidden=true;
   const E=incomingFrom(o), war=!!W.wars[PLAYER*W.M+o];
-  ($('wpTitle')).textContent = !E || E.phase<2 ? `${W.nations[o].name}'s ${E?.raid ? 'raiders are' : 'army is'} coming` : `${W.nations[o].name}'s raiders are fleeing`;
+  ($('wpTitle')).textContent = counter ? `Your land is free of ${W.nations[o].name}`
+    : !E || E.phase<2 ? `${W.nations[o].name}'s ${E?.raid ? 'raiders are' : 'army is'} coming` : `${W.nations[o].name}'s raiders are fleeing`;
+  $('wpPeace').textContent = counter ? 'Offer peace' : 'Request peace';
+  $('wpIntercept').textContent = counter ? 'Counter-attack…' : 'Intercept…';
+  $('wpIntercept').title = counter ? 'Strike back with your armies: your troops are thirsty for revenge, and hit harder' : 'Send armies out to meet their army in the field';
   $('wpPeace').hidden=!war;   // raiders can't be bargained with, only fought
   popMenu.classList.toggle('one',!war);
   placePop();
 }
-export function closePop(){ pop.hidden=true; popFor=0; popCamp=-1; }
+export function closePop(){ pop.hidden=true; popFor=0; popCamp=-1; popCounter=false; }
 function showIntercept(){
   const E=incomingFrom(popFor), me=W.nations[PLAYER]; if (!E || !me){ closePop(); return; }
   popCamp=E.id; popMenu.hidden=true; popSend.hidden=false;
@@ -238,13 +244,13 @@ export function setupDiplomacy(){
     const b=(e.target as HTMLElement).closest('button.chip') as HTMLButtonElement | null; if (!b || b.disabled) return;
     const o=+b.dataset.o!, act=b.dataset.act;
     if (act==='respond'){ if (!pop.hidden && popFor===o) closePop(); else openPop(o); return; }
-    if (act==='counter'){ openCounter(o); return; }
+    if (act==='counter'){ if (!pop.hidden && popFor===o) closePop(); else openPop(o,true); return; }
     if (act==='peace') queueCommand({ type:'peace', nation:PLAYER, target:o });
     else if (act==='end') queueCommand({ type:'endWar', nation:PLAYER, target:o });
     lastChips=''; b.disabled=true;
   });
   $('wpPeace').onclick=()=>{ if (popFor){ queueCommand({ type:'endWar', nation:PLAYER, target:popFor }); toast(`You ask ${W.nations[popFor].name} for peace`); } closePop(); };
-  $('wpIntercept').onclick=showIntercept;
+  $('wpIntercept').onclick=()=>{ if (popCounter){ const o=popFor; closePop(); openCounter(o); } else showIntercept(); };
   $('wpBack').onclick=()=>{ popCamp=-1; popMenu.hidden=false; popSend.hidden=true; placePop(); };
   $('wpClose').onclick=closePop;
   $('wpGo').onclick=()=>{

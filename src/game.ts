@@ -16,6 +16,7 @@ import { resetStyles } from './render/style';
 import { resetLabels, resetGhosts, noteBlow, noteSwing, noteArrow } from './render/render';
 import { onStory } from './ui/story';
 import { resetPeople } from './render/people';
+import { resetSpeech } from './render/speech';
 import { setupBuildPanel, toggleBuildPanel } from './ui/build';
 import { ui, log, toast, showHUD, checkEnd, onEliminated, onCapitalFell, onBuildingPlaced } from './ui/hud';
 import { setupDiplomacy, resetDiplomacy, noteDeath } from './ui/diplomacy';
@@ -85,7 +86,7 @@ const TIER_NEWS=[['','','your builders guild can raise stone houses','your build
 const nm = (id: number) => W.nations[id]?.name ?? 'Someone';
 export function newGame(seed?: number){
   newWorld(seed ?? (Math.random()*2147483647)|0);
-  resetStyles(); resetLabels(); resetEffects(); resetGhosts(); resetPeople();
+  resetStyles(); resetLabels(); resetEffects(); resetGhosts(); resetPeople(); resetSpeech();
   toggleBuildPanel(false); resetDiplomacy(); closeResearch(); closeArmy();
   client.overShown=false; client.lastVillageLog=-99; client.paused=false; client.speed=1; $('speed').textContent='1×';
   setSoldierShare(0);
