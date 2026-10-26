@@ -9,11 +9,12 @@ import { updateWarChips, refreshDiplomacy } from './diplomacy';
 import { refreshResearch } from './research';
 import { refreshArmy } from './army';
 import { $ } from './dom';
+import { perMinute } from '../sim/ledger';
 
 export const ui={ meGold:$('meGold'), meRate:$('meRate'), meLand:$('meLand'), meHouses:$('meHouses'), meStrength:$('meStrength'),
   meWood:$('meWood'), meStone:$('meStone'), meCopper:$('meCopper'),
   meVillagers:$('meVillagers'), meWages:$('meWages'), meHomeless:$('meHomeless'), meSoldiers:$('meSoldiers'), meTraining:$('meTraining'), meNext:$('meNext'),
-  soldiers:$('soldiers') as HTMLInputElement, soldiersHint:$('soldiersHint'),
+  soldiers:$('soldiers') as HTMLInputElement, soldiersHint:$('soldiersHint'), invest:$('invest') as HTMLInputElement, investHint:$('investHint'),
   clock:$('clock'), boardList:$('boardList'), attacks:$('attacks'), log:$('log'), toast:$('toast'), tip:$('tip'), banner:$('banner') };
 
 let lastBoard=0;
@@ -40,6 +41,12 @@ export function updateHUD(now: number){
   // soldiers need a barracks
   const canTrain=me.alive && me.barracks>0;
   ui.soldiers.disabled=!canTrain; ui.soldiersHint.hidden=canTrain;
+  // city investment opens up with the first builders guild; beside it, the goods of the last minute
+  const canInvest=me.alive && me.guilds>0;
+  ui.invest.disabled=!canInvest; ui.investHint.hidden=canInvest;
+  const { gain, spend }=perMinute(me);
+  ['inW','inS','inC'].forEach((id,g) => { $(id).textContent='+'+Math.round(gain[g]); });
+  ['outW','outS','outC'].forEach((id,g) => { $(id).textContent='−'+Math.round(spend[g]); });
   ui.clock.textContent=fmtTime(W.simTime);
   if (now-lastBoard>450){
     lastBoard=now;

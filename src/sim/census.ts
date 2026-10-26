@@ -3,7 +3,7 @@ import { TW, TH, NP, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CPART, B_RUINS
 import { W, owner, occ, isLand, pType, pOwner, pBuild, pCenter, pBurn, pTimer, pTier } from './state';
 import { HOUSE_BEDS } from './research';
 import { on } from './events';
-import { isBld } from './buildings';
+import { isBld, joinGatherers } from './buildings';
 
 /** Counts shared border edges between every pair of nations into W.contact[a*M+b]. */
 export function scanContacts(withSums: boolean){
@@ -34,6 +34,7 @@ export function census(){
       else if (ty===B_RESEARCH) n.labs++; else if (ty===B_GUILD) n.guilds++; else if (ty===B_SMITHY) n.smithies++;
     }
   }
+  for (let i=1;i<N.length;i++) if (N[i].alive) joinGatherers(N[i]);   // what research now lets join up
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive) continue;
     const pct=n.tiles/W.landCount; if (pct>n.peak) n.peak=pct;

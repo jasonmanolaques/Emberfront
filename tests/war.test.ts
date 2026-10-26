@@ -2,7 +2,7 @@
 // Most of these play on a flat all-grass map, so distances and borders are predictable.
 import { describe, it, expect } from 'vitest';
 import { TW, TH, NT, NP, PW, T_GRASS, B_HOUSE, B_FARM, B_TOWER, B_BARRACKS, B_RUINS } from '../src/core/constants';
-import { W, owner, occ, isLand, terr, resType, resLeft, pBuild, pType, pOwner, pBurn, pCenter, type Human, type Nation } from '../src/sim/state';
+import { W, owner, occ, isLand, terr, resType, resLeft, pBuild, pType, pOwner, pBurn, pCenter, pHp, type Human, type Nation } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { listen, on } from '../src/sim/events';
 import { setOwner } from '../src/sim/territory';
@@ -475,6 +475,19 @@ describe('occupation', () => {
     for (const t of held) if (occ[t]===0 && owner[t]===2) continue; else expect([owner[t], occ[t]]).toEqual([2, 0]);
     expect(W.occCount[1*W.M+2]).toBe(0);
     expect(atWar(1,2)).toBe(false);
+  });
+
+  it('doesn\'t burn what stands on the ground it occupies: the army has to break it', () => {
+    world(1); quiet(); paintToward(1,2); paintDisc(N(1),14);
+    const c2=N(2).capTile, d=(q: number) => ((pCenter[q]%TW)-(c2%TW))**2+(((pCenter[q]/TW)|0)-((c2/TW)|0))**2;
+    const farm=Array.from({ length: NP }, (_, q) => q).filter(q => !plotProblem(N(1),q)).sort((a,b) => d(a)-d(b) || a-b)[0];
+    N(1).stock=[10,10,0]; expect(build(N(1),farm,B_FARM)).toBe(true);
+    soldiers(N(2),10); run(1);
+    expect(declare(2,1,false,10)).toBe(true);
+    until(() => occ[pCenter[farm]]===2, 4000);
+    expect([pType[farm], pBurn[farm]]).toEqual([B_FARM, 0]);   // still standing on occupied ground
+    until(() => pHp[farm]>0, 600);                             // until they set about it
+    until(() => pBurn[farm]>0 || pType[farm]===B_RUINS, 2000);
   });
 
   it('keeps the war going when the attacking army is gone; the defenders take their land back and are ready to counter-attack', () => {

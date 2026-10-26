@@ -17,6 +17,8 @@ export interface Nation {
   nextWar: number; nextOffer: number;   // bots: sim time before which they start no campaign, offer no peace
   nextWave: number;                  // bots: sim time before which they send no more armies to a war under way
   unpaid: number;                    // ticks the treasury has been below zero, soldiers unpaid
+  invest: number;                    // city investment: share of the goods coming in (0..1) the builders may spend
+  gain: number[]; spend: number[];   // goods in and goods spent by the builders and smiths, per second for the last minute: [second*3+good]
   soldierShare: number;              // share of the population the kingdom wants as soldiers (0..1)
   humanProg: number;                 // progress toward the next human; one arrives at HUMAN_EVERY (farms speed it up)
   villagers: number; soldiers: number; training: number;   // headcount, updated every tick; training = switching role
@@ -95,7 +97,8 @@ export type Command =
   | { type: 'endWar'; nation: number; target: number }                // recall a raid, or offer peace
   | { type: 'intercept'; nation: number; campaign: number; soldiers?: number; units?: number[] }   // send armies after an enemy army
   | { type: 'peace'; nation: number; target: number }                 // accept the target's peace offer
-  | { type: 'research'; nation: number; topic: number };              // study this topic next (R_* in research.ts)
+  | { type: 'research'; nation: number; topic: number }               // study this topic next (R_* in research.ts)
+  | { type: 'invest'; nation: number; share: number };               // city investment (0..1)
 
 export const elev = new Float32Array(NT), moist = new Float32Array(NT);
 // resources: at most one per tile (R_* in resources.ts), harvests left, claimed by a villager
@@ -109,7 +112,8 @@ export const pAband = new Uint8Array(NP);   // houses standing empty, run down
 export const occ = new Uint8Array(NT);      // a kingdom's land held by an enemy at war: the occupier (0 = free); the owner stays
 export const pHp = new Float32Array(NP);     // damage a building has taken (multi-plot buildings keep theirs on the main plot)
 export const pArmor = [new Uint8Array(0), new Uint8Array(0), new Uint8Array(NP), new Uint8Array(NP)];   // barracks: armour of tier 2 and 3 stored there
-export const pTier = new Uint8Array(NP);   // houses: 1 hovel, 2 stone house, 3 manor (0 for anything else)
+export const pTier = new Uint8Array(NP);   // houses: 1 hovel, 2 stone house, 3 manor; watchtowers 1-3 (0 for anything else)
+export const pSpan = new Uint8Array(NP);   // plantations, quarries, copper mines (main plot): 0 one plot, 1 two side by side, 2 a 2×2 block
 export const pPrio = new Int32Array(NP);   // watchtowers calling for a garrison: order they asked in (0 = not asking)
 
 export const W = {

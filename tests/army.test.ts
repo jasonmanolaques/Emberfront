@@ -115,7 +115,7 @@ describe('soldier tiers and the blacksmith', () => {
     const { b, smith, men }=armoury(5);
     me().tier[R_INFANTRY]=2; me().stock=[0,0,20];
     until(() => smith.load===1, 2000);
-    expect(me().stock[2]).toBe(19);                 // one copper taken from the store
+    expect(me().stock[2]).toBe(15);                 // 5 copper taken from the store
     until(() => smith.load===2, 1000);              // forged
     until(() => men.some(h => h.tier===2), 1500);   // delivered, and worn
     const t2=men.find(h => h.tier===2)!;

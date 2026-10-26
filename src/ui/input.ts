@@ -8,7 +8,8 @@ import { view, cam, clampCam, zoomAt, tileAt } from '../render/camera';
 import { hover } from '../render/render';
 import { ui, showHUD } from './hud';
 import { $ } from './dom';
-import { newGame, trySpawn, playerAttack, setRatio, setSoldierShare, centerHome, setPaused } from '../game';
+import { newGame, trySpawn, setInvest, setSoldierShare, centerHome, setPaused } from '../game';
+import { openExpand, closeExpand, expandOpen } from './expand';
 import { placeAt, clickOwnBuilding, stopPlacing, toggleBuildPanel } from './build';
 import { openDiplomacy, closeDiplomacy, diplomacyOpen, closePop } from './diplomacy';
 import { researchOpen, closeResearch } from './research';
@@ -46,9 +47,13 @@ function endPointer(e: PointerEvent){
       if (client.state==='spawn') trySpawn(t);
       else if (client.state==='play'){
         const o=t>=0 ? owner[t] : 0;
+        const wasOpen=expandOpen(); closeExpand();
         if (client.placing) placeAt(t);
         else if (o && o!==PLAYER){ closeResearch(); closeArmy(); openDiplomacy(o); }   // another kingdom: talk first
-        else if (!clickOwnBuilding(t)){ if (armyOpen()) closeArmy(); else if (armyOpen()) closeArmy(); else if (researchOpen()) closeResearch(); else if (diplomacyOpen()) closeDiplomacy(); else playerAttack(t); }
+        else if (!clickOwnBuilding(t)){
+          if (armyOpen()) closeArmy(); else if (researchOpen()) closeResearch(); else if (diplomacyOpen()) closeDiplomacy();
+          else if (t>=0 && !o && isLand[t] && !wasOpen) openExpand(t,e.clientX,e.clientY);   // unclaimed land: how much to spend settling it
+        }
       }
     }
     drag=null; view.classList.remove('dragging');
@@ -89,9 +94,8 @@ export function bindInput(){
   view.addEventListener('pointerleave',()=>{ hover.tile=-1; ui.tip.hidden=true; });
   view.addEventListener('wheel',e=>{ e.preventDefault(); const [sx,sy]=devXY(e); zoomAt(Math.exp(-e.deltaY*0.0018),sx,sy); },{passive:false});
 
-  const ratioEl=$('ratio') as HTMLInputElement;
-  ratioEl.addEventListener('input',()=>setRatio(+ratioEl.value/100));
-  setRatio(0.4);
+  const investEl=$('invest') as HTMLInputElement;
+  investEl.addEventListener('input',()=>setInvest(+investEl.value/100));
   const soldiersEl=$('soldiers') as HTMLInputElement;
   soldiersEl.addEventListener('input',()=>setSoldierShare(+soldiersEl.value/100));
 
@@ -108,12 +112,11 @@ export function bindInput(){
   window.addEventListener('keydown',e=>{
     const tag=(e.target as HTMLElement).tagName;
     if (tag==='SELECT' || (tag==='INPUT' && e.key!=='Escape') || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key>='1' && e.key<='9'){ setRatio(+e.key/10); }
-    else if (e.key==='0'){ setRatio(1); }
+    if (expandOpen() && e.key>='1' && e.key<='4'){ (document.querySelectorAll<HTMLButtonElement>('#expand button')[+e.key-1])?.click(); }   // 1-4: 25% to 100%
     else if (e.key===' ' && client.state==='play'){ e.preventDefault(); centerHome(); }
     else if (e.key==='p' || e.key==='P'){ if (client.state==='play') setPaused(!client.paused); }
     else if (e.key==='b' || e.key==='B'){ if (client.state==='play') toggleBuildPanel(); }
-    else if (e.key==='Escape'){ closePop(); if (client.placing) stopPlacing(); else if (researchOpen()) closeResearch(); else if (diplomacyOpen()) closeDiplomacy(); else toggleBuildPanel(false); }
+    else if (e.key==='Escape'){ closePop(); closeExpand(); if (client.placing) stopPlacing(); else if (researchOpen()) closeResearch(); else if (diplomacyOpen()) closeDiplomacy(); else toggleBuildPanel(false); }
     else if (e.key==='+' || e.key==='='){ zoomAt(1.3,view.width/2,view.height/2); }
     else if (e.key==='-'){ zoomAt(1/1.3,view.width/2,view.height/2); }
   });

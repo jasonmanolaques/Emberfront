@@ -3,7 +3,7 @@ import { B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPER
 import { W, pType, pOwner, pPrio, type Nation } from './state';
 import { launch } from './territory';
 import { grossIncome } from './sim';
-import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, TOPICS, setStudy, maxed } from './research';
+import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, TOPICS, setStudy, maxed } from './research';
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, canAfford, placeProblem, build, togglePriority, anyWithin, isEnemyLand } from './buildings';
 import { allied, atWar, ready, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge } from './war';
@@ -23,9 +23,11 @@ function wishlist(n: Nation, exposed: boolean){
   if (n.tier[R_INFANTRY]>=2 && n.barracks && n.smithies < 1+(n.barracks/6|0)) w.push(B_SMITHY);
   // a steady supply of whatever the land is poorest in
   const [wood,stone,copper]=n.stock, few=Math.min(wood,stone,copper);
-  if (copper===few && n.copperMines < 1+(n.tiles/2000|0)) w.push(B_COPPERMINE);
-  if (stone===few && n.quarries < 1+(n.tiles/2000|0)) w.push(B_QUARRY);
-  if (wood===few && n.plantations < 1+(n.tiles/2000|0)) w.push(B_PLANTATION);
+  // one plot each, set side by side (pickPlot) so research can join them into bigger ones
+  const enough=2+(n.tiles/700|0);
+  if (copper===few && n.copperMines < enough) w.push(B_COPPERMINE);
+  if (stone===few && n.quarries < enough) w.push(B_QUARRY);
+  if (wood===few && n.plantations < enough) w.push(B_PLANTATION);
   return w;
 }
 const sameNeighbour = (q: number, type: number, id: number) =>
@@ -62,13 +64,14 @@ function pickPlot(n: Nation, type: number){
 /** Bots study whichever topic is furthest behind: housing first, then infantry, the watchtowers,
     the castle and taxation; a kingdom with enemies on its border puts its towers before its houses. */
 function botStudy(n: Nation, exposed: boolean){
-  const order=exposed ? [R_TOWERS, R_HOUSING, R_INFANTRY, R_CASTLE, R_TAXES] : [R_HOUSING, R_INFANTRY, R_TOWERS, R_CASTLE, R_TAXES];
+  const order=exposed ? [R_TOWERS, R_GATHER, R_HOUSING, R_INFANTRY, R_CASTLE, R_TAXES] : [R_GATHER, R_HOUSING, R_INFANTRY, R_TOWERS, R_CASTLE, R_TAXES];
   let best=order[0]; for (const t of order) if (n.tier[t]<n.tier[best]) best=t;
   setStudy(n,best);
 }
 
 function botBuild(n: Nation, exposed: boolean){
   botStudy(n,exposed);
+  n.invest=0.4+n.expandAt*0.8;   // the builders may spend 58% to 78% of the goods coming in, by temper
   for (const type of wishlist(n,exposed)){
     const s=STRUCTURES.find(s=>s.type===type)!;
     if (!canAfford(n,s)) continue;

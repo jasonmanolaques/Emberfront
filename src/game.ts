@@ -23,7 +23,7 @@ import { setupDiplomacy, resetDiplomacy, noteDeath } from './ui/diplomacy';
 import { refreshResearch, closeResearch } from './ui/research';
 import { closeArmy } from './ui/army';
 import { TIER_NAME } from './sim/army';
-import { R_TOWERS, R_CASTLE } from './sim/research';
+import { R_CASTLE } from './sim/research';
 import { TOPIC_NAME } from './sim/research';
 import { $ } from './ui/dom';
 
@@ -75,7 +75,7 @@ listen({
   },
   // research and the builders guild
   researched: (o,topic,tier) => {
-    if (topic===R_TOWERS || topic===R_CASTLE){ const n=W.nations[o]; for (const q of n.blds) if (pType[q]===B_TOWER) drawPlotAndNeighbours(q); if (n.capTile>=0) drawPlotAndNeighbours(n.capPlot); }   // new towers, a new castle
+    if (topic===R_CASTLE){ const n=W.nations[o]; if (n.capTile>=0) drawPlotAndNeighbours(n.capPlot); }   // the castle is rebuilt at once
     if (o===PLAYER){ log(`Your scholars reach ${TOPIC_NAME[topic].toLowerCase()} tier ${tier}: ${TIER_NEWS[topic][tier]}`,'good'); toast(`${TOPIC_NAME[topic]} tier ${tier}`); } refreshResearch(); },
   upgraded: (q,o,tier) => { dustPuff(q); if (o===PLAYER) floats.push({ x:(q%PW)*8+4, y:((q/PW)|0)*8-1, text: tier===3 ? 'Manor' : 'Stone house', t0:performance.now(), c:'#f0e6c8' }); },
   builderHired: (q,o,replaced) => { if (o===PLAYER && replaced) log(pType[q]===B_SMITHY ? 'A villager takes up the fallen smith\'s hammer' : 'A villager takes up the fallen builder\'s tools at the guild'); },
@@ -91,15 +91,16 @@ listen({
 const GOOD_COL=['#e9b26a','#dcd6cc','#ffa060'];
 const TIER_NEWS=[['','','your builders guild can raise stone houses','your builders guild can raise manors'],['','','each villager pays 0.2 gold a second','each villager pays 0.3 gold a second'],
   ['','','your blacksmith can forge reinforced armour','your blacksmith can forge heavy armour'],
-  ['','','your watchtowers are rebuilt stronger','your watchtowers are rebuilt into keeps'],
-  ['','','your castle is rebuilt into a fortress','your castle is rebuilt into a citadel']];
+  ['','','your builders can rebuild watchtowers stronger','your builders can rebuild watchtowers into keeps'],
+  ['','','your castle is rebuilt into a fortress','your castle is rebuilt into a citadel'],
+  ['','','plantations, quarries and copper mines side by side join in pairs','plantations, quarries and copper mines join in squares of four']];
 const nm = (id: number) => W.nations[id]?.name ?? 'Someone';
 export function newGame(seed?: number){
   newWorld(seed ?? (Math.random()*2147483647)|0);
   resetStyles(); resetLabels(); resetEffects(); resetGhosts(); resetPeople(); resetSpeech();
   toggleBuildPanel(false); resetDiplomacy(); closeResearch(); closeArmy();
   client.overShown=false; client.lastVillageLog=-99; client.paused=false; client.speed=1; $('speed').textContent='1×';
-  setSoldierShare(0);
+  setSoldierShare(0); setInvest(0.5);
   buildBase(); paintAll(); drawNature();
   fitCam();
 }
@@ -121,13 +122,14 @@ export function trySpawn(t: number){
   log(`${me.name} is founded. Expand fast while the land is empty.`,'good');
 }
 
-/** A click on unclaimed land: spend gold to push the border there. (Other kingdoms' land opens diplomacy.) */
-export function playerAttack(t: number){
+/** Settling unclaimed land: spend `ratio` of the treasury pushing the border toward tile t.
+    (Other kingdoms' land opens diplomacy.) */
+export function playerAttack(t: number, ratio=0.4){
   const me=W.nations[PLAYER]; if (!me || !me.alive || t<0 || !isLand[t] || owner[t]) return;
   // the order always goes to the simulation, which has the final say; the checks here are only for feedback
-  queueCommand({ type:'attack', nation:PLAYER, tile:t, ratio:client.ratio });
+  queueCommand({ type:'attack', nation:PLAYER, tile:t, ratio });
   if (!bordersOn(PLAYER,0)){ toast('Your border no longer touches unclaimed land'); return; }
-  const send=me.gold*client.ratio;
+  const send=me.gold*ratio;
   if (send<2){ toast('Not enough gold yet'); return; }
   floats.push({x:(t%TW)*2+1, y:((t/TW)|0)*2, text:'−'+fmt(send)+' gold', t0:performance.now(), c:'#ffe27a'});
 }
@@ -138,8 +140,12 @@ export function setSoldierShare(v: number){
   if (W.nations[PLAYER]) queueCommand({ type:'soldiers', nation:PLAYER, share:v });
 }
 const soldiersEl=$('soldiers') as HTMLInputElement;
-const ratioEl=$('ratio') as HTMLInputElement;
-export function setRatio(v: number){ client.ratio=clamp(v,0.05,1); ratioEl.value=String(Math.round(client.ratio*100)); $('ratioVal').textContent=Math.round(client.ratio*100)+'%'; ratioEl.style.setProperty('--fill',((client.ratio*100-5)/95*100)+'%'); }
+const investEl=$('invest') as HTMLInputElement;
+/** City investment: the share (0..1) of the goods coming in that the builders may spend. */
+export function setInvest(v: number){
+  v=clamp(v,0,1); investEl.value=String(Math.round(v*100)); $('investVal').textContent=Math.round(v*100)+'%'; investEl.style.setProperty('--fill',(v*100)+'%');
+  if (W.nations[PLAYER]) queueCommand({ type:'invest', nation:PLAYER, share:v });
+}
 
 export function centerHome(){ const me=W.nations[PLAYER]; if (!me) return; const t=me.capTile>=0?me.capTile:(me.lty*TW+me.ltx); focusOn(t,Math.max(cam.zoom,cam.fitZ*2.2)); }
 export function setPaused(p: boolean){ client.paused=p; $('pause').innerHTML = p ? '<svg viewBox="0 0 9 9"><path fill="currentColor" d="M2 1h1v1h1v1h1v1h1v1H5v1H4v1H3v1H2z"/></svg>' : '<svg viewBox="0 0 9 9"><path fill="currentColor" d="M2 1h2v7H2zM5 1h2v7H5z"/></svg>'; $('pause').setAttribute('aria-label',p?'Resume':'Pause'); if (p) toast('Paused'); }

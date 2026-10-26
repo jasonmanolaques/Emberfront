@@ -8,6 +8,7 @@ import { RW, RH, PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_C
 import { pType, pOwner, pVar, pMain, pAband, pTier } from '../sim/state';
 import { styleOf, type NationStyle } from './style';
 import { towerTier, castleTier, wear } from '../sim/defense';
+import { dims } from '../sim/buildings';
 import { rows, outline, type Pal } from './pixel';
 
 export const objC = document.createElement('canvas'); objC.width = RW; objC.height = RH;
@@ -381,7 +382,7 @@ export function drawPlot(q: number){
   if (ty===B_CPART){ const m=pMain[q]; if (pType[m]===B_CASTLE){ drawPlot(m); return; } }
   if (ty===B_PART){ const m=pMain[q]; if (BIG[pType[m]]){ drawPlot(m); return; } octx.clearRect(ox,oy,PS,PS); return; }
   const n=styleOf(pOwner[q]);
-  if (BIG[ty]){ const [w,h]=BIG[ty]; stamp(ox,oy,w*PS,h*PS,()=>drawBig(0,0,ty,n)); return; }
+  if (BIG[ty]){ const [w,h]=dims(q); stamp(ox,oy,w*PS,h*PS,()=>drawBig(0,0,ty,n,w,h)); return; }
   if (ty===B_CASTLE){ const t=castleTier(pOwner[q]), w=wear(q); stamp(ox,oy,2*PS,2*PS,()=>drawCastle(0,0,n,t,w)); return; }
   const v=pVar[q]%3;
   if (ty===B_HOUSE){ const t=pTier[q]; stamp(ox,oy,PS,PS,()=>drawHouse(0,0,n,t>=2 ? pVar[q] : v,!!pAband[q],t)); }
@@ -389,7 +390,7 @@ export function drawPlot(q: number){
   else if (ty===B_SMITHY) stamp(ox,oy,PS,PS,()=>drawSmithy(0,0,n));
   else if (ty===B_SITE) stamp(ox,oy,PS,PS,()=>drawSite(0,0,n));
   else if (ty===B_FARM){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawFarm(0,0,n,pOwner[q]%3,m)); }   // one crop per kingdom, so joined fields match
-  else if (ty===B_TOWER){ const m=joins(q), t=towerTier(pOwner[q]), w=wear(q); stamp(ox,oy,PS,PS,()=>drawTower(0,0,n,m,t,w)); }
+  else if (ty===B_TOWER){ const m=joins(q), t=towerTier(q), w=wear(q); stamp(ox,oy,PS,PS,()=>drawTower(0,0,n,m,t,w)); }
   else if (ty===B_BARRACKS){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawBarracks(0,0,n,m)); }
   else if (ty===B_MINTER){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawMinter(0,0,n,m)); }
   else if (ty===B_MINE) stamp(ox,oy,PS,PS,()=>drawMine(0,0,n));
@@ -418,49 +419,64 @@ export function drawIcon(ctx: CanvasRenderingContext2D, type: number, n: NationS
   G=prev;
 }
 
-/* ---------- production buildings: 2x2 or 2x1 plots, a static base here plus live work drawn each frame ---------- */
-export const BIG: Record<number, [number, number]> = { [B_PLANTATION]: [2,2], [B_QUARRY]: [2,2], [B_COPPERMINE]: [2,1], [B_GUILD]: [2,1] };
-// where the four saplings stand in a plantation
-const SLOTS = [[8,11],[24,11],[8,27],[24,27]];
-function drawBig(ox: number, oy: number, type: number, n: NationStyle){
+/* ---------- production buildings: a static base here plus live work drawn each frame ----------
+   Plantations, quarries and copper mines are drawn at their size: one plot (tier 1), two side by
+   side (tier 2) or a 2×2 block (tier 3); the builders guild is always 2×1. */
+export const BIG: Record<number, [number, number]> = { [B_PLANTATION]: [1,1], [B_QUARRY]: [1,1], [B_COPPERMINE]: [1,1], [B_GUILD]: [2,1] };
+/** Where the saplings stand in a plantation of w×h plots: one in each plot. */
+const slots = (w: number, h: number) => { const out: number[][]=[]; for (let y=0;y<h;y++) for (let x=0;x<w;x++) out.push([x*16+8, y*16+11]); return out; };
+/** A copper mine's shafts by size: [centre x, width]. */
+const shafts = (w: number, h: number) => w===1 ? [[8,4]] : h===1 ? [[16,8]] : [[9,6],[23,6]];
+function drawBig(ox: number, oy: number, type: number, n: NationStyle, w=BIG[type][0], h=BIG[type][1]){
+  const W=w*16, H=h*16;
   if (type===B_GUILD){ drawGuild(ox,oy,n); return; }
   if (type===B_PLANTATION){
-    R(ox,oy,32,32,'#7a5c36');                                      // turned earth
-    for (let y=3;y<32;y+=4) R(ox+1,oy+y,30,1,'#8e6c40');
-    for (const [x,y] of SLOTS){ R(ox+x-3,oy+y+1,7,2,'#5e4428'); R(ox+x-2,oy+y+1,5,1,'#4e3820'); }   // a dug bed under each sapling
+    R(ox,oy,W,H,'#7a5c36');                                        // turned earth
+    for (let y=3;y<H;y+=4) R(ox+1,oy+y,W-2,1,'#8e6c40');
+    for (const [x,y] of slots(w,h)){ R(ox+x-3,oy+y+1,7,2,'#5e4428'); R(ox+x-2,oy+y+1,5,1,'#4e3820'); }   // a dug bed under each sapling
     const rail=C.woodL;
-    R(ox,oy,32,1,rail); R(ox,oy+31,32,1,rail); R(ox,oy,1,32,rail); R(ox+31,oy,1,32,rail);
-    for (const p of [0,10,21,31]){ P(ox+p,oy,C.woodD); P(ox+p,oy+31,C.woodD); P(ox,oy+p,C.woodD); P(ox+31,oy+p,C.woodD); }
+    R(ox,oy,W,1,rail); R(ox,oy+H-1,W,1,rail); R(ox,oy,1,H,rail); R(ox+W-1,oy,1,H,rail);
+    for (let p=0;p<W;p+=10){ P(ox+p,oy,C.woodD); P(ox+p,oy+H-1,C.woodD); } for (let p=0;p<H;p+=10){ P(ox,oy+p,C.woodD); P(ox+W-1,oy+p,C.woodD); }
+    P(ox+W-1,oy,C.woodD); P(ox+W-1,oy+H-1,C.woodD); P(ox,oy+H-1,C.woodD);
     R(ox+2,oy+2,1,4,C.woodD); R(ox+3,oy+2,3,2,n.roof);                // the kingdom's marker post
+    if (w===2 && h===2){ R(ox+13,oy+17,6,2,C.wood); R(ox+14,oy+16,4,1,C.woodL); P(ox+13,oy+17,C.woodD); P(ox+18,oy+18,C.woodD); }   // a pile of felled logs
   } else if (type===B_QUARRY){
     // a stepped pit cut into the ground, the deepest step darkest
-    R(ox,oy+4,32,27,'#a49d90'); R(ox+4,oy+8,24,20,'#8d867b'); R(ox+8,oy+12,16,12,'#6f695f'); R(ox+12,oy+16,8,6,'#4a4640');
-    R(ox,oy+4,32,1,'#c4beb4'); R(ox+4,oy+8,24,1,'#a49d90'); R(ox+8,oy+12,16,1,'#8d867b');   // lit lips of the steps
-    R(ox,oy+31,32,1,SH);
-    for (const [x,y] of [[2,6],[26,10],[6,26],[22,24],[28,20],[14,9]]){ R(ox+x,oy+y,2,1,'#c4beb4'); P(ox+x,oy+y+1,'#7c766c'); }   // loose blocks
+    const cols=['#a49d90','#8d867b','#6f695f','#4a4640'], lips=['#c4beb4','#a49d90','#8d867b'];
+    for (let i=0,x=0,y=4,ww=W,hh=H-5;i<4 && ww>=4 && hh>=3;i++,x+=4,y+=4,ww-=8,hh-=8){ R(ox+x,oy+y,ww,hh,cols[i]); if (i<3) R(ox+x,oy+y,ww,1,lips[i]); }
+    R(ox,oy+H-1,W,1,SH);
+    for (const [x,y] of [[2,6],[26,10],[6,26],[22,24],[28,20],[14,9]]) if (x+2<W && y+2<H){ R(ox+x,oy+y,2,1,'#c4beb4'); P(ox+x,oy+y+1,'#7c766c'); }   // loose blocks
     // the pulley frame over the pit
-    R(ox+6,oy+2,2,18,C.woodD); R(ox+24,oy+2,2,18,C.woodD); R(ox+6,oy+2,20,2,C.wood); R(ox+6,oy+2,20,1,C.woodL);
-    R(ox+15,oy+4,3,3,'#3b2a1e'); P(ox+16,oy+5,C.woodL);              // the wheel
-    R(ox+26,oy+24,4,4,'#bdb6aa'); R(ox+26,oy+24,4,1,'#d6d1c5'); R(ox+27,oy+22,3,2,'#bdb6aa');   // a stack of cut stone
-    R(ox+3,oy+1,1,5,C.woodD); R(ox+4,oy+1,3,2,n.roof);
+    const p1=Math.round(W*0.19), p2=W-p1-2, ph=Math.round(H*0.56);
+    R(ox+p1,oy+2,2,ph,C.woodD); R(ox+p2,oy+2,2,ph,C.woodD); R(ox+p1,oy+2,p2-p1+2,2,C.wood); R(ox+p1,oy+2,p2-p1+2,1,C.woodL);
+    R(ox+W/2-1,oy+4,3,3,'#3b2a1e'); P(ox+W/2,oy+5,C.woodL);         // the wheel
+    if (W>=32){ const y=H-8; R(ox+26,oy+y,4,4,'#bdb6aa'); R(ox+26,oy+y,4,1,'#d6d1c5'); R(ox+27,oy+y-2,3,2,'#bdb6aa'); }   // a stack of cut stone
+    R(ox+1,oy+1,1,5,C.woodD); R(ox+2,oy+1,3,2,n.roof);
   } else if (type===B_COPPERMINE){
-    // a rocky mound with a timbered shaft; the glow is drawn live
-    R(ox+2,oy+4,28,11,'#8d867b'); R(ox+6,oy+2,20,2,'#a49d90'); R(ox+4,oy+4,6,4,'#a49d90'); R(ox+22,oy+4,6,4,'#a49d90');
-    R(ox+6,oy+2,20,1,'#bdb6aa'); P(ox+3,oy+5,'#bdb6aa'); R(ox+26,oy+8,3,2,'#6f695f'); R(ox+6,oy+12,3,1,'#6f695f');
-    R(ox+12,oy+6,8,9,'#1c1410');                                   // the dark entrance
-    R(ox+10,oy+6,2,9,C.woodD); R(ox+20,oy+6,2,9,C.woodD); R(ox+10,oy+4,12,2,C.wood); R(ox+10,oy+4,12,1,C.woodL);   // timber frame
-    R(ox,oy+15,32,1,SH);
-    R(ox+4,oy+12,3,2,'#d9823e'); P(ox+5,oy+12,'#f2a35e'); R(ox+25,oy+11,3,2,'#e08a48'); P(ox+26,oy+11,'#ffc080');   // ore by the door
-    R(ox+28,oy,1,5,C.woodD); R(ox+29,oy,3,2,n.roof);
+    // a rocky mound with timbered shafts; the glow is drawn live
+    const top=H-12;
+    if (h===2){ R(ox+3,oy+3,W-6,top-2,'#7c766c'); R(ox+5,oy+2,W-10,2,'#a49d90'); R(ox+5,oy+2,W-10,1,'#bdb6aa'); R(ox+9,oy+8,3,2,'#6f695f'); R(ox+20,oy+6,4,2,'#d9823e'); }   // the mountain behind
+    R(ox+2,oy+top,W-4,11,'#8d867b'); R(ox+Math.min(6,W/4),oy+top-2,W-2*Math.min(6,W/4),2,'#a49d90'); R(ox+Math.min(6,W/4),oy+top-2,W-2*Math.min(6,W/4),1,'#bdb6aa');
+    P(ox+3,oy+top+1,'#bdb6aa'); R(ox+W-6,oy+top+4,3,2,'#6f695f');
+    for (const [cx,ew] of shafts(w,h)){
+      const x=cx-ew/2, pw=ew>4 ? 2 : 1;
+      R(ox+x,oy+H-10,ew,9,'#1c1410');                                // the dark entrance
+      R(ox+x-pw,oy+H-10,pw,9,C.woodD); R(ox+x+ew,oy+H-10,pw,9,C.woodD); R(ox+x-pw,oy+H-12,ew+2*pw,2,C.wood); R(ox+x-pw,oy+H-12,ew+2*pw,1,C.woodL);
+    }
+    R(ox,oy+H-1,W,1,SH);
+    R(ox+2,oy+H-4,3,2,'#d9823e'); P(ox+3,oy+H-4,'#f2a35e'); if (W>=32){ R(ox+W-7,oy+H-5,3,2,'#e08a48'); P(ox+W-6,oy+H-5,'#ffc080'); }   // ore by the door
+    if (h===2){ R(ox+W-9,oy+1,3,9,C.stD); R(ox+W-9,oy+1,3,1,'#4a4740'); }   // the smelter's chimney
+    R(ox+W-4,oy+top-6,1,5,C.woodD); R(ox+W-3,oy+top-6,3,2,n.roof);
   }
 }
 /** The moving part of a production building, drawn over its base each frame. k = progress through
     the 30-second cycle (0..1), now = milliseconds for the looping bits. */
-export function drawWorking(ctx: CanvasRenderingContext2D, type: number, ox: number, oy: number, k: number, now: number){
+export function drawWorking(ctx: CanvasRenderingContext2D, type: number, ox: number, oy: number, k: number, now: number, w=BIG[type][0], h=BIG[type][1]){
   const prev=G; G=ctx;
+  const W=w*16, H=h*16;
   if (type===B_PLANTATION){
     // each bed grows a tree from a sprout to a full tree over the cycle
-    for (const [sx,sy] of SLOTS){
+    for (const [sx,sy] of slots(w,h)){
       const x=ox+sx, y=oy+sy;
       if (k<0.2){ P(x,y,'#7fb34c'); P(x,y-1,'#b2d86c'); }
       else if (k<0.45){ R(x,y-2,1,3,'#6e4b2c'); R(x-1,y-3,3,1,'#7fb34c'); P(x+1,y-2,'#4f8a37'); P(x,y-4,'#b2d86c'); }
@@ -469,16 +485,21 @@ export function drawWorking(ctx: CanvasRenderingContext2D, type: number, ox: num
     }
   } else if (type===B_QUARRY){
     // a block rides the rope up from the pit floor and back, ten times a cycle
-    const f=(k*10)%1, up=f<0.5 ? f*2 : 2-f*2, by=oy+20-Math.round(up*13);
-    R(ox+16,oy+6,1,Math.max(0,by-oy-6),'#c9b48a');   // the rope
-    R(ox+14,by,5,3,'#bdb6aa'); R(ox+14,by,5,1,'#d6d1c5'); R(ox+18,by,1,3,'#8d867b');
+    const f=(k*10)%1, up=f<0.5 ? f*2 : 2-f*2, low=Math.round(H*0.62), by=oy+low-Math.round(up*(low-7)), x=ox+W/2;
+    R(x,oy+6,1,Math.max(0,by-oy-6),'#c9b48a');   // the rope
+    R(x-2,by,5,3,'#bdb6aa'); R(x-2,by,5,1,'#d6d1c5'); R(x+2,by,1,3,'#8d867b');
   } else if (type===B_GUILD){
     // a block of stone swings gently on the crane's rope
     const sway=Math.round(Math.sin(now/700)), x=ox+27+sway;
     R(x,oy+2,1,4,'#c9b48a'); R(x-1,oy+6,3,2,'#bdb6aa'); R(x-1,oy+6,3,1,'#d6d1c5');
   } else if (type===B_COPPERMINE){
     const glow=0.55+0.45*Math.sin(now/180)*Math.sin(now/67+1);
-    ctx.globalAlpha=0.55+0.4*glow; R(ox+14,oy+9,4,6,'#ff8a2b'); ctx.globalAlpha=0.35+0.3*glow; R(ox+12,oy+11,8,4,'#ffb24a'); ctx.globalAlpha=1;
+    for (const [cx,ew] of shafts(w,h)){
+      const x=ox+cx-ew/2;
+      ctx.globalAlpha=0.55+0.4*glow; R(x+Math.max(1,ew/4),oy+H-7,Math.max(2,ew/2),6,'#ff8a2b'); ctx.globalAlpha=0.35+0.3*glow; R(x,oy+H-5,ew,4,'#ffb24a');
+    }
+    if (h===2){ ctx.globalAlpha=0.5+0.4*glow; P(ox+W-8,oy,'#ffb24a'); }   // sparks over the smelter
+    ctx.globalAlpha=1;
   }
   G=prev;
 }

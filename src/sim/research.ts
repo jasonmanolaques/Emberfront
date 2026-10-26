@@ -7,17 +7,18 @@
    Housing lets the builders guild turn hovels into stone houses (tier 2) and manors (tier 3);
    taxation raises each villager's tax by 0.1 gold a second per tier; infantry lets the
    blacksmith forge reinforced (tier 2) and then heavy (tier 3) armour for the barracks;
-   watchtowers and the castle make every tower and the castle shoot faster, hit harder and take
-   more blows (sim/defense.ts). */
+   watchtowers lets the builders guild rebuild watchtowers a tier up (sim/defense.ts); the castle
+   is rebuilt at once; resource gathering lets plantations, quarries and copper mines side by side
+   join into bigger, better ones (sim/buildings.ts). */
 import { TICK } from '../core/constants';
 import { W, type Nation } from './state';
 import { on } from './events';
 
-export const R_HOUSING = 0, R_TAXES = 1, R_INFANTRY = 2, R_TOWERS = 3, R_CASTLE = 4;
-export const TOPICS = [R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE];
-export const TOPIC_NAME = ['Housing', 'Taxation', 'Infantry', 'Watchtowers', 'Castle'];
+export const R_HOUSING = 0, R_TAXES = 1, R_INFANTRY = 2, R_TOWERS = 3, R_CASTLE = 4, R_GATHER = 5;
+export const TOPICS = [R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER];
+export const TOPIC_NAME = ['Housing', 'Taxation', 'Infantry', 'Watchtowers', 'Castle', 'Resource gathering'];
 export const MAX_TIER = 3;
-export const TIER_XP = [[0, 50, 100], [0, 50, 100], [0, 100, 150], [0, 100, 200], [0, 100, 200]];   // by topic: points to go from tier t to t+1, by t
+export const TIER_XP = [[0, 50, 100], [0, 50, 100], [0, 100, 150], [0, 100, 200], [0, 100, 200], [0, 100, 200]];   // by topic: points to go from tier t to t+1, by t
 export const XP_PER_STATION = 1;      // points a second each research station earns
 /** People a house of each tier holds, and how many blows it takes compared with a hovel. */
 export const HOUSE_BEDS = [1, 1, 2, 3], HOUSE_TOUGH = [1, 1, 3, 6];

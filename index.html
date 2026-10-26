@@ -42,8 +42,14 @@
   </section>
 
   <section id="bar" class="plate" hidden aria-label="Attack and army">
-    <label for="ratio"><span>Each expansion spends</span><b id="ratioVal">40%</b></label>
-    <input type="range" id="ratio" min="5" max="100" step="5" value="40">
+    <label for="invest"><span>City investment</span><b id="investVal">50%</b></label>
+    <input type="range" id="invest" min="0" max="100" step="5" value="50">
+    <span class="hint" id="investHint">Build a builders guild to invest in the city</span>
+    <div class="flows" id="flows" aria-label="Goods a minute">
+      <span class="tag">per min</span><span class="tag"><i class="ico wood"></i>Wood</span><span class="tag"><i class="ico stone"></i>Stone</span><span class="tag"><i class="ico copper"></i>Copper</span>
+      <span class="tag">In</span><b class="in" id="inW">0</b><b class="in" id="inS">0</b><b class="in" id="inC">0</b>
+      <span class="tag">Spent</span><b class="out" id="outW">0</b><b class="out" id="outS">0</b><b class="out" id="outC">0</b>
+    </div>
     <label for="soldiers" class="split"><span>People serving as soldiers</span><b id="soldiersVal">0%</b></label>
     <input type="range" id="soldiers" min="0" max="100" step="5" value="0">
     <span class="hint" id="soldiersHint">Build a barracks to raise an army</span>
@@ -123,6 +129,11 @@
       <div class="tbar"><i></i><span></span></div>
       <p class="tnote"></p>
     </div>
+    <div class="topic" id="rGather">
+      <button aria-pressed="false" title="Study resource gathering"><span class="tname">Resource gathering</span><span class="ttier"></span></button>
+      <div class="tbar"><i></i><span></span></div>
+      <p class="tnote"></p>
+    </div>
     <div class="topic" id="rTaxes">
       <button aria-pressed="false" title="Study taxation"><span class="tname">Taxation</span><span class="ttier"></span></button>
       <div class="tbar"><i></i><span></span></div>
@@ -142,6 +153,10 @@
     </div>
   </section>
 
+  <div id="expand" class="plate" hidden role="dialog" aria-label="Settle this land">
+    <span class="tag" id="exTitle">Settle: spend of your gold</span>
+    <div class="exrow"><button data-r="0.25">25%</button><button data-r="0.5">50%</button><button data-r="0.75">75%</button><button data-r="1">100%</button></div>
+  </div>
   <div id="log" aria-live="polite"></div>
   <div id="banner" class="plate" hidden>Tap open land to found your capital</div>
   <div id="toast" class="plate" hidden></div>
@@ -153,12 +168,12 @@
     <h1>Emberfront</h1>
     <p class="sub">A fast territory war where every kingdom builds itself.</p>
     <ul class="how">
-      <li><b>Click</b> unclaimed land to push your border: settling costs <b>1 gold</b> a tile. The top slider sets how much of your gold each push spends.</li>
+      <li><b>Click</b> unclaimed land to push your border: settling costs <b>1 gold</b> a tile. A small menu asks how much of your gold the push spends: 25% to 100%.</li>
       <li>You earn <b>5 gold</b> a second, plus <b>0.1</b> in tax from every villager (soldiers pay none). Every 10 seconds a <b>human</b> walks out of your capital.</li>
       <li>Everyone needs a home: while you are short of houses, a newcomer first builds himself a hovel near the rest of town. Houses nobody needs for a while stand empty.</li>
       <li><b>Villagers</b> gather wood, stone and copper. Forests are rich in wood, mountains in stone, deserts in copper. Nothing grows back.</li>
       <li>Open <b>Buildings</b> (the hammer) to place farms, barracks, watchtowers and coin minters. The same buildings side by side join up.</li>
-      <li>A <b>barracks</b> lets you raise soldiers with the second slider. <b>Click a watchtower</b> to call 5 soldiers to guard it.</li>
+      <li>A <b>barracks</b> lets you raise soldiers with the soldier slider. Soldiers are paid wages. <b>Click a watchtower</b> to call 5 soldiers to guard it.</li>
       <li><b>Click another kingdom</b> for diplomacy. <b>Allies</b> open their land to your soldiers. Go to <b>war</b> with as many soldiers as you choose: a <b>raid</b> burns their buildings for loot, an <b>attack</b> takes their land and marches on the capital. Break the castle and the whole kingdom is yours.</li>
       <li>Only at war do soldiers fight, and watchtowers and your castle shoot at enemies on your land. Land an attack takes is only <b>occupied</b> (hatched) until peace: drive the enemy out and take it back, then counter-attack.</li>
       <li>Each war has a button at the top: recall a raid, offer peace, or, when an army marches on you, <b>intercept</b> it. Villagers caught near a fight either run or take up arms.</li>
@@ -169,7 +184,7 @@
       <button id="newMap" class="ghost">New map</button>
     </div>
     <button id="start" class="primary">Choose your spawn</button>
-    <p class="keys">Drag to pan · scroll or pinch to zoom · keys 1–9 set the expansion % · B opens buildings · Esc closes panels · Space centers on your capital · P pauses</p>
+    <p class="keys">Drag to pan · scroll or pinch to zoom · keys 1–4 pick from the settle menu · B opens buildings · Esc closes panels · Space centers on your capital · P pauses</p>
   </section>
 
   <section id="over" class="plate card" hidden aria-label="Match over">

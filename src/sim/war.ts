@@ -28,7 +28,7 @@ import { TW, TH, NT, NP, PW, PH, TICK, B_CASTLE, B_CPART, B_TOWER, B_HOUSE, B_FA
 import { W, owner, occ, isLand, pType, pOwner, pBurn, pMain, pHp, pPrio, pCenter, pTier, type Campaign, type Human, type Nation } from './state';
 import { on } from './events';
 import { setOwner } from './territory';
-import { ignite, SIZE } from './buildings';
+import { ignite, dims } from './buildings';
 import { census } from './census';
 import { BLD_HP, bldHp, wear, towerTier, castleTier, TOWER_RELOADS, TOWER_DMGS, CASTLE_MEND } from './defense';
 import { SOLDIER_DMG, units, unitAt, type Unit } from './army';
@@ -99,7 +99,7 @@ export function resetWar(M: number){
 const mainOf = (q: number) => pType[q]===B_PART || pType[q]===B_CPART ? pMain[q] : q;
 /** The pixel rectangle a building covers, from its main plot. */
 function rectOf(q: number): [number, number, number, number] {
-  const [w,h] = pType[q]===B_CASTLE ? [2,2] : SIZE[pType[q]] ?? [1,1], x=(q%PW)*8, y=((q/PW)|0)*8;
+  const [w,h]=dims(q), x=(q%PW)*8, y=((q/PW)|0)*8;
   return [x, y, x+w*8, y+h*8];
 }
 const clamp = (v: number, a: number, b: number) => v<a ? a : v>b ? b : v;
@@ -642,9 +642,7 @@ function occupy(t: number, by: number){
   if (prev) W.occCount[o*M+prev]--;
   occ[t]=by; W.occCount[o*M+by]++; W.lost[o*M+by]=1;
   on.occupied(t);
-  const x=t%TW, y=(t/TW)|0;
-  if ((x&3)===2 && (y&3)===2){ const q=(y>>2)*PW+(x>>2); if (isStructure(pType[q]) && pOwner[q]===o && pBurn[q]<=0) ignite(q); }
-}
+}   // what stands on it isn't burnt by marching over it: the army has to break it (targetable)
 function liberate(t: number){
   const prev=occ[t]; if (!prev) return;
   W.occCount[owner[t]*W.M+prev]--; occ[t]=0;
@@ -694,10 +692,10 @@ function towersFire(){
   };
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive || !warring[i]) continue;
-    const tr=TOWER_RELOADS[towerTier(i)], td=TOWER_DMGS[towerTier(i)];
     for (const q of n.blds){
-      if ((q+W.tickN)%tr || pType[q]!==B_TOWER || pOwner[q]!==i || pBurn[q]>0) continue;
-      shoot(i,(q%PW)*8+4,((q/PW)|0)*8+1,TOWER_RANGE,td);
+      if (pType[q]!==B_TOWER || pOwner[q]!==i || pBurn[q]>0) continue;
+      const t=towerTier(q); if ((q+W.tickN)%TOWER_RELOADS[t]) continue;
+      shoot(i,(q%PW)*8+4,((q/PW)|0)*8+1,TOWER_RANGE,TOWER_DMGS[t]);
     }
     // the castle mends itself; it shoots like two towers of its tier: twice as often, as hard
     const q=n.capPlot, ct=castleTier(i), cr=TOWER_RELOADS[ct], t=q+W.tickN;
@@ -746,11 +744,13 @@ function stepHome(h: Human, gx: number, gy: number, stop: number, sp=pace(h)){
   }
 }
 /** Can c's soldiers attack building q? Raids burn anything but the castle; an attack goes for
-    watchtowers and, at the end, the castle; interceptors only fight. */
+    watchtowers, whatever stands on the ground it holds, and at the end the castle; interceptors
+    only fight. */
 function targetable(q: number, c: Campaign){
   const ty=pType[q];
   if (c.target>=0 || pOwner[q]!==c.d || pBurn[q]>0) return false;
-  return ty===B_CASTLE ? !c.raid : isStructure(ty) && ty!==B_PART && (c.raid || ty===B_TOWER);
+  if (ty===B_CASTLE) return !c.raid;
+  return isStructure(ty) && ty!==B_PART && (c.raid || ty===B_TOWER || occ[pCenter[q]]===c.a);
 }
 function pickBuilding(h: Human, c: Campaign){
   if (c.target>=0) return -1;

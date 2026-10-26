@@ -1,7 +1,7 @@
 // Watchtowers and the castle by tier, battle damage, and soldiers' wages.
 import { describe, it, expect } from 'vitest';
 import { TW, TH, NT, NP, PW, T_GRASS, B_FARM, B_TOWER, B_CASTLE, WAGE, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD } from '../src/core/constants';
-import { W, owner, isLand, terr, resType, resLeft, pBuild, pType, pHp, type Human, type Nation } from '../src/sim/state';
+import { W, owner, isLand, terr, resType, resLeft, pBuild, pType, pHp, pTier, type Human, type Nation } from '../src/sim/state';
 import { newWorld, startMatch, tick, grossIncome } from '../src/sim/sim';
 import { listen } from '../src/sim/events';
 import { setOwner } from '../src/sim/territory';
@@ -49,10 +49,10 @@ describe('watchtowers by tier', () => {
     expect(TOWER_DMGS.slice(1)).toEqual([2, 3, 4]);
     for (const tier of [1,2,3]){
       world(1); paintDisc(N(1),40);
-      N(1).tier[R_TOWERS]=tier;
+      N(1).tier[R_TOWERS]=tier;   // (the builders would rebuild it; here it is set by hand)
       // a tower 8 plots from the castle, its target on the far side, out of the castle's reach
       const c=N(1).capPlot, q=c+8, tx=(q%PW)*8+4, ty=((q/PW)|0)*8+8;
-      N(1).stock=[10,10,10]; expect(build(N(1),q,B_TOWER)).toBe(true);
+      N(1).stock=[10,10,10]; expect(build(N(1),q,B_TOWER)).toBe(true); pTier[q]=tier;
       expect(bldHp(q)).toBe(TOWER_HP[tier]);
       const e=dummy(tx+16,ty);
       const shots: number[]=[]; listen({ towerShot: (x0) => { if (x0===(q%PW)*8+4) shots.push(W.tickN); } });

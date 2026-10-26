@@ -5,7 +5,7 @@ import { TW, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY }
 import { clamp, fmt } from '../core/util';
 import { W, isLand, pType, pPrio, pTimer, pBurn, type Human } from '../sim/state';
 import { findBlock } from '../sim/sim';
-import { placeProblem, structureOf, canAfford, SIZE, PRODUCE_TICKS } from '../sim/buildings';
+import { placeProblem, structureOf, canAfford, SIZE, PRODUCE_TICKS, dims } from '../sim/buildings';
 import { client, reduceMotion } from '../client';
 import { view, ctx, cam, stepCamAnim } from './camera';
 import { worldC, flushWorld, SEA } from './terrain';
@@ -242,7 +242,7 @@ export function render(now: number, dt: number){
     const qx0=Math.max(0,Math.floor(vx0/PS)-1), qy0=Math.max(0,Math.floor(vy0/PS)-1), qx1=Math.min(PW-1,Math.floor(vx1/PS)), qy1=Math.min(PH-1,Math.floor(vy1/PS));
     for (let y=qy0;y<=qy1;y++) for (let x=qx0;x<=qx1;x++){
       const q=y*PW+x, ty=pType[q]; if (!BIG[ty] || pBurn[q]>0) continue;
-      drawWorking(ctx,ty,x*PS,y*PS,pTimer[q]/PRODUCE_TICKS,reduceMotion?0:now);
+      const [bw,bh]=dims(q); drawWorking(ctx,ty,x*PS,y*PS,pTimer[q]/PRODUCE_TICKS,reduceMotion?0:now,bw,bh);
     }
   }
 

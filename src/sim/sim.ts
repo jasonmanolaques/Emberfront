@@ -2,7 +2,7 @@
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
 import { TW, TH, NT, PW, PH, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, BOT_COLS, PLAYER_COL, GOLD_START, GOLD_PER_SEC, TAX_PER_VILLAGER, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
 import { mulberry32 } from '../core/rng';
-import { W, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, pHp, pTier, pArmor, type Nation, type Command } from './state';
+import { W, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
 import { genMap } from './mapgen';
 import { setOwner, stepAttack, launch, touches } from './territory';
@@ -14,6 +14,7 @@ import { genResources, clearPlot } from './resources';
 import { resetWar, declare, intercept, proposeAlliance, endWar, makePeace } from './war';
 import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
+import { turnLedger, resetLedger } from './ledger';
 
 const SYL1 = ['Val','Mor','Ost','Kar','Bre','Thal','Ves','Dun','Ard','Sel','Hal','Ner','Cor','Ith','Rav','Lun','Gor','Eld','Tor','Fen','Ash','Ul','Bel','Kes','Myr','Oak','Sar','Wen'];
 const SYL2 = ['mark','heim','dor','gard','ia','or','wyn','vale','mere','rath','holm','ford','ain','esk','ora','burg','moor','reach','fell','haven'];
@@ -25,7 +26,7 @@ function blankNation(id: number, name: string, hex: string, isPlayer: boolean): 
     plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, beds:0,
     sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0, nextWave:0, unpaid:0,
     soldierShare:0, humanProg:0, villagers:0, soldiers:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0,
-    study:R_HOUSING, tier:[1,1,1,1,1], xp:[0,0,0,0,0] };
+    study:R_HOUSING, tier:[1,1,1,1,1,1], xp:[0,0,0,0,0,0], invest:0.5, gain:new Array(180).fill(0), spend:new Array(180).fill(0) };
 }
 function makeNation(id: number, name: string, hex: string, isPlayer: boolean): Nation {
   const srand=W.srand;
@@ -76,13 +77,13 @@ export function newWorld(seed: number){
   genMap(seed);
   genResources();
   owner.fill(0); occ.fill(0); road.fill(0); frontMark.fill(0);
-  pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0); pPrio.fill(0); pAband.fill(0); pHp.fill(0); pTier.fill(0); pArmor[2].fill(0); pArmor[3].fill(0); W.prioSeq=0;
+  pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0); pPrio.fill(0); pAband.fill(0); pHp.fill(0); pTier.fill(0); pSpan.fill(0); pArmor[2].fill(0); pArmor[3].fill(0); W.prioSeq=0;
   W.burning=[]; W.attacks=[]; W.attackSeq=0; W.commands.length=0;
   W.nations=[blankNation(0,'Unclaimed land','#cfc6a8',false)];
   W.M=1; W.contact=new Int32Array(1);
   W.simTime=0; W.tickN=0;
   W.humans=[]; W.humanSeq=0;
-  resetWar(1); resetStories(1);
+  resetWar(1); resetStories(1); resetLedger();
 }
 
 /** Founds the player's capital near tile t and places `rivals` bot kingdoms. Returns false if t has no room. */
@@ -153,6 +154,8 @@ function applyCommand(c: Command){
     endWar(c.nation,c.target);
   } else if (c.type==='peace'){
     const M=W.M; if (c.target>0 && c.target<M && W.offers[c.target*M+c.nation]) makePeace(c.nation,c.target);
+  } else if (c.type==='invest'){
+    const n=W.nations[c.nation]; if (n && n.alive) n.invest=Math.min(1,Math.max(0,c.share));
   } else if (c.type==='research'){
     const n=W.nations[c.nation]; if (n && n.alive) setStudy(n,c.topic);
   }
@@ -164,6 +167,7 @@ export const grossIncome = (n: Nation) => (GOLD_PER_SEC+TAX_PER_VILLAGER*n.tier[
 export function tick(){
   if (W.commands.length){ for (const c of W.commands) applyCommand(c); W.commands.length=0; }
   W.simTime+=TICK; W.tickN++;
+  turnLedger();
   const N=W.nations;
   // passive income plus each villager's tax (more with taxation research), each coin minter adding
   // 10% to that, less the soldiers' wages; the treasury can go below zero

@@ -1,13 +1,15 @@
 // Research stations, house tiers and the builders guild.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NT, NP, B_HOUSE, B_RESEARCH, B_GUILD, GOLD_PER_SEC, TAX_PER_VILLAGER } from '../src/core/constants';
+import { TW, TH, NT, NP, B_HOUSE, B_RESEARCH, B_GUILD, B_TOWER, GOLD_PER_SEC, TAX_PER_VILLAGER } from '../src/core/constants';
 import { W, owner, isLand, pType, pOwner, pTier, pCenter, pTimer } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { build, placeProblem } from '../src/sim/buildings';
-import { H_VILLAGER, TASK_FIX, FIX_TICKS, REHIRE_TICKS, improvements } from '../src/sim/population';
-import { R_HOUSING, R_TAXES, R_INFANTRY, TIER_XP, HOUSE_BEDS } from '../src/sim/research';
+import { H_VILLAGER, TASK_FIX, FIX_TICKS, REHIRE_TICKS, improvements, upgradeCost } from '../src/sim/population';
+import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, TIER_XP, HOUSE_BEDS } from '../src/sim/research';
+import { TOWER_COST } from '../src/sim/defense';
 import { bldHp } from '../src/sim/war';
 import { listen } from '../src/sim/events';
+import { gained, spent, perMinute, mayInvest } from '../src/sim/ledger';
 
 const me = () => W.nations[1];
 const mine = () => W.humans.filter(h => h.o === 1);
@@ -43,8 +45,8 @@ describe('research', () => {
   it('earns a point a second per station, for housing first, and goes up a tier at 50 then 100', () => {
     start(12345); run(20);
     expect(me().study).toBe(R_HOUSING);
-    expect(me().tier).toEqual([1,1,1,1,1]);
-    run(100); expect(me().xp).toEqual([0,0,0,0,0]);   // nothing without a station
+    expect(me().tier).toEqual([1,1,1,1,1,1]);
+    run(100); expect(me().xp).toEqual([0,0,0,0,0,0]);   // nothing without a station
     place(B_RESEARCH); run(100);                // 10 s
     expect(me().xp[R_HOUSING]).toBe(100);       // 10 points, in tenths
     place(B_RESEARCH); run(100);                // two stations: twice as fast
@@ -66,19 +68,19 @@ describe('research', () => {
     start(12345); run(20);
     place(B_RESEARCH); run(200);
     queueCommand({ type:'research', nation:1, topic:R_TAXES }); run(100);
-    expect(me().xp).toEqual([200,100,0,0,0]);
+    expect(me().xp).toEqual([200,100,0,0,0,0]);
     queueCommand({ type:'research', nation:1, topic:R_HOUSING }); run(1);
     expect(me().study).toBe(R_HOUSING);
   });
 
   it('moves on to the other topic when one is done, and keeps its tiers if the stations burn', () => {
     start(12345); run(20);
-    me().tier=[3,1,1,1,1]; me().study=R_HOUSING;
+    me().tier=[3,1,1,1,1,1]; me().study=R_HOUSING;
     const q=place(B_RESEARCH); run(10);
     expect(me().study).toBe(R_TAXES);
     pType[q]=0; pOwner[q]=0; run(20);
     expect(me().labs).toBe(0);
-    expect(me().tier).toEqual([3,1,1,1,1]);
+    expect(me().tier).toEqual([3,1,1,1,1,1]);
   });
 
   it('raises each villager\'s tax by 0.1 a tier', () => {
@@ -94,7 +96,7 @@ describe('house tiers and the builders guild', () => {
     expect(HOUSE_BEDS.slice(1)).toEqual([1,2,3]);
     start(12345); expand(4); until(() => houses().length>=4);
     const [a,b,c]=houses(); pTier[b]=2; pTier[c]=3;
-    expect([bldHp(a),bldHp(b),bldHp(c)]).toEqual([6,18,36]);
+    expect([bldHp(a),bldHp(b),bldHp(c)]).toEqual([10,30,60]);
     run(10);   // census
     expect(me().beds).toBe(houses().length+1+2);
   });
@@ -128,7 +130,7 @@ describe('house tiers and the builders guild', () => {
   it('with manors allowed, puts the manors in the heart of town and stone houses further out', () => {
     start(12345); expand(8); until(() => houses().length>=12);
     place(B_GUILD); place(B_GUILD); me().tier[R_HOUSING]=3;
-    until(() => { me().stock=[100,100,100]; return improvements(me()).length===0; }, 20000);
+    until(() => { me().stock=[100,100,100]; gained(me(),0,1); gained(me(),1,1); return improvements(me()).length===0; }, 20000);   // goods keep coming in, so the builders may spend
     const hs=houses().filter(q => pTier[q]>0).sort((a,b) => fromCapital(a)-fromCapital(b));
     const manors=hs.filter(q => pTier[q]===3), stone=hs.filter(q => pTier[q]===2);
     expect(manors.length).toBeGreaterThan(0); expect(stone.length).toBeGreaterThan(0);
@@ -143,5 +145,43 @@ describe('house tiers and the builders guild', () => {
     expect(pTimer[g]).toBeGreaterThan(0);
     run(REHIRE_TICKS-5); expect(mine().filter(h => h.work===g)).toHaveLength(0);
     run(10); expect(mine().filter(h => h.work===g)).toHaveLength(1);
+  });
+});
+
+describe('watchtowers rebuilt by the builders guild', () => {
+  it('rebuilds a watchtower a tier up for 10 stone and 4 wood, then 20 stone and 8 wood, towers before houses', () => {
+    start(12345); expand(6); until(() => houses().length>=6);
+    const t=place(B_TOWER); place(B_GUILD);
+    me().tier[R_TOWERS]=3; me().tier[R_HOUSING]=2; me().invest=1;
+    expect(pTier[t]).toBe(1);
+    expect(improvements(me())[0]).toBe(t);
+    expect([upgradeCost(t), TOWER_COST[2]]).toEqual([[4,10,0], [8,20,0]]);
+    until(() => { me().stock=[100,100,100]; gained(me(),0,2); gained(me(),1,2); return pTier[t]===3; }, 6000);
+    expect(bldHp(t)).toBe(40);
+  });
+});
+
+describe('city investment', () => {
+  it('lets the builders spend only that share of the goods coming in over the last minute', () => {
+    start(12345);
+    const n=me(); n.invest=0.5;
+    gained(n,0,30);                                      // 30 wood a minute coming in
+    expect(perMinute(n).gain).toEqual([30,0,0]);
+    expect(mayInvest(n,[3,0,0])).toBe(true);
+    spent(n,0,12); expect(mayInvest(n,[3,0,0])).toBe(true);   // 15 of 30 is the half allowed
+    spent(n,0,3);  expect(mayInvest(n,[3,0,0])).toBe(false);  // that would make 18
+    expect(mayInvest(n,[0,3,0])).toBe(false);            // nothing comes in of stone
+    n.invest=1; expect(mayInvest(n,[3,0,0])).toBe(true);
+    run(610);                                            // a minute later the ledger has moved on
+    expect(perMinute(n).spend[0]).toBe(0);
+  });
+
+  it('keeps a builder idle once the investment is spent, with the rest left in the stockpile', () => {
+    start(12345); expand(6); until(() => houses().length>=10);
+    const g=place(B_GUILD); me().tier[R_HOUSING]=2; me().invest=0; run(2);
+    const b=mine().find(h => h.work===g)!;
+    me().stock=[100,100,0]; run(300);
+    expect(b.fix).toBe(-1);
+    expect(houses().every(q => pTier[q]===1)).toBe(true);
   });
 });

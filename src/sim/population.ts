@@ -28,7 +28,9 @@ import { homeScore, startSite, cancelSite, finishHouse } from './buildings';
 import { on } from './events';
 import { GOOD_OF, YIELD, WORK_TICKS, available, harvest } from './resources';
 import { updateWar, marchStep, guardStep, alarmStep, mayStand, spread } from './war';
-import { HOUSE_BEDS, R_HOUSING, MAX_TIER } from './research';
+import { HOUSE_BEDS, R_HOUSING, R_TOWERS, MAX_TIER } from './research';
+import { gained, spent, mayInvest } from './ledger';
+import { TOWER_COST } from './defense';
 import { SOLDIER_HP, VILLAGER_HP, maxHp, buildUnits, station, armUp, armorWanted, units, unitAt, type Unit } from './army';
 export { SOLDIER_HP, VILLAGER_HP, maxHp };
 
@@ -65,7 +67,7 @@ export const FIX_TICKS = 50;     // ticks a builder works to raise a house a tie
 export const FIX_COST = [3,3,0]; // what each improvement costs: [wood, stone, copper]
 export const REHIRE_TICKS = 50;  // ticks after a builder or smith falls before another villager takes his place (5 s)
 export const FORGE_TICKS = 50;   // ticks a smith works on a piece of armour (5 s)
-export const ARMOR_COPPER = 1;   // copper each piece takes
+export const ARMOR_COPPER = 5;   // copper each piece takes
 const MANOR_SHARE = 0.4;         // with manors allowed, the innermost 40% of houses become manors
 
 /** Switching role: walking to a barracks for it, or inside training. */
@@ -238,7 +240,7 @@ export function release(h: Human){
 function store(h: Human){
   if (h.carry<0) return;
   const n=W.nations[h.o];
-  n.stock[h.carry]+=h.amount; on.stored(h.o,h.carry,h.amount);
+  n.stock[h.carry]+=h.amount; gained(n,h.carry,h.amount); on.stored(h.o,h.carry,h.amount);
   h.carry=-1; h.amount=0;
 }
 
@@ -417,29 +419,38 @@ function upkeepHouses(n: Nation, people: number){
 const jitter = (q: number) => 0.8+0.4*((Math.imul(q,2654435761)>>>0)%1000)/1000;   // a fixed wobble per plot
 /** True if the house on plot q can still be raised a tier by kingdom n's builders. */
 function improvable(n: Nation, q: number){
-  return q>=0 && standing(q,B_HOUSE,n.id) && !occ[pCenter[q]] && pTier[q]<Math.min(n.tier[R_HOUSING],MAX_TIER);
+  if (q<0 || occ[pCenter[q]]) return false;
+  if (standing(q,B_HOUSE,n.id)) return pTier[q]<Math.min(n.tier[R_HOUSING],MAX_TIER);
+  if (standing(q,B_TOWER,n.id)) return pTier[q]<Math.min(n.tier[R_TOWERS],MAX_TIER);
+  return false;
 }
-/** The houses kingdom n's builders should improve, in order. The town is rebuilt from the castle
-    outward: with manors allowed, the innermost houses (the edge a little ragged) are to become
-    manors and the rest stone houses; the nearest house short of what it should be comes first. */
+/** What rebuilding the house or watchtower on plot q a tier up costs: [wood, stone, copper]. */
+export const upgradeCost = (q: number) => pType[q]===B_TOWER ? TOWER_COST[pTier[q]] : FIX_COST;
+/** The buildings kingdom n's builders should improve, in order: its watchtowers first (the nearest
+    the castle first), then its houses. The town is rebuilt from the castle outward: with manors
+    allowed, the innermost houses (the edge a little ragged) are to become manors and the rest stone
+    houses; the nearest house short of what it should be comes first. */
 export function improvements(n: Nation){
-  const top=Math.min(n.tier[R_HOUSING],MAX_TIER); if (top<2) return [];
-  const houses=n.blds.filter(q => standing(q,B_HOUSE,n.id) && !pAband[q] && !occ[pCenter[q]]);
   const c = n.capTile>=0 ? n.capTile : n.lty*TW+n.ltx, cx=c%TW, cy=(c/TW)|0;
-  const away=(q: number)=>Math.sqrt(((pCenter[q]%TW)-cx)**2+(((pCenter[q]/TW)|0)-cy)**2)*jitter(q);
-  const d=new Map(houses.map(q => [q,away(q)]));
+  const dist=(q: number)=>Math.sqrt(((pCenter[q]%TW)-cx)**2+(((pCenter[q]/TW)|0)-cy)**2);
+  const towers=n.blds.filter(q => improvable(n,q) && pType[q]===B_TOWER).sort((a,b) => dist(a)-dist(b) || a-b);
+  const top=Math.min(n.tier[R_HOUSING],MAX_TIER); if (top<2) return towers;
+  const houses=n.blds.filter(q => standing(q,B_HOUSE,n.id) && !pAband[q] && !occ[pCenter[q]]);
+  const d=new Map(houses.map(q => [q,dist(q)*jitter(q)]));
   houses.sort((a,b)=>d.get(a)!-d.get(b)! || a-b);
   const manors = top>=3 ? Math.ceil(houses.length*MANOR_SHARE) : 0;
-  return houses.filter((q,i) => pTier[q] < (i<manors ? 3 : 2));
+  return [...towers, ...houses.filter((q,i) => pTier[q] < (i<manors ? 3 : 2))];
 }
-/** A builder sets off to improve the next house on the list, if the kingdom can pay for it. */
+/** A builder sets off to improve the next building on the list that the kingdom can pay for, and
+    whose cost the city investment allows (sim/ledger.ts). */
 function goImprove(h: Human){
   const n=W.nations[h.o];
-  if (!FIX_COST.every((c,g) => n.stock[g]>=c)) return false;
   const taken=new Set<number>(); for (const o of W.humans) if (o.o===h.o && o.fix>=0) taken.add(o.fix);
   let tries=0;
   for (const q of improvements(n)){
     if (taken.has(q)) continue;
+    const cost=upgradeCost(q);
+    if (!cost.every((c,g) => n.stock[g]>=c) || !mayInvest(n,cost)) continue;
     const [x,y]=frontOf(q); h.tx=x; h.ty=y; h.task=TASK_FIX_GO;
     if (route(h,true)){ h.fix=q; h.wait=0; return true; }
     if (++tries>=3) break;
@@ -447,11 +458,13 @@ function goImprove(h: Human){
   h.task=TASK_ROAM;
   return false;
 }
-/** The builder finishes: the house goes up a tier, as good as new, if the kingdom can still pay. */
+/** The builder finishes: the building goes up a tier, as good as new, if the kingdom can still pay. */
 function improve(n: Nation, q: number){
-  if (!FIX_COST.every((c,g) => n.stock[g]>=c)) return;
-  FIX_COST.forEach((c,g) => n.stock[g]-=c);
-  pTier[q]++; pHp[q]=0; n.beds+=HOUSE_BEDS[pTier[q]]-HOUSE_BEDS[pTier[q]-1];
+  const cost=upgradeCost(q);
+  if (!cost.every((c,g) => n.stock[g]>=c)) return;
+  cost.forEach((c,g) => { n.stock[g]-=c; if (c) spent(n,g,c); });
+  pTier[q]++; pHp[q]=0;
+  if (pType[q]===B_HOUSE) n.beds+=HOUSE_BEDS[pTier[q]]-HOUSE_BEDS[pTier[q]-1];
   on.plotChanged(q); on.upgraded(q,n.id,pTier[q]);
 }
 /** Every builders guild has one builder and every blacksmith one smith. A workshop without its
@@ -589,7 +602,7 @@ function step(h: Human){
     if (h.task===TASK_HOME_GO){ h.task=TASK_HOME_BUILD; h.wait=BUILD_TICKS; return; }
     if (h.task===TASK_FIX_GO){ h.task=TASK_FIX; h.wait=FIX_TICKS; return; }
     if (h.task===TASK_SMITH_FETCH){
-      if (n.stock[2]>=ARMOR_COPPER){ n.stock[2]-=ARMOR_COPPER; h.load=1; } else h.make=0;   // no copper in store: the job is off
+      if (n.stock[2]>=ARMOR_COPPER){ n.stock[2]-=ARMOR_COPPER; spent(n,2,ARMOR_COPPER); h.load=1; } else h.make=0;   // no copper in store: the job is off
       think(h); return;
     }
     if (h.task===TASK_SMITH_BACK){ h.task=TASK_FORGE; h.wait=FORGE_TICKS; return; }
