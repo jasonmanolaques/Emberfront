@@ -7,6 +7,7 @@ import { allied, atWar } from '../sim/war';
 import { client } from '../client';
 import { updateWarChips, refreshDiplomacy } from './diplomacy';
 import { refreshResearch } from './research';
+import { refreshArmy } from './army';
 import { $ } from './dom';
 
 export const ui={ meGold:$('meGold'), meRate:$('meRate'), meLand:$('meLand'), meHouses:$('meHouses'), meStrength:$('meStrength'),
@@ -53,6 +54,7 @@ export function updateHUD(now: number){
   updateWarChips();
   refreshDiplomacy();
   refreshResearch();
+  refreshArmy();
 }
 
 export function log(text: string, kind?: string){

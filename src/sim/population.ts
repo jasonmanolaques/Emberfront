@@ -17,15 +17,20 @@
    then manors (room for 3), the manors in the old heart of town and stone houses further out.
    Each improvement costs 3 wood and 3 stone. He runs or fights like any villager, and if he
    falls another villager takes up his tools 5 seconds later.
+   A blacksmith also takes one villager as its smith. Once infantry research allows it, he walks
+   to the castle for a piece of copper, forges armour at his smithy for 5 seconds, and carries it
+   to the barracks that needs it most nearly (sim/army.ts says which armour each one wants).
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, until the kingdom sends them to war (sim/war.ts). */
-import { TW, TH, PW, TICK, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD } from '../core/constants';
-import { W, owner, occ, pType, pOwner, pBurn, pPrio, pAband, pCenter, pTimer, pTier, pHp, resType, resBusy, type Human, type Nation } from './state';
+import { TW, TH, PW, TICK, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY } from '../core/constants';
+import { W, owner, occ, pType, pOwner, pBurn, pPrio, pAband, pCenter, pTimer, pTier, pHp, pArmor, resType, resBusy, type Human, type Nation } from './state';
 import { homeScore, startSite, cancelSite, finishHouse } from './buildings';
 import { on } from './events';
 import { GOOD_OF, YIELD, WORK_TICKS, available, harvest } from './resources';
 import { updateWar, marchStep, guardStep, alarmStep, mayStand, spread } from './war';
 import { HOUSE_BEDS, R_HOUSING, MAX_TIER } from './research';
+import { SOLDIER_HP, VILLAGER_HP, maxHp, buildUnits, station, armUp, armorWanted, units, unitAt, type Unit } from './army';
+export { SOLDIER_HP, VILLAGER_HP, maxHp };
 
 export const H_VILLAGER = 0, H_SOLDIER = 1;
 export const TASK_ROAM = 0,      // between jobs: villagers think or stroll between buildings, soldiers patrol
@@ -38,13 +43,16 @@ export const TASK_ROAM = 0,      // between jobs: villagers think or stroll betw
              TASK_HOME_GO = 7,   // walking to the plot of the house they will build
              TASK_HOME_BUILD = 8,// building it
              TASK_FIX_GO = 9,    // builders: walking to the house they will improve
-             TASK_FIX = 10;      // improving it
+             TASK_FIX = 10,      // improving it
+             TASK_SMITH_FETCH = 11,  // blacksmiths: walking to the castle for copper
+             TASK_SMITH_BACK = 12,   // carrying it to the smithy
+             TASK_FORGE = 13,        // forging armour
+             TASK_SMITH_DELIVER = 14;// carrying the armour to a barracks
 export const HUMAN_EVERY = 100;  // progress per new human: 100 ticks (10 s), each farm adds 5% speed
 export const FARM_BONUS = 0.05;
 const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 s)
 const STORE_TICKS = 10;          // ticks inside the capital to store a load (1 s)
 const PATROL_R = 36;             // pixels around the capital door soldiers patrol when there is no barracks
-export const SOLDIER_HP = 11, VILLAGER_HP = 6;
 export const HOME_PACE = 1.15;   // soldiers on their own kingdom's land move 15% faster
 export const REGEN = 0.01;        // hit points everyone heals a tick (0.1 a second)
 export const GARRISON = 5;       // soldiers a watchtower calls for
@@ -57,7 +65,9 @@ export const BEG_TICKS = 600;    // ticks homeless before a villager turns begga
 export const ABANDON_TICKS = 200;// ticks with more houses than people before the extra ones stand empty (20 s)
 export const FIX_TICKS = 50;     // ticks a builder works to raise a house a tier (5 s)
 export const FIX_COST = [3,3,0]; // what each improvement costs: [wood, stone, copper]
-export const REHIRE_TICKS = 50;  // ticks after a builder falls before another villager takes his place (5 s)
+export const REHIRE_TICKS = 50;  // ticks after a builder or smith falls before another villager takes his place (5 s)
+export const FORGE_TICKS = 50;   // ticks a smith works on a piece of armour (5 s)
+export const ARMOR_COPPER = 1;   // copper each piece takes
 const MANOR_SHARE = 0.4;         // with manors allowed, the innermost 40% of houses become manors
 
 /** Switching role: walking to a barracks for it, or inside training. */
@@ -152,8 +162,8 @@ function route(h: Human, picky=false){
 function roamTarget(h: Human){
   const n=W.nations[h.o], r=W.prand;
   if (h.kind===H_SOLDIER){
-    // on guard round a watchtower, waiting in front of the nearest barracks, or (with neither) patrolling the capital
-    const b = h.post>=0 ? -1 : nearestPlot(barracksOf(n),h.x,h.y);
+    // on guard round a watchtower, waiting in front of his army's barracks, or (with neither) patrolling the city
+    const b = h.post>=0 ? -1 : h.base>=0 && standing(h.base,B_BARRACKS,h.o) ? h.base : -1;
     const [cx,cy] = h.post>=0 ? frontOf(h.post) : b>=0 ? frontOf(b) : n.capTile>=0 ? doorOf(n) : [h.x,h.y];
     const rx = h.post>=0 ? 10 : b>=0 ? 9 : PATROL_R, ry = h.post>=0 ? 8 : b>=0 ? 3 : PATROL_R*0.6, dy = b>=0 ? 3 : 0;
     h.tx=h.x; h.ty=h.y;
@@ -166,7 +176,7 @@ function roamTarget(h: Human){
   // villagers with nothing to do: stroll to a nearby building of their own kingdom (builders wait by their guild)
   let bx=h.x, by=h.y, bd=1e9, gate=false;
   h.tx=h.x; h.ty=h.y;
-  if (h.guild>=0){ const [x,y]=frontOf(h.guild+(r()<0.5 ? 1 : 0)); bx=x; by=y; bd=0; }
+  if (h.work>=0){ const [x,y]=frontOf(h.work+(pType[h.work]===B_GUILD && r()<0.5 ? 1 : 0)); bx=x; by=y; bd=0; }
   for (let k=0;k<6 && bd>0;k++){ if (!n.blds.length) break; const q=n.blds[(r()*n.blds.length)|0];
     const castle=pType[q]===B_CASTLE||pType[q]===B_CPART;
     if (castle && n.capTile<0) continue;
@@ -263,7 +273,7 @@ function think(h: Human){
   const n=W.nations[h.o];
   release(h); h.task=TASK_ROAM;
   if (h.beggar){ roamTarget(h); return; }   // beggars just drift about town
-  if (h.guild>=0 && h.kind===H_VILLAGER){ if (!goImprove(h)) roamTarget(h); return; }   // builders improve houses, or wait by the guild
+  if (h.work>=0 && h.kind===H_VILLAGER){ if (!(pType[h.work]===B_SMITHY ? goForge(h) : goImprove(h))) roamTarget(h); return; }   // builders and smiths work, or wait at their workshop
   if (h.kind===H_VILLAGER && needsHome(n) && goBuildHome(h)) return;
   if (h.kind!==H_VILLAGER || n.capTile<0){ roamTarget(h); return; }   // nowhere to store anything without a capital
   const found=nearestResources(h), have=n.stock.map((s,g)=>s+(pending[h.o]?.[g] ?? 0));
@@ -282,8 +292,9 @@ function think(h: Human){
 /** A new person of kingdom n standing at (x,y), with nothing to do yet. */
 export function makeHuman(n: Nation, kind: number, x: number, y: number): Human {
   return { id:++W.humanSeq, o:n.id, kind, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+W.prand()*2,
-    res:-1, carry:-1, amount:0, hp:kind===H_SOLDIER?SOLDIER_HP:VILLAGER_HP, post:-1, site:-1, home:-1, housed:false, homeless:0, beggar:false,
-    war:-1, loot:false, foe:-1, aim:-1, cool:0, slot:0, brave:-1, calm:0, guild:-1, fix:-1 };
+    res:-1, carry:-1, amount:0, hp:kind===H_SOLDIER?SOLDIER_HP[1]:VILLAGER_HP, post:-1, site:-1, home:-1, housed:false, homeless:0, beggar:false,
+    war:-1, loot:false, foe:-1, aim:-1, cool:0, slot:0, brave:-1, calm:0, work:-1, fix:-1,
+    tier:kind===H_SOLDIER?1:0, base:-1, load:0, make:0, dest:-1 };
 }
 /** A new villager walks out of the capital; a new soldier out of the barracks nearest the capital. */
 function spawnHuman(n: Nation, kind: number, barracks: number[]){
@@ -294,10 +305,14 @@ function spawnHuman(n: Nation, kind: number, barracks: number[]){
   think(h); h.wait=0;
 }
 
+/** Sends h to the nearest barracks to switch role. A soldier who can't get there without leaving
+    the kingdom or climbing the castle stays where he is (returns false). */
 function sendToTrain(h: Human, barracks: number[]){
-  release(h); h.post=-1;
-  const b=nearestPlot(barracks,h.x,h.y), [x,y]=frontOf(b);
-  h.site=b; h.task=TASK_TO_TRAIN; h.tx=x; h.ty=y; h.wait=0; route(h);
+  const b=nearestPlot(barracks,h.x,h.y), [x,y]=frontOf(b), was=[h.task,h.tx,h.ty,h.wait] as const, path=h.path;
+  h.task=TASK_TO_TRAIN; h.tx=x; h.ty=y;
+  if (!route(h,h.kind===H_SOLDIER) && h.kind===H_SOLDIER){ [h.task,h.tx,h.ty,h.wait]=was; h.path=path; return false; }   // a soldier out on patrol can wait for a better moment
+  release(h); h.post=-1; h.site=b; h.wait=0;
+  return true;
 }
 /** Back out into the world: soldiers resume their patrol, villagers pause a moment and think. */
 export { think };
@@ -335,8 +350,9 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
   for (const h of mine){ if (!diff) return; if (h.task===TASK_TO_TRAIN && h.kind===want){ backToRoam(h); diff--; } }
   // then the people of the other role nearest a barracks; anyone carrying a load delivers it first
   const away=(h: Human)=>{ const [x,y]=frontOf(nearestPlot(barracks,h.x,h.y)); return (h.x-x)**2+(h.y-y)**2; };
-  const cands=mine.filter(h=>!switching(h) && !h.beggar && h.task!==TASK_STORE && h.carry<0 && h.home<0 && h.war<0 && h.guild<0 && h.kind===from).sort((a,b)=>away(a)-away(b) || a.id-b.id);
-  for (const h of cands){ if (!diff) return; sendToTrain(h,barracks); diff--; }
+  const cands=mine.filter(h=>!switching(h) && !h.beggar && h.task!==TASK_STORE && h.carry<0 && h.home<0 && h.war<0 && h.work<0 && h.kind===from)
+    .sort((a,b)=>(+(a.base>=0) - +(b.base>=0)) || a.tier-b.tier || away(a)-away(b) || a.id-b.id);   // soldiers without a barracks, and the least armoured, go first
+  for (const h of cands){ if (!diff) return; if (sendToTrain(h,barracks)) diff--; }
 }
 
 /** Shares out idle soldiers among the watchtowers calling for a garrison, one at a time in the
@@ -346,10 +362,11 @@ function garrison(n: Nation, mine: Human[]){
   const count=new Map(towers.map(q => [q,0]));
   for (const h of mine){
     if (h.kind!==H_SOLDIER || h.post<0) continue;
+    if (h.base>=0){ h.post=-1; continue; }   // he has joined an army
     if (count.has(h.post)) count.set(h.post, count.get(h.post)!+1);
     else { h.post=-1; if (!switching(h)) backToRoam(h); }   // that tower stopped asking or is gone: back to the barracks
   }
-  const idle=mine.filter(h => h.kind===H_SOLDIER && h.post<0 && h.war<0 && !switching(h));
+  const idle=mine.filter(h => h.kind===H_SOLDIER && h.post<0 && h.base<0 && h.war<0 && !switching(h));   // only soldiers with no room in a barracks guard towers
   for (let progress=true; progress && idle.length;){
     progress=false;
     for (const q of towers){
@@ -438,33 +455,81 @@ function improve(n: Nation, q: number){
   pTier[q]++; pHp[q]=0; n.beds+=HOUSE_BEDS[pTier[q]]-HOUSE_BEDS[pTier[q]-1];
   on.plotChanged(q); on.upgraded(q,n.id,pTier[q]);
 }
-/** Every builders guild has one builder. A guild without one takes the villager nearest it,
-    straight away when it is new, a while after its builder fell. */
+/** Every builders guild has one builder and every blacksmith one smith. A workshop without its
+    worker takes the villager nearest it, straight away when it is new, a while after he fell. */
+const workshop = (q: number, id: number) => standing(q,B_GUILD,id) || standing(q,B_SMITHY,id);
 function staffGuilds(n: Nation, mine: Human[]){
   const staffed=new Set<number>();
   for (const h of mine){
-    if (h.guild<0) continue;
-    if (!standing(h.guild,B_GUILD,n.id) || h.kind!==H_VILLAGER || h.beggar || staffed.has(h.guild)){ h.guild=-1; if (h.fix>=0) backToRoam(h); continue; }
-    staffed.add(h.guild);
+    if (h.work<0) continue;
+    if (!workshop(h.work,n.id) || h.kind!==H_VILLAGER || h.beggar || staffed.has(h.work)){
+      const busy=h.fix>=0 || h.make>0 || h.load>0;
+      h.work=-1; h.load=0; h.make=0; h.dest=-1; if (busy) backToRoam(h); continue;   // whatever he carried is lost
+    }
+    staffed.add(h.work);
   }
-  if (staffed.size===n.guilds) return;
+  if (staffed.size===n.guilds+n.smithies) return;
   let free: Human[] | null=null;
   for (const q of n.blds){
-    if (staffed.has(q) || !standing(q,B_GUILD,n.id)) continue;
+    if (staffed.has(q) || !workshop(q,n.id)) continue;
     if (pTimer[q]>1){ pTimer[q]--; continue; }   // his replacement is on the way
-    free ??= mine.filter(h => h.kind===H_VILLAGER && h.guild<0 && !h.beggar && !switching(h) && h.brave<0 && h.carry<0 && h.home<0 && h.task!==TASK_STORE);
+    free ??= mine.filter(h => h.kind===H_VILLAGER && h.work<0 && !h.beggar && !switching(h) && h.brave<0 && h.carry<0 && h.home<0 && h.task!==TASK_STORE);
     const [x,y]=frontOf(q), h=nearest(free,x,y).shift(); if (!h) return;
     const replaced=pTimer[q]===1; pTimer[q]=0;
-    release(h); h.guild=q; think(h); h.wait=0;
+    release(h); h.work=q; think(h); h.wait=0;
     on.builderHired(q,n.id,replaced);
   }
+}
+
+/* ---------- blacksmiths ---------- */
+/** Pieces of armour kingdom n's smiths are already making, per barracks: [_, _, tier 2, tier 3]. */
+function forging(n: Nation){
+  const out=new Map<Unit, number[]>();
+  for (const s of W.humans){
+    if (s.o!==n.id || s.make<2) continue;
+    const u=unitAt(s.dest); if (!u) continue;
+    let p=out.get(u); if (!p){ p=[0,0,0,0]; out.set(u,p); } p[s.make]++;
+  }
+  return out;
+}
+/** A smith between jobs: carries on with what he holds, or takes the next piece the barracks want. */
+function goForge(h: Human){
+  const n=W.nations[h.o];
+  if (h.load===1){   // copper in hand: back to the forge
+    const [x,y]=frontOf(h.work); h.tx=x; h.ty=y; h.task=TASK_SMITH_BACK; route(h); h.wait=0; return true;
+  }
+  if (h.load>=2){    // armour in hand: to the barracks it was made for, or the nearest one left
+    let u=unitAt(h.dest);
+    if (!u || u.o!==h.o){ const U=units[h.o] ?? []; u=U.slice().sort((a,b)=>((a.x-h.x)**2+(a.y-h.y)**2)-((b.x-h.x)**2+(b.y-h.y)**2) || a.key-b.key)[0]; }
+    if (!u) return false;   // no barracks at all: he waits with it
+    if (unitAt(h.dest)!==u) h.dest=nearestPlot(u.plots,h.x,h.y);
+    const [x,y]=frontOf(h.dest); h.tx=x; h.ty=y; h.task=TASK_SMITH_DELIVER; route(h); h.wait=0; return true;
+  }
+  if (n.capTile<0 || n.stock[2]<ARMOR_COPPER) return false;
+  // the barracks nearest the smithy that still wants armour
+  const made=forging(n), [sx,sy]=frontOf(h.work);
+  let best: Unit | undefined, tier=0, bd=Infinity;
+  for (const u of units[h.o] ?? []){
+    const t=armorWanted(n,u,made.get(u) ?? [0,0,0,0]); if (!t) continue;
+    const d=(u.x-sx)**2+(u.y-sy)**2; if (d<bd){ bd=d; best=u; tier=t; }
+  }
+  if (!best) return false;
+  h.make=tier; h.dest=nearestPlot(best.plots,sx,sy);
+  const [x,y]=doorOf(n); h.tx=x; h.ty=y; h.task=TASK_SMITH_FETCH; h.wait=0;
+  if (!route(h)){ h.make=0; h.dest=-1; h.task=TASK_ROAM; return false; }
+  return true;
 }
 
 function step(h: Human){
   const n=W.nations[h.o];
   if (switching(h) && !standing(h.site,B_BARRACKS,h.o)){ backToRoam(h); return; }   // the barracks was lost
   if (h.task===TASK_INSIDE){
-    if (--h.wait<=0){ h.kind^=1; h.sp+=h.kind===H_SOLDIER?1:-1; h.hp=h.kind===H_SOLDIER?SOLDIER_HP:VILLAGER_HP; backToRoam(h); on.roleChanged(h.x,h.y,h.kind); }
+    if (--h.wait<=0){
+      h.kind^=1; h.sp+=h.kind===H_SOLDIER?1:-1;
+      if (h.kind===H_SOLDIER) h.tier=1;
+      else { if (h.tier>=2) pArmor[h.tier][h.site]++; h.tier=0; h.base=-1; }   // his armour goes back on the racks
+      h.hp=maxHp(h); backToRoam(h); on.roleChanged(h.x,h.y,h.kind);
+    }
     return;
   }
   if (h.kind===H_SOLDIER ? guardStep(h) : alarmStep(h)) return;   // at war: soldiers defend, villagers run or fight
@@ -486,6 +551,10 @@ function step(h: Human){
     if (--h.wait<=0){ const q=h.home; h.home=-1; finishHouse(q,h.o); think(h); }
     return;
   }
+  if (h.task===TASK_FORGE){
+    if (--h.wait<=0){ h.load=h.make; think(h); }   // the armour is done: off to the barracks with it
+    return;
+  }
   if ((h.task===TASK_FIX_GO || h.task===TASK_FIX) && !improvable(n,h.fix)){ think(h); return; }   // the house burned, was lost or is done
   if (h.task===TASK_FIX){
     if (--h.wait<=0){ improve(n,h.fix); think(h); }
@@ -502,6 +571,15 @@ function step(h: Human){
     if (h.task===TASK_GATHER){ h.task=TASK_HARVEST; h.wait=WORK_TICKS[resType[h.res]]; return; }
     if (h.task===TASK_HOME_GO){ h.task=TASK_HOME_BUILD; h.wait=BUILD_TICKS; return; }
     if (h.task===TASK_FIX_GO){ h.task=TASK_FIX; h.wait=FIX_TICKS; return; }
+    if (h.task===TASK_SMITH_FETCH){
+      if (n.stock[2]>=ARMOR_COPPER){ n.stock[2]-=ARMOR_COPPER; h.load=1; } else h.make=0;   // no copper in store: the job is off
+      think(h); return;
+    }
+    if (h.task===TASK_SMITH_BACK){ h.task=TASK_FORGE; h.wait=FORGE_TICKS; return; }
+    if (h.task===TASK_SMITH_DELIVER){
+      if (standing(h.dest,B_BARRACKS,h.o)){ pArmor[h.load][h.dest]++; const u=unitAt(h.dest); if (u) u.stored[h.load]++; on.forged(h.dest,h.o,h.load); h.load=0; h.make=0; h.dest=-1; }   // on the racks at once, so the next job counts it
+      think(h); return;
+    }
     if (h.task===TASK_HAUL){ h.task=TASK_STORE; h.x=h.tx; h.y=h.ty; h.wait=STORE_TICKS; return; }
     think(h); return;
   }
@@ -515,11 +593,12 @@ export function updatePopulation(){
   for (let i=H.length-1;i>=0;i--){
     const h=H[i];
     if (!N[h.o].alive || !mayStand(h,owner[tileOf(h.x,h.y)]) || h.hp<=0){
-      if (h.hp<=0 && N[h.o].alive) on.died(h.x,h.y,h.o,h.id,h.kind===H_SOLDIER ? 1 : h.beggar ? 2 : 0);   // they drop where they fell
-      if (h.guild>=0 && pType[h.guild]===B_GUILD) pTimer[h.guild]=REHIRE_TICKS+1;   // the guild waits a while for a new builder
+      if (h.hp<=0 && N[h.o].alive) on.died(h.x,h.y,h.o,h.id,h.kind===H_SOLDIER ? 1 : h.beggar ? 2 : 0,h.tier);   // they drop where they fell
+      if (h.work>=0 && (pType[h.work]===B_GUILD || pType[h.work]===B_SMITHY)) pTimer[h.work]=REHIRE_TICKS+1;   // the workshop waits a while for a new hand
       release(h); H[i]=H[H.length-1]; H.pop();
     }
   }
+  buildUnits();  // which barracks stand, and their armies
   updateWar();   // armies, watchtowers and who is fighting whom
   const groups: Human[][]=N.map(()=>[]);
   for (const h of H) groups[h.o].push(h);
@@ -547,6 +626,8 @@ export function updatePopulation(){
       mine.push(H[H.length-1]);
     }
     balance(n, mine, barracks);
+    for (const h of station(n, mine, switching)) if (!indoors(h) && !switching(h) && h.task===TASK_ROAM) backToRoam(h);   // off to his barracks
+    armUp(n, switching);
     garrison(n, mine);
     staffGuilds(n, mine);
   }

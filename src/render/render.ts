@@ -1,7 +1,7 @@
 /* ---------- frame rendering: reads the simulation, never changes it ----------
    The world is drawn in render pixels (RS per tile, K per simulation pixel); the camera's zoom
    is screen pixels per render pixel. */
-import { TW, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER } from '../core/constants';
+import { TW, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY } from '../core/constants';
 import { clamp, fmt } from '../core/util';
 import { W, isLand, pType, pPrio, pTimer, pBurn, type Human } from '../sim/state';
 import { findBlock } from '../sim/sim';
@@ -14,7 +14,8 @@ import { natC } from './nature';
 import { styleOf } from './style';
 import { personSprite, corpseSprite, woundStage, BODY_X, FEET_Y } from './people';
 import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, psize, floats, glints, shots, hits, corpses, drips, addDrip, CORPSE_MS, DRIP_MS, updateEffects } from './effects';
-import { H_SOLDIER, TASK_HARVEST, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, indoors } from '../sim/population';
+import { H_SOLDIER, TASK_HARVEST, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, TASK_FORGE, indoors, maxHp } from '../sim/population';
+import { units, unitLabel } from '../sim/army';
 import { G_WOOD, G_STONE, G_COPPER } from '../sim/resources';
 import { allied, atWar, HIT_TICKS } from '../sim/war';
 
@@ -98,13 +99,13 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
     const striking = swAge<SWING_MS*0.8 || (kind===1 && p.cool>HIT_TICKS-3 && p.aim>=0);
     const frame = striking && kind===1 ? 2 : moving ? (step ^ (p.id&1)) : 0;
     const look = ((p.id*7)&3) | (((p.id*13)%4)<<2);
-    const wound = woundStage(kind===1 ? 1 : 0, p.hp);
+    const wound = woundStage(kind===1 ? 1 : 0, p.hp, maxHp(p));
     // near death, a trail of blood for a few seconds as they stagger on
     if (wound===(kind===1 ? 2 : 1)){
       let b=bleeding.get(p.id); if (!b){ b=[now,0]; bleeding.set(p.id,b); }
       if (moving && now-b[0]<TRAIL_MS && now-b[1]>DROP_MS){ b[1]=now; addDrip(p.x+(Math.random()-0.5)*0.8,p.y); }
     } else bleeding.delete(p.id);
-    const spr = personSprite(p.o,kind,look,frame,left,wound);
+    const spr = personSprite(p.o,kind,look,frame,left,wound,p.tier || 1);
     const bx = Math.round(rx+px)-2, fy = Math.floor(ry+py)+1;   // body's left column, and its feet row
     const sx = left ? bx-(spr.width-BODY_X-4) : bx-BODY_X;
     ctx.drawImage(spr, sx, fy-FEET_Y);
@@ -115,8 +116,23 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
       ctx.fillStyle='#8a6a40'; ctx.fillRect(tx,fy-7,1,7); ctx.fillStyle='#c9cdd1'; ctx.fillRect(tx,fy-8,1,1); ctx.fillRect(tx-1,fy-9,1,1); ctx.fillRect(tx+1,fy-9,1,1);
       continue;
     }
+    // smiths wear a dark apron; at the forge the hammer rings on the anvil and sparks fly; they
+    // carry a lump of copper there, and the finished armour to the barracks
+    if (p.work>=0 && pType[p.work]===B_SMITHY){
+      ctx.fillStyle='#2f2a27'; ctx.fillRect(bx+1,fy-4,2,3);
+      if (p.task===TASK_FORGE){
+        const up=reduceMotion ? 0 : ((now/200+p.id)|0)&1, tx=left ? bx-2 : bx+4;
+        ctx.fillStyle=INK; ctx.fillRect(tx-1,fy-7+up*2,3,5);
+        ctx.fillStyle='#7a5634'; ctx.fillRect(tx,fy-5+up*2,1,3);
+        ctx.fillStyle='#5d656c'; ctx.fillRect(left ? tx-1 : tx,fy-6+up*2,2,1);
+        if (up && !reduceMotion){ ctx.fillStyle='#ffd27a'; ctx.fillRect(tx+(left?-2:2),fy-3,1,1); ctx.fillStyle='#ff8a3c'; ctx.fillRect(tx+(left?-3:3),fy-4,1,1); }
+        continue;
+      }
+      if (p.load===1){ box(bx,fy-10,3,2,'#d9823e'); ctx.fillStyle='#ffb06a'; ctx.fillRect(bx,fy-10,1,1); continue; }
+      if (p.load>=2){ const steel=p.load===3 ? '#d4dbe1' : '#8d949b'; box(bx,fy-11,4,3,steel); ctx.fillStyle=styleOf(p.o).roof; ctx.fillRect(bx+1,fy-10,2,2); continue; }   // armour with the kingdom's colours
+    }
     // builders wear a leather cap; at work, a hammer rises and falls on the house
-    if (p.guild>=0){
+    if (p.work>=0 && pType[p.work]===B_GUILD){
       ctx.fillStyle=INK; ctx.fillRect(bx-1,fy-8,6,2);
       ctx.fillStyle='#d99a3e'; ctx.fillRect(bx,fy-8,4,1); ctx.fillRect(left ? bx-1 : bx+4,fy-7,1,1); ctx.fillStyle='#a8702a'; ctx.fillRect(bx,fy-7,4,1);
       if (p.task===TASK_FIX){
@@ -159,7 +175,7 @@ function drawFallen(now: number, vx0: number, vy0: number, vx1: number, vy1: num
     for (let j=-ry;j<=ry;j++){ const w=Math.round(rx*Math.sqrt(1-(j/(ry+0.5))**2)); ctx.fillRect(x-w,y+j,w*2+1,1); }
     ctx.fillStyle='#9a1a14'; ctx.fillRect(x-Math.max(1,rx-2),y-Math.max(0,ry-1),Math.max(1,rx-2)*2,1);
     ctx.globalAlpha=fade;
-    const s=corpseSprite(c.o,c.kind,c.look); ctx.drawImage(s,x-7,y-7);
+    const s=corpseSprite(c.o,c.kind,c.look,c.tier); ctx.drawImage(s,x-7,y-7);
   }
   ctx.globalAlpha=1;
 }
@@ -325,6 +341,19 @@ export function render(now: number, dt: number){
     const ts=(fs*0.72)|0; ctx.font=`500 ${ts}px "Pixelify Sans", ui-monospace, monospace`; ctx.lineWidth=Math.max(2,ts*0.22);
     ctx.fillStyle=n.isPlayer?'#ffe27a':rel ?? '#e9eef3';
     ctx.strokeText(fmt(n.strength),sx,sy+fs*0.55); ctx.fillText(fmt(n.strength),sx,sy+fs*0.55);
+  }
+  // each barracks' army over its roof: soldiers there over its room, and the army by tier
+  if (zs>=1.5){
+    const fs=Math.round(Math.min(15,Math.max(11,zs*2.8))*dpr);
+    ctx.font=`600 ${fs}px "Pixelify Sans", ui-monospace, monospace`; ctx.lineWidth=Math.max(2,fs*0.25); ctx.strokeStyle='rgba(8,14,22,.9)';
+    for (let i=1;i<N.length;i++) for (const u of units[i] ?? []){
+      const top=Math.min(...u.plots.map(q => ((q/PW)|0)))*PS, sx=(u.x*K-camX)*zoom, sy=(top-camY)*zoom-fs*0.7;
+      if (sx<-80||sy<-20||sx>w+80||sy>h+20) continue;
+      const text=unitLabel(u), tw=ctx.measureText(text).width, sq=Math.round(fs*0.55);
+      ctx.fillStyle='rgba(8,14,22,.9)'; ctx.fillRect(sx-tw/2-sq-5*dpr,sy-sq/2-1*dpr,sq+2*dpr,sq+2*dpr);
+      ctx.fillStyle=N[i].hex; ctx.fillRect(sx-tw/2-sq-4*dpr,sy-sq/2,sq,sq);   // the kingdom's colour
+      ctx.fillStyle=i===PLAYER ? '#ffe27a' : '#f2f5f8'; ctx.strokeText(text,sx,sy); ctx.fillText(text,sx,sy);
+    }
   }
   for (let i=floats.length-1;i>=0;i--){
     const f=floats[i], age=(now-f.t0)/1000; if (age>1.3){ floats.splice(i,1); continue; }

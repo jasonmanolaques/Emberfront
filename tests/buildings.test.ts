@@ -1,12 +1,12 @@
 // Buildings a kingdom places, and the gold economy.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, GOLD_START, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
+import { TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, GOLD_START, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
 import { W, owner, isLand, pType, pCenter, pBuild, type Human } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { listen } from '../src/sim/events';
 import { setOwner, tileCost } from '../src/sim/territory';
-import { STRUCTURES, structureOf, build, plotProblem } from '../src/sim/buildings';
-import { H_SOLDIER, H_VILLAGER, SOLDIER_HP, frontOf, switching, makeHuman } from '../src/sim/population';
+import { STRUCTURES, structureOf, build, plotProblem, placeProblem } from '../src/sim/buildings';
+import { H_SOLDIER, H_VILLAGER, SOLDIER_HP, frontOf, doorOf, switching, makeHuman } from '../src/sim/population';
 import { declare } from '../src/sim/war';
 
 const me = () => W.nations[1];
@@ -51,7 +51,8 @@ describe('building costs and placement', () => {
     expect(structureOf(B_COPPERMINE)!.cost).toEqual([10,10,0]);
     expect(structureOf(B_RESEARCH)!.cost).toEqual([15,15,10]);
     expect(structureOf(B_GUILD)!.cost).toEqual([10,20,5]);
-    expect(STRUCTURES).toHaveLength(9);
+    expect(structureOf(B_SMITHY)!.cost).toEqual([10,15,5]);
+    expect(STRUCTURES).toHaveLength(10);
   });
 
   it('takes the resources and places the building, but only if they are all there', () => {
@@ -120,24 +121,29 @@ describe('what the buildings do', () => {
     expect(me().gold-g1).toBeCloseTo(60, 6);
   });
 
-  it('keeps idle soldiers waiting at the barracks', () => {
+  it('keeps its army of 5 waiting at the barracks; soldiers with no room patrol the city', () => {
     start(12345, 0); expand(4);
     const b=place(B_BARRACKS);
-    run(1000); queueCommand({ type: 'soldiers', nation: 1, share: 0.5 }); run(600);
+    run(1000); queueCommand({ type: 'soldiers', nation: 1, share: 0.6 }); run(600);
     const [bx, by]=frontOf(b), soldiers=mine().filter(h => h.kind===H_SOLDIER && !switching(h));
-    expect(soldiers.length).toBeGreaterThan(3);
+    expect(soldiers.length).toBeGreaterThan(6);
     run(100);
-    for (const h of soldiers) expect(Math.hypot(h.x-bx, h.y-by)).toBeLessThan(16);
+    const army=soldiers.filter(h => h.base>=0), patrol=soldiers.filter(h => h.base<0);
+    expect(army).toHaveLength(5);
+    for (const h of army) expect(Math.hypot(h.x-bx, h.y-by)).toBeLessThan(16);
+    const [cx, cy]=doorOf(me());
+    for (const h of patrol) expect(Math.hypot(h.x-cx, h.y-cy)).toBeLessThan(50);   // round the castle
   });
 
-  it('splits 5 idle soldiers 3 and 2 between two watchtowers calling for a garrison', () => {
+  it('splits 5 soldiers without room in a barracks 3 and 2 between two watchtowers calling for a garrison', () => {
     start(12345, 0); expand(8);
     const plots=freePlots(); place(B_BARRACKS, plots[0]); const t1=place(B_TOWER, plots[3]), t2=place(B_TOWER, plots[6]);
     while (mine().length<10) tick();
     me().humanProg = -1e9;   // no more newcomers, so the kingdom stays at 10 people
-    queueCommand({ type: 'soldiers', nation: 1, share: 0.5 });
-    for (let i=0;i<2000 && (mine().some(switching) || mine().filter(h => h.kind===H_SOLDIER).length<5);i++) tick();
-    expect(mine().filter(h => h.kind===H_SOLDIER)).toHaveLength(5);
+    queueCommand({ type: 'soldiers', nation: 1, share: 1 });   // 10 soldiers: 5 in the barracks' army, 5 patrolling
+    for (let i=0;i<3000 && (mine().some(switching) || mine().filter(h => h.kind===H_SOLDIER).length<10);i++) tick();
+    expect(mine().filter(h => h.kind===H_SOLDIER)).toHaveLength(10);
+    expect(mine().filter(h => h.base<0)).toHaveLength(5);
     queueCommand({ type: 'priority', nation: 1, plot: t1 });
     queueCommand({ type: 'priority', nation: 1, plot: t2 });
     tick();
@@ -171,6 +177,9 @@ describe('what the buildings do', () => {
     expect(out).toBeLessThan(20);
     const mk=(t: number): Human => { const h=makeHuman(W.nations[2], H_SOLDIER, (t%TW)*2+1, ((t/TW)|0)*2+1.5); h.sp=0; h.wait=1e9; W.humans.push(h); return h; };
     const soldier=mk(outside), raider=mk(outside);
+    // they are the army of a barracks of the bot's, so they can be sent
+    const bq=W.nations[2].plots.find(q => !placeProblem(W.nations[2],q,B_BARRACKS))!; W.nations[2].stock=[50,50,50]; build(W.nations[2],bq,B_BARRACKS);
+    soldier.base=raider.base=bq; W.nations[2].soldierShare=1;
     const shots: { from: number; tick: number; x: number }[]=[];
     listen({ towerShot: (x0,_y0,x1) => { shots.push({ from:x0, tick:W.tickN, x:x1 }); } });
     run(100);
@@ -183,7 +192,7 @@ describe('what the buildings do', () => {
     expect(fromTower.length).toBeGreaterThanOrEqual(3);
     for (let k=1;k<fromTower.length;k++) expect(fromTower[k].tick-fromTower[k-1].tick).toBe(40);   // once every 4 seconds
     expect(shots.every(s => s.x===raider.x)).toBe(true);           // nobody shoots past the border
-    expect(soldier.hp).toBe(SOLDIER_HP);
+    expect(soldier.hp).toBe(SOLDIER_HP[1]);
     expect(100-raider.hp).toBeGreaterThanOrEqual(2*shots.length-1e-6);   // 2 damage a shot (villagers with pitchforks may add some)
     listen({ towerShot: () => {} });
   });

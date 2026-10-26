@@ -7,20 +7,20 @@ import { queueCommand } from '../sim/sim';
 import { allied, atWar, available, allyProblem, warProblem, interceptProblem, OFFER_TICKS, LOOT_GOLD } from '../sim/war';
 import type { Campaign, Human } from '../sim/state';
 import { toast } from './hud';
+import { ArmyPicker } from './armies';
 import { $ } from './dom';
 
 const panel=$('diplo'), talk=$('dTalk'), warView=$('dWarView'), wars=$('wars');
-const commit=$('dCommit') as HTMLInputElement;
-const pop=$('warPop'), popMenu=$('wpMenu'), popSend=$('wpSend'), popCount=$('wpCount') as HTMLInputElement;
+const pop=$('warPop'), popMenu=$('wpMenu'), popSend=$('wpSend');
+const picker=new ArmyPicker($('dArmies'), () => refreshWar(false)), popPicker=new ArmyPicker($('wpArmies'), () => refreshPop());
 let target=0;
-let followMax=false;   // the war slider sits at "everyone", and keeps up as new soldiers are trained
 let popFor=0, popCamp=-1;   // the enemy whose army the menu is about, and that army
 // raid routes take a search of the map: worked out at most once a second while the war screen is open
 let raidWhy: string | null = null, raidAt = -1e9;
 
 const nameOf = (id: number) => id===PLAYER ? 'You' : W.nations[id].name;
 
-/** Opens the war screen against o straight away (a counter-attack), with every free soldier. */
+/** Opens the war screen against o straight away (a counter-attack), with every army. */
 export function openCounter(o: number){ openDiplomacy(o); if (!panel.hidden) showWarView(); }
 /** Opens diplomacy with kingdom o. */
 export function openDiplomacy(o: number){
@@ -34,10 +34,8 @@ export const diplomacyOpen = () => !panel.hidden;
 function showWarView(){
   const me=W.nations[PLAYER]; if (!me) return;
   talk.hidden=true; warView.hidden=false;
-  const pool=available(me).all.length;
-  commit.max=String(pool); commit.value=String(pool); raidAt=-1e9; followMax=true;
+  picker.reset(); raidAt=-1e9;
   refreshDiplomacy(true);
-  commit.focus();
 }
 
 /** Keeps the open panel in step with the match. */
@@ -62,29 +60,26 @@ export function refreshDiplomacy(force=false){
 }
 
 function refreshWar(force: boolean){
-  const me=W.nations[PLAYER], pool=available(me), max=pool.all.length;
-  if (+commit.max!==max){ const was=+commit.value; commit.max=String(max); commit.value=String(followMax ? max : Math.min(was,max)); }
-  const k=+commit.value, fromGuards=Math.max(0,k-pool.idle.length);
-  commit.style.setProperty('--fill',(max ? k/max*100 : 0)+'%');
-  $('dCommitVal').textContent=`${k} / ${max}`;
-  $('dSplit').textContent = max ? `${pool.idle.length} idle at the barracks · ${pool.guards.length} guarding watchtowers` : 'No soldiers free: raise some with a barracks';
-  const warn=$('dWarn'); warn.hidden=!fromGuards;
-  warn.textContent = fromGuards>1 ? `${fromGuards} garrison soldiers will leave their watchtowers` : '1 garrison soldier will leave his watchtower';
+  const me=W.nations[PLAYER], armies=available(me);
+  picker.refresh();
+  const k=picker.count(), picked=picker.chosen().length;
+  $('dCommitVal').textContent=`${k} soldier${k===1?'':'s'}`;
+  $('dSplit').textContent = armies.length ? `${picked} arm${picked===1?'y':'ies'} chosen: each marches on its own. Soldiers without room in a barracks stay home to defend.` : '';
   if (force || performance.now()-raidAt>1000){ raidAt=performance.now(); raidWhy=warProblem(PLAYER,target,true); }
   const attackWhy=warProblem(PLAYER,target,false);
   const raid=$('dRaid') as HTMLButtonElement, attack=$('dAttack') as HTMLButtonElement;
   raid.disabled=!!raidWhy || k<1; attack.disabled=!!attackWhy || k<1;
   const why: string[]=[];
-  if (k<1 && max) why.push('Choose how many soldiers to send');
+  if (k<1 && armies.length) why.push('Choose the armies to send');
   if (raidWhy) why.push('Raid: '+raidWhy.toLowerCase());
   if (attackWhy) why.push('Attack: '+attackWhy.toLowerCase());
   $('dWhy').textContent=why.join(' · ');
 }
 
 function send(raid: boolean){
-  const k=+commit.value; if (!target || k<1) return;
+  const units=picker.chosen(); if (!target || !units.length) return;
   if (allied(PLAYER,target)) toast(`Your alliance with ${W.nations[target].name} is over`);
-  queueCommand({ type:'war', nation:PLAYER, target, raid, soldiers:k });
+  queueCommand({ type:'war', nation:PLAYER, target, raid, units });
   closeDiplomacy();
 }
 
@@ -219,22 +214,16 @@ export function closePop(){ pop.hidden=true; popFor=0; popCamp=-1; }
 function showIntercept(){
   const E=incomingFrom(popFor), me=W.nations[PLAYER]; if (!E || !me){ closePop(); return; }
   popCamp=E.id; popMenu.hidden=true; popSend.hidden=false;
-  const pool=available(me);
-  // as many as they send, if the barracks can spare them; watchtower guards only if the player says so
-  popCount.max=String(pool.all.length); popCount.value=String(Math.min(E.members.length,pool.idle.length));
+  popPicker.reset(E.members.length);   // the biggest armies, until they match what they send
   refreshPop(); placePop();
 }
 function refreshPop(){
   const me=W.nations[PLAYER], E=W.campaigns.find(c => c.id===popCamp);
   if (!me || !E || interceptProblem(PLAYER,E.id)){ closePop(); return; }
-  const pool=available(me), max=pool.all.length;
-  if (+popCount.max!==max){ popCount.max=String(max); if (+popCount.value>max) popCount.value=String(max); }
-  const k=+popCount.value, fromGuards=Math.max(0,k-pool.idle.length);
-  popCount.style.setProperty('--fill',(max ? k/max*100 : 0)+'%');
-  $('wpVal').textContent=`${k} / ${max}`;
-  $('wpSplit').textContent=`They send ${E.members.length} · you have ${pool.idle.length} idle, ${pool.guards.length} on guard`;
-  const warn=$('wpWarn'); warn.hidden=!fromGuards;
-  warn.textContent = fromGuards>1 ? `${fromGuards} garrison soldiers will leave their watchtowers` : '1 garrison soldier will leave his watchtower';
+  popPicker.refresh();
+  const k=popPicker.count();
+  $('wpVal').textContent=`${k} soldier${k===1?'':'s'}`;
+  $('wpSplit').textContent=`They send ${E.members.length} · you have ${available(me).reduce((s,a) => s+a.men.length,0)} ready in your barracks`;
   ($('wpGo') as HTMLButtonElement).disabled=k<1;
 }
 
@@ -245,7 +234,6 @@ export function setupDiplomacy(){
   $('dBack').onclick=()=>{ talk.hidden=false; warView.hidden=true; refreshDiplomacy(true); };
   $('dRaid').onclick=()=>send(true);
   $('dAttack').onclick=()=>send(false);
-  commit.addEventListener('input',()=>{ followMax=+commit.value===+commit.max; refreshWar(false); });
   wars.addEventListener('click',e=>{
     const b=(e.target as HTMLElement).closest('button.chip') as HTMLButtonElement | null; if (!b || b.disabled) return;
     const o=+b.dataset.o!, act=b.dataset.act;
@@ -259,10 +247,9 @@ export function setupDiplomacy(){
   $('wpIntercept').onclick=showIntercept;
   $('wpBack').onclick=()=>{ popCamp=-1; popMenu.hidden=false; popSend.hidden=true; placePop(); };
   $('wpClose').onclick=closePop;
-  popCount.addEventListener('input',refreshPop);
   $('wpGo').onclick=()=>{
-    const k=+popCount.value; if (popCamp<0 || k<1) return;
-    queueCommand({ type:'intercept', nation:PLAYER, campaign:popCamp, soldiers:k });
+    const units=popPicker.chosen(); if (popCamp<0 || !units.length) return;
+    queueCommand({ type:'intercept', nation:PLAYER, campaign:popCamp, units });
     closePop();
   };
 }

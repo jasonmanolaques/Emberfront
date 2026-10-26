@@ -1,5 +1,5 @@
 /* ---------- census: contacts, counts, labels (once per second) ---------- */
-import { TW, TH, NP, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD } from '../core/constants';
+import { TW, TH, NP, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY } from '../core/constants';
 import { W, owner, occ, isLand, pType, pOwner, pBuild, pCenter, pBurn, pTimer, pTier } from './state';
 import { HOUSE_BEDS } from './research';
 import { on } from './events';
@@ -20,7 +20,7 @@ export function scanContacts(withSums: boolean){
 export function census(){
   const N=W.nations;
   scanContacts(true);
-  for (const n of N){ n.plots.length=0; n.blds.length=0; n.houses=n.farms=n.towers=n.mines=n.barracks=n.minters=n.plantations=n.quarries=n.copperMines=n.labs=n.guilds=n.beds=0; n.bCount=0; }
+  for (const n of N){ n.plots.length=0; n.blds.length=0; n.houses=n.farms=n.towers=n.mines=n.barracks=n.minters=n.plantations=n.quarries=n.copperMines=n.labs=n.guilds=n.smithies=n.beds=0; n.bCount=0; }
   for (let q=0;q<NP;q++){
     const o=owner[pCenter[q]]; if (o && pBuild[q] && !occ[pCenter[q]]) N[o].plots.push(q);   // nobody builds on occupied ground
     const ty=pType[q];
@@ -31,7 +31,7 @@ export function census(){
       if (ty===B_HOUSE){ n.houses++; n.beds+=HOUSE_BEDS[pTier[q]]; } else if (ty===B_FARM) n.farms++; else if (ty===B_TOWER) n.towers++; else if (ty===B_MINE) n.mines++;
       else if (ty===B_BARRACKS) n.barracks++; else if (ty===B_MINTER) n.minters++;
       else if (ty===B_PLANTATION) n.plantations++; else if (ty===B_QUARRY) n.quarries++; else if (ty===B_COPPERMINE) n.copperMines++;
-      else if (ty===B_RESEARCH) n.labs++; else if (ty===B_GUILD) n.guilds++;
+      else if (ty===B_RESEARCH) n.labs++; else if (ty===B_GUILD) n.guilds++; else if (ty===B_SMITHY) n.smithies++;
     }
   }
   for (let i=1;i<N.length;i++){

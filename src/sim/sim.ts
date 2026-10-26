@@ -2,7 +2,7 @@
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
 import { TW, TH, NT, PW, PH, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, BOT_COLS, PLAYER_COL, GOLD_START, GOLD_PER_SEC, TAX_PER_VILLAGER, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
 import { mulberry32 } from '../core/rng';
-import { W, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, pHp, pTier, type Nation, type Command } from './state';
+import { W, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, pHp, pTier, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
 import { genMap } from './mapgen';
 import { setOwner, stepAttack, launch, touches } from './territory';
@@ -22,10 +22,10 @@ const SYL2 = ['mark','heim','dor','gard','ia','or','wyn','vale','mere','rath','h
 function blankNation(id: number, name: string, hex: string, isPlayer: boolean): Nation {
   return { id, name, hex, isPlayer,
     gold:0, income:0, strength:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
-    plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, beds:0,
+    plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, beds:0,
     sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0,
     soldierShare:0, humanProg:0, villagers:0, soldiers:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0,
-    study:R_HOUSING, tier:[1,1], xp:[0,0] };
+    study:R_HOUSING, tier:[1,1,1], xp:[0,0,0] };
 }
 function makeNation(id: number, name: string, hex: string, isPlayer: boolean): Nation {
   const srand=W.srand;
@@ -76,7 +76,7 @@ export function newWorld(seed: number){
   genMap(seed);
   genResources();
   owner.fill(0); occ.fill(0); road.fill(0); frontMark.fill(0);
-  pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0); pPrio.fill(0); pAband.fill(0); pHp.fill(0); pTier.fill(0); W.prioSeq=0;
+  pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0); pPrio.fill(0); pAband.fill(0); pHp.fill(0); pTier.fill(0); pArmor[2].fill(0); pArmor[3].fill(0); W.prioSeq=0;
   W.burning=[]; W.attacks=[]; W.attackSeq=0; W.commands.length=0;
   W.nations=[blankNation(0,'Unclaimed land','#cfc6a8',false)];
   W.M=1; W.contact=new Int32Array(1);
@@ -146,9 +146,9 @@ function applyCommand(c: Command){
     proposeAlliance(c.nation,c.target);
   } else if (c.type==='war'){
     scanContacts(false);
-    declare(c.nation,c.target,c.raid,c.soldiers);
+    declare(c.nation,c.target,c.raid,c.units ?? c.soldiers ?? 0);
   } else if (c.type==='intercept'){
-    intercept(c.nation,c.campaign,c.soldiers);
+    intercept(c.nation,c.campaign,c.units ?? c.soldiers ?? 0);
   } else if (c.type==='endWar'){
     endWar(c.nation,c.target);
   } else if (c.type==='peace'){

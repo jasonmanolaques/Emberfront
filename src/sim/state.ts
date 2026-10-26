@@ -10,7 +10,7 @@ export interface Nation {
   tiles: number; alive: boolean; capTile: number; capPlot: number;
   plots: number[]; blds: number[]; bCount: number;
   houses: number; farms: number; towers: number; mines: number; barracks: number; minters: number;
-  plantations: number; quarries: number; copperMines: number; labs: number; guilds: number;   // labs: research stations
+  plantations: number; quarries: number; copperMines: number; labs: number; guilds: number; smithies: number;   // labs: research stations
   beds: number;                      // people the houses can hold: a hovel 1, a stone house 2, a manor 3
   sumX: number; sumY: number; ltx: number; lty: number; peak: number;   // ltx/lty: where the kingdom's label sits
   expandAt: number; attackAt: number; ratio: number; nextThink: number;  // bot personality
@@ -52,8 +52,13 @@ export interface Human {
   slot: number;                      // place in the campaign's formation, or the home guard's line
   brave: number;                     // villagers with enemies near: -1 not yet decided, 0 running away, 1 fighting
   calm: number;                      // ticks since an enemy was last near
-  guild: number;                     // builders: plot of the builders guild they work for, or -1
+  work: number;                      // builders and blacksmiths: plot of the builders guild or smithy they work at, or -1
   fix: number;                       // builders: plot of the house they are improving, or -1
+  tier: number;                      // soldiers: 1 archaic, 2 reinforced, 3 heavy armour (villagers 0)
+  base: number;                      // soldiers: a plot of the barracks whose army they belong to, or -1 (patrolling the city)
+  load: number;                      // blacksmiths: carrying 1 copper, or armour of tier 2 or 3 (0 = nothing)
+  make: number;                      // blacksmiths: tier of the armour the current job is for (0 = no job)
+  dest: number;                      // blacksmiths: plot of the barracks the armour is for, or -1
 }
 /** An army in the field: a war (taking land, pushing for the capital) or a raid (burning buildings). */
 export interface Campaign {
@@ -71,6 +76,7 @@ export interface Campaign {
   started: number; startSoldiers: number; startTiles: number;   // tick it began, with how many soldiers, and the defender's land then
   stall: number;                     // ticks the banner has waited for stragglers
   why: string;                       // why it is going home: 'recall', 'peace', 'cut', 'done', 'won'
+  unit: number;                      // the barracks (a plot of it) whose army this is, or -1
 }
 export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; }   // gold still to spend on this front
 
@@ -82,9 +88,9 @@ export type Command =
   | { type: 'build'; nation: number; plot: number; kind: number }     // kind: B_FARM, B_BARRACKS, B_TOWER or B_MINTER
   | { type: 'priority'; nation: number; plot: number }                // toggle a watchtower's call for a garrison
   | { type: 'ally'; nation: number; target: number }                  // propose an alliance
-  | { type: 'war'; nation: number; target: number; raid: boolean; soldiers: number }
+  | { type: 'war'; nation: number; target: number; raid: boolean; soldiers?: number; units?: number[] }   // units: barracks plots, each army marches on its own
   | { type: 'endWar'; nation: number; target: number }                // recall a raid, or offer peace
-  | { type: 'intercept'; nation: number; campaign: number; soldiers: number }   // send soldiers after an enemy army
+  | { type: 'intercept'; nation: number; campaign: number; soldiers?: number; units?: number[] }   // send armies after an enemy army
   | { type: 'peace'; nation: number; target: number }                 // accept the target's peace offer
   | { type: 'research'; nation: number; topic: number };              // study this topic next (R_* in research.ts)
 
@@ -99,6 +105,7 @@ for (let q=0;q<NP;q++){ const px=q%PW, py=(q/PW)|0; pCenter[q]=(py*4+2)*TW+px*4+
 export const pAband = new Uint8Array(NP);   // houses standing empty, run down
 export const occ = new Uint8Array(NT);      // a kingdom's land held by an enemy at war: the occupier (0 = free); the owner stays
 export const pHp = new Float32Array(NP);     // damage a building has taken (multi-plot buildings keep theirs on the main plot)
+export const pArmor = [new Uint8Array(0), new Uint8Array(0), new Uint8Array(NP), new Uint8Array(NP)];   // barracks: armour of tier 2 and 3 stored there
 export const pTier = new Uint8Array(NP);   // houses: 1 hovel, 2 stone house, 3 manor (0 for anything else)
 export const pPrio = new Int32Array(NP);   // watchtowers calling for a garrison: order they asked in (0 = not asking)
 

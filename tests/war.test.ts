@@ -2,14 +2,15 @@
 // Most of these play on a flat all-grass map, so distances and borders are predictable.
 import { describe, it, expect } from 'vitest';
 import { TW, TH, NT, NP, PW, T_GRASS, B_HOUSE, B_FARM, B_TOWER, B_BARRACKS, B_RUINS } from '../src/core/constants';
-import { W, owner, occ, isLand, terr, resType, resLeft, pBuild, pType, pOwner, pBurn, type Human, type Nation } from '../src/sim/state';
+import { W, owner, occ, isLand, terr, resType, resLeft, pBuild, pType, pOwner, pBurn, pCenter, type Human, type Nation } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { listen, on } from '../src/sim/events';
 import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
 import { build, plotProblem, structureOf, togglePriority, finishHouse } from '../src/sim/buildings';
 import { H_SOLDIER, H_VILLAGER, TASK_STORE, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, switching, pace } from '../src/sim/population';
-import { allied, atWar, available, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, spread } from '../src/sim/war';
+import { UNIT_SIZE, buildUnits, station, unitAt } from '../src/sim/army';
+import { allied, atWar, available, ready, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, spread } from '../src/sim/war';
 
 const N = (i: number) => W.nations[i];
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
@@ -35,10 +36,32 @@ function paintToward(a: number, b: number){
   }
   census();
 }
-/** k soldiers of nation n standing at its capital door. */
-function soldiers(n: Nation, k: number){
+/** k soldiers of nation n standing at its capital door, as the army of a new barracks beside the
+    castle (modules side by side, 5 soldiers each); with `own=false`, without a barracks. */
+function soldiers(n: Nation, k: number, own=true){
   const [x,y]=doorOf(n), out: Human[]=[];
   for (let i=0;i<k;i++){ const h=makeHuman(n,H_SOLDIER,x+(i%5)-2,y+((i/5)|0)*0.5); W.humans.push(h); out.push(h); }
+  if (own && k>0){
+    // modules grown one beside another from the free plot nearest the castle, so they make one barracks
+    const m=Math.ceil(k/UNIT_SIZE), cap=n.capPlot, d=(q: number) => (q%PW-cap%PW)**2+((q/PW|0)-(cap/PW|0))**2;
+    const stock=n.stock, mods: number[]=[];
+    n.stock=[1000,1000,1000];
+    for (let tries=0; mods.length<m && tries<2; tries++){
+      while (mods.length<m){
+        const near=mods.length ? mods.flatMap(q => [q-PW,q+1,q+PW,q-1]) : Array.from({ length: NP }, (_, q) => q);
+        const q=near.filter(q => q>=0 && q<NP && !mods.includes(q) && !plotProblem(n,q)).sort((a,b) => d(a)-d(b) || a-b)[0];
+        if (q===undefined) break;
+        build(n,q,B_BARRACKS); mods.push(q);
+      }
+      if (mods.length<m){ for (const q of mods){ pType[q]=0; pOwner[q]=0; } mods.length=0; paintDisc(n,14); }   // a little more room round the castle
+    }
+    n.stock=stock;
+    buildUnits(); const u=unitAt(mods[0])!;
+    out.forEach((h,i) => { h.base=u.plots[i%u.plots.length]; });
+    station(n, W.humans.filter(h => h.o===n.id), switching);
+    // the kingdom keeps them as soldiers rather than sending them back to work
+    const mine=W.humans.filter(h => h.o===n.id); n.soldierShare=Math.max(n.soldierShare, mine.filter(h => h.kind===H_SOLDIER).length/mine.length);
+  }
   return out;
 }
 /** Claims the unclaimed land within r tiles of n's capital. */
@@ -126,19 +149,30 @@ describe('alliances', () => {
 });
 
 describe('declaring war', () => {
-  it('sends idle soldiers first, then watchtower guards, and leaves the rest at home', () => {
-    world(1); quiet();
-    const men=soldiers(N(1),5), tower=place(N(1),B_TOWER); place(N(2),B_FARM);
-    men[0].post=tower; men[1].post=tower;   // two of them on guard
+  it('sends each barracks\' army on its own; soldiers without room in a barracks stay home', () => {
+    world(1); quiet(); paintDisc(N(1),14); place(N(2),B_FARM);
+    const a=place(N(1),B_BARRACKS), b=place(N(1),B_BARRACKS,pCenter[a]);   // two barracks far apart
+    const men=soldiers(N(1),12,false); N(1).soldierShare=1; tick();
     const pool=available(N(1));
-    expect(pool.idle.map(h => h.id)).toEqual(men.slice(2).map(h => h.id));
-    expect(pool.all.map(h => h.id)).toEqual([...men.slice(2), ...men.slice(0,2)].map(h => h.id));
-    expect(declare(1,2,true,4)).toBe(true);
-    const c=W.campaigns[0];
-    expect(men.filter(h => h.war===c.id).map(h => h.id).sort()).toEqual([men[0],men[2],men[3],men[4]].map(h => h.id).sort());
-    expect(men[0].post).toBe(-1);         // the guard who went
-    expect(men[1].post).toBe(tower);      // and the one who stayed
-    expect(men[1].war).toBe(-1);
+    expect(pool.map(p => p.men.length)).toEqual([5,5]);
+    const patrol=men.filter(h => h.base<0);
+    expect(patrol).toHaveLength(2);       // no room for them: they patrol the city
+    expect(declare(1,2,true,[a,b])).toBe(true);
+    const [c1,c2]=W.campaigns;
+    expect(W.campaigns).toHaveLength(2);  // two armies, marching separately
+    expect([c1.members.length,c2.members.length]).toEqual([5,5]);
+    expect(Math.hypot(c1.bx-c2.bx,c1.by-c2.by)).toBeGreaterThan(16);   // each forms up at its own barracks
+    expect(patrol.every(h => h.war===-1)).toBe(true);
+    expect(available(N(1))).toHaveLength(0);
+  });
+
+  it('asked for a number of soldiers, sends the biggest armies first; joined barracks make one bigger army', () => {
+    world(1); quiet(); place(N(2),B_FARM);
+    soldiers(N(1),10);                    // two modules side by side: one army of 10
+    expect(available(N(1)).map(p => [p.men.length,p.unit.cap])).toEqual([[10,10]]);
+    expect(declare(1,2,true,7)).toBe(true);
+    expect(W.campaigns).toHaveLength(1);
+    expect(W.campaigns[0].members).toHaveLength(7);
   });
 
   it('needs a shared border to attack, but can raid across unclaimed land', () => {
@@ -172,7 +206,7 @@ describe('at war', () => {
     mine[0].x=sx; mine[0].y=sy; mine[0].sp=0; mine[0].wait=1e9; theirs[0].x=sx+1; theirs[0].y=sy; theirs[0].sp=0; theirs[0].wait=1e9;
     run(100);
     expect(blows).toHaveLength(0);
-    expect(mine[0].hp).toBe(SOLDIER_HP);
+    expect(mine[0].hp).toBe(SOLDIER_HP[1]);
     // now 1 attacks with everything but that soldier, and fighting starts where the armies meet
     queueCommand({ type:'war', nation:1, target:2, raid:false, soldiers:6 }); tick();
     expect(atWar(1,2)).toBe(true);
@@ -367,7 +401,7 @@ describe('bots at war', () => {
     outer: for (let r=0;r<60;r++) for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){ if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue; if (startMatch((TH/2+dy*3)*TW+TW/2+dx*3, 9)) break outer; }
     quiet();
     const began=collect('warBegan'), annexed=collect('annexed');
-    run(7000);
+    run(9500);   // armies big enough to break a castle take a while to raise
     expect(began.some(b => b[2])).toBe(true);    // raids
     expect(began.some(b => !b[2])).toBe(true);   // and attacks
     expect(annexed.length).toBeGreaterThan(0);
@@ -375,23 +409,26 @@ describe('bots at war', () => {
 });
 
 describe('wounds and healing', () => {
-  it('gives soldiers 11 hit points and villagers 6; blows do 1, a villager\'s half that; everyone heals 0.1 a second', () => {
+  it('gives tier 1 soldiers 8 hit points and 1 damage, tier 2 10 and 1.5, tier 3 15 and 2; villagers 4 and 0.5; everyone heals 0.1 a second', () => {
     world(1); quiet();
-    const [s0]=soldiers(N(1),1), [x,y]=doorOf(N(1)), v=makeHuman(N(1),H_VILLAGER,x,y); W.humans.push(v);
-    expect([s0.hp, v.hp, SOLDIER_HP, VILLAGER_HP]).toEqual([11, 6, 11, 6]);
-    expect([HIT_DMG, MILITIA_DMG]).toEqual([1, 0.5]);
+    const [s0]=soldiers(N(1),1), [x,y]=doorOf(N(1)), v=makeHuman(N(1),H_VILLAGER,x,y); W.humans.push(v); N(1).soldierShare=0.5;
+    expect([s0.tier, s0.hp, v.hp, VILLAGER_HP]).toEqual([1, 8, 4, 4]);
+    expect(SOLDIER_HP.slice(1)).toEqual([8, 10, 15]);
+    expect([HIT_DMG.slice(1), MILITIA_DMG]).toEqual([[1, 1.5, 2], 0.5]);
     s0.hp=5; v.hp=2; run(100);
     expect(s0.hp).toBeCloseTo(6, 5);
     expect(v.hp).toBeCloseTo(3, 5);
     run(1000);
-    expect([s0.hp, v.hp]).toEqual([11, 6]);   // no more than full
+    expect([s0.hp, v.hp]).toEqual([8, 4]);     // no more than full
+    s0.tier=3; run(1000);
+    expect(s0.hp).toBe(15);                     // heavy armour holds more
   });
 
   it('announces the fallen where they fell', () => {
     world(1); quiet();
     const died=collect('died'), [s0]=soldiers(N(1),1); s0.hp=0; tick();
     expect(died).toHaveLength(1);
-    expect(died[0].slice(2)).toEqual([1, s0.id, 1]);
+    expect(died[0].slice(2)).toEqual([1, s0.id, 1, 1]);   // kingdom, who, a soldier, of tier 1
   });
 });
 
@@ -443,6 +480,7 @@ describe('occupation', () => {
   it('keeps the war going when the attacking army is gone; the defenders take their land back and are ready to counter-attack', () => {
     const c=invaded(8,30);
     for (const id of c.members) W.humans.find(h => h.id===id)!.hp=0;
+    N(2).soldierShare=0;   // and it raises no more
     tick(); tick();
     expect(W.campaigns.includes(c)).toBe(false);
     expect(atWar(1,2)).toBe(true);   // the war is not over
@@ -482,7 +520,7 @@ describe('intercepting', () => {
     const I=W.campaigns.find(c => c.a===1)!;
     expect(I.target).toBe(E.id);
     expect(I.members).toHaveLength(6);
-    expect(available(N(1)).all).toHaveLength(2);
+    expect(ready(N(1))).toBe(2);
     expect(interceptProblem(1,E.id)).toMatch(/already/);
     expect(intercept(1,E.id,2)).toBe(false);
     until(() => !W.campaigns.includes(E) || E.phase===2, 4000);

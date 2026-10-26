@@ -1,7 +1,7 @@
 /* ---------- game flow: ties the simulation to this browser's screen ---------- */
-import { TW, PLAYER, PLAYER_COL } from './core/constants';
+import { TW, PLAYER, PLAYER_COL, B_SMITHY } from './core/constants';
 import { clamp, fmt } from './core/util';
-import { W, owner, isLand } from './sim/state';
+import { W, owner, isLand, pType } from './sim/state';
 import { listen } from './sim/events';
 import { newWorld, startMatch, bordersOn, queueCommand, tick } from './sim/sim';
 import { client } from './client';
@@ -20,6 +20,8 @@ import { setupBuildPanel, toggleBuildPanel } from './ui/build';
 import { ui, log, toast, showHUD, checkEnd, onEliminated, onCapitalFell, onBuildingPlaced } from './ui/hud';
 import { setupDiplomacy, resetDiplomacy, noteDeath } from './ui/diplomacy';
 import { refreshResearch, closeResearch } from './ui/research';
+import { closeArmy } from './ui/army';
+import { TIER_NAME } from './sim/army';
 import { TOPIC_NAME } from './sim/research';
 import { $ } from './ui/dom';
 
@@ -41,7 +43,7 @@ listen({
   hit: (x,y,kill,victim,attacker) => { addHit(x,y,kill); noteBlow(victim,attacker); },
   swing: noteSwing,
   story: onStory,
-  died: (x,y,o,id,kind) => { addCorpse(x,y,o,id,kind); noteDeath(id,o,kind); },
+  died: (x,y,o,id,kind,tier) => { addCorpse(x,y,o,id,kind,tier); noteDeath(id,o,kind); },
   occupied: paintTile,
   bldHit: dustPuff,
   plunder: (id,x,y,gold) => { if (id===PLAYER) floats.push({ x, y:y-4, text:`+${gold} gold`, t0:performance.now(), c:'#ffe27a' }); },
@@ -72,16 +74,19 @@ listen({
   // research and the builders guild
   researched: (o,topic,tier) => { if (o===PLAYER){ log(`Your scholars reach ${TOPIC_NAME[topic].toLowerCase()} tier ${tier}: ${TIER_NEWS[topic][tier]}`,'good'); toast(`${TOPIC_NAME[topic]} tier ${tier}`); } refreshResearch(); },
   upgraded: (q,o,tier) => { dustPuff(q); if (o===PLAYER) floats.push({ x:(q%PW)*8+4, y:((q/PW)|0)*8-1, text: tier===3 ? 'Manor' : 'Stone house', t0:performance.now(), c:'#f0e6c8' }); },
-  builderHired: (_q,o,replaced) => { if (o===PLAYER && replaced) log('A villager takes up the fallen builder\'s tools at the guild'); },
+  builderHired: (q,o,replaced) => { if (o===PLAYER && replaced) log(pType[q]===B_SMITHY ? 'A villager takes up the fallen smith\'s hammer' : 'A villager takes up the fallen builder\'s tools at the guild'); },
+  forged: (q,o,tier) => { if (o===PLAYER) floats.push({ x:(q%PW)*8+4, y:((q/PW)|0)*8-1, text:`Armour ${TIER_NAME[tier]}`, t0:performance.now(), c:'#dfe6ec' }); },
+  armored: (id,x,y,tier) => { gatePuff(x,y-2,1); if (W.humans.find(h => h.id===id)?.o===PLAYER) floats.push({ x, y:y-6, text:`Armour ${TIER_NAME[tier]}`, t0:performance.now(), c:'#dfe6ec' }); },
   annexed: (loser,winner) => { if (winner===PLAYER){ log(`You took the castle of ${nm(loser)}: its land and people are yours`,'good'); toast(`${nm(loser)} is yours`); } },
 });
 const GOOD_COL=['#e9b26a','#dcd6cc','#ffa060'];
-const TIER_NEWS=[['','','your builders guild can raise stone houses','your builders guild can raise manors'],['','','each villager pays 0.2 gold a second','each villager pays 0.3 gold a second']];
+const TIER_NEWS=[['','','your builders guild can raise stone houses','your builders guild can raise manors'],['','','each villager pays 0.2 gold a second','each villager pays 0.3 gold a second'],
+  ['','','your blacksmith can forge reinforced armour','your blacksmith can forge heavy armour']];
 const nm = (id: number) => W.nations[id]?.name ?? 'Someone';
 export function newGame(seed?: number){
   newWorld(seed ?? (Math.random()*2147483647)|0);
   resetStyles(); resetLabels(); resetEffects(); resetGhosts(); resetPeople();
-  toggleBuildPanel(false); resetDiplomacy(); closeResearch();
+  toggleBuildPanel(false); resetDiplomacy(); closeResearch(); closeArmy();
   client.overShown=false; client.lastVillageLog=-99; client.paused=false; client.speed=1; $('speed').textContent='1×';
   setSoldierShare(0);
   buildBase(); paintAll(); drawNature();

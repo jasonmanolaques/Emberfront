@@ -77,20 +77,38 @@
       <p class="dnote" id="dNote"></p>
     </div>
     <div id="dWarView" hidden>
-      <label for="dCommit"><span>Soldiers to send</span><b id="dCommitVal">0 / 0</b></label>
-      <input type="range" id="dCommit" min="0" max="0" step="1" value="0">
+      <label><span>Armies to send</span><b id="dCommitVal">0</b></label>
+      <div id="dArmies" class="armies"></div>
       <div class="dsplit" id="dSplit"></div>
-      <div class="dwarn" id="dWarn" hidden></div>
       <div class="drow"><button id="dRaid" title="Burn their buildings and bring the loot home: 50 gold a bag. Needs a way through unclaimed or allied land.">Raid</button><button id="dAttack" class="danger" title="Take their land and march on their capital. Needs a shared border.">Attack</button></div>
       <p class="dnote" id="dWhy"></p>
       <button id="dBack" class="ghost">← Back</button>
     </div>
+  </section>
+  <section id="army" class="plate" hidden aria-label="Barracks">
+    <div class="dhead"><canvas id="aIcon" width="16" height="16" aria-hidden="true"></canvas><span class="dname" id="aName">Barracks</span><button id="aClose" class="x" aria-label="Close">×</button></div>
+    <dl class="stats dstats">
+      <div><dt title="Soldiers at the barracks, and how many it has room for">Here</dt><dd id="aHome">0/5</dd></div>
+      <div><dt>Away</dt><dd id="aAway">0</dd></div>
+      <div><dt title="Barracks joined side by side">Modules</dt><dd id="aMods">1</dd></div>
+    </dl>
+    <div class="arow"><span class="tag">Army by tier</span><span id="aTiers"></span></div>
+    <div class="arow"><span class="tag">Armour worn</span><span id="aWorn"></span></div>
+    <div class="arow"><span class="tag">On the racks</span><span id="aRacks"></span></div>
+    <div class="arow"><span class="tag">Racks without armour</span><span id="aFree"></span></div>
+    <p class="tnote" id="aSmith"></p>
+    <p class="dnote" id="aNote"></p>
   </section>
   <section id="research" class="plate" hidden aria-label="Research">
     <div class="dhead"><canvas id="rIcon" width="16" height="16" aria-hidden="true"></canvas><span class="dname">Research</span><button id="rClose" class="x" aria-label="Close">×</button></div>
     <div class="tag" id="rRate"></div>
     <div class="topic" id="rHousing">
       <button aria-pressed="false" title="Study housing"><span class="tname">Housing</span><span class="ttier"></span></button>
+      <div class="tbar"><i></i><span></span></div>
+      <p class="tnote"></p>
+    </div>
+    <div class="topic" id="rInfantry">
+      <button aria-pressed="false" title="Study infantry"><span class="tname">Infantry</span><span class="ttier"></span></button>
       <div class="tbar"><i></i><span></span></div>
       <p class="tnote"></p>
     </div>
@@ -106,10 +124,9 @@
     <div class="dhead"><span class="tag" id="wpTitle">An army is coming</span><button id="wpClose" class="x" aria-label="Close">×</button></div>
     <div id="wpMenu" class="drow"><button id="wpPeace" title="Offer them peace. They answer depending on how they think the war is going.">Request peace</button><button id="wpIntercept" class="danger" title="Send soldiers out to meet their army in the field">Intercept…</button></div>
     <div id="wpSend" hidden>
-      <label for="wpCount"><span>Soldiers to send</span><b id="wpVal">0 / 0</b></label>
-      <input type="range" id="wpCount" min="0" max="0" step="1" value="0">
+      <label><span>Armies to send</span><b id="wpVal">0</b></label>
+      <div id="wpArmies" class="armies"></div>
       <div class="dsplit" id="wpSplit"></div>
-      <div class="dwarn" id="wpWarn" hidden></div>
       <div class="drow"><button id="wpBack" class="ghost">← Back</button><button id="wpGo" class="danger">Intercept</button></div>
     </div>
   </section>

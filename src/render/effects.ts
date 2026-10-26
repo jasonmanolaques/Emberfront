@@ -61,11 +61,11 @@ export const hits: Hit[]=[];
 export function addHit(x: number, y: number, kill: boolean){ hits.push({x,y,t0:performance.now(),kill}); if (hits.length>300) hits.shift(); }
 
 /* the fallen: bodies with a pool of blood spreading under them, and drops left by the badly hurt (simulation pixels) */
-export interface Corpse { x: number; y: number; o: number; kind: number; look: number; t0: number; }
+export interface Corpse { x: number; y: number; o: number; kind: number; look: number; tier: number; t0: number; }
 export const corpses: Corpse[]=[];
 export const CORPSE_MS=30000;
-export function addCorpse(x: number, y: number, o: number, id: number, kind: number){
-  corpses.push({ x, y, o, kind, look:((id*7)&3) | (((id*13)%4)<<2), t0:performance.now() });
+export function addCorpse(x: number, y: number, o: number, id: number, kind: number, tier=1){
+  corpses.push({ x, y, o, kind, look:((id*7)&3) | (((id*13)%4)<<2), tier, t0:performance.now() });
   if (corpses.length>300) corpses.shift();
 }
 export interface Drip { x: number; y: number; t0: number; }

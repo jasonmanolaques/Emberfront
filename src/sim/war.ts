@@ -1,6 +1,7 @@
 /* ---------- war: alliances, armies in the field, fighting, and the fall of kingdoms ----------
-   Clicking another kingdom opens diplomacy: an alliance, or war. War sends some of the
-   kingdom's soldiers out as a campaign, idle soldiers first, then watchtower guards:
+   Clicking another kingdom opens diplomacy: an alliance, or war. War sends out the armies of
+   the kingdom's barracks (sim/army.ts), each one a campaign of its own that musters at its
+   barracks; soldiers without room in a barracks stay home and only defend:
    - a raid crosses unclaimed or allied land to the target and burns its buildings, the
      outskirts first and on toward the centre. A raider who destroys a building carries a loot
      bag, worth LOOT_GOLD if he gets it home. If other kingdoms close every way through, the
@@ -30,13 +31,14 @@ import { setOwner } from './territory';
 import { ignite, SIZE } from './buildings';
 import { census } from './census';
 import { HOUSE_TOUGH } from './research';
-import { H_SOLDIER, TASK_ROAM, TOWER_RANGE, TOWER_RELOAD, TOWER_DMG, SOLDIER_HP, VILLAGER_HP, REGEN, pace, onCastle, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf } from './population';
+import { SOLDIER_DMG, units, unitAt, type Unit } from './army';
+import { H_SOLDIER, TASK_ROAM, TOWER_RANGE, TOWER_RELOAD, TOWER_DMG, maxHp, REGEN, pace, onCastle, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf } from './population';
 
 export const LOOT_GOLD = 50;          // a raider's loot bag, paid when he gets it home
 export const MELEE_R = 2.6;           // pixels: close enough to strike
 export const HIT_TICKS = 8;           // ticks between blows
 export const HIT_CHANCE = 0.7;
-export const HIT_DMG = 1;             // soldiers have SOLDIER_HP (11)
+export const HIT_DMG = SOLDIER_DMG;   // a soldier's blow, by tier (soldiers have SOLDIER_HP by tier)
 export const MILITIA_DMG = 0.5;       // a villager with a pitchfork does half that
 export const BLD_DMG = 1;             // a blow on a building
 const ENGAGE_R = 16;                  // pixels around him a soldier in the field picks a fight...
@@ -213,12 +215,26 @@ export function routeOpen(a: number, d: number){
 }
 
 /* ---------- declaring war ---------- */
-/** a's soldiers free to march: idle ones first, then watchtower guards. */
+/** n's armies ready to march: each barracks with the soldiers of its army who are at home. */
 export function available(n: Nation){
-  const idle: Human[]=[], guards: Human[]=[];
-  for (const h of W.humans) if (h.o===n.id && h.kind===H_SOLDIER && h.war<0 && h.hp>0 && !switching(h)) (h.post>=0 ? guards : idle).push(h);
-  idle.sort((x,y)=>x.id-y.id); guards.sort((x,y)=>x.id-y.id);
-  return { idle, guards, all: [...idle, ...guards] };
+  const out: { unit: Unit; men: Human[] }[]=[];
+  for (const u of units[n.id] ?? []){
+    const men=u.members.filter(h => h.war<0 && h.hp>0 && !switching(h)).sort((x,y)=>x.id-y.id);
+    if (men.length) out.push({ unit:u, men });
+  }
+  return out;
+}
+/** How many of n's soldiers could march right now. */
+export const ready = (n: Nation) => available(n).reduce((k,a) => k+a.men.length, 0);
+/** The armies to send: the barracks named (any plot of each), or, for a number, the biggest armies
+    first until that many soldiers are found (the last one sending only as many as are missing). */
+function pickArmies(n: Nation, pick: number | number[]){
+  const all=available(n);
+  if (Array.isArray(pick)){ const want=new Set(pick.map(q => unitAt(q)?.key)); return all.filter(a => want.has(a.unit.key)); }
+  all.sort((a,b) => b.men.length-a.men.length || a.unit.key-b.unit.key);
+  const out: typeof all=[]; let left=Math.floor(pick);
+  for (const a of all){ if (left<=0) break; const men=a.men.slice(0,left); left-=men.length; out.push({ unit:a.unit, men }); }
+  return out;
 }
 /** Why a can't go to war on d this way, or null if it can. */
 export function warProblem(a: number, d: number, raid: boolean): string | null {
@@ -230,13 +246,17 @@ export function warProblem(a: number, d: number, raid: boolean): string | null {
   return null;
 }
 
-/** Sends `count` of a's soldiers against d. Returns false if it can't. */
-export function declare(a: number, d: number, raid: boolean, count: number){
+/** Sends a's armies against d: the barracks named, or armies enough for `pick` soldiers. Each
+    army marches on its own. Returns false if none could go. */
+export function declare(a: number, d: number, raid: boolean, pick: number | number[]){
   if (warProblem(a,d,raid)) return false;
-  const A=W.nations[a], D=W.nations[d], pool=available(A).all.slice(0,Math.max(0,Math.floor(count)));
-  if (!pool.length) return false;
-  const c=newCampaign(a,d,raid,-1,pool.length,D.tiles);
-  if (!muster(c,pool)) return false;
+  const A=W.nations[a], D=W.nations[d];
+  let sent=0;
+  for (const { unit, men } of pickArmies(A,pick)){
+    const c=newCampaign(a,d,raid,-1,men.length,D.tiles,unit.key);
+    if (muster(c,men,unit)) sent++;
+  }
+  if (!sent) return false;
   if (allied(a,d)){ W.ally[a*W.M+d]=W.ally[d*W.M+a]=0; on.allianceBroken(a,d); }
   W.grudge[d*W.M+a]=W.tickN;
   const M=W.M;
@@ -248,15 +268,18 @@ export function declare(a: number, d: number, raid: boolean, count: number){
   on.warBegan(a,d,raid);
   return true;
 }
-function newCampaign(a: number, d: number, raid: boolean, target: number, size: number, tiles: number): Campaign {
+function newCampaign(a: number, d: number, raid: boolean, target: number, size: number, tiles: number, unit: number): Campaign {
   return { id:++W.campSeq, a, d, raid, target, hostile:true, members:[], phase:0, bx:0, by:0, dx:1, dy:0, rx:0, ry:0, goal:-1,
-    field:new Int16Array(NT), fieldAt:W.tickN, started:W.tickN, startSoldiers:size, startTiles:tiles, stall:0, why:'' };
+    field:new Int16Array(NT), fieldAt:W.tickN, started:W.tickN, startSoldiers:size, startTiles:tiles, stall:0, why:'', unit };
 }
-/** Works out the way, picks the muster point on our own ground nearest the goal and calls the soldiers to it. */
-function muster(c: Campaign, pool: Human[]){
+/** Works out the way and calls the soldiers to form up in front of their barracks (or, if the way
+    can't reach it, on our own ground nearest the goal). */
+function muster(c: Campaign, pool: Human[], u?: Unit){
   const A=W.nations[c.a];
   if (A.capTile>=0){ const [x,y]=doorOf(A); c.bx=x; c.by=y; }
-  const best=fill(c.field,goalsOf(c),c.a,c.d,false,ownLand(c.a),true,80);
+  const home=u ? tileOf(u.x,u.y) : -1;
+  let best=home>=0 ? fill(c.field,goalsOf(c),c.a,c.d,false,(st) => { want[home]=st; return 1; },true,2) : -1;
+  if (best<0) best=fill(c.field,goalsOf(c),c.a,c.d,false,ownLand(c.a),true,80);
   if (best<0) return false;
   c.rx=c.bx=(best%TW)*2+1; c.ry=c.by=((best/TW)|0)*2+1;
   const s=downhill(c.field,c.bx,c.by);
@@ -273,14 +296,17 @@ export function interceptProblem(n: number, id: number): string | null {
   if (W.campaigns.some(c => c.a===n && c.target===id && c.phase<2)) return 'You are already after that army';
   return null;
 }
-/** Sends `count` of n's soldiers (idle first, then guards) after enemy army `id`. */
-export function intercept(n: number, id: number, count: number){
+/** Sends n's armies (the barracks named, or enough for `pick` soldiers) after enemy army `id`. */
+export function intercept(n: number, id: number, pick: number | number[]){
   if (interceptProblem(n,id)) return false;
-  const E=campaignById(id)!, pool=available(W.nations[n]).all.slice(0,Math.max(0,Math.floor(count)));
-  if (!pool.length) return false;
-  const c=newCampaign(n,E.a,false,id,pool.length,W.nations[E.a].tiles);
-  if (!muster(c,pool)) return false;
-  on.intercepting(n,E.a,pool.length);
+  const E=campaignById(id)!;
+  let sent=0;
+  for (const { unit, men } of pickArmies(W.nations[n],pick)){
+    const c=newCampaign(n,E.a,false,id,men.length,W.nations[E.a].tiles,unit.key);
+    if (muster(c,men,unit)) sent+=men.length;
+  }
+  if (!sent) return false;
+  on.intercepting(n,E.a,sent);
   return true;
 }
 
@@ -379,7 +405,7 @@ export function annex(loser: number, winner: number){
   L.capTile=-1;   // so taking the ground below doesn't count as an ordinary sack
   for (const h of W.humans){
     if (h.o!==loser) continue;
-    release(h); h.carry=-1; h.amount=0; h.o=winner; h.post=-1; h.site=-1; h.war=-1; h.foe=-1; h.aim=-1; h.loot=false; h.brave=-1; h.calm=0; h.guild=-1;
+    release(h); h.carry=-1; h.amount=0; h.o=winner; h.post=-1; h.site=-1; h.war=-1; h.foe=-1; h.aim=-1; h.loot=false; h.brave=-1; h.calm=0; h.work=-1;
     h.task=TASK_ROAM; h.path=[]; h.wait=0; h.tx=h.x; h.ty=h.y;
   }
   // buildings change hands before the ground does, so they don't burn
@@ -473,7 +499,7 @@ export function updateWar(){
   byId.clear(); camps.clear(); troops.clear();
   for (const h of H){
     byId.set(h.id,h);
-    const max=h.kind===H_SOLDIER ? SOLDIER_HP : VILLAGER_HP;
+    const max=maxHp(h);
     if (h.hp<max) h.hp=Math.min(max,h.hp+REGEN);   // everyone heals, slowly
   }
   for (const c of W.campaigns){ camps.set(c.id,c); troops.set(c.id,[]); }
@@ -679,7 +705,7 @@ function strike(h: Human, e: Human){
   if (h.cool>0) return;
   h.cool=HIT_TICKS;
   on.swing(h.id,e.id);
-  if (W.prand()<HIT_CHANCE){ e.hp-=h.kind===H_SOLDIER ? HIT_DMG : MILITIA_DMG; on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id); }
+  if (W.prand()<HIT_CHANCE){ e.hp-=h.kind===H_SOLDIER ? HIT_DMG[h.tier] : MILITIA_DMG; on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id); }
   if (e.foe<0 && (e.kind===H_SOLDIER || e.brave>=1)) e.foe=h.id;   // he turns to fight back
 }
 /** Steps toward (gx,gy): straight if the way is open, otherwise along the army's way. */

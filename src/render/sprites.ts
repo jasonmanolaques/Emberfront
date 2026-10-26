@@ -4,7 +4,7 @@
    Farms, barracks, watchtowers and coin minters are modular: each plot looks at its four
    neighbours, and plots of the same kind and owner join up, so fields merge into one farmland,
    barracks into one long hall, minters into one workshop, and towers link with walls. */
-import { RW, RH, PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD } from '../core/constants';
+import { RW, RH, PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY } from '../core/constants';
 import { pType, pOwner, pVar, pMain, pAband, pTier } from '../sim/state';
 import { styleOf, type NationStyle } from './style';
 import { rows, outline, type Pal } from './pixel';
@@ -219,6 +219,19 @@ function drawResearch(ox: number, oy: number, n: NationStyle){
   P(ox+12,oy+1,brass); P(ox+13,oy,brass); P(ox+14,oy,'#f2d27a');   // the telescope
 }
 
+/* ---------- blacksmith: a stone forge open at the front, its hearth glowing, an anvil outside ---------- */
+function drawSmithy(ox: number, oy: number, n: NationStyle){
+  const st=C.st, sd=C.stD, sl=C.stL;
+  R(ox+1,oy+14,14,1,SH);
+  R(ox+1,oy+7,10,7,st); R(ox+1,oy+7,1,7,sl); R(ox+10,oy+7,1,7,sd);       // stone walls
+  for (let y=9;y<14;y+=2) R(ox+2,oy+y,8,1,'#a7a194');
+  R(ox+1,oy+6,10,1,'#3b2a1e'); R(ox+1,oy+4,10,2,n.roofD); R(ox+2,oy+3,8,1,n.roof); R(ox+3,oy+2,6,1,n.roofL);   // the roof
+  R(ox+8,oy,2,4,sd); R(ox+8,oy,2,1,'#4a4740');                            // the chimney
+  R(ox+3,oy+9,5,5,'#2a1d16'); R(ox+4,oy+11,3,2,'#ff8a2b'); R(ox+4,oy+11,3,1,'#ffd27a'); P(ox+5,oy+10,'#ff6a1c');   // the hearth
+  R(ox+12,oy+11,3,1,'#4a4f55'); R(ox+13,oy+12,1,2,'#3a3e43'); R(ox+11,oy+11,1,1,'#6c737a');   // the anvil
+  R(ox+12,oy+8,2,1,'#8d949b'); P(ox+12,oy+9,'#6c737a'); P(ox+13,oy+9,n.roof);               // a helm hung up, in the kingdom's colours
+}
+
 /* ---------- builders guild (2×1 plots): a workshop and its yard of timber and stone ---------- */
 function drawGuild(ox: number, oy: number, n: NationStyle){
   R(ox+1,oy+14,30,1,SH);
@@ -289,6 +302,7 @@ export function drawPlot(q: number){
   const v=pVar[q]%3;
   if (ty===B_HOUSE){ const t=pTier[q]; stamp(ox,oy,PS,PS,()=>drawHouse(0,0,n,t>=2 ? pVar[q] : v,!!pAband[q],t)); }
   else if (ty===B_RESEARCH) stamp(ox,oy,PS,PS,()=>drawResearch(0,0,n));
+  else if (ty===B_SMITHY) stamp(ox,oy,PS,PS,()=>drawSmithy(0,0,n));
   else if (ty===B_SITE) stamp(ox,oy,PS,PS,()=>drawSite(0,0,n));
   else if (ty===B_FARM){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawFarm(0,0,n,pOwner[q]%3,m)); }   // one crop per kingdom, so joined fields match
   else if (ty===B_TOWER){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawTower(0,0,n,m)); }
@@ -314,6 +328,7 @@ export function drawIcon(ctx: CanvasRenderingContext2D, type: number, n: NationS
   else if (type===B_TOWER) drawTower(0,0,n,0); else if (type===B_MINTER) drawMinter(0,0,n,0);
   else if (type===B_HOUSE) drawHouse(0,0,n,0,false);
   else if (type===B_RESEARCH) drawResearch(0,0,n);
+  else if (type===B_SMITHY) drawSmithy(0,0,n);
   else if (BIG[type]){ drawBig(0,0,type,n); drawWorking(ctx,type,0,0,0.99,0); }
   outline(ctx,0,0,ctx.canvas.width,ctx.canvas.height,EDGE);
   G=prev;

@@ -5,7 +5,7 @@ import { W, owner, isLand, pType, pOwner, pTier, pCenter, pTimer } from '../src/
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { build, placeProblem } from '../src/sim/buildings';
 import { H_VILLAGER, TASK_FIX, FIX_TICKS, REHIRE_TICKS, improvements } from '../src/sim/population';
-import { R_HOUSING, R_TAXES, TIER_XP, HOUSE_BEDS } from '../src/sim/research';
+import { R_HOUSING, R_TAXES, R_INFANTRY, TIER_XP, HOUSE_BEDS } from '../src/sim/research';
 import { bldHp } from '../src/sim/war';
 import { listen } from '../src/sim/events';
 
@@ -43,33 +43,42 @@ describe('research', () => {
   it('earns a point a second per station, for housing first, and goes up a tier at 50 then 100', () => {
     start(12345); run(20);
     expect(me().study).toBe(R_HOUSING);
-    expect(me().tier).toEqual([1,1]);
-    run(100); expect(me().xp).toEqual([0,0]);   // nothing without a station
+    expect(me().tier).toEqual([1,1,1]);
+    run(100); expect(me().xp).toEqual([0,0,0]);   // nothing without a station
     place(B_RESEARCH); run(100);                // 10 s
     expect(me().xp[R_HOUSING]).toBe(100);       // 10 points, in tenths
     place(B_RESEARCH); run(100);                // two stations: twice as fast
     expect(me().xp[R_HOUSING]).toBe(300);
     run(100); expect(me().tier[R_HOUSING]).toBe(2); expect(me().xp[R_HOUSING]).toBe(0);
-    expect(TIER_XP[2]).toBe(100);
+    expect(TIER_XP[R_HOUSING][2]).toBe(100);
+  });
+
+  it('takes 100 points for infantry tier 2 and 150 more for tier 3', () => {
+    expect(TIER_XP[R_INFANTRY].slice(1)).toEqual([100,150]);
+    start(12345); run(20);
+    me().study=R_INFANTRY; place(B_RESEARCH); place(B_RESEARCH);   // 2 points a second
+    run(499); expect(me().tier[R_INFANTRY]).toBe(1);
+    run(1);   expect(me().tier[R_INFANTRY]).toBe(2);
+    run(750); expect(me().tier[R_INFANTRY]).toBe(3);
   });
 
   it('studies one topic at a time and keeps what the other has learned', () => {
     start(12345); run(20);
     place(B_RESEARCH); run(200);
     queueCommand({ type:'research', nation:1, topic:R_TAXES }); run(100);
-    expect(me().xp).toEqual([200,100]);
+    expect(me().xp).toEqual([200,100,0]);
     queueCommand({ type:'research', nation:1, topic:R_HOUSING }); run(1);
     expect(me().study).toBe(R_HOUSING);
   });
 
   it('moves on to the other topic when one is done, and keeps its tiers if the stations burn', () => {
     start(12345); run(20);
-    me().tier=[3,1]; me().study=R_HOUSING;
+    me().tier=[3,1,1]; me().study=R_HOUSING;
     const q=place(B_RESEARCH); run(10);
     expect(me().study).toBe(R_TAXES);
     pType[q]=0; pOwner[q]=0; run(20);
     expect(me().labs).toBe(0);
-    expect(me().tier).toEqual([3,1]);
+    expect(me().tier).toEqual([3,1,1]);
   });
 
   it('raises each villager\'s tax by 0.1 a tier', () => {
@@ -93,7 +102,7 @@ describe('house tiers and the builders guild', () => {
   it('takes one villager as its builder, and does nothing until housing research allows it', () => {
     start(12345); expand(6); until(() => houses().length>=10);
     const g=place(B_GUILD); run(2);
-    const builders=mine().filter(h => h.guild===g);
+    const builders=mine().filter(h => h.work===g);
     expect(builders).toHaveLength(1);
     expect(builders[0].kind).toBe(H_VILLAGER);
     run(300);
@@ -103,7 +112,7 @@ describe('house tiers and the builders guild', () => {
   it('turns hovels into stone houses from the castle outward, for 3 wood and 3 stone each', () => {
     start(12345); expand(6); until(() => houses().length>=10);
     const g=place(B_GUILD); me().tier[R_HOUSING]=2; run(2);
-    const b=mine().find(h => h.guild===g)!, first=improvements(me())[0];
+    const b=mine().find(h => h.work===g)!, first=improvements(me())[0];
     const nearest=Math.min(...houses().map(fromCapital));
     expect(fromCapital(first)).toBeLessThanOrEqual(nearest*1.2+1e-9);   // the inner town first (a little ragged)
     until(() => b.task===TASK_FIX);
@@ -130,9 +139,9 @@ describe('house tiers and the builders guild', () => {
   it('finds a new builder 5 seconds after the old one falls', () => {
     start(12345); expand(6); until(() => houses().length>=10);
     const g=place(B_GUILD); run(2);
-    const b=mine().find(h => h.guild===g)!; b.hp=0; run(1);
+    const b=mine().find(h => h.work===g)!; b.hp=0; run(1);
     expect(pTimer[g]).toBeGreaterThan(0);
-    run(REHIRE_TICKS-5); expect(mine().filter(h => h.guild===g)).toHaveLength(0);
-    run(10); expect(mine().filter(h => h.guild===g)).toHaveLength(1);
+    run(REHIRE_TICKS-5); expect(mine().filter(h => h.work===g)).toHaveLength(0);
+    run(10); expect(mine().filter(h => h.work===g)).toHaveLength(1);
   });
 });

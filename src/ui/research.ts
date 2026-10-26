@@ -4,7 +4,7 @@
 import { PLAYER, PS, B_RESEARCH } from '../core/constants';
 import { W } from '../sim/state';
 import { queueCommand } from '../sim/sim';
-import { R_HOUSING, R_TAXES, TOPIC_NAME, MAX_TIER, XP_PER_STATION, xpNeeded, maxed } from '../sim/research';
+import { R_HOUSING, R_TAXES, R_INFANTRY, TOPIC_NAME, MAX_TIER, XP_PER_STATION, xpNeeded, maxed } from '../sim/research';
 import { drawIcon } from '../render/sprites';
 import { styleOf } from '../render/style';
 import { closeDiplomacy, diplomacyOpen } from './diplomacy';
@@ -15,9 +15,10 @@ const panel=$('research'), rate=$('rRate');
 const NEXT = [
   ['', '', 'Stone houses: room for 2 people, 3× as hard to burn. Needs a builders guild.', 'Manors: room for 3 people, 6× as hard to burn as a hovel.'],
   ['', '', 'Each villager pays 0.2 gold a second.', 'Each villager pays 0.3 gold a second.'],
+  ['', '', 'Reinforced soldiers: 10 hit points, 1.5 damage. Needs a blacksmith.', 'Heavy armour: 15 hit points, 2 damage.'],
 ];
-const topics=[R_HOUSING, R_TAXES].map(t => {
-  const root=$(t===R_HOUSING ? 'rHousing' : 'rTaxes');
+const topics=[R_HOUSING, R_INFANTRY, R_TAXES].map(t => {
+  const root=$(t===R_HOUSING ? 'rHousing' : t===R_INFANTRY ? 'rInfantry' : 'rTaxes');
   const button=root.querySelector('button')!, tier=root.querySelector('.ttier') as HTMLElement, bar=root.querySelector('.tbar i') as HTMLElement,
     count=root.querySelector('.tbar span') as HTMLElement, note=root.querySelector('.tnote') as HTMLElement;
   button.addEventListener('click', () => { queueCommand({ type:'research', nation:PLAYER, topic:t }); });
@@ -28,6 +29,7 @@ export const researchOpen = () => !panel.hidden;
 export function openResearch(){
   const c=$('rIcon') as HTMLCanvasElement; c.width=PS; c.height=PS; drawIcon(c.getContext('2d')!,B_RESEARCH,styleOf(PLAYER));
   if (diplomacyOpen()) closeDiplomacy();
+  $('army').hidden=true;
   panel.hidden=false; refreshResearch();
 }
 export function closeResearch(){ panel.hidden=true; }

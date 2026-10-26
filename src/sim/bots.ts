@@ -1,21 +1,25 @@
 /* ---------- bots ---------- */
-import { B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, PW } from '../core/constants';
+import { B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, PW, NP } from '../core/constants';
 import { W, pType, pOwner, pPrio, type Nation } from './state';
 import { launch } from './territory';
-import { R_HOUSING, R_TAXES, setStudy, maxed } from './research';
+import { R_HOUSING, R_TAXES, R_INFANTRY, TOPICS, setStudy, maxed } from './research';
+import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, canAfford, placeProblem, build, togglePriority, anyWithin, isEnemyLand } from './buildings';
-import { allied, atWar, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge } from './war';
+import { allied, atWar, ready, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge } from './war';
 
 /** What a bot would build next, most wanted first. */
 function wishlist(n: Nation, exposed: boolean){
   const w: number[]=[];
   if (!n.barracks && n.soldierShare>0) w.push(B_BARRACKS);
+  // room in the barracks for the army it keeps (new modules join the old, making one bigger army)
+  else if (n.soldiers>n.barracks*UNIT_SIZE-2 && n.barracks<2+(n.tiles/400|0)) w.push(B_BARRACKS);
   if (exposed && n.towers < 1+(n.tiles/900|0)) w.push(B_TOWER);
   if (n.farms < 1+(n.tiles/600|0)) w.push(B_FARM);
   if (n.minters < 1+(n.tiles/1500|0)) w.push(B_MINTER);
   // learning once the kingdom has found its feet, and a guild to build on what it learns
-  if (n.farms && n.tiles>=300 && !(maxed(n,R_HOUSING) && maxed(n,R_TAXES)) && n.labs < 1+(n.tiles/2500|0)) w.push(B_RESEARCH);
+  if (n.farms && n.tiles>=300 && !TOPICS.every(t => maxed(n,t)) && n.labs < 1+(n.tiles/2500|0)) w.push(B_RESEARCH);
   if (n.tier[R_HOUSING]>=2 && n.guilds < 1+(n.tiles/4000|0)) w.push(B_GUILD);
+  if (n.tier[R_INFANTRY]>=2 && n.barracks && n.smithies < 1+(n.barracks/6|0)) w.push(B_SMITHY);
   // a steady supply of whatever the land is poorest in
   const [wood,stone,copper]=n.stock, few=Math.min(wood,stone,copper);
   if (copper===few && n.copperMines < 1+(n.tiles/2000|0)) w.push(B_COPPERMINE);
@@ -26,8 +30,22 @@ function wishlist(n: Nation, exposed: boolean){
 const sameNeighbour = (q: number, type: number, id: number) =>
   [q-1,q+1,q-PW,q+PW].some(k => k>=0 && pType[k]===type && pOwner[k]===id);
 
-/** Picks a plot for `type`: towers go toward enemies; the rest gather next to their own kind, near the capital. */
+/** Where a new barracks module goes: beside the biggest barracks, so its army grows (the free
+    plot nearest the castle); if it has no room, or there is none yet, anywhere. */
+function barracksPlot(n: Nation){
+  const U=(units[n.id] ?? []).slice().sort((a,b) => b.plots.length-a.plots.length || a.key-b.key), cap=n.capPlot;
+  const d=(q: number) => (q%PW-cap%PW)**2+((q/PW|0)-(cap/PW|0))**2;
+  for (const u of U){
+    let best=-1;
+    for (const p of u.plots) for (const q of [p-PW,p+1,p+PW,p-1]) if (q>=0 && q<NP && Math.abs(q%PW-p%PW)<=1 && !placeProblem(n,q,B_BARRACKS) && (best<0 || d(q)<d(best) || (d(q)===d(best) && q<best))) best=q;
+    if (best>=0) return best;
+  }
+  return -1;
+}
+/** Picks a plot for `type`: towers go toward enemies; barracks join the biggest barracks; the rest
+    gather next to their own kind, near the capital. */
 function pickPlot(n: Nation, type: number){
+  if (type===B_BARRACKS){ const q=barracksPlot(n); if (q>=0) return q; }
   const srand=W.srand, cap=n.capPlot; let best=-1, bs=-Infinity;
   for (let k=0;k<24 && n.plots.length;k++){
     const q=n.plots[(srand()*n.plots.length)|0];
@@ -40,8 +58,11 @@ function pickPlot(n: Nation, type: number){
   return best;
 }
 
-/** Bots study whichever topic is behind, housing first. */
-function botStudy(n: Nation){ setStudy(n, n.tier[R_HOUSING]<=n.tier[R_TAXES] ? R_HOUSING : R_TAXES); }
+/** Bots study whichever topic is furthest behind: housing first, then infantry, then taxation. */
+function botStudy(n: Nation){
+  let best=R_HOUSING; for (const t of [R_HOUSING, R_INFANTRY, R_TAXES]) if (n.tier[t]<n.tier[best]) best=t;
+  setStudy(n,best);
+}
 
 function botBuild(n: Nation, exposed: boolean){
   botStudy(n);
@@ -98,14 +119,14 @@ function botWar(n: Nation){
   for (const E of W.campaigns){
     if (E.d!==id || E.phase===2 || !E.hostile || E.target>=0) continue;
     if (W.campaigns.some(c => c.a===id && c.target===E.id && c.phase<2)) continue;
-    const idle=available(n).idle.length, need=E.members.length;
+    const idle=ready(n), need=E.members.length;
     if (idle>=3 && idle>=need*(dug ? 1 : 0.6)) intercept(id,E.id,Math.min(idle,need+2));   // outnumbered, only a fair fight
   }
   // our land is back: strike back while the enemy is weak, or make peace
   for (let o=1;o<M;o++){
     if (!W.ready[id*M+o] || !atWar(id,o)) continue;
     W.ready[id*M+o]=0;
-    const pool=available(n).all.length;
+    const pool=ready(n);
     if (pool>=5 && !dug && outlook(n,o)>-0.3 && W.contact[id*M+o]) declare(id,o,false,pool);
     else offerPeace(id,o);
   }
@@ -123,7 +144,7 @@ function botWar(n: Nation){
   // after a campaign it rests a while (the bold less), so a winner digests its gains first
   if (busy){ n.nextWar=Math.max(n.nextWar, W.simTime+50+(0.8-n.attackAt)*150); return; }
   if (W.simTime<n.nextWar || dug) return;   // badly outnumbered: stay home and hold
-  const pool=available(n).all.length; if (pool<6) return;
+  const pool=ready(n); if (pool<5) return;
   const need=1.4-(n.attackAt-0.5)*2;   // 1.4 for the cautious, 0.8 for the bold
   // a kingdom two armies are already on is left to them
   const beset=new Uint8Array(M); for (const c of W.campaigns) if (c.hostile && c.phase<2) beset[c.d]++;
