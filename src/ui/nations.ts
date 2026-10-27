@@ -3,12 +3,13 @@
    capital is on it). Click one to play it; tick the ones you will face. On a real-world map
    everyone, you included, is founded at their real capital. Quick picks choose the nearest
    capitals to yours (at random on a generated map), all of them, or none. */
-import { TW } from '../core/constants';
+import { TW, MAX_KINGDOMS } from '../core/constants';
 import { COUNTRIES, MAJOR, countryByCode } from '../core/countries';
 import { W } from '../sim/state';
 import { capitalsOn } from '../sim/realmap';
 import { client } from '../client';
 import { flagCSS } from '../render/flags';
+import { toast } from './hud';
 import { $ } from './dom';
 
 const win=$('nations'), list=$('nList'), search=$('nSearch') as HTMLInputElement;
@@ -17,11 +18,13 @@ const real = () => W.map!=='gen';
 /** The countries that can play on this map, with their capital's tile (-1 on a generated map). */
 export function available(){ return real() ? capitalsOn(W.map) : COUNTRIES.map(country => ({ country, tile:-1 })); }
 
-/** The rivals a quick pick chooses: the k capitals nearest yours (at random on a generated map), all, or none. */
+const MAX_RIVALS = MAX_KINGDOMS-1;
+/** The rivals a quick pick chooses: the k capitals nearest yours (at random on a generated map), a
+    full game (63, at random if more could play), or none. */
 function quick(kind: string, k=0): string[] {
   const av=available().filter(a => a.country.code!==client.me);
   if (kind==='none') return [];
-  if (kind==='all') return av.map(a => a.country.code);
+  if (kind==='full') return av.map(a => a.country.code).sort(() => Math.random()-0.5).slice(0,MAX_RIVALS);
   const mine=available().find(a => a.country.code===client.me);
   if (real() && mine){
     const d=(t: number) => Math.hypot(t%TW-mine.tile%TW, ((t/TW)|0)-((mine.tile/TW)|0));
@@ -73,11 +76,13 @@ function render(){
       +`<button class="play" title="Play as ${k.name}"><i class="flag" style="${flagCSS(k.code)}"></i><span>${k.name}</span></button>`
       +(me ? `<span class="you">You</span>` : `<label class="riv"><input type="checkbox" ${picked.has(k.code) ? 'checked' : ''}>Rival</label>`)+`</li>`;
   }).join('') || '<li class="none">No country by that name on this map</li>';
-  $('nCount').textContent=`${client.rivals.length} rival${client.rivals.length===1?'':'s'} of ${available().length-1}`;
+  $('nCount').textContent=`${client.rivals.length} rival${client.rivals.length===1?'':'s'} · ${client.rivals.length+1} of ${MAX_KINGDOMS} kingdoms`;
   $('nHint').textContent = real()
     ? 'Click a country to play it: you start at its real capital. Tick the countries you will face: each is founded at its own capital.'
     : 'Click a country to play it: you choose where to found it. Tick the countries you will face: they are founded around the map.';
   for (const b of win.querySelectorAll<HTMLButtonElement>('.nquick button[data-k]')) b.textContent=`${real() ? 'Nearest' : 'Random'} ${b.dataset.k}`;
+  const full=win.querySelector<HTMLButtonElement>('.nquick button[data-q="full"]')!, n=Math.min(MAX_KINGDOMS, available().length);
+  full.textContent = n<MAX_KINGDOMS ? `All · ${n}` : `Full game · ${MAX_KINGDOMS}`;
 }
 
 list.addEventListener('click', e => {
@@ -86,6 +91,7 @@ list.addEventListener('click', e => {
   if ((e.target as HTMLElement).closest('.play')){ client.me=code; client.rivals=client.rivals.filter(c => c!==code); render(); return; }
   if ((e.target as HTMLElement).closest('input')){
     const box=(e.target as HTMLInputElement);
+    if (box.checked && client.rivals.length>=MAX_RIVALS){ box.checked=false; toast(`A game holds at most ${MAX_KINGDOMS} kingdoms`); return; }
     client.rivals = box.checked ? [...client.rivals.filter(c => c!==code), code] : client.rivals.filter(c => c!==code);
     render();
   }

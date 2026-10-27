@@ -34,6 +34,7 @@ export function tileXY(v: MapView, lat: number, lon: number, w: number, h: numbe
 
 export const VIEWS: Record<string, MapView> = {
   balkans: { lon0:12, lon1:46, lat0:49, lat1:33, proj:'eq', w:560, h:348 },
-  europe: { lon0:-12, lon1:66, lat0:71, lat1:34.5, proj:'eq', w:600, h:372 },
+  // Europe and its neighbours, from Iceland to Kyrgyzstan and from the Nile to the Arctic: room for 64 kingdoms
+  europe: { lon0:-25, lon1:75, lat0:71.5, lat1:29, proj:'eq', w:1200, h:744 },
   world: { lon0:-169, lon1:191, lat0:78, lat1:-56, proj:'miller', w:640, h:396 },   // cut through the Bering Strait
 };

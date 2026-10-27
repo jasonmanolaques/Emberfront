@@ -1,21 +1,28 @@
 /* ---------- census: contacts, counts, labels (once per second) ---------- */
 import { TW, TH, NP, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY } from '../core/constants';
-import { W, owner, occ, isLand, pType, pOwner, pBuild, pCenter, pBurn, pTimer, pTier } from './state';
+import { W, owner, occ, isLand, resType, resLeft, pType, pOwner, pBuild, pCenter, pBurn, pTimer, pTier } from './state';
 import { HOUSE_BEDS } from './research';
 import { on } from './events';
 import { isBld, joinGatherers } from './buildings';
+import { GOOD_OF } from './resources';
 
 /** Counts shared border edges between every pair of nations into W.contact[a*M+b]. */
 export function scanContacts(withSums: boolean){
-  const N=W.nations, M=W.M, contact=W.contact;
+  const N=W.nations, M=W.M, contact=W.contact, land=isLand, own=owner, tw=TW, th=TH;   // (locals: a hot loop over the whole map)
   contact.fill(0);
-  if (withSums) for (const n of N){ n.sumX=0; n.sumY=0; }
-  for (let y=0;y<TH;y++){ let t=y*TW; for (let x=0;x<TW;x++,t++){
-    if (!isLand[t]) continue; const o=owner[t];
-    if (withSums && o){ const n=N[o]; n.sumX+=x; n.sumY+=y; }
-    if (x+1<TW && isLand[t+1]){ const o2=owner[t+1]; if (o2!==o){ contact[o*M+o2]++; contact[o2*M+o]++; } }
-    if (y+1<TH && isLand[t+TW]){ const o2=owner[t+TW]; if (o2!==o){ contact[o*M+o2]++; contact[o2*M+o]++; } }
+  const sx=new Float64Array(M), sy=new Float64Array(M);
+  for (let y=0;y<th;y++){ let t=y*tw; for (let x=0;x<tw;x++,t++){
+    if (!land[t]) continue; const o=own[t];
+    if (o){ sx[o]+=x; sy[o]+=y; }
+    if (x+1<tw && land[t+1]){ const o2=own[t+1]; if (o2!==o){ contact[o*M+o2]++; contact[o2*M+o]++; } }
+    if (y+1<th && land[t+tw]){ const o2=own[t+tw]; if (o2!==o){ contact[o*M+o2]++; contact[o2*M+o]++; } }
   } }
+  if (withSums) for (let i=1;i<N.length;i++){ N[i].sumX=sx[i]; N[i].sumY=sy[i]; }
+  if (withSums){   // what is left to gather on each kingdom's land
+    for (const n of N) n.resHere=[0,0,0];
+    const rt=resType, rl=resLeft;
+    for (let t=0;t<tw*th;t++){ const o=own[t]; if (o && rl[t]>0) N[o].resHere[GOOD_OF[rt[t]]]++; }
+  }
 }
 export function census(){
   const N=W.nations;

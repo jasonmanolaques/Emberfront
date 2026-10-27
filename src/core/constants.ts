@@ -41,4 +41,5 @@ export const GOLD_PER_TILE = 1;           // cost of settling one unclaimed tile
 export const STR_TILE = 1, STR_VILLAGER = 50, STR_SOLDIER = 100, STR_GOLD = 3;
 
 export const PLAYER = 1;                  // nation id of the local player
+export const MAX_KINGDOMS = 64;           // kingdoms in one game at most, the player's included (a full game)
 export const PLAYER_COL = '#ffd23f';     // the player's highlight (kingdoms take their colours from their flags: core/countries.ts)

@@ -53,11 +53,11 @@ describe('resources on the map', () => {
     expect(nearStone/nearTiles).toBeGreaterThan(4*farStone/farTiles);
   });
   it('grows healthy trees in temperate land and dry twiggy ones in deserts and savanna', () => {
-    expect(density(T_FOREST, R_TREE)).toBeGreaterThan(0.4);
-    expect(density(T_GRASS, R_TREE)).toBeGreaterThan(0.01);
+    expect(density(T_FOREST, R_TREE)).toBeGreaterThan(0.2);   // (at half the density of old)
+    expect(density(T_GRASS, R_TREE)).toBeGreaterThan(0.005);
     expect(per[T_DESERT][R_TREE] + per[T_DRY][R_TREE]).toBe(0);
-    expect(density(T_DRY, R_TWIG)).toBeGreaterThan(0.02);
-    expect(density(T_DESERT, R_TWIG)).toBeGreaterThan(0.01);
+    expect(density(T_DRY, R_TWIG)).toBeGreaterThan(0.01);
+    expect(density(T_DESERT, R_TWIG)).toBeGreaterThan(0.005);
     expect(per[T_FOREST][R_TWIG] + per[T_GRASS][R_TWIG]).toBe(0);
   });
   it('scatters some stone and copper almost everywhere', () => {

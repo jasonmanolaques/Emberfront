@@ -21,15 +21,17 @@ const wctx = worldC.getContext('2d') as CanvasRenderingContext2D;
 let worldImg = wctx.createImageData(RW, RH);
 export let wbuf = new Uint32Array(worldImg.data.buffer);
 let base = new Uint32Array(RW*RH);     // terrain and roads, without territory tint
-let soil = new Uint32Array(RW*RH);     // terrain alone, under the roads
-let dx0=RW, dy0=RH, dx1=-1, dy1=-1;    // dirty rectangle still to upload
+// what is still to upload, in 256-pixel chunks (on a big map with many kingdoms growing at once,
+// one rectangle round all the changes would be most of the map every frame)
+const CH = 256;
+let chW = Math.ceil(RW/CH), dirty = new Uint8Array(chW*Math.ceil(RH/CH)), anyDirty = false;
 /** Fits the terrain layer to the map's size (after it changed). */
 export function sizeTerrain(){
   if (worldC.width===RW && worldC.height===RH) return;
   worldC.width=RW; worldC.height=RH;
   worldImg=wctx.createImageData(RW,RH); wbuf=new Uint32Array(worldImg.data.buffer);
-  base=new Uint32Array(RW*RH); soil=new Uint32Array(RW*RH);
-  dx0=RW; dy0=RH; dx1=-1; dy1=-1;
+  base=new Uint32Array(RW*RH);
+  chW=Math.ceil(RW/CH); dirty=new Uint8Array(chW*Math.ceil(RH/CH)); anyDirty=false;
 }
 
 /** Stable per-pixel hash for the current map (texture variation, tree placement). */
@@ -46,10 +48,10 @@ function edgeDist(sx: number, sy: number, l: boolean, r: boolean, u: boolean, d:
 }
 const landAt = (x: number, y: number) => x<0||y<0||x>=TW||y>=TH ? 0 : isLand[y*TW+x];
 
-export function buildBase(){
-  const k = 1/W.heightRange;
-  const px: RGB[] = Array.from({ length: RS*RS }, () => [0,0,0]);
-  for (let y=0;y<TH;y++) for (let x=0;x<TW;x++){
+const px: RGB[] = Array.from({ length: RS*RS }, () => [0,0,0]);
+/** Paints the ground of tile (x,y), without roads, into px. */
+function terrainOf(x: number, y: number){
+    const k = 1/W.heightRange;
     const t=y*TW+x, tr=terr[t], land=isLand[t], c=TCOL[tr], h=hash2(x*5+3,y*7+11);
     let s=0;
     if (land){
@@ -90,7 +92,11 @@ export function buildBase(){
         px[ty*RS+tx]=dk; px[(ty-1)*RS+tx]=lt;
       } else if (tr===T_GRASS && h>0.985){ px[RS+1+((h*1e5|0)&1)]=FLOWERS[(h*1e6|0)%FLOWERS.length]; }
     }
-    for (let sy=0;sy<RS;sy++) for (let sx=0;sx<RS;sx++){ const p=px[sy*RS+sx], i=(y*RS+sy)*RW+x*RS+sx; base[i]=soil[i]=pack(p[0],p[1],p[2]); }
+}
+export function buildBase(){
+  for (let y=0;y<TH;y++) for (let x=0;x<TW;x++){
+    terrainOf(x,y);
+    for (let sy=0;sy<RS;sy++) for (let sx=0;sx<RS;sx++){ const p=px[sy*RS+sx]; base[(y*RS+sy)*RW+x*RS+sx]=pack(p[0],p[1],p[2]); }
   }
 }
 
@@ -106,11 +112,13 @@ function roadBase(t: number){
     return (mx&&my) || (E&&my&&sx>=1) || (Wd&&my&&sx<=2) || (N&&mx&&sy<=2) || (S&&mx&&sy>=1)
       || (NE&&sx>=2&&sy<=1) || (NW&&sx<=1&&sy<=1) || (SE&&sx>=2&&sy>=2) || (SW&&sx<=1&&sy>=2);
   };
+  terrainOf(x,y);   // the ground under the road
+  const soil=(sx: number, sy: number) => { const p=px[sy*RS+sx]; return pack(p[0],p[1],p[2]); };
   for (let sy=0;sy<RS;sy++) for (let sx=0;sx<RS;sx++){
     const X=x*RS+sx, Y=y*RS+sy, i=Y*RW+X, j=hash2(X+911,Y+37);
     if (on(sx,sy)){ const col=j<0.08 ? [206,182,142] : c, f=0.93+j*0.12; base[i]=pack(col[0]*f,col[1]*f,col[2]*f); }
-    else if (on(sx-1,sy)||on(sx+1,sy)||on(sx,sy-1)||on(sx,sy+1)){ const g=soil[i], d=PAL.roadD; base[i]=pack((g&255)*0.6+d[0]*0.4, ((g>>>8)&255)*0.6+d[1]*0.4, ((g>>>16)&255)*0.6+d[2]*0.4); }
-    else base[i]=soil[i];
+    else if (on(sx-1,sy)||on(sx+1,sy)||on(sx,sy-1)||on(sx,sy+1)){ const g=soil(sx,sy), d=PAL.roadD; base[i]=pack((g&255)*0.6+d[0]*0.4, ((g>>>8)&255)*0.6+d[1]*0.4, ((g>>>16)&255)*0.6+d[2]*0.4); }
+    else base[i]=soil(sx,sy);
   }
 }
 /** Lays road on tile t, and redraws the road tiles around it so the tracks join. */
@@ -143,13 +151,20 @@ export function paintTile(t: number){
       }
     }
   }
-  const X=x*RS, Y=y*RS; if (X<dx0) dx0=X; if (Y<dy0) dy0=Y; if (X+R1>dx1) dx1=X+R1; if (Y+R1>dy1) dy1=Y+R1;
+  dirty[((y*RS/CH)|0)*chW+((x*RS/CH)|0)]=1; anyDirty=true;
 }
 /** Repaints tile t and its eight neighbours (their borders depend on it). */
 export function repaint(t: number){
   const x=t%TW, y=(t/TW)|0;
   for (let yy=Math.max(0,y-1);yy<=Math.min(TH-1,y+1);yy++) for (let xx=Math.max(0,x-1);xx<=Math.min(TW-1,x+1);xx++) paintTile(yy*TW+xx);
 }
-export function paintAll(){ for (let t=0;t<NT;t++) paintTile(t); dx0=0; dy0=0; dx1=RW-1; dy1=RH-1; }
+export function paintAll(){ for (let t=0;t<NT;t++) paintTile(t); }
 /** Uploads the changed part of the pixel buffer to the world canvas. */
-export function flushWorld(){ if (dx1>=0){ wctx.putImageData(worldImg,0,0,dx0,dy0,dx1-dx0+1,dy1-dy0+1); dx0=RW; dy0=RH; dx1=-1; dy1=-1; } }
+export function flushWorld(){
+  if (!anyDirty) return;
+  for (let k=0;k<dirty.length;k++) if (dirty[k]){
+    const x=(k%chW)*CH, y=((k/chW)|0)*CH;
+    wctx.putImageData(worldImg,0,0,x,y,Math.min(CH,RW-x),Math.min(CH,RH-y)); dirty[k]=0;
+  }
+  anyDirty=false;
+}

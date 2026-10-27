@@ -111,7 +111,9 @@ function encode(code: Uint8Array){
 interface Spec { id: string; land: string; minKeep: number; maxGap: number; bridges?: [number, number][][] }
 const SPECS: Spec[] = [
   { id:'balkans', land:'ne_10m_land', minKeep:300, maxGap:7 },
-  { id:'europe', land:'ne_10m_land', minKeep:130, maxGap:9 },
+  { id:'europe', land:'ne_10m_land', minKeep:60, maxGap:18,
+    // Iceland by the Faroes to Scotland
+    bridges:[ [[64.9,-13.6],[62.1,-7.0],[58.6,-5.0]] ] },
   { id:'world', land:'ne_50m_land', minKeep:34, maxGap:8,
     // the North Atlantic: Baffin Island to Greenland, Greenland to Iceland, Iceland by the Faroes to Scotland;
     // and Java along the Lesser Sunda Islands and Timor to Australia

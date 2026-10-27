@@ -12,10 +12,15 @@ export const cam = { dpr: 1, x: 0, y: 0, zoom: 1, fitZ: 1, anim: null as CamAnim
 // the camera works in render pixels (RS per tile); zoom is screen pixels per render pixel
 export function fitCam(){ const w=view.width, h=view.height; cam.fitZ=Math.min(w/RW,h/RH); cam.zoom=cam.fitZ*1.02; cam.x=(RW-w/cam.zoom)/2; cam.y=(RH-h/cam.zoom)/2; }
 function maxZ(){ return 8*cam.dpr; }
-export function clampCam(){ const w=view.width/cam.zoom, h=view.height/cam.zoom; cam.x=clamp(cam.x,-w*0.45,RW-w*0.55); cam.y=clamp(cam.y,-h*0.45,RH-h*0.55); }
-export function zoomAt(f: number, sx: number, sy: number){ const nz=clamp(cam.zoom*f,cam.fitZ*0.85,maxZ()); const wx=cam.x+sx/cam.zoom, wy=cam.y+sy/cam.zoom; cam.zoom=nz; cam.x=wx-sx/cam.zoom; cam.y=wy-sy/cam.zoom; cam.anim=null; clampCam(); }
+/** Keeps the map on screen: little sea past its edges, and centred along a side it doesn't fill. */
+export function clampCam(){
+  const w=view.width/cam.zoom, h=view.height/cam.zoom, mx=w*0.06, my=h*0.06;
+  cam.x = w>=RW ? (RW-w)/2 : clamp(cam.x,-mx,RW-w+mx);
+  cam.y = h>=RH ? (RH-h)/2 : clamp(cam.y,-my,RH-h+my);
+}
+export function zoomAt(f: number, sx: number, sy: number){ const nz=clamp(cam.zoom*f,cam.fitZ,maxZ()); const wx=cam.x+sx/cam.zoom, wy=cam.y+sy/cam.zoom; cam.zoom=nz; cam.x=wx-sx/cam.zoom; cam.y=wy-sy/cam.zoom; cam.anim=null; clampCam(); }
 export function focusOn(t: number, z: number){
-  z=clamp(z,cam.fitZ*0.85,maxZ());
+  z=clamp(z,cam.fitZ,maxZ());
   const tx=(t%TW)*RS+RS/2, ty=((t/TW)|0)*RS+RS/2, x1=tx-view.width/z/2, y1=ty-view.height/z/2;
   if (reduceMotion){ cam.zoom=z; cam.x=x1; cam.y=y1; return; }
   cam.anim={x0:cam.x,y0:cam.y,z0:cam.zoom,x1,y1,z1:z,t0:performance.now(),d:750};
@@ -35,7 +40,7 @@ export function resize(){
   const cx=cam.x+oldW/cam.zoom/2, cy=cam.y+oldH/cam.zoom/2;
   cam.fitZ=Math.min(view.width/RW,view.height/RH);
   if (client.state==='intro' || client.state==='spawn' || oldW<=1) fitCam();
-  else { cam.zoom=clamp(cam.zoom,cam.fitZ*0.85,maxZ()); cam.x=cx-view.width/cam.zoom/2; cam.y=cy-view.height/cam.zoom/2; clampCam(); }
+  else { cam.zoom=clamp(cam.zoom,cam.fitZ,maxZ()); cam.x=cx-view.width/cam.zoom/2; cam.y=cy-view.height/cam.zoom/2; clampCam(); }
 }
 /** Map tile under a point in device pixels, or -1. */
 export function tileAt(sx: number, sy: number){ const X=Math.floor((cam.x+sx/cam.zoom)/RS), Y=Math.floor((cam.y+sy/cam.zoom)/RS); if (X<0||Y<0||X>=TW||Y>=TH) return -1; return Y*TW+X; }

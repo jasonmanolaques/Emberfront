@@ -1,6 +1,6 @@
 // The real-world maps, and kingdoms as real countries with their flags and capitals.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NT, T_SNOW, T_MOUNT } from '../src/core/constants';
+import { TW, TH, NT, T_SNOW, T_MOUNT, MAX_KINGDOMS } from '../src/core/constants';
 import { W, isLand, terr } from '../src/sim/state';
 import { newWorld, startMatch } from '../src/sim/sim';
 import { capitalsOn, REAL_MAPS } from '../src/sim/realmap';
@@ -71,6 +71,20 @@ describe('the real-world maps', () => {
     for (const n of N.slice(2)){ expect(n.alive).toBe(true); expect(near(n.capTile,caps.get(n.code)!)).toBeLessThan(26); }
     // close neighbours with near-identical flag colours are told apart
     for (let i=1;i<N.length;i++) for (let j=i+1;j<N.length;j++) expect(colourGap(N[i].hex,N[j].hex)).toBeGreaterThanOrEqual(0.05);
+  });
+
+  it('hold a full game on Europe: 64 kingdoms at their capitals, with more countries to choose from than that', () => {
+    newWorld(2,'europe');
+    expect([TW,TH]).toEqual([1200,744]);   // 3 by 3 generated maps
+    const caps=capitalsOn('europe'), codes=caps.map(c => c.country.code);
+    expect(codes.length).toBeGreaterThan(MAX_KINGDOMS);
+    for (const k of ['IS','PT','GB','FR','DE','IT','PL','RU','TR','EG','IR','KZ','AD','VA','LI']) expect(codes).toContain(k);
+    expect(startMatch(caps.find(c => c.country.code==='FR')!.tile,codes.filter(c => c!=='FR'),'FR')).toBe(true);
+    expect(W.nations.length-1).toBe(MAX_KINGDOMS);   // more were named: a game holds 64
+    expect(W.nations.slice(1).every(n => n.alive)).toBe(true);
+    const at=new Map(caps.map(c => [c.country.code, c.tile]));
+    for (const n of W.nations.slice(1)) expect(near(n.capTile,at.get(n.code)!)).toBeLessThan(30);
+    expect(W.landCount/MAX_KINGDOMS).toBeGreaterThan(6000);   // room to grow: as much land each as in a generated game of 10
   });
 
   it('are bigger than a generated map, so close capitals have room', () => {

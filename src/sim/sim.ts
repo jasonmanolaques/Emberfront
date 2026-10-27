@@ -1,6 +1,6 @@
 /* ---------- simulation entry points: worlds, matches, commands, ticks ----------
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
-import { TW, TH, NT, PW, PH, GEN_W, GEN_H, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOLD_PER_SEC, TAX_PER_VILLAGER, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
+import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOLD_PER_SEC, TAX_PER_VILLAGER, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
 import { mulberry32 } from '../core/rng';
 import { W, resizeGrid, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
@@ -25,8 +25,8 @@ function blankNation(id: number, name: string, hex: string, isPlayer: boolean, c
   return { id, name, hex, isPlayer, code,
     gold:0, income:0, strength:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
     plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, beds:0,
-    sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0, nextWave:0, wallR:0, nextWall:0, unpaid:0,
-    soldierShare:0, humanProg:0, villagers:0, soldiers:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0,
+    sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0, nextWave:0, x0:1e9, y0:1e9, x1:-1, y1:-1, wallR:0, nextWall:0, unpaid:0,
+    soldierShare:0, humanProg:0, villagers:0, soldiers:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], resHere:[0,0,0], abandoned:0, surplusTicks:0,
     study:R_HOUSING, tier:[1,1,1,1,1,1], xp:[0,0,0,0,0,0], invest:0.5, gain:new Array(180).fill(0), spend:new Array(180).fill(0) };
 }
 function makeNation(id: number, k: Country, isPlayer: boolean): Nation {
@@ -98,6 +98,7 @@ export function newWorld(seed: number, map='gen'){
     their countries' real capitals. */
 export function startMatch(t: number, rivals: number | string[], me?: string){
   if (t<0) return false;
+  if (Array.isArray(rivals)) rivals=rivals.slice(0,MAX_KINGDOMS-1); else rivals=Math.min(rivals,MAX_KINGDOMS-1);   // a full game is 64
   const b=findBlock(t%TW,(t/TW)|0,W.map==='gen' ? 4 : 6);   // (a real capital may sit between sea and mountains)
   if (!b) return false;
   if (W.map!=='gen') return startReal(b,rivals,me);

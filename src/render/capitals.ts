@@ -19,7 +19,9 @@ import type { NationStyle } from './style';
 export const CULTURE: Record<string, string> = {
   GB:'west', FR:'west', DE:'west', BE:'west', LU:'west', IE:'west', CH:'west',
   AT:'central', CZ:'central', SK:'central', HU:'central', PL:'central', SI:'central', HR:'central',
-  NL:'hansa', EE:'hansa', LV:'hansa', LT:'hansa',
+  NL:'hansa', EE:'hansa', LV:'hansa', LT:'hansa', LI:'central',
+  AD:'med', MC:'med', SM:'med', VA:'med', LY:'maghreb', IL:'arab', PS:'arab', JO:'arab', KW:'arab',
+  TM:'persian', UZ:'persian', TJ:'persian', KG:'steppe',
   NO:'nordic', SE:'nordic', FI:'nordic', IS:'nordic', DK:'nordic',
   ES:'med', PT:'med', IT:'med', MT:'med',
   BG:'orthodox', RS:'orthodox', ME:'orthodox', MK:'orthodox', RO:'orthodox', MD:'orthodox', GE:'orthodox', AM:'orthodox',

@@ -1,8 +1,9 @@
 /* ---------- territory & combat ---------- */
-import { TW, NT, PW, PH, TMULT, B_TOWER, B_CASTLE, B_CPART, GOLD_PER_TILE, isStructure } from '../core/constants';
-import { W, owner, occ, terr, isLand, frontMark, pType, pOwner, pBurn, type Attack } from './state';
+import { TW, TH, NT, PW, PH, TMULT, B_TOWER, B_CASTLE, B_CPART, GOLD_PER_TILE, isStructure } from '../core/constants';
+import { W, owner, occ, terr, isLand, frontMark, resType, resLeft, pType, pOwner, pBurn, type Attack } from './state';
 import { on } from './events';
 import { ignite } from './buildings';
+import { GOOD_OF } from './resources';
 
 export function touches(t: number, a: number){ const x=t%TW; return (x>0&&owner[t-1]===a)||(x<TW-1&&owner[t+1]===a)||(t>=TW&&owner[t-TW]===a)||(t<NT-TW&&owner[t+TW]===a); }
 function nCount(t: number, a: number){ const x=t%TW; return +(x>0&&owner[t-1]===a)+ +(x<TW-1&&owner[t+1]===a)+ +(t>=TW&&owner[t-TW]===a)+ +(t<NT-TW&&owner[t+TW]===a); }
@@ -28,9 +29,10 @@ export function setOwner(t: number, o: number){
   if (occ[t]){ W.occCount[prev*W.M+occ[t]]--; occ[t]=0; }   // changing hands ends any occupation
   owner[t]=o;
   if (prev) W.nations[prev].tiles--;
-  if (o) W.nations[o].tiles++;
-  on.tileChanged(t,o);
   const x=t%TW, y=(t/TW)|0;
+  if (o){ const n=W.nations[o]; n.tiles++; if (x<n.x0) n.x0=x; if (x>n.x1) n.x1=x; if (y<n.y0) n.y0=y; if (y>n.y1) n.y1=y;
+    if (resLeft[t]>0) n.resHere[GOOD_OF[resType[t]]]++; }   // (the census counts exactly, once a second)
+  on.tileChanged(t,o);
   if ((x&3)===2 && (y&3)===2){
     const q=(y>>2)*PW+(x>>2), ty=pType[q];
     if (isStructure(ty) && pOwner[q]!==o && pBurn[q]<=0) ignite(q);
@@ -40,8 +42,10 @@ export function setOwner(t: number, o: number){
 
 function startAttack(a: number, d: number, gold: number){
   for (const A of W.attacks) if (!A.done && A.att===a && A.def===d){ A.gold+=gold; return A; }
-  const id=++W.attackSeq, F: number[]=[];
-  for (let t=0;t<NT;t++){ if (owner[t]!==d || !isLand[t]) continue; if (touches(t,a)){ F.push(t); frontMark[t]=id; } }
+  const id=++W.attackSeq, F: number[]=[], A0=W.nations[a];
+  // the front: d's land touching a's, looked for only round a's land
+  const x0=Math.max(0,A0.x0-1), x1=Math.min(TW-1,A0.x1+1), y0=Math.max(0,A0.y0-1), y1=Math.min(TH-1,A0.y1+1);
+  for (let y=y0;y<=y1;y++) for (let t=y*TW+x0, e=y*TW+x1;t<=e;t++){ if (owner[t]!==d || !isLand[t]) continue; if (touches(t,a)){ F.push(t); frontMark[t]=id; } }
   const A: Attack={ id, att:a, def:d, gold, front:F, done:false };
   W.attacks.push(A); return A;
 }

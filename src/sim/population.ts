@@ -211,7 +211,8 @@ const CANDIDATES = 3;   // spots remembered per good, nearest first, in case the
 /** The nearest free resources of each good on the kingdom's own land, within SEARCH_R tiles. */
 function nearestResources(h: Human){
   const found: [number, number][][]=[[],[],[]];   // per good: [distance, tile], nearest first
-  const far=(g: number)=>found[g].length<CANDIDATES ? Infinity : found[g][CANDIDATES-1][0];
+  const here=W.nations[h.o].resHere;   // a good the kingdom has none of left needn't be looked for
+  const far=(g: number)=>!here[g] ? -1 : found[g].length<CANDIDATES ? Infinity : found[g][CANDIDATES-1][0];
   const cx=(h.x/2)|0, cy=(h.y/2)|0;
   for (let r=0;r<=SEARCH_R;r++){
     // a tile on ring r is at least 2r pixels away: stop once every good's list is closer than that
@@ -287,6 +288,7 @@ function think(h: Human){
     // can't get there and back without leaving our land or climbing the castle: try the next spot
   }
   h.task=TASK_ROAM; roamTarget(h);
+  if (!found[0].length && !found[1].length && !found[2].length) h.wait=Math.max(h.wait,(4+W.prand()*4)/TICK);   // nothing to gather in reach: idle a while before looking again
 }
 
 /** A new person of kingdom n standing at (x,y), with nothing to do yet. */

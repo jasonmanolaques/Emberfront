@@ -15,11 +15,13 @@ const CHARGES          = [0, 1, 1, 3, 3];        // harvests before it is gone: 
 export const WORK_TICKS= [0, 40, 25, 40, 50];    // how long one harvest takes
 
 // chance per tile, by terrain:          deep wat shal beach grass dry   forest desert hills mount snow
-const P_COPPER = [0,0,0, 0.002, 0.003, 0.006, 0.002, 0.030, 0.006, 0.010, 0.002];
-const P_STONE  = [0,0,0, 0.004, 0.006, 0.010, 0.004, 0.012, 0.060, 0.250, 0.050];
-const P_TWIG   = [0,0,0, 0.010, 0.000, 0.050, 0.000, 0.025, 0.020, 0.000, 0.000];
-const P_TREE   = [0,0,0, 0.000, 0.030, 0.000, 0.600, 0.000, 0.070, 0.000, 0.030];
-const NEAR_MOUNTAIN_STONE = 0.05;   // extra stone within 3 tiles of a mountain
+// (all at half the density they once were: wild ground is thinner, so plantations, quarries and mines matter)
+export const DENSITY = 0.5;
+const P_COPPER = [0,0,0, 0.002, 0.003, 0.006, 0.002, 0.030, 0.006, 0.010, 0.002].map(p => p*DENSITY);
+const P_STONE  = [0,0,0, 0.004, 0.006, 0.010, 0.004, 0.012, 0.060, 0.250, 0.050].map(p => p*DENSITY);
+const P_TWIG   = [0,0,0, 0.010, 0.000, 0.050, 0.000, 0.025, 0.020, 0.000, 0.000].map(p => p*DENSITY);
+const P_TREE   = [0,0,0, 0.000, 0.030, 0.000, 0.600, 0.000, 0.070, 0.000, 0.030].map(p => p*DENSITY);
+const NEAR_MOUNTAIN_STONE = 0.05*DENSITY;   // extra stone within 3 tiles of a mountain
 
 function rhash(x: number, y: number, salt: number){
   let h=Math.imul(x,0x27d4eb2d)^Math.imul(y,0x165667b1)^Math.imul(W.mapSeed^salt,0x9e3779b1);
@@ -29,12 +31,16 @@ function rhash(x: number, y: number, salt: number){
 
 export function genResources(){
   resType.fill(0); resLeft.fill(0); resBusy.fill(0);
-  for (let y=0;y<TH;y++) for (let x=0;x<TW;x++){
-    const t=y*TW+x; if (!isLand[t]) continue;
-    const tr=terr[t];
-    let nearMount=false;
-    if (tr!==T_MOUNT) for (let dy=-3;dy<=3 && !nearMount;dy++) for (let dx=-3;dx<=3;dx++){
-      const X=x+dx, Y=y+dy; if (X>=0 && Y>=0 && X<TW && Y<TH && terr[Y*TW+X]===T_MOUNT){ nearMount=true; break; } }
+  const tw=TW, th=TH, tr0=terr;
+  // tiles within 3 of a mountain (a 7×7 square), found row by row and then column by column
+  const across=new Uint8Array(NT), near=new Uint8Array(NT);
+  for (let y=0;y<th;y++){ let last=-99; for (let x=0;x<tw;x++){ if (tr0[y*tw+x]===T_MOUNT) last=x; if (x-last<=3) across[y*tw+x]=1; }
+    last=1e9; for (let x=tw-1;x>=0;x--){ if (tr0[y*tw+x]===T_MOUNT) last=x; if (last-x<=3) across[y*tw+x]=1; } }
+  for (let x=0;x<tw;x++){ let last=-99; for (let y=0;y<th;y++){ if (across[y*tw+x]) last=y; if (y-last<=3) near[y*tw+x]=1; }
+    last=1e9; for (let y=th-1;y>=0;y--){ if (across[y*tw+x]) last=y; if (last-y<=3) near[y*tw+x]=1; } }
+  for (let y=0;y<th;y++) for (let x=0;x<tw;x++){
+    const t=y*tw+x; if (!isLand[t]) continue;
+    const tr=tr0[t], nearMount=tr!==T_MOUNT && near[t]===1;
     const pc=P_COPPER[tr], ps=P_STONE[tr]+(nearMount?NEAR_MOUNTAIN_STONE:0), pw=P_TWIG[tr], pt=P_TREE[tr];
     const r=rhash(x,y,0x51ed);
     const type = r<pc ? R_COPPER : r<pc+ps ? R_STONE : r<pc+ps+pw ? R_TWIG : r<pc+ps+pw+pt ? R_TREE : R_NONE;

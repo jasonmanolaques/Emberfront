@@ -17,6 +17,7 @@ export interface Nation {
   expandAt: number; attackAt: number; ratio: number; nextThink: number;  // bot personality
   nextWar: number; nextOffer: number;   // bots: sim time before which they start no campaign, offer no peace
   nextWave: number;                  // bots: sim time before which they send no more armies to a war under way
+  x0: number; y0: number; x1: number; y1: number;   // a box round every tile it has ever held (so its borders are found without searching the whole map)
   wallR: number; nextWall: number;   // bots: the ring of their town wall, in plots from the castle (0: none planned yet), and sim time of its next tower (sim/fort.ts)
   unpaid: number;                    // ticks the treasury has been below zero, soldiers unpaid
   invest: number;                    // city investment: share of the goods coming in (0..1) the builders may spend
@@ -27,6 +28,7 @@ export interface Nation {
   beggars: number; homeless: number; taxpayers: number;     // villagers turned beggar; people without a home; housed working villagers
   stock: number[];                   // goods stored in the capital: [wood, stone, copper]
   abandoned: number;                 // houses standing empty
+  resHere: number[];                 // trees, rocks and copper left on its land, by good (counted each census, and up as land is gained: never too few)
   surplusTicks: number;              // how long the kingdom has had more houses than people
   study: number;                     // research topic being studied (R_* in research.ts)
   tier: number[];                    // tier reached in each topic, 1..3: [housing, taxation]
