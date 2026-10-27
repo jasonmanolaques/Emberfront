@@ -10,6 +10,8 @@ import { rows, sprite, type Pal } from './pixel';
 
 export const natC = document.createElement('canvas'); natC.width = RW; natC.height = RH;
 const nctx = natC.getContext('2d') as CanvasRenderingContext2D;
+/** Fits the nature layer to the map's size. */
+export function sizeNature(){ if (natC.width!==RW || natC.height!==RH){ natC.width=RW; natC.height=RH; } }
 
 const LEAF: Pal = { h:'#b2d86c', l:'#7fb34c', m:'#4f8a37', d:'#2e5b2a', t:'#6b4a2c', T:'#4a321e' };
 const LEAF2: Pal = { h:'#c6d66a', l:'#93b04a', m:'#5f8c36', d:'#365e29', t:'#6b4a2c', T:'#4a321e' };   // a yellower crown

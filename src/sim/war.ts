@@ -102,15 +102,16 @@ interface Rally { x: number; y: number; dx: number; dy: number; threat: boolean;
 let rallies: (Rally | null)[] = [];
 // per kingdom: steps to its rally over its own land, and the rally tile they were worked out for
 let homeField: Int16Array[] = [], homeFieldFor: number[] = [];
-const heldAt = new Int32Array(NT), heldBy = new Uint8Array(NT);   // tick a soldier last stood on or beside a tile his side holds, and whose
-const queue = new Int32Array(NT), scratch = new Int16Array(NT);
-const want = new Int32Array(NT); let wantSeq = 0;   // tiles a fill is looking for, stamped wantSeq
+let heldAt = new Int32Array(NT), heldBy = new Uint8Array(NT);   // tick a soldier last stood on or beside a tile his side holds, and whose
+let queue = new Int32Array(NT), scratch = new Int16Array(NT);
+let want = new Int32Array(NT), wantSeq = 0;   // tiles a fill is looking for, stamped wantSeq
 const DIRS8 = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
 
 export function resetWar(M: number){
   W.campaigns=[]; W.campSeq=0;
   W.ally=new Uint8Array(M*M); W.atWar=new Uint8Array(M*M); W.offers=new Int32Array(M*M); W.grudge=new Int32Array(M*M).fill(-1e9);
   W.wars=new Uint8Array(M*M); W.warSince=new Int32Array(M*M); W.occCount=new Int32Array(M*M); W.lost=new Uint8Array(M*M); W.ready=new Int32Array(M*M); W.orphans=[];
+  if (queue.length!==NT){ heldAt=new Int32Array(NT); heldBy=new Uint8Array(NT); queue=new Int32Array(NT); scratch=new Int16Array(NT); want=new Int32Array(NT); wantSeq=0; }   // the map changed size
   byId.clear(); camps.clear(); troops.clear(); armies=[]; posts=[]; warring=new Uint8Array(M); rallies=[]; homeField=[]; homeFieldFor=[]; heldAt.fill(0); resetWalls();
 }
 

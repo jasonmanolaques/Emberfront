@@ -1,6 +1,6 @@
 /* ---------- world state ----------
    Everything the simulation decides lives here. Rendering and UI may read it but never write it. */
-import { NT, NP, PW, TW } from '../core/constants';
+import { NT, NP, PW, TW, TH, setGrid } from '../core/constants';
 import type { Rng } from '../core/rng';
 
 export interface Nation {
@@ -115,21 +115,35 @@ export type Command =
   | { type: 'order'; nation: number; campaign: number; x: number; y: number; foe?: number }   // take command of an army: gather at (x,y), attack there, or hunt army `foe`
   | { type: 'auto'; nation: number; campaign: number };              // hand an army back to its leader
 
-export const elev = new Float32Array(NT), moist = new Float32Array(NT);
+export let elev = new Float32Array(NT), moist = new Float32Array(NT);
 // resources: at most one per tile (R_* in resources.ts), harvests left, claimed by a villager
-export const resType = new Uint8Array(NT), resLeft = new Uint8Array(NT), resBusy = new Uint8Array(NT);
-export const terr = new Uint8Array(NT), isLand = new Uint8Array(NT), owner = new Uint8Array(NT), road = new Uint8Array(NT);
-export const frontMark = new Int32Array(NT);
-export const pType = new Uint8Array(NP), pOwner = new Uint8Array(NP), pVar = new Uint8Array(NP), pBuild = new Uint8Array(NP);
-export const pMain = new Int32Array(NP), pCenter = new Int32Array(NP), pBurn = new Float32Array(NP), pTimer = new Float32Array(NP);
-for (let q=0;q<NP;q++){ const px=q%PW, py=(q/PW)|0; pCenter[q]=(py*4+2)*TW+px*4+2; }
-export const pAband = new Uint8Array(NP);   // houses standing empty, run down
-export const occ = new Uint8Array(NT);      // a kingdom's land held by an enemy at war: the occupier (0 = free); the owner stays
-export const pHp = new Float32Array(NP);     // damage a building has taken (multi-plot buildings keep theirs on the main plot)
-export const pArmor = [new Uint8Array(0), new Uint8Array(0), new Uint8Array(NP), new Uint8Array(NP)];   // barracks: armour of tier 2 and 3 stored there
-export const pTier = new Uint8Array(NP);   // houses: 1 hovel, 2 stone house, 3 manor; watchtowers 1-3 (0 for anything else)
-export const pSpan = new Uint8Array(NP);   // plantations, quarries, copper mines (main plot): 0 one plot, 1 two side by side, 2 a 2×2 block
-export const pPrio = new Int32Array(NP);   // watchtowers calling for a garrison: order they asked in (0 = not asking)
+export let resType = new Uint8Array(NT), resLeft = new Uint8Array(NT), resBusy = new Uint8Array(NT);
+export let terr = new Uint8Array(NT), isLand = new Uint8Array(NT), owner = new Uint8Array(NT), road = new Uint8Array(NT);
+export let frontMark = new Int32Array(NT);
+export let pType = new Uint8Array(NP), pOwner = new Uint8Array(NP), pVar = new Uint8Array(NP), pBuild = new Uint8Array(NP);
+export let pMain = new Int32Array(NP), pCenter = new Int32Array(NP), pBurn = new Float32Array(NP), pTimer = new Float32Array(NP);
+export let pAband = new Uint8Array(NP);   // houses standing empty, run down
+export let occ = new Uint8Array(NT);      // a kingdom's land held by an enemy at war: the occupier (0 = free); the owner stays
+export let pHp = new Float32Array(NP);     // damage a building has taken (multi-plot buildings keep theirs on the main plot)
+export let pArmor = [new Uint8Array(0), new Uint8Array(0), new Uint8Array(NP), new Uint8Array(NP)];   // barracks: armour of tier 2 and 3 stored there
+export let pTier = new Uint8Array(NP);   // houses: 1 hovel, 2 stone house, 3 manor; watchtowers 1-3 (0 for anything else)
+export let pSpan = new Uint8Array(NP);   // plantations, quarries, copper mines (main plot): 0 one plot, 1 two side by side, 2 a 2×2 block
+export let pPrio = new Int32Array(NP);   // watchtowers calling for a garrison: order they asked in (0 = not asking)
+function placeCentres(){ for (let q=0;q<NP;q++){ const px=q%PW, py=(q/PW)|0; pCenter[q]=(py*4+2)*TW+px*4+2; } }
+placeCentres();
+/** Makes the map w×h tiles: every array sized by the map is made anew (empty). */
+export function resizeGrid(w: number, h: number){
+  if (w===TW && h===TH) return;
+  setGrid(w,h);
+  elev=new Float32Array(NT); moist=new Float32Array(NT);
+  resType=new Uint8Array(NT); resLeft=new Uint8Array(NT); resBusy=new Uint8Array(NT);
+  terr=new Uint8Array(NT); isLand=new Uint8Array(NT); owner=new Uint8Array(NT); road=new Uint8Array(NT); frontMark=new Int32Array(NT); occ=new Uint8Array(NT);
+  pType=new Uint8Array(NP); pOwner=new Uint8Array(NP); pVar=new Uint8Array(NP); pBuild=new Uint8Array(NP);
+  pMain=new Int32Array(NP); pCenter=new Int32Array(NP); pBurn=new Float32Array(NP); pTimer=new Float32Array(NP);
+  pAband=new Uint8Array(NP); pHp=new Float32Array(NP); pArmor=[new Uint8Array(0), new Uint8Array(0), new Uint8Array(NP), new Uint8Array(NP)];
+  pTier=new Uint8Array(NP); pSpan=new Uint8Array(NP); pPrio=new Int32Array(NP);
+  placeCentres();
+}
 
 export const W = {
   map: 'gen',   // 'gen' for a generated map, else a real-world one (sim/realmap.ts)

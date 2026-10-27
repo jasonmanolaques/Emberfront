@@ -6,6 +6,7 @@ export interface MapView {
   lon0: number; lon1: number;   // west and east edges (a whole turn of the globe wraps round)
   lat0: number; lat1: number;   // north and south edges
   proj: 'eq' | 'miller';        // plain latitude and longitude, or Miller's cylinder (the world)
+  w: number; h: number;         // its size in tiles (bigger than a generated map's, so close capitals have room)
 }
 const RAD = Math.PI/180;
 const millerY = (lat: number) => 1.25*Math.log(Math.tan(Math.PI/4+0.4*lat*RAD));
@@ -32,7 +33,7 @@ export function tileXY(v: MapView, lat: number, lon: number, w: number, h: numbe
 }
 
 export const VIEWS: Record<string, MapView> = {
-  balkans: { lon0:12, lon1:46, lat0:49, lat1:33, proj:'eq' },
-  europe: { lon0:-12, lon1:66, lat0:71, lat1:34.5, proj:'eq' },
-  world: { lon0:-169, lon1:191, lat0:78, lat1:-56, proj:'miller' },   // cut through the Bering Strait
+  balkans: { lon0:12, lon1:46, lat0:49, lat1:33, proj:'eq', w:560, h:348 },
+  europe: { lon0:-12, lon1:66, lat0:71, lat1:34.5, proj:'eq', w:600, h:372 },
+  world: { lon0:-169, lon1:191, lat0:78, lat1:-56, proj:'miller', w:640, h:396 },   // cut through the Bering Strait
 };

@@ -1,13 +1,20 @@
 /* ---------- map & simulation constants ---------- */
-export const TW = 400, TH = 248;          // map size in tiles (multiples of 4: building plots are 4x4)
+// The map's size changes with the map (the real-world ones are bigger): these are live bindings,
+// set by setGrid (sim/state.ts resizeGrid reallocates everything sized by them).
+export let TW = 400, TH = 248;            // map size in tiles (multiples of 4: building plots are 4x4)
+export const GEN_W = 400, GEN_H = 248;    // the generated maps' size
 export const S = 2;                       // simulation pixels per tile: where people stand, in sim units
-export const DW = TW * S, DH = TH * S;
+export let DW = TW * S, DH = TH * S;
 // rendering draws everything at twice that detail: 4 screen-art pixels per tile, 16 per building plot
 export const K = 2;                       // render pixels per simulation pixel
 export const RS = S * K, PS = 4 * RS;     // render pixels per tile, per building plot
-export const RW = TW * RS, RH = TH * RS;  // size of the rendered world
-export const PW = TW >> 2, PH = TH >> 2;  // building plots are 4x4 tiles
-export const NT = TW * TH, NP = PW * PH;
+export let RW = TW * RS, RH = TH * RS;    // size of the rendered world
+export let PW = TW >> 2, PH = TH >> 2;    // building plots are 4x4 tiles
+export let NT = TW * TH, NP = PW * PH;
+/** Sets the map's size in tiles (multiples of 4). */
+export function setGrid(w: number, h: number){
+  TW=w; TH=h; DW=TW*S; DH=TH*S; RW=TW*RS; RH=TH*RS; PW=TW>>2; PH=TH>>2; NT=TW*TH; NP=PW*PH;
+}
 export const TICK = 0.1;                  // simulation step in seconds
 
 export const T_DEEP=0,T_WATER=1,T_SHALLOW=2,T_BEACH=3,T_GRASS=4,T_DRY=5,T_FOREST=6,T_DESERT=7,T_HILLS=8,T_MOUNT=9,T_SNOW=10;

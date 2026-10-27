@@ -5,7 +5,8 @@
    neighbours, and plots of the same kind and owner join up, so fields merge into one farmland,
    barracks into one long hall, minters into one workshop, and towers link with walls. */
 import { RW, RH, PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY } from '../core/constants';
-import { pType, pOwner, pVar, pMain, pAband, pTier, pBurn } from '../sim/state';
+import { W, pType, pOwner, pVar, pMain, pAband, pTier, pBurn } from '../sim/state';
+import { cultureOf, drawCapital, wearCapital } from './capitals';
 import { styleOf, type NationStyle } from './style';
 import { towerTier, castleTier, wear } from '../sim/defense';
 import { dims } from '../sim/buildings';
@@ -13,6 +14,8 @@ import { rows, outline, type Pal } from './pixel';
 
 export const objC = document.createElement('canvas'); objC.width = RW; objC.height = RH;
 export const octx = objC.getContext('2d') as CanvasRenderingContext2D;
+/** Fits the buildings layer to the map's size, empty for a new game. */
+export function sizeObjects(){ if (objC.width!==RW || objC.height!==RH){ objC.width=RW; objC.height=RH; } else octx.clearRect(0,0,RW,RH); }
 const tmp = document.createElement('canvas'); tmp.width = 2*PS; tmp.height = 2*PS;
 const tctx = tmp.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
 let G = tctx;   // where P and R draw: the scratch canvas, or an icon
@@ -383,7 +386,13 @@ export function drawPlot(q: number){
   if (ty===B_PART){ const m=pMain[q]; if (BIG[pType[m]]){ drawPlot(m); return; } octx.clearRect(ox,oy,PS,PS); return; }
   const n=styleOf(pOwner[q]);
   if (BIG[ty]){ const [w,h]=dims(q); stamp(ox,oy,w*PS,h*PS,()=>drawBig(0,0,ty,n,w,h)); return; }
-  if (ty===B_CASTLE){ const t=castleTier(pOwner[q]), w=wear(q); stamp(ox,oy,2*PS,2*PS,()=>drawCastle(0,0,n,t,w)); return; }
+  if (ty===B_CASTLE){
+    // each country builds its capital in its own tradition (render/capitals.ts); the West, a keep
+    const t=castleTier(pOwner[q]), w=wear(q), code=W.nations[pOwner[q]]?.code ?? '';
+    if (cultureOf(code)==='west') stamp(ox,oy,2*PS,2*PS,()=>drawCastle(0,0,n,t,w));
+    else stamp(ox,oy,2*PS,2*PS,()=>{ drawCapital(G,0,0,n,code,t); wearCapital(G,0,0,w,q+t*7); });
+    return;
+  }
   const v=pVar[q]%3;
   if (ty===B_HOUSE){ const t=pTier[q]; stamp(ox,oy,PS,PS,()=>drawHouse(0,0,n,t>=2 ? pVar[q] : v,!!pAband[q],t)); }
   else if (ty===B_RESEARCH) stamp(ox,oy,PS,PS,()=>drawResearch(0,0,n));

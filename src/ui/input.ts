@@ -8,13 +8,14 @@ import { view, cam, clampCam, zoomAt, tileAt } from '../render/camera';
 import { hover } from '../render/render';
 import { ui, showHUD } from './hud';
 import { $ } from './dom';
-import { newGame, nextMap, trySpawn, setInvest, setSoldierShare, centerHome, setPaused } from '../game';
+import { newGame, nextMap, startGame, trySpawn, setInvest, setSoldierShare, centerHome, setPaused } from '../game';
 import { openExpand, closeExpand, expandOpen } from './expand';
 import { placeAt, clickOwnBuilding, stopPlacing, toggleBuildPanel } from './build';
 import { openDiplomacy, closeDiplomacy, diplomacyOpen, closePop } from './diplomacy';
 import { researchOpen, closeResearch } from './research';
 import { armyOpen, closeArmy } from './army';
 import { rightClick, deselect } from './command';
+import { nationsOpen, closeNations } from './nations';
 
 interface Drag { sx: number; sy: number; lx: number; ly: number; moved: boolean; button: number; }
 const pointers=new Map<number,{x: number; y: number}>(); let drag: Drag | null=null, pinch: {d: number; mx: number; my: number} | null=null;
@@ -107,9 +108,9 @@ export function bindInput(){
   $('speed').onclick=()=>{ client.speed=client.speed>=3?1:client.speed+1; $('speed').textContent=client.speed+'×'; };
   $('pause').onclick=()=>setPaused(!client.paused);
   $('build').onclick=()=>toggleBuildPanel();
-  $('start').onclick=()=>{ $('intro').hidden=true; $('scrim').hidden=true; client.state='spawn'; ui.banner.hidden=false; };
+  $('start').onclick=startGame;
   $('newMap').onclick=nextMap;
-  $('again').onclick=()=>{ $('over').hidden=true; $('scrim').hidden=true; showHUD(false); client.state='spawn'; nextMap(); ui.banner.hidden=false; };
+  $('again').onclick=()=>{ $('over').hidden=true; showHUD(false); client.state='intro'; nextMap(); $('intro').hidden=false; };   // back to the start card, to choose again
   $('watch').onclick=()=>{ $('over').hidden=true; $('scrim').hidden=true; };
   window.addEventListener('keydown',e=>{
     const tag=(e.target as HTMLElement).tagName;
@@ -118,6 +119,7 @@ export function bindInput(){
     else if (e.key===' ' && client.state==='play'){ e.preventDefault(); centerHome(); }
     else if (e.key==='p' || e.key==='P'){ if (client.state==='play') setPaused(!client.paused); }
     else if (e.key==='b' || e.key==='B'){ if (client.state==='play') toggleBuildPanel(); }
+    else if (e.key==='Escape' && nationsOpen()) closeNations();
     else if (e.key==='Escape' && client.selected>=0) deselect();   // let go of the army first
     else if (e.key==='Escape'){ closePop(); closeExpand(); if (client.placing) stopPlacing(); else if (researchOpen()) closeResearch(); else if (diplomacyOpen()) closeDiplomacy(); else toggleBuildPanel(false); }
     else if (e.key==='+' || e.key==='='){ zoomAt(1.3,view.width/2,view.height/2); }

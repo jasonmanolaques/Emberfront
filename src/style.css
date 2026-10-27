@@ -157,6 +157,28 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--gold);outline-
 .how li::before{content:"";position:absolute;left:2px;top:.45em;width:6px;height:6px;background:var(--ember)}
 .how b{color:var(--gold);font-weight:600}
 .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+button.pick{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;font-size:17px;font-weight:700;text-align:left}
+button.pick .flag{width:30px;height:20px;flex:none;border:2px solid var(--ink)}
+button.pick #pcName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#nations{width:min(520px,calc(100% - 32px));gap:10px;z-index:5}
+#nations .dhead{display:flex;align-items:center;gap:8px;justify-content:space-between}
+#nations .x{width:32px;height:32px;padding:0;font-size:19px;line-height:1}
+.nbar{display:flex;gap:10px;align-items:center}
+.nbar input{flex:1;min-width:0;font:inherit;font-size:15px;padding:7px 9px;background:var(--plate-2);color:var(--text);border:2px solid var(--edge)}
+.nquick{display:flex;flex-wrap:wrap;gap:6px}
+.nquick button{padding:5px 9px;font-size:13px;font-weight:600}
+#nList{list-style:none;margin:0;padding:0;max-height:min(46vh,420px);overflow:auto;border:2px solid var(--edge);background:rgba(0,0,0,.18)}
+#nList li{display:flex;align-items:center;gap:8px;padding:3px 6px;border-bottom:1px solid rgba(255,255,255,.06)}
+#nList li.on{background:rgba(255,117,98,.12)}
+#nList li.me{background:rgba(255,210,63,.16)}
+#nList li.none{color:var(--muted);padding:10px}
+#nList .play{flex:1;min-width:0;display:flex;align-items:center;gap:9px;background:transparent;border-color:transparent;padding:5px 6px;text-align:left;font-size:15px}
+#nList .play:hover{border-color:var(--edge-hi)}
+#nList .play span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#nList .flag{width:24px;height:16px;flex:none;border:1px solid var(--ink)}
+#nList .riv{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);cursor:pointer;padding:4px}
+#nList .riv input{width:18px;height:18px;accent-color:var(--bad)}
+#nList .you{font-size:13px;font-weight:700;color:var(--gold);padding:4px 8px}
 .mapname{flex:1;min-width:0;font-weight:600;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
 .row .tag{margin-right:-2px}
 .keys{font-size:13px;color:var(--muted)}

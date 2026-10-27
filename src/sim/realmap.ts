@@ -72,6 +72,33 @@ export function genRealMap(id: string, seed: number){
       elev[t]=sea+e; if (sea+e>top) top=sea+e;
     }
   }
+  // capitals lie in valleys and on plains: the ranges' coarse outlines give way around each one
+  for (const k of COUNTRIES){
+    const p=tileXY(v,k.cap[0],k.cap[1],TW,TH); if (!p) continue;
+    for (let dy=-9;dy<=9;dy++) for (let dx=-9;dx<=9;dx++){
+      const X: number=p[0]+dx, Y: number=p[1]+dy, d=Math.hypot(dx,dy); if (X<0||Y<0||X>=TW||Y>=TH || d>9) continue;
+      const t=Y*TW+X; if (!isLand[t]) continue;
+      if (terr[t]===T_SNOW || terr[t]===T_MOUNT){ terr[t] = d<6.5 ? T_GRASS : T_HILLS; elev[t]=sea+(d<6.5 ? 0.06 : 0.16); }
+      else if (terr[t]===T_HILLS && d<5) { terr[t]=T_GRASS; elev[t]=sea+0.06; }
+    }
+  }
+  // a capital by the sea with no room for a castle at hand gets a harbour: the nearest block that is
+  // mostly land is filled in
+  for (const k of COUNTRIES){
+    const p=tileXY(v,k.cap[0],k.cap[1],TW,TH); if (!p) continue;
+    const bx0=Math.round(p[0]/4)-1, by0=Math.round(p[1]/4)-1;
+    const fits=(bx: number, by: number, need: number) => {
+      if (bx<0 || by<0 || bx+2>PW || by+2>(TH>>2)) return false;
+      let land=0; for (let y=by*4;y<by*4+8;y++) for (let x=bx*4;x<bx*4+8;x++){ const t=y*TW+x; if (terr[t]===T_MOUNT || terr[t]===T_SNOW) return false; land+=isLand[t]; }
+      return land>=need;
+    };
+    let room=false; for (let dy=-1;dy<=1 && !room;dy++) for (let dx=-1;dx<=1;dx++) if (fits(bx0+dx,by0+dy,64)){ room=true; break; }
+    if (room) continue;
+    let best: [number, number] | null=null, bd=1e9;
+    for (const need of [30,16]) if (!best) for (let dy=-2;dy<=2;dy++) for (let dx=-2;dx<=2;dx++){ const d=dx*dx+dy*dy; if (d<bd && fits(bx0+dx,by0+dy,need)){ bd=d; best=[bx0+dx,by0+dy]; } }   // (a thin island too)
+    if (!best) continue;
+    for (let y=best[1]*4;y<best[1]*4+8;y++) for (let x=best[0]*4;x<best[0]*4+8;x++){ const t=y*TW+x; if (!isLand[t]){ isLand[t]=1; terr[t]=T_GRASS; elev[t]=sea+0.02; } }
+  }
   const lt: number[]=[]; for (let t=0;t<NT;t++) if (isLand[t]) lt.push(t);
   W.landTiles=Int32Array.from(lt); W.landCount=lt.length;
   W.seaLevel=sea; W.heightRange=top-sea;

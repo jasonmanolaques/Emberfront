@@ -50,8 +50,8 @@ export function wear(q: number){
 }
 
 /* ---------- walls between watchtowers ---------- */
-export const wallOf = new Uint8Array(NT);      // kingdom whose wall stands on each tile, 0 none
-export const wallTower = new Int32Array(NT);   // a tower holding up the wall on each tile
+export let wallOf = new Uint8Array(NT);        // kingdom whose wall stands on each tile, 0 none
+export let wallTower = new Int32Array(NT);     // a tower holding up the wall on each tile
 let walled: number[] = [];
 const standingTower = (q: number, o: number) => pType[q]===B_TOWER && pOwner[q]===o && pBurn[q]<=0;
 function mark(o: number, t: number, q: number){ if (!wallOf[t]) walled.push(t); wallOf[t]=o; wallTower[t]=q; }
@@ -74,4 +74,4 @@ export function buildWalls(){
 }
 /** Does a wall on tile t keep kingdom o's people out? (Its own and its allies' pass through the gates.) */
 export const walledFor = (o: number, t: number) => { const w=wallOf[t]; return w!==0 && w!==o && W.ally[o*W.M+w]!==1; };
-export function resetWalls(){ wallOf.fill(0); walled=[]; }
+export function resetWalls(){ if (wallOf.length!==NT){ wallOf=new Uint8Array(NT); wallTower=new Int32Array(NT); } wallOf.fill(0); walled=[]; }

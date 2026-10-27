@@ -1,12 +1,13 @@
 /* ---------- simulation entry points: worlds, matches, commands, ticks ----------
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
-import { TW, TH, NT, PW, PH, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOLD_PER_SEC, TAX_PER_VILLAGER, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
+import { TW, TH, NT, PW, PH, GEN_W, GEN_H, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOLD_PER_SEC, TAX_PER_VILLAGER, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
 import { mulberry32 } from '../core/rng';
-import { W, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
+import { W, resizeGrid, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
 import { genMap } from './mapgen';
 import { genRealMap, capitalsOn, REAL_MAPS } from './realmap';
-import { COUNTRIES, MAJOR, colourGap, type Country } from '../core/countries';
+import { VIEWS } from './mapview';
+import { COUNTRIES, MAJOR, countryByCode, colourGap, type Country } from '../core/countries';
 import { setOwner, stepAttack, launch, touches } from './territory';
 import { toRuins, build, togglePriority, produce } from './buildings';
 import { scanContacts, census } from './census';
@@ -77,7 +78,8 @@ export function newWorld(seed: number, map='gen'){
   W.mapSeed=seed; W.map=REAL_MAPS.includes(map) ? map : 'gen';
   W.srand=mulberry32(seed^0x5bd1e995);
   W.prand=mulberry32(seed^0x2f6b3a1d);
-  if (W.map==='gen') genMap(seed); else genRealMap(W.map,7);   // a real map's ground is the same every match
+  if (W.map==='gen'){ resizeGrid(GEN_W,GEN_H); genMap(seed); }
+  else { resizeGrid(VIEWS[W.map].w,VIEWS[W.map].h); genRealMap(W.map,7); }   // a real map's ground is the same every match
   genResources();
   owner.fill(0); occ.fill(0); road.fill(0); frontMark.fill(0);
   pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0); pPrio.fill(0); pAband.fill(0); pHp.fill(0); pTier.fill(0); pSpan.fill(0); pArmor[2].fill(0); pArmor[3].fill(0); W.prioSeq=0;
@@ -89,22 +91,27 @@ export function newWorld(seed: number, map='gen'){
   resetWar(1); resetStories(1); resetLedger();
 }
 
-/** Founds the player's capital near tile t and places `rivals` bot kingdoms. Returns false if t has no room.
-    Every kingdom is a real country. On a real-world map the player is the country whose capital is
-    nearest where they settle, and the bots are founded at their countries' real capitals. */
-export function startMatch(t: number, rivals: number){
+/** Founds the player's capital near tile t and places the bot kingdoms: `rivals` of them, countries
+    picked at random, or the countries named (codes). Returns false if t has no room.
+    Every kingdom is a real country: the player's is `me` (by default, on a real-world map the one
+    whose capital is nearest t, else one at random). On a real-world map the bots are founded at
+    their countries' real capitals. */
+export function startMatch(t: number, rivals: number | string[], me?: string){
   if (t<0) return false;
-  const b=findBlock(t%TW,(t/TW)|0,4);
+  const b=findBlock(t%TW,(t/TW)|0,W.map==='gen' ? 4 : 6);   // (a real capital may sit between sea and mountains)
   if (!b) return false;
-  if (W.map!=='gen') return startReal(b,rivals);
+  if (W.map!=='gen') return startReal(b,rivals,me);
   const srand=W.srand, N=W.nations, taken: Country[]=[];
-  const add=(id: number, player: boolean) => { const k=pickCountry(COUNTRIES,taken)!; taken.push(k); const n=makeNation(id,k,player); N.push(n); return n; };
-  const me=add(1,true);
-  for (let i=0;i<rivals;i++) add(i+2,false);
+  const named=Array.isArray(rivals) ? rivals.map(c => countryByCode.get(c)).filter((k): k is Country => !!k && k.code!==me) : null;
+  const add=(id: number, k: Country | undefined, player: boolean) => { k??=pickCountry(COUNTRIES,taken)!; taken.push(k); const n=makeNation(id,k,player); N.push(n); return n; };
+  const mine=add(1,me ? countryByCode.get(me) : undefined,true);
+  if (named) named.forEach((k,i) => add(i+2,k,false));
+  else for (let i=0;i<(rivals as number);i++) add(i+2,undefined,false);
+  if (named) tellApart(N);
   W.M=N.length; W.contact=new Int32Array(W.M*W.M);
   resetWar(W.M); resetStories(W.M);
-  spawnNation(me,b[0],b[1]);
-  const caps=[me.capTile];
+  spawnNation(mine,b[0],b[1]);
+  const caps=[mine.capTile];
   for (let i=2;i<W.M;i++){
     const n=N[i]; let placed=false, minD=34;
     for (let tries=0;tries<1500 && !placed;tries++){
@@ -122,34 +129,53 @@ export function startMatch(t: number, rivals: number){
   return true;
 }
 
-/** startMatch on a real-world map: the player founded at block b, the bots at real capitals,
-    as far apart as the map allows, in colours that tell them apart. */
-function startReal(b: [number, number], rivals: number){
+/** Kingdoms whose flags give nearly the same colour: each later one a shade lighter or darker. */
+function tellApart(N: Nation[]){
+  for (let i=2;i<N.length;i++){
+    const clash=(hex: string) => N.slice(1,i).some(o => colourGap(o.hex,hex)<0.1);
+    if (!clash(N[i].hex)) continue;
+    for (const f of [0.72,1.3,0.55,1.5]){ const h=shade(N[i].hex,f); if (!clash(h)){ N[i].hex=h; break; } }
+  }
+}
+const shade = (hex: string, f: number) => '#'+[1,3,5].map(i => Math.max(0,Math.min(255,Math.round(parseInt(hex.slice(i,i+2),16)*f))).toString(16).padStart(2,'0')).join('');
+
+/** startMatch on a real-world map: the player founded at block b; the bots at their real capitals,
+    either the countries named, or (a number of them) as far apart as the map allows, in colours
+    that tell them apart. */
+function startReal(b: [number, number], rivals: number | string[], me?: string){
   const N=W.nations, caps=capitalsOn(W.map), cx=(b[0]+1)*4, cy=(b[1]+1)*4;
   const near=caps.slice().sort((p,q) => Math.hypot(p.tile%TW-cx,((p.tile/TW)|0)-cy)-Math.hypot(q.tile%TW-cx,((q.tile/TW)|0)-cy));
-  const mine=near[0]?.country ?? pickCountry(COUNTRIES,[])!;
-  const me=makeNation(1,mine,true); N.push(me);
-  // the bots' countries: capitals far enough apart, colours distinct, in a shuffled order
-  const pool=caps.filter(p => p.country!==mine);
-  for (let i=pool.length-1;i>0;i--){ const j=(W.srand()*(i+1))|0; [pool[i],pool[j]]=[pool[j],pool[i]]; }
-  // on the world map, the great powers first, and only then the rest
-  const groups=W.map==='world' ? [pool.filter(p => MAJOR.has(p.country.code)), pool.filter(p => !MAJOR.has(p.country.code))] : [pool];
-  const chosen: { country: Country; block: [number, number] }[]=[], placed=[[cx,cy]], taken=[mine];
-  for (const group of groups) for (const [minD, gap] of [[16,0.3],[16,0.18],[11,0.12],[8,0]] as const){
-    for (const p of group){
-      if (chosen.length>=rivals) break;
-      if (chosen.some(c => c.country===p.country)) continue;
-      const x=p.tile%TW, y=(p.tile/TW)|0;
-      if (placed.some(([px,py]) => Math.hypot(px-x,py-y)<minD) || taken.some(o => colourGap(o.hex,p.country.hex)<gap)) continue;
-      const blk=findBlock(x,y,3); if (!blk) continue;
-      chosen.push({ country:p.country, block:blk }); placed.push([(blk[0]+1)*4,(blk[1]+1)*4]); taken.push(p.country);
+  const mine=(me ? countryByCode.get(me) : undefined) ?? near[0]?.country ?? pickCountry(COUNTRIES,[])!;
+  const meN=makeNation(1,mine,true); N.push(meN);
+  const chosen: { country: Country; tile: number }[]=[];
+  if (Array.isArray(rivals)){
+    // the countries named, at their capitals (those this map has)
+    for (const code of rivals){ const p=caps.find(c => c.country.code===code); if (p && p.country!==mine && !chosen.some(c => c.country===p.country)) chosen.push(p); }
+  } else {
+    // the bots' countries: capitals far enough apart, colours distinct, in a shuffled order
+    const pool=caps.filter(p => p.country!==mine);
+    for (let i=pool.length-1;i>0;i--){ const j=(W.srand()*(i+1))|0; [pool[i],pool[j]]=[pool[j],pool[i]]; }
+    // on the world map, the great powers first, and only then the rest
+    const groups=W.map==='world' ? [pool.filter(p => MAJOR.has(p.country.code)), pool.filter(p => !MAJOR.has(p.country.code))] : [pool];
+    const placed=[[cx,cy]], taken=[mine];
+    for (const group of groups) for (const [minD, gap] of [[24,0.3],[24,0.18],[16,0.12],[11,0]] as const){
+      for (const p of group){
+        if (chosen.length>=rivals) break;
+        if (chosen.some(c => c.country===p.country)) continue;
+        const x=p.tile%TW, y=(p.tile/TW)|0;
+        if (placed.some(([px,py]) => Math.hypot(px-x,py-y)<minD) || taken.some(o => colourGap(o.hex,p.country.hex)<gap)) continue;
+        if (!findBlock(x,y,3)) continue;
+        chosen.push(p); placed.push([x,y]); taken.push(p.country);
+      }
     }
   }
   chosen.forEach((c,i) => N.push(makeNation(i+2,c.country,false)));
+  if (Array.isArray(rivals)) tellApart(N);
   W.M=N.length; W.contact=new Int32Array(W.M*W.M);
   resetWar(W.M); resetStories(W.M);
-  spawnNation(me,b[0],b[1]);
-  chosen.forEach((c,i) => { const n=N[i+2], blk=findBlock((c.block[0]+1)*4,(c.block[1]+1)*4,3); if (blk) spawnNation(n,blk[0],blk[1]); else n.alive=false; });
+  spawnNation(meN,b[0],b[1]);
+  // each at its capital, or as near it as there is room (close capitals push each other apart)
+  chosen.forEach((c,i) => { const n=N[i+2], blk=findBlock(c.tile%TW,(c.tile/TW)|0,6); if (blk) spawnNation(n,blk[0],blk[1]); else n.alive=false; });
   census();
   return true;
 }

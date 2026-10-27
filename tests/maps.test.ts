@@ -6,6 +6,7 @@ import { newWorld, startMatch } from '../src/sim/sim';
 import { capitalsOn, REAL_MAPS } from '../src/sim/realmap';
 import { VIEWS, tileXY } from '../src/sim/mapview';
 import { COUNTRIES, countryByCode, flagPixels, flagSmall, colourGap } from '../src/core/countries';
+import { cultureOf, TRADITIONS } from '../src/render/capitals';
 
 /** Land tiles reachable from the first one, 4-connected. */
 function reach(){
@@ -51,21 +52,53 @@ describe('the real-world maps', () => {
     const caps=new Map(capitalsOn('balkans').map(c => [c.country.code, c.tile]));
     for (const n of N.slice(2)){
       expect(caps.has(n.code)).toBe(true);
-      expect(near(n.capTile,caps.get(n.code)!)).toBeLessThan(16);   // at (or as near as the ground allows) the real capital
+      expect(near(n.capTile,caps.get(n.code)!)).toBeLessThan(26);   // at (or as near as the ground allows) the real capital
       expect(n.name).toBe(countryByCode.get(n.code)!.name);
       expect(n.hex).toBe(countryByCode.get(n.code)!.hex);
     }
     expect(new Set(N.slice(1).map(n => n.code)).size).toBe(10);   // no country twice
   });
+
+  it('play the country chosen from its capital, against exactly the countries chosen, each at its own capital', () => {
+    newWorld(3,'europe');
+    const caps=new Map(capitalsOn('europe').map(c => [c.country.code, c.tile]));
+    const rivals=['IT','AL','MK','BG','RS','TR','RO','HU','AT','SK','CZ','PL','DE','FR','ES','PT','GB','IE','NL','BE'];
+    expect(startMatch(caps.get('GR')!,rivals,'GR')).toBe(true);
+    const N=W.nations;
+    expect(N[1].code).toBe('GR');
+    expect(near(N[1].capTile,caps.get('GR')!)).toBeLessThan(8);   // Athens
+    expect(N.slice(2).map(n => n.code)).toEqual(rivals);
+    for (const n of N.slice(2)){ expect(n.alive).toBe(true); expect(near(n.capTile,caps.get(n.code)!)).toBeLessThan(26); }
+    // close neighbours with near-identical flag colours are told apart
+    for (let i=1;i<N.length;i++) for (let j=i+1;j<N.length;j++) expect(colourGap(N[i].hex,N[j].hex)).toBeGreaterThanOrEqual(0.05);
+  });
+
+  it('are bigger than a generated map, so close capitals have room', () => {
+    newWorld(3,'world'); expect([TW,TH]).toEqual([640,396]);
+    newWorld(3,'balkans'); expect([TW,TH]).toEqual([560,348]);
+    newWorld(3); expect([TW,TH]).toEqual([400,248]);
+    expect(isLand.length).toBe(400*248);
+  });
 });
 
 describe('countries', () => {
-  it('name every kingdom, on generated maps too, in colours that tell them apart', () => {
+  it('name every kingdom on generated maps too, chosen or at random, in colours that tell them apart', () => {
+    newWorld(4242);
+    let s=-1; for (let r=0;r<60 && s<0;r++) for (let dy=-r;dy<=r && s<0;dy++) for (let dx=-r;dx<=r;dx++){ const k=(TH/2+dy*3)*TW+TW/2+dx*3; if (startMatch(k,['FR','DE','JP'],'BR')){ s=k; break; } }
+    expect(W.nations.slice(1).map(n => n.code)).toEqual(['BR','FR','DE','JP']);
     newWorld(4242);
     let t=-1; for (let r=0;r<60 && t<0;r++) for (let dy=-r;dy<=r && t<0;dy++) for (let dx=-r;dx<=r;dx++){ const k=(TH/2+dy*3)*TW+TW/2+dx*3; if (startMatch(k,9)){ t=k; break; } }
     const N=W.nations.slice(1);
     for (const n of N) expect(countryByCode.get(n.code)?.name).toBe(n.name);
     for (let i=0;i<N.length;i++) for (let j=i+1;j<N.length;j++) expect(colourGap(N[i].hex,N[j].hex)).toBeGreaterThan(0.1);
+  });
+
+  it('each build their capital in their own tradition, from two dozen', () => {
+    const used=new Set(COUNTRIES.map(k => cultureOf(k.code)));
+    for (const c of used) expect(c==='west' || TRADITIONS.includes(c)).toBe(true);
+    expect(TRADITIONS.length).toBeGreaterThanOrEqual(24);
+    expect(TRADITIONS.every(t => used.has(t))).toBe(true);   // every tradition has a country
+    expect([cultureOf('TR'), cultureOf('GR'), cultureOf('RU'), cultureOf('CN'), cultureOf('JP'), cultureOf('US'), cultureOf('FR')]).toEqual(['ottoman','greek','kremlin','chinese','japanese','capitol','west']);
   });
 
   it('each have a 12 by 8 flag (6 by 4 for a standard) and a capital', () => {

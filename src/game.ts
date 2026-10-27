@@ -1,15 +1,16 @@
 /* ---------- game flow: ties the simulation to this browser's screen ---------- */
 import { TW, PLAYER, B_SMITHY, B_TOWER } from './core/constants';
 import { flagCSS } from './render/flags';
+import { fitChoice, available } from './ui/nations';
 import { clamp, fmt } from './core/util';
 import { W, owner, isLand, pType } from './sim/state';
 import { listen } from './sim/events';
 import { newWorld, startMatch, bordersOn, queueCommand, tick } from './sim/sim';
 import { client } from './client';
 import { cam, fitCam, focusOn } from './render/camera';
-import { buildBase, paintAll, paintRoad, paintTile, repaint } from './render/terrain';
-import { drawPlotAndNeighbours } from './render/sprites';
-import { drawNature, redrawNature } from './render/nature';
+import { buildBase, paintAll, paintRoad, paintTile, repaint, sizeTerrain } from './render/terrain';
+import { drawPlotAndNeighbours, sizeObjects } from './render/sprites';
+import { drawNature, redrawNature, sizeNature } from './render/nature';
 import { addFlash, fireBurst, gatePuff, addShot, addHit, dustPuff, addCorpse, floats, resetEffects } from './render/effects';
 import { GOOD_NAME } from './sim/resources';
 import { PW } from './core/constants';
@@ -145,11 +146,13 @@ export function newGame(seed?: number){
   if (seed!==undefined) newWorld(seed);
   else newWorld(m.seed ?? (Math.random()*2147483647)|0, m.map);
   $('mapName').textContent=`${m.name} · ${client.mapIndex+1}/${MAPS.length}`;
+  fitChoice();
   ui.banner.textContent = W.map==='gen' ? 'Tap open land to found your capital' : 'Tap open land to found your capital: you play the country whose capital is nearest';
   resetStyles(); resetLabels(); resetEffects(); resetGhosts(); resetPeople(); resetSpeech();
   toggleBuildPanel(false); resetDiplomacy(); closeResearch(); closeArmy(); deselect();
   client.overShown=false; client.lastVillageLog=-99; client.paused=false; client.speed=1; $('speed').textContent='1×';
   setSoldierShare(0); setInvest(0.5);
+  sizeTerrain(); sizeNature(); sizeObjects();   // (the real-world maps are bigger)
   buildBase(); paintAll(); drawNature();
   fitCam();
 }
@@ -163,9 +166,20 @@ export function step(){
   if (W.tickN%10===5) checkEnd();
 }
 
+/** The start card's button: on a real-world map you start at once at your country's capital;
+    on a generated one you choose where. */
+export function startGame(){
+  $('intro').hidden=true; $('scrim').hidden=true;
+  if (W.map==='gen'){ client.state='spawn'; ui.banner.hidden=false; return; }
+  const cap=available().find(a => a.country.code===client.me);
+  client.state='spawn';
+  if (cap) trySpawn(cap.tile);
+  if ((client.state as string)!=='play') ui.banner.hidden=false;   // (no room there after all: choose a place)
+}
+
 export function trySpawn(t: number){
   if (t<0) return;
-  if (!startMatch(t, +($('rivals') as HTMLSelectElement).value)){ toast('Pick open land away from water and mountains'); return; }
+  if (!startMatch(t, client.rivals.length ? client.rivals : 9, client.me || undefined)){ toast('Pick open land away from water and mountains'); return; }
   const me=W.nations[PLAYER];
   $('meName').textContent=me.name; $('meCrest').style.cssText=flagCSS(me.code);
   client.state='play'; ui.banner.hidden=true; showHUD(true);

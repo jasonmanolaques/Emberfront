@@ -9,7 +9,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { VIEWS, colOf, rowOf, type MapView } from '../src/sim/mapview.ts';
 
-const TW = 400, TH = 248, NT = TW*TH;
+let TW = 400, TH = 248, NT = TW*TH;   // the map being drawn's size (VIEWS)
 export const C_SEA=0, C_LAND=1, C_BRIDGE=2, C_RANGE=3, C_HIGH=4, C_DESERT=5, C_PLATEAU=6;
 
 type Ring = number[][];
@@ -110,9 +110,9 @@ function encode(code: Uint8Array){
 
 interface Spec { id: string; land: string; minKeep: number; maxGap: number; bridges?: [number, number][][] }
 const SPECS: Spec[] = [
-  { id:'balkans', land:'ne_10m_land', minKeep:150, maxGap:5 },
-  { id:'europe', land:'ne_10m_land', minKeep:60, maxGap:6 },
-  { id:'world', land:'ne_50m_land', minKeep:14, maxGap:5,
+  { id:'balkans', land:'ne_10m_land', minKeep:300, maxGap:7 },
+  { id:'europe', land:'ne_10m_land', minKeep:130, maxGap:9 },
+  { id:'world', land:'ne_50m_land', minKeep:34, maxGap:8,
     // the North Atlantic: Baffin Island to Greenland, Greenland to Iceland, Iceland by the Faroes to Scotland;
     // and Java along the Lesser Sunda Islands and Timor to Australia
     bridges:[ [[66.6,-61.8],[66.2,-53.6]], [[68.3,-26.5],[66.4,-22.9]], [[64.9,-13.6],[62.1,-7.0],[58.6,-5.0]],
@@ -125,7 +125,8 @@ let ts=`/* ---------- the real-world maps, drawn by tools/realmaps.ts from Natur
    G plateau) followed by the length of the run in base 36. Generated: do not edit. */
 `;
 for (const s of SPECS){
-  const v=VIEWS[s.id], code=new Uint8Array(NT);
+  const v=VIEWS[s.id]; TW=v.w; TH=v.h; NT=TW*TH;
+  const code=new Uint8Array(NT);
   fillLayer(v, s.land==='ne_10m_land' ? land10 : land50, () => true, (t) => { code[t]=C_LAND; });
   fillLayer(v, lakes, () => true, (t) => { code[t]=C_SEA; });
   for (const b of s.bridges ?? []) drawBridge(v,code,b);

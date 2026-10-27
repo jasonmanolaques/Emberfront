@@ -18,11 +18,19 @@ const FLOWERS: RGB[] = [[250,246,232],[255,214,92],[232,128,170],[170,150,240]];
 
 export const worldC = document.createElement('canvas'); worldC.width = RW; worldC.height = RH;
 const wctx = worldC.getContext('2d') as CanvasRenderingContext2D;
-const worldImg = wctx.createImageData(RW, RH);
-export const wbuf = new Uint32Array(worldImg.data.buffer);
-const base = new Uint32Array(RW*RH);   // terrain and roads, without territory tint
-const soil = new Uint32Array(RW*RH);   // terrain alone, under the roads
+let worldImg = wctx.createImageData(RW, RH);
+export let wbuf = new Uint32Array(worldImg.data.buffer);
+let base = new Uint32Array(RW*RH);     // terrain and roads, without territory tint
+let soil = new Uint32Array(RW*RH);     // terrain alone, under the roads
 let dx0=RW, dy0=RH, dx1=-1, dy1=-1;    // dirty rectangle still to upload
+/** Fits the terrain layer to the map's size (after it changed). */
+export function sizeTerrain(){
+  if (worldC.width===RW && worldC.height===RH) return;
+  worldC.width=RW; worldC.height=RH;
+  worldImg=wctx.createImageData(RW,RH); wbuf=new Uint32Array(worldImg.data.buffer);
+  base=new Uint32Array(RW*RH); soil=new Uint32Array(RW*RH);
+  dx0=RW; dy0=RH; dx1=-1; dy1=-1;
+}
 
 /** Stable per-pixel hash for the current map (texture variation, tree placement). */
 export function hash2(x: number, y: number){ let h=Math.imul(x,374761393)^Math.imul(y,668265263)^W.mapSeed; h=Math.imul(h^(h>>>13),1274126177); h^=h>>>16; return (h>>>0)/4294967296; }
