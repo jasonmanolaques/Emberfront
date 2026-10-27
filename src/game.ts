@@ -23,6 +23,7 @@ import { ui, log, toast, showHUD, checkEnd, onEliminated, onCapitalFell, onBuild
 import { setupDiplomacy, resetDiplomacy, noteDeath } from './ui/diplomacy';
 import { refreshResearch, closeResearch } from './ui/research';
 import { closeArmy } from './ui/army';
+import { deselect } from './ui/command';
 import { TIER_NAME } from './sim/army';
 import { R_CASTLE } from './sim/research';
 import { TOPIC_NAME } from './sim/research';
@@ -33,7 +34,7 @@ listen({
   tileChanged: (t,o) => { repaint(t); addFlash(t,o); },
   plotChanged: q => drawPlotAndNeighbours(q),
   roadBuilt: paintRoad,
-  plotIgnited: q => fireBurst(q),
+  plotIgnited: q => { fireBurst(q); if (pType[q]===B_TOWER) drawPlotAndNeighbours(q); },   // its walls come down
   buildingPlaced: onBuildingPlaced,
   capitalFell: onCapitalFell,
   eliminated: onEliminated,
@@ -118,6 +119,7 @@ const ORDER_LOG: Record<string, { mine: (r: string, foe: string) => [string, Moo
           theirs: (_r,f) => [`${f}'s army gives up and goes home`,'good'] },
   fell: { mine: (r,f) => [`Your ${r} has fallen: for the rest of the war with ${f}, his barracks' soldiers charge leaderless, one by one`,'bad'],
           theirs: (r,f) => [`You killed the ${r} of ${f}'s army: its soldiers fight on leaderless`,'good'] },
+  resume: { mine: (r,_f) => [`Your ${r} takes charge of his army again`,undefined] },
   slain: { mine: (r,f) => [`Your ${r} has fallen fighting ${f}`,'bad'],
            theirs: (r,f) => [`You killed the ${r} of ${f}'s army`,'good'] },
 };
@@ -130,7 +132,7 @@ const nm = (id: number) => W.nations[id]?.name ?? 'Someone';
 export function newGame(seed?: number){
   newWorld(seed ?? (Math.random()*2147483647)|0);
   resetStyles(); resetLabels(); resetEffects(); resetGhosts(); resetPeople(); resetSpeech();
-  toggleBuildPanel(false); resetDiplomacy(); closeResearch(); closeArmy();
+  toggleBuildPanel(false); resetDiplomacy(); closeResearch(); closeArmy(); deselect();
   client.overShown=false; client.lastVillageLog=-99; client.paused=false; client.speed=1; $('speed').textContent='1×';
   setSoldierShare(0); setInvest(0.5);
   buildBase(); paintAll(); drawNature();

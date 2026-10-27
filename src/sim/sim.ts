@@ -11,7 +11,7 @@ import { scanContacts, census } from './census';
 import { botThink } from './bots';
 import { updatePopulation } from './population';
 import { genResources, clearPlot } from './resources';
-import { resetWar, declare, intercept, proposeAlliance, endWar, makePeace } from './war';
+import { resetWar, declare, intercept, proposeAlliance, endWar, makePeace, giveOrder, handBack } from './war';
 import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
 import { turnLedger, resetLedger } from './ledger';
@@ -150,6 +150,10 @@ function applyCommand(c: Command){
     declare(c.nation,c.target,c.raid,c.units ?? c.soldiers ?? 0);
   } else if (c.type==='intercept'){
     intercept(c.nation,c.campaign,c.units ?? c.soldiers ?? 0);
+  } else if (c.type==='order'){
+    giveOrder(c.nation,c.campaign,c.x,c.y,c.foe ?? -1);
+  } else if (c.type==='auto'){
+    handBack(c.nation,c.campaign);
   } else if (c.type==='endWar'){
     endWar(c.nation,c.target);
   } else if (c.type==='peace'){

@@ -181,6 +181,13 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--gold);outline-
 /* War chips: one per enemy, top centre; click to recall a raid or offer peace */
 #wars{position:absolute;top:16px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px;width:min(440px,calc(100% - 540px));min-width:220px;pointer-events:none;z-index:3}
 #wars:empty{display:none}
+#command{left:50%;transform:translateX(-50%);bottom:calc(var(--barH,150px) + 28px);width:min(400px,calc(100% - 32px));padding:8px 10px 10px;display:grid;gap:6px;z-index:3}
+#command .dhead{display:flex;align-items:center;gap:8px}
+#command .dname{font-weight:700;font-size:16px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#command .x{width:28px;height:28px;padding:0;font-size:17px;line-height:1}
+#cmMode{padding:4px 10px;font-weight:600;color:var(--good);border-color:#3c6e46}
+#cmMode[aria-pressed=true]{color:var(--gold);border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-d),2px 2px 0 var(--ink)}
+#command .dnote{margin:0;font-size:12px;color:var(--muted);line-height:1.3}
 .chip.war{pointer-events:auto;font-size:13px;padding:5px 8px;gap:8px;background:var(--plate);border-color:#8a3a2e;box-shadow:0 0 0 2px var(--ink),3px 3px 0 2px rgba(0,0,0,.3);max-width:100%;flex-wrap:wrap;justify-content:center}
 .chip.war b{font-weight:600;color:var(--gold);padding-left:8px;border-left:2px solid var(--edge);white-space:nowrap}
 .chip.war:disabled{cursor:default;opacity:.85}
@@ -245,6 +252,7 @@ button:disabled:active{transform:none;box-shadow:2px 2px 0 var(--ink)}
 .pinfo{display:flex;justify-content:space-between;gap:10px;font-size:11px;line-height:1.25;color:var(--text);background:var(--plate);border:2px solid var(--edge);box-shadow:0 0 0 2px var(--ink);padding:3px 6px}
 .pinfo span:last-child{text-align:right}
 .pinfo b{font-weight:600}
+.pinfo em{font-style:normal;color:var(--gold);white-space:nowrap}
 
 /* Research: opened by clicking a research station */
 #research{left:50%;top:50%;transform:translate(-50%,-55%);max-height:calc(100% - 40px);overflow-y:auto;width:min(320px,calc(100% - 32px));padding:12px 14px 14px;display:grid;gap:10px;z-index:4}

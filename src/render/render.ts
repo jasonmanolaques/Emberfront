@@ -17,6 +17,7 @@ import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, psize, floats, 
 import { H_SOLDIER, TASK_HARVEST, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, TASK_FORGE, indoors, maxHp } from '../sim/population';
 import { units, unitLabel } from '../sim/army';
 import { chatter, drawSpeech } from './speech';
+import { orderPing } from '../ui/command';
 import { G_WOOD, G_STONE, G_COPPER } from '../sim/resources';
 import { allied, atWar, HIT_TICKS, RANKS } from '../sim/war';
 
@@ -83,6 +84,33 @@ function drawStandard(o: number, rank: number, bx: number, fy: number, left: boo
   const w=rank*2+1, px=Math.round(bx+2-w/2);
   ctx.fillStyle=INK; ctx.fillRect(px,fy-21,w,3);
   ctx.fillStyle='#ffd23f'; for (let i=0;i<rank;i++) ctx.fillRect(px+1+i*2,fy-20,1,1);
+}
+
+/** The army the player has in hand: a gold ring at each of its soldiers' feet (a bigger one for
+    the leader), and where it was sent. */
+function drawSelection(now: number){
+  const c=client.selected>=0 ? W.campaigns.find(k => k.id===client.selected) : undefined;
+  if (c && c.leader>=0 && c.phase<2){
+    const pulse=reduceMotion ? 0 : ((now/300)|0)&1;
+    for (const p of W.humans){
+      if (p.war!==c.id || indoors(p)) continue;
+      const x=Math.round(p.x*K), y=Math.floor(p.y*K)+1, w=p.id===c.leader ? 6 : 4;
+      ctx.fillStyle=INK; ctx.fillRect(x-w-1,y-1,w*2+3,3); ctx.fillRect(x-w,y-2,w*2+1,5);
+      ctx.fillStyle=pulse ? '#ffe27a' : '#ffd23f'; ctx.fillRect(x-w,y-1,w*2+1,1); ctx.fillRect(x-w,y+1,w*2+1,1); ctx.fillRect(x-w,y,1,1); ctx.fillRect(x+w,y,1,1);
+    }
+    if (c.manual && !c.orderDone && c.orderAt>=0){   // the order's mark: a gold cross where it goes, red for an attack
+      const x=(c.orderAt%TW)*RS+RS/2, y=((c.orderAt/TW)|0)*RS+RS/2, col=c.manual===1 ? '#ffd23f' : '#ff7562';
+      ctx.fillStyle=INK; for (let k=-3;k<=3;k++){ ctx.fillRect(x+k-1,y+k-1,3,3); ctx.fillRect(x+k-1,y-k-1,3,3); }
+      ctx.fillStyle=col; for (let k=-3;k<=3;k++){ ctx.fillRect(x+k,y+k,1,1); ctx.fillRect(x+k,y-k,1,1); }
+    }
+  }
+  // the right-click itself: a ring closing in on the spot
+  const age=now-orderPing.t0;
+  if (age<500){
+    const r=Math.round(10*(1-age/500))+2, x=Math.round(orderPing.x*K), y=Math.round(orderPing.y*K);
+    ctx.strokeStyle=orderPing.kind===1 ? '#ffd23f' : '#ff7562'; ctx.lineWidth=1.5; ctx.globalAlpha=1-age/600;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1;
+  }
 }
 
 function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
@@ -266,7 +294,8 @@ export function render(now: number, dt: number){
   }
 
   // people and armies, once close enough to tell them apart
-  if (zs>=1.5){ drawFallen(now,vx0,vy0,vx1,vy1); drawPeople(now,vx0,vy0,vx1,vy1); drawBanners(now,vx0,vy0,vx1,vy1); }
+  if (zs>=1.5){ drawFallen(now,vx0,vy0,vx1,vy1); drawSelection(now); drawPeople(now,vx0,vy0,vx1,vy1); drawBanners(now,vx0,vy0,vx1,vy1); }
+  else if (client.selected>=0) drawSelection(now);
 
   // particles
   for (let i=0;i<fx.pcount;i++){

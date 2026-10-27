@@ -74,17 +74,17 @@ describe('watchtowers by tier', () => {
 });
 
 describe('the castle by tier', () => {
-  it('takes 100, 200 and 300 blows, mends 2 a second, and looks damaged then badly damaged', () => {
+  it('takes 200, 400 and 600 blows, mends 2 a second, and looks damaged then badly damaged', () => {
     world(1);
     const q=N(1).capPlot;
     expect(pType[q]).toBe(B_CASTLE);
     for (const tier of [1,2,3]){ N(1).tier[R_CASTLE]=tier; expect(bldHp(q)).toBe(CASTLE_HP[tier]); }
     N(1).tier[R_CASTLE]=1;
-    pHp[q]=30; expect(wear(q)).toBe(0);
-    pHp[q]=40; expect(wear(q)).toBe(1);
-    pHp[q]=70; expect(wear(q)).toBe(2);
-    run(100); expect(pHp[q]).toBeCloseTo(50, 3);   // 2 a second
-    run(400); expect(pHp[q]).toBe(0);
+    pHp[q]=60; expect(wear(q)).toBe(0);
+    pHp[q]=70; expect(wear(q)).toBe(1);
+    pHp[q]=140; expect(wear(q)).toBe(2);
+    run(100); expect(pHp[q]).toBeCloseTo(120, 3);   // 2 a second
+    run(700); expect(pHp[q]).toBe(0);
   });
 
   it('shoots like two watchtowers of its tier: twice as often, as hard', () => {
@@ -118,13 +118,13 @@ describe('invaders and towers', () => {
 });
 
 describe('wages', () => {
-  it('cost 0.15 gold a second a soldier, and the treasury may go below zero', () => {
+  it('cost 0.2 gold a second a soldier, and the treasury may go below zero', () => {
     world(0);
     const [x,y]=doorOf(N(1));
     for (let i=0;i<10;i++) W.humans.push(makeHuman(N(1),H_SOLDIER,x,y));
     N(1).soldierShare=1; N(1).humanProg=-1e9; run(2);
     expect(N(1).income).toBeCloseTo(grossIncome(N(1))-10*WAGE, 6);
-    expect(WAGE).toBe(0.15);
+    expect(WAGE).toBe(0.2);
     N(1).gold=-5; run(1);
     expect(N(1).gold).toBeLessThan(0);
   });

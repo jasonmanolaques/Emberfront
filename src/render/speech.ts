@@ -17,6 +17,11 @@ export const LINES: Record<string, string[]> = {
   stand: ['No retreat! We fight to the last!', 'Stand your ground! To the death!', 'We will not run from them!'],
   regroup: ['Regroup here! Fresh men are coming.', 'Close ranks and catch your breath.', 'We wait here until we are strong again.'],
   home: ['No help is coming. Back home, all of you.', 'Enough. We march home.'],
+  // the player's orders, as the leader passes them on (sim/war.ts giveOrder), and taking over again
+  toMove: ['To my mark! Form ranks there!', 'Gather on me there, and dress the line!', 'Shoulder arms! We regroup over there.'],
+  toHunt: ['Their army is there! Run them down!', 'After them! Cut that army to pieces!', 'Turn about! We take their army head on!'],
+  toLand: ['Strike their land there! Forward!', 'That is where we break them! March!', 'Over their border, there! Burn and take it!'],
+  resume: ['Right, I have it from here.', 'Leave it to me now, I know this ground.', 'The field is mine to lead again!'],
 };
 const SHOW_MS = 2600, FADE_MS = 250;
 interface Bubble { text: string; t0: number; }

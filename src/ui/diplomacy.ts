@@ -7,7 +7,8 @@ import { queueCommand } from '../sim/sim';
 import { allied, atWar, available, allyProblem, warProblem, interceptProblem, OFFER_TICKS, LOOT_GOLD } from '../sim/war';
 import type { Campaign, Human } from '../sim/state';
 import { toast } from './hud';
-import { ArmyPicker } from './armies';
+import { ArmyPicker, armyName } from './armies';
+import { unitAt } from '../sim/army';
 import { $ } from './dom';
 
 const panel=$('diplo'), talk=$('dTalk'), warView=$('dWarView'), wars=$('wars');
@@ -143,6 +144,21 @@ export function noteDeath(id: number, _o: number, kind: number){
     (kind===1 ? b.soldiers : b.villagers)[s]++; b.side.delete(id);
   }
 }
+/** Each side's armies in this fight: "West army 4/10 +1", the men with it out of its barracks'
+    room, and reinforcements on their way to it. */
+function groupsOf(o: number, side: number, byId: Map<number, Human>){
+  const k=side===0 ? PLAYER : o, out: string[]=[];
+  for (const c of W.campaigns){
+    if (c.a!==k || !between(c,o) || c.phase===2) continue;
+    let here=0, coming=0;
+    for (const id of c.members){ const h=byId.get(id); if (!h) continue; if ((h.x-c.bx)**2+(h.y-c.by)**2<40*40) here++; else coming++; }
+    const u=unitAt(c.unit), n=W.nations[k];
+    const name=u && u.o===k ? armyName(n,u).replace(/ barracks$/i,' army').replace(/^Barracks$/,'Army') : 'Army';
+    const tip=`${here} with the army, room for ${u?.cap ?? c.startSoldiers}`+(coming ? `, ${coming} reinforcement${coming===1?'':'s'} on the way` : '');
+    out.push(`<em title="${tip}">${esc(name)} ${here}/${u && u.o===k ? u.cap : c.startSoldiers}${coming ? ` +${coming}` : ''}</em>`);
+  }
+  return out.length ? '<br>'+out.join(' · ') : '';
+}
 function lootOf(o: number){
   const ids=new Set(W.campaigns.filter(c => between(c,o)).map(c => c.id)), g=[0,0];
   for (const h of W.humans) if (h.loot && ids.has(h.war)) g[h.o===PLAYER ? 0 : 1]+=LOOT_GOLD;
@@ -150,7 +166,7 @@ function lootOf(o: number){
 }
 /** Two colours pushing against each other, as wide as each side's share of everyone in the fight;
     the fallen darken each side from its outer end, under a field of skulls. Then the numbers. */
-function powerBar(f: Front, b: Battle){
+function powerBar(f: Front, b: Battle, byId: Map<number, Human>){
   const all=b.total[0]+b.total[1]; if (!all) return '';
   const loot=lootOf(f.o), L=f.a===PLAYER ? 0 : 1, R=1-L, ids=[PLAYER,f.o];
   const seg=(s: number, cls: string) => {
@@ -161,7 +177,7 @@ function powerBar(f: Front, b: Battle){
     const dead=b.soldiers[s]+b.villagers[s];
     return `<span><b style="color:${W.nations[ids[s]].hex}">${esc(nameOf(ids[s]))}</b> ${b.total[s]-dead} fighting`+
       `<br>Dead: ${b.soldiers[s]} soldier${b.soldiers[s]===1?'':'s'}, ${b.villagers[s]} villager${b.villagers[s]===1?'':'s'}`+
-      (loot[s] ? `<br>Loot carried: ${loot[s]} gold` : '')+`</span>`;
+      (loot[s] ? `<br>Loot carried: ${loot[s]} gold` : '')+groupsOf(f.o,s,byId)+`</span>`;
   };
   return `<div class="pbar" title="Balance of power: everyone in the fight, the fallen under skulls">${seg(L,'l')}${seg(R,'r')}</div><div class="pinfo">${info(L)}${info(R)}</div>`;
 }
@@ -185,7 +201,7 @@ export function updateWarChips(){
     const inc=f.incoming.reduce((k,c)=>k+c.members.length,0);
     const men=(inc ? ` · ${inc} coming` : '')+(f.fleeing ? ` · ${f.fleeing} fleeing` : '')+(f.intercepting ? ` · ${f.intercepting} intercepting` : '')+(f.men-f.intercepting>0 ? ` · ${f.men-f.intercepting} out` : '');
     const chip=`<button class="chip war${f.theyOffer||f.ready?' offer':''}${open?' threat':''}" data-o="${f.o}" data-act="${act}" ${off||!act?'disabled':''}><i style="background:${W.nations[f.a].hex}"></i>${esc(nameOf(f.a))} – ${esc(nameOf(f.d))} · ${kind}${men}<b>${label}</b></button>`;
-    return `<div class="front" data-o="${f.o}">${chip}${powerBar(f,track(f.o,byId))}</div>`;
+    return `<div class="front" data-o="${f.o}">${chip}${powerBar(f,track(f.o,byId),byId)}</div>`;
   }).join('');
   if (html!==lastChips){ lastChips=html; wars.innerHTML=html; placePop(); }
   if (!pop.hidden){

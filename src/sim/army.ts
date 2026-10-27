@@ -35,7 +35,7 @@ export interface Unit {
 export let units: Unit[][] = [];                    // per kingdom, rebuilt every tick
 const unitOf = new Map<number, Unit>();             // barracks plot -> its unit
 export const unitAt = (q: number) => unitOf.get(q);
-export const maxHp = (h: Human) => h.kind===H_SOLDIER ? SOLDIER_HP[h.tier] : VILLAGER_HP;
+export const maxHp = (h: Human) => h.kind===H_SOLDIER ? SOLDIER_HP[h.tier]*2**h.lead : VILLAGER_HP;   // an army's leader: doubled for each rank
 const frontOf = (q: number): [number, number] => [(q%PW)*8+4, ((q/PW)|0)*8+7.5];
 const standing = (q: number, o: number) => pType[q]===B_BARRACKS && pOwner[q]===o && pBurn[q]<=0;
 

@@ -39,7 +39,7 @@ import { on } from './events';
 import { setOwner } from './territory';
 import { ignite, dims } from './buildings';
 import { census } from './census';
-import { BLD_HP, bldHp, wear, towerTier, castleTier, TOWER_RELOADS, TOWER_DMGS, CASTLE_MEND } from './defense';
+import { BLD_HP, bldHp, wear, towerTier, castleTier, TOWER_RELOADS, TOWER_DMGS, CASTLE_MEND, wallOf, wallTower, walledFor, buildWalls, resetWalls } from './defense';
 import { SOLDIER_DMG, units, unitAt, type Unit } from './army';
 import { H_SOLDIER, TASK_ROAM, TOWER_RANGE, maxHp, REGEN, pace, onCastle, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf } from './population';
 
@@ -74,6 +74,8 @@ export const M_MARCH=0, M_HOLD=1, M_ASSAULT=2, M_FALLBACK=3, M_REGROUP=4, M_BLIN
 export const HOLD_BELOW = 0.3, READY_AT = 0.6, BREAK_AT = 0.2, RETREAT_CHANCE = 0.75;   // shares of the barracks' army
 const PRESENT_R = 40;                 // pixels around the banner a man counts as with his army
 const PATIENCE = 1200;                // ticks a leader waits for reinforcements before he takes his army home (2 min)
+export const O_MOVE=1, O_HUNT=2, O_LAND=3;   // the player's orders: gather and form ranks there, hunt an enemy army, attack there
+const AUTO_TICKS = 30;                // an order carried out, ticks on enemy land or under fire before the leader takes over again (3 s)
 export const REVENGE_DMG = 1.25, REVENGE_PACE = 1.1;   // a counter-attack's soldiers hit 25% harder and march 10% faster
 const REFIELD = 20;                   // ticks between working out the way again (2 s)
 export const MUSTER_TICKS = 200;      // longest an army waits at the muster point (20 s)
@@ -109,7 +111,7 @@ export function resetWar(M: number){
   W.campaigns=[]; W.campSeq=0;
   W.ally=new Uint8Array(M*M); W.atWar=new Uint8Array(M*M); W.offers=new Int32Array(M*M); W.grudge=new Int32Array(M*M).fill(-1e9);
   W.wars=new Uint8Array(M*M); W.warSince=new Int32Array(M*M); W.occCount=new Int32Array(M*M); W.lost=new Uint8Array(M*M); W.ready=new Int32Array(M*M); W.orphans=[];
-  byId.clear(); camps.clear(); troops.clear(); armies=[]; posts=[]; warring=new Uint8Array(M); rallies=[]; homeField=[]; homeFieldFor=[]; heldAt.fill(0);
+  byId.clear(); camps.clear(); troops.clear(); armies=[]; posts=[]; warring=new Uint8Array(M); rallies=[]; homeField=[]; homeFieldFor=[]; heldAt.fill(0); resetWalls();
 }
 
 /* ---------- the way there ---------- */
@@ -133,6 +135,7 @@ export function mayStand(h: Human, o: number){
     (with `any`, over all land), -1 where there is no way. It looks for the tiles `mark` stamps
     (each stamped tile counts once; one is enough if `first`), and stops `margin` steps past the
     last of them. Returns the first such tile reached, or -1. */
+let breach=false;   // fill straight through enemy walls (when they leave no way round)
 function fill(f: Int16Array, src: number[], a: number, d: number, any: boolean, mark: (stamp: number) => number, first: boolean, margin: number){
   const stamp=++wantSeq, wanted=mark(stamp);
   f.fill(-1);
@@ -141,7 +144,9 @@ function fill(f: Int16Array, src: number[], a: number, d: number, any: boolean, 
   // which owners' land the army may cross
   const pass=new Uint8Array(W.M); pass[0]=pass[a]=pass[d]=1;
   for (let o=1;o<W.M;o++) if (any || W.ally[a*W.M+o]) pass[o]=1;
-  const tw=TW, nt=NT, land=isLand, own=owner, Q=queue, mk=want;   // local names: much faster in a hot loop than imports
+  // whose walls stop it (none of them when breaching)
+  const wall=new Uint8Array(W.M); if (!breach) for (let o=1;o<W.M;o++) wall[o]=o!==a && !W.ally[a*W.M+o] ? 1 : 0;
+  const tw=TW, nt=NT, land=isLand, own=owner, Q=queue, mk=want, wo=wallOf;   // local names: much faster in a hot loop than imports
   while (head<tail){
     const t=Q[head++], v=f[t];
     if (v>until) break;
@@ -150,11 +155,18 @@ function fill(f: Int16Array, src: number[], a: number, d: number, any: boolean, 
       if (--left<=0 || first) until=Math.min(until,v+margin);
     }
     const x=t%tw, nv=v+1;
-    let n=t-1;  if (x>0 && f[n]<0 && land[n] && pass[own[n]]){ f[n]=nv; Q[tail++]=n; }
-    n=t+1;      if (x<tw-1 && f[n]<0 && land[n] && pass[own[n]]){ f[n]=nv; Q[tail++]=n; }
-    n=t-tw;     if (t>=tw && f[n]<0 && land[n] && pass[own[n]]){ f[n]=nv; Q[tail++]=n; }
-    n=t+tw;     if (t<nt-tw && f[n]<0 && land[n] && pass[own[n]]){ f[n]=nv; Q[tail++]=n; }
+    let n=t-1;  if (x>0 && f[n]<0 && land[n] && pass[own[n]] && !wall[wo[n]]){ f[n]=nv; Q[tail++]=n; }
+    n=t+1;      if (x<tw-1 && f[n]<0 && land[n] && pass[own[n]] && !wall[wo[n]]){ f[n]=nv; Q[tail++]=n; }
+    n=t-tw;     if (t>=tw && f[n]<0 && land[n] && pass[own[n]] && !wall[wo[n]]){ f[n]=nv; Q[tail++]=n; }
+    n=t+tw;     if (t<nt-tw && f[n]<0 && land[n] && pass[own[n]] && !wall[wo[n]]){ f[n]=nv; Q[tail++]=n; }
   }
+  return found;
+}
+/** Like fill, but if walls leave no way to what it looks for (`ok`), straight through them: the
+    army will have to knock down a tower. */
+function fillOrBreach(f: Int16Array, src: number[], a: number, d: number, any: boolean, mark: (stamp: number) => number, first: boolean, margin: number, ok: (found: number) => boolean){
+  let found=fill(f,src,a,d,any,mark,first,margin);
+  if (!ok(found)){ breach=true; found=fill(f,src,a,d,any,mark,first,margin); breach=false; }
   return found;
 }
 /** Stamps every tile of nation a as wanted. */
@@ -208,6 +220,11 @@ function nearestTile(d: number, x: number, y: number, by: number){
 /** Where the army is headed: a raid, every building it could burn; an attack, the capital; an
     intercept, the army it is after. */
 function goalsOf(c: Campaign){
+  if (c.manual){   // where the player sent it (or, its order carried out, where it stands)
+    if (c.orderDone) return [tileOf(c.bx,c.by)];
+    if (c.manual===O_HUNT){ const E=campaignById(c.orderFoe); if (E && E.hostile){ const [x,y]=armyAt(E); c.orderAt=tileOf(x,y); } }
+    return [c.orderAt];
+  }
   if (c.raid) return raidTargets(c.d).map(q => pCenter[q]);
   if (c.target>=0){ const E=campaignById(c.target); if (!E || !E.hostile) return []; const [x,y]=armyAt(E); return [tileOf(x,y)]; }
   const D=W.nations[c.d];
@@ -225,7 +242,8 @@ const campaignById = (id: number) => camps.get(id) ?? W.campaigns.find(c => c.id
 /** True if a's army could reach something of d's to raid, crossing only unclaimed, allied or d's land. */
 export function routeOpen(a: number, d: number){
   const src=raidTargets(d).map(q => pCenter[q]); if (!src.length) return false;
-  return fill(scratch,src,a,d,false,ownLand(a),true,0)>=0;
+  breach=true; const ok=fill(scratch,src,a,d,false,ownLand(a),true,0)>=0; breach=false;   // walls can be broken
+  return ok;
 }
 
 /* ---------- declaring war ---------- */
@@ -286,7 +304,8 @@ export function declare(a: number, d: number, raid: boolean, pick: number | numb
 }
 function newCampaign(a: number, d: number, raid: boolean, target: number, size: number, tiles: number, unit: number): Campaign {
   return { id:++W.campSeq, a, d, raid, target, hostile:true, members:[], phase:0, bx:0, by:0, dx:1, dy:0, rx:0, ry:0, goal:-1,
-    field:new Int16Array(NT), fieldAt:W.tickN, started:W.tickN, startSoldiers:size, startTiles:tiles, stall:0, why:'', unit, inspired:false, leader:-1, rank:0, mode:M_MARCH, stand:false };
+    field:new Int16Array(NT), fieldAt:W.tickN, started:W.tickN, startSoldiers:size, startTiles:tiles, stall:0, why:'', unit, inspired:false, leader:-1, rank:0, mode:M_MARCH, stand:false,
+    manual:0, orderAt:-1, orderFoe:-1, orderDone:false, calm:0, hitAt:-1e9 };
 }
 /** Works out the way and calls the soldiers to form up in front of their barracks (or, if the way
     can't reach it, on our own ground nearest the goal). */
@@ -294,8 +313,9 @@ function muster(c: Campaign, pool: Human[], u?: Unit){
   const A=W.nations[c.a];
   if (A.capTile>=0){ const [x,y]=doorOf(A); c.bx=x; c.by=y; }
   const home=u ? tileOf(u.x,u.y) : -1;
-  let best=home>=0 ? fill(c.field,goalsOf(c),c.a,c.d,false,(st) => { want[home]=st; return 1; },true,2) : -1;
-  if (best<0) best=fill(c.field,goalsOf(c),c.a,c.d,false,ownLand(c.a),true,80);
+  const goals=goalsOf(c), found=(b: number) => b>=0;
+  let best=home>=0 ? fillOrBreach(c.field,goals,c.a,c.d,false,(st) => { want[home]=st; return 1; },true,2,found) : -1;
+  if (best<0) best=fillOrBreach(c.field,goals,c.a,c.d,false,ownLand(c.a),true,80,found);
   if (best<0) return false;
   c.rx=c.bx=(best%TW)*2+1; c.ry=c.by=((best/TW)|0)*2+1;
   const s=downhill(c.field,c.bx,c.by);
@@ -304,7 +324,11 @@ function muster(c: Campaign, pool: Human[], u?: Unit){
   pool.forEach((h,i) => enlist(c,h,i));
   // more than 5: the best armoured of them leads (the longest serving among equals)
   c.rank=c.mode===M_BLIND ? 0 : rankFor(pool.length);
-  if (c.rank){ const l=pool.reduce((b,h) => h.tier>b.tier || (h.tier===b.tier && h.id<b.id) ? h : b); c.leader=l.id; l.slot=1e6; on.order('march',c.a,c.d,c.rank,l.id,l.x,l.y); }
+  if (c.rank){
+    const l=pool.reduce((b,h) => h.tier>b.tier || (h.tier===b.tier && h.id<b.id) ? h : b);
+    c.leader=l.id; l.slot=1e6; l.lead=c.rank; l.hp*=2**c.rank;   // the better protected, the higher his rank
+    on.order('march',c.a,c.d,c.rank,l.id,l.x,l.y);
+  }
   return true;
 }
 /** Soldier h joins army c (at the end of its line). */
@@ -346,17 +370,20 @@ function refield(c: Campaign){
   c.fieldAt=W.tickN;
   if (c.phase===2){
     const src: number[]=[]; for (let t=0;t<NT;t++) if (owner[t]===c.a) src.push(t);
-    fill(c.field,src,c.a,c.d,true,armyTiles(c,false),false,12); return;
+    fillOrBreach(c.field,src,c.a,c.d,true,armyTiles(c,false),false,12,(b) => b>=0); return;
   }
   if (c.mode===M_FALLBACK){
     // falling back: the way out of their land, to the nearest ground that isn't theirs
     const src: number[]=[]; for (let t=0;t<NT;t++){ const o=owner[t]; if (isLand[t] && o!==c.d && (o===0 || o===c.a || allied(c.a,o))) src.push(t); }
-    fill(c.field,src,c.a,c.d,false,armyTiles(c,true),false,12); return;
+    fillOrBreach(c.field,src,c.a,c.d,false,armyTiles(c,true),false,12,(b) => b>=0); return;
   }
   const src=goalsOf(c);
   if (!src.length){ if (c.phase<2) sendHome(c, c.raid || c.target>=0 ? 'done' : 'won', (c.raid || c.target>=0) && c.hostile); return; }
-  fill(c.field,src,c.a,c.d,false,armyTiles(c,true),false,24);
-  if (c.field[tileOf(c.bx,c.by)]<0) sendHome(c,'cut');   // other kingdoms have closed every way on
+  const banner=tileOf(c.bx,c.by);
+  fillOrBreach(c.field,src,c.a,c.d,false,armyTiles(c,true),false,24,() => c.field[banner]>=0);
+  if (c.field[banner]>=0) return;
+  if (c.manual){ c.orderDone=true; c.calm=0; c.field.fill(-1); c.field[banner]=0; return; }   // no way there: it stays where it is
+  sendHome(c,'cut');   // other kingdoms have closed every way on
 }
 
 /* ---------- peace and alliances ---------- */
@@ -498,15 +525,18 @@ function slotPos(c: Campaign, i: number, n: number): [number, number] {
   const across=(col-(inRank-1)/2)*SPACING, back=rank*SPACING+1.5;
   return [c.bx - c.dy*across - c.dx*back, c.by + c.dx*across - c.dy*back];
 }
+/** Moves the banner on along the way. Returns the tile of an enemy wall that stops it, or -1. */
 function advance(c: Campaign){
   const f=c.field, here=f[tileOf(c.bx,c.by)];
-  if (here<0) return;
-  if (c.mode!==M_FALLBACK && here<=(c.target>=0 ? 3 : 1)){ if (!c.raid && c.target<0 && W.nations[c.d].capTile<0) c.fieldAt=-1e9; return; }   // there: siege, burn, close with the enemy, or (no capital) find more land
-  const s=downhill(f,c.bx,c.by); if (!s) return;
-  const dx=s[0]-c.bx, dy=s[1]-c.by, d=Math.hypot(dx,dy); if (d<1e-6) return;
+  if (here<0) return -1;
+  if (c.mode!==M_FALLBACK && here<=(c.target>=0 && !c.manual ? 3 : 1)){ if (!c.raid && c.target<0 && !c.manual && W.nations[c.d].capTile<0) c.fieldAt=-1e9; return -1; }   // there: siege, burn, close with the enemy, or (no capital) find more land
+  const s=downhill(f,c.bx,c.by); if (!s) return -1;
+  const w=tileOf(s[0],s[1]); if (walledFor(c.a,w) && !walledFor(c.a,tileOf(c.bx,c.by))) return w;
+  const dx=s[0]-c.bx, dy=s[1]-c.by, d=Math.hypot(dx,dy); if (d<1e-6) return -1;
   const st=Math.min(d,MARCH_SP*(c.inspired ? REVENGE_PACE : 1)*TICK); c.bx+=dx/d*st; c.by+=dy/d*st;
   // the line turns gradually toward where it is going
   c.dx+=(dx/d-c.dx)*0.08; c.dy+=(dy/d-c.dy)*0.08; const L=Math.hypot(c.dx,c.dy)||1; c.dx/=L; c.dy/=L;
+  return -1;
 }
 function runCampaign(c: Campaign, men: Human[]){
   if (!men.length){ if (c.leader>=0) leaderGone(c); W.campaigns.splice(W.campaigns.indexOf(c),1); camps.delete(c.id); on.armyGone(c.a,c.d,c.raid,c.phase===2 ? c.why : 'lost'); return; }
@@ -515,8 +545,8 @@ function runCampaign(c: Campaign, men: Human[]){
   c.members=men.map(h => h.id);
   if (c.leader>=0 && !men.some(h => h.id===c.leader)) leaderGone(c);
   if (c.phase<2 && !W.nations[c.d].alive){ sendHome(c,'won',false); return; }
-  if (c.phase<2 && c.target>=0){ const E=campaignById(c.target); if (!E || !E.hostile){ sendHome(c,'done',false); return; } }   // they are beaten, home, or at peace
-  if (W.tickN-c.fieldAt>=(c.target>=0 ? REFIELD/2 : REFIELD)) refield(c);
+  if (c.phase<2 && c.target>=0 && !c.manual){ const E=campaignById(c.target); if (!E || !E.hostile){ sendHome(c,'done',false); return; } }   // they are beaten, home, or at peace
+  if (W.tickN-c.fieldAt>=((c.target>=0 && !c.manual) || (c.manual===O_HUNT && !c.orderDone) ? REFIELD/2 : REFIELD)) refield(c);
   if (c.phase===2) return;
   if (c.mode===M_BLIND){ c.phase=1; followFront(c,men); return; }
   let inPlace=0, near=0, busy=false;
@@ -525,13 +555,89 @@ function runCampaign(c: Campaign, men: Human[]){
     if (d2<25) inPlace++; if (d2<400) near++; if (h.foe>=0) busy=true;
   }
   if (c.phase===0){ if (inPlace>=men.length*0.7 || W.tickN-c.started>=(c.target>=0 ? INTERCEPT_MUSTER : MUSTER_TICKS)){ c.phase=1; c.stall=0; } return; }
-  if (!c.raid && c.target<0 && command(c,men)) return;   // an attack: its leader decides whether it moves on
+  if (c.manual){ if (steer(c,men,inPlace)) return; }   // the player commands it
+  else if (!c.raid && c.target<0 && command(c,men)) return;   // an attack: its leader decides whether it moves on
   // the banner waits for fights to end and (on the march) for stragglers, but not for ever
-  const marching=c.raid || c.target>=0 || c.mode===M_MARCH;
+  const marching=c.raid || c.target>=0 || c.mode===M_MARCH || c.manual===O_MOVE;
   const wait=busy || (marching && inPlace<men.length*0.6);
   if (wait && c.stall<(marching && near<men.length*0.5 ? STRAGGLE_TICKS : STALL_TICKS)){ c.stall++; return; }
   if (!wait) c.stall=0;
-  advance(c);
+  const w=advance(c);
+  if (w>=0){   // a wall in the way and no way round: knock down a tower holding it up
+    const q=wallTower[w];
+    if (targetable(q,c)) for (const h of men) if (h.id!==c.leader && h.foe<0 && h.aim<0) h.aim=q;
+  }
+}
+
+/* ---------- the player's command ---------- */
+/** Why kingdom n can't command army `id`, or null. */
+export function orderProblem(n: number, id: number): string | null {
+  const c=campaignById(id);
+  if (!c || c.a!==n || c.phase===2 || !c.hostile) return 'That army is gone';
+  if (c.leader<0) return 'Without a leader this army fights on its own';
+  return null;
+}
+/** What an order for army c at (x,y) (or after enemy army `foe`) would be (O_*), or 0 if it can't be given. */
+export function orderKind(c: Campaign, x: number, y: number, foe=-1){
+  const M=W.M;
+  if (foe>=0){
+    const E=campaignById(foe);
+    if (!E || E.a===c.a || !E.hostile || !atWar(c.a,E.a) || (c.raid && E.a!==c.d)) return 0;
+    return O_HUNT;
+  }
+  if (x<0 || y<0 || x>=TW*2 || y>=TH*2) return 0;
+  const t=tileOf(x,y), o=owner[t];
+  if (!isLand[t]) return 0;
+  if (o===0 || o===c.a || allied(c.a,o)) return O_MOVE;
+  if (o===c.d && (c.raid || W.wars[c.a*M+o])) return O_LAND;
+  if (!c.raid && W.wars[c.a*M+o]) return O_LAND;   // another kingdom we are at war with: the army turns on it
+  return 0;
+}
+/** Kingdom n takes command of its army `id`: gather at (x,y) and form ranks, attack there, or hunt
+    enemy army `foe`. Its leader stops deciding until the order is carried out. */
+export function giveOrder(n: number, id: number, x: number, y: number, foe=-1){
+  if (orderProblem(n,id)) return false;
+  const c=campaignById(id)!, kind=orderKind(c,x,y,foe);
+  if (!kind) return false;
+  if (kind===O_HUNT){ const E=campaignById(foe)!; c.orderFoe=foe; c.d=E.a; const [ex,ey]=armyAt(E); c.orderAt=tileOf(ex,ey); }
+  else { c.orderAt=tileOf(x,y); c.orderFoe=-1; if (kind===O_LAND && owner[c.orderAt]!==c.d){ c.d=owner[c.orderAt]; c.target=-1; } }
+  if (kind===O_LAND && c.target>=0){ c.target=-1; }   // interceptors become an attack
+  c.manual=kind; c.orderDone=false; c.calm=0; c.stall=0; c.phase=1; c.fieldAt=-1e9;
+  if (c.mode!==M_BLIND) c.mode=M_ASSAULT;
+  for (const mid of c.members){ const h=byId.get(mid); if (h) h.aim=-1; }   // leave what they were breaking: there is an order
+  const l=byId.get(c.leader);
+  if (l) on.order(kind===O_MOVE ? 'toMove' : kind===O_HUNT ? 'toHunt' : 'toLand',c.a,c.d,c.rank,l.id,l.x,l.y);
+  return true;
+}
+/** Kingdom n hands its army `id` back to its leader. */
+export function handBack(n: number, id: number){
+  const c=campaignById(id); if (!c || c.a!==n || !c.manual) return false;
+  resume(c); return true;
+}
+/** The leader decides again: an attack carries on into the enemy's land, or marches up to it first. */
+function resume(c: Campaign){
+  c.manual=0; c.orderDone=false; c.calm=0; c.orderFoe=-1; c.stall=0; c.fieldAt=-1e9;
+  if (!c.raid && c.target<0 && c.mode!==M_BLIND) c.mode=owner[tileOf(c.bx,c.by)]===c.d ? M_ASSAULT : M_MARCH;
+  const l=byId.get(c.leader); if (l) on.order('resume',c.a,c.d,c.rank,l.id,l.x,l.y);
+}
+/** An army under the player's command: has it carried out its order? Then it stays there, until
+    it has stood on enemy land or under fire for 3 seconds and its leader takes over again.
+    Returns true if the banner stays put. */
+function steer(c: Campaign, men: Human[], inPlace: number){
+  if (!c.orderDone){
+    let done=false;
+    if (c.manual===O_HUNT){ const E=campaignById(c.orderFoe); done=!E || !E.hostile; }   // beaten, or at peace
+    else {
+      const here=c.field[tileOf(c.bx,c.by)];
+      done=here>=0 && here<=1 && (c.manual!==O_MOVE || inPlace>=men.length*0.7 || ++c.stall>=STRAGGLE_TICKS);   // there (and gathering: in ranks)
+    }
+    if (!done) return false;
+    c.orderDone=true; c.calm=0; c.stall=0; c.fieldAt=-1e9;
+  }
+  const o=owner[tileOf(c.bx,c.by)], enemyLand=o!==0 && o!==c.a && atWar(c.a,o), fire=W.tickN-c.hitAt<=10;
+  if (enemyLand || fire){ if (++c.calm>=AUTO_TICKS){ resume(c); return false; } }
+  else c.calm=0;
+  return true;
 }
 
 /* ---------- leaders ---------- */
@@ -568,13 +674,15 @@ function command(c: Campaign, men: Human[]){
   return false;
 }
 /** The leader is no longer with army c: home ahead of it, or fallen. */
-function leaderGone(c: Campaign){ const l=byId.get(c.leader); if (l && l.hp>0) c.leader=-1; else leaderFell(c); }
+function leaderGone(c: Campaign){ const l=byId.get(c.leader); if (l && l.hp>0){ c.leader=-1; unlead(l); } else leaderFell(c); }
+/** A leader no longer leading: back to a soldier's hit points. */
+function unlead(h: Human){ if (!h.lead) return; h.lead=0; h.hp=Math.min(h.hp,maxHp(h)); }
 /** The leader of army c is dead: an attack goes on leaderless, every man for himself, and so does
     every man its barracks sends for the rest of the war. */
 function leaderFell(c: Campaign){
   const attack=!c.raid && c.target<0;
   on.order(attack ? 'fell' : 'slain',c.a,c.d,c.rank,c.leader,c.bx,c.by);
-  c.leader=-1;
+  c.leader=-1; c.manual=0; c.orderDone=false;   // nobody left to take orders
   if (!attack) return;
   c.mode=M_BLIND;
   if (c.unit>=0 && !orphaned(c.a,c.unit,c.d)) W.orphans.push(c.a,c.unit,c.d);
@@ -613,8 +721,10 @@ export function reinforce(){
 export function updateWar(){
   const M=W.M, N=W.nations, H=W.humans;
   byId.clear(); camps.clear(); troops.clear();
+  buildWalls();
   for (const h of H){
     byId.set(h.id,h);
+    if (h.lead && h.war<0) unlead(h);
     const max=maxHp(h);
     if (h.hp<max) h.hp=Math.min(max,h.hp+REGEN);   // everyone heals, slowly
   }
@@ -805,7 +915,7 @@ function towersFire(){
       const s=h.kind===H_SOLDIER;
       if ((s && !soldier) || (s===soldier && (d<bd || (d===bd && target!==null && h.id<target.id)))){ target=h; bd=d; soldier=s; }
     }
-    if (target){ target.hp-=dmg; on.towerShot(x,y,target.x,target.y-2,target.hp<=0,target.id); }
+    if (target){ target.hp-=dmg; underFire(target); on.towerShot(x,y,target.x,target.y-2,target.hp<=0,target.id); }
   };
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive || !warring[i]) continue;
@@ -821,11 +931,13 @@ function towersFire(){
 }
 
 /* ---------- soldiers ---------- */
+/** Notes that soldier h's army has come under attack. */
+function underFire(h: Human){ if (h.war>=0){ const c=camps.get(h.war); if (c) c.hitAt=W.tickN; } }
 function strike(h: Human, e: Human){
   if (h.cool>0) return;
   h.cool=HIT_TICKS;
   on.swing(h.id,e.id);
-  if (W.prand()<HIT_CHANCE){ e.hp-=(h.kind===H_SOLDIER ? HIT_DMG[h.tier] : MILITIA_DMG)*(revenge(h) ? REVENGE_DMG : 1); on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id); }
+  if (W.prand()<HIT_CHANCE){ e.hp-=(h.kind===H_SOLDIER ? HIT_DMG[h.tier] : MILITIA_DMG)*(revenge(h) ? REVENGE_DMG : 1); underFire(e); on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id); }
   if (e.foe<0 && (e.kind===H_SOLDIER || e.brave>=1)) e.foe=h.id;   // he turns to fight back
 }
 /** Steps toward (gx,gy): straight if the way is open, otherwise along the army's way. */
@@ -848,7 +960,18 @@ function moveTo(h: Human, c: Campaign, gx: number, gy: number, stop=0, toLine=fa
       if (s){ dx=s[0]-h.x; dy=s[1]-h.y; d=Math.hypot(dx,dy); stop=0; if (d<1e-6) return; }
     }
   }
-  const st=Math.min(d-stop,marchPace(h,c)*TICK); h.x+=dx/d*st; h.y+=dy/d*st;
+  const st=Math.min(d-stop,marchPace(h,c)*TICK), w=wallStep(h,h.x+dx/d*st,h.y+dy/d*st);
+  // stopped by a wall: break it down (a tower holding it up), unless he leads or they are getting out
+  if (w>=0 && h.foe<0 && h.aim<0 && h.id!==c.leader && c.mode!==M_FALLBACK && targetable(wallTower[w],c)) h.aim=wallTower[w];
+}
+/** Steps h to (nx,ny) unless an enemy wall is in the way, sliding along it if he can. Returns the
+    wall's tile if one stopped him (in either direction), or -1. Someone already on a wall walks off it freely. */
+function wallStep(h: Human, nx: number, ny: number){
+  const t=tileOf(nx,ny);
+  if (!walledFor(h.o,t) || walledFor(h.o,tileOf(h.x,h.y))){ h.x=nx; h.y=ny; return -1; }
+  if (!walledFor(h.o,tileOf(nx,h.y))) h.x=nx;
+  else if (!walledFor(h.o,tileOf(h.x,ny))) h.y=ny;
+  return t;
 }
 /** Steps toward (gx,gy) without leaving his own kingdom's land (sidestepping a corner if he can). */
 function stepHome(h: Human, gx: number, gy: number, stop: number, sp=pace(h)){
@@ -942,14 +1065,14 @@ function homeward(h: Human, c: Campaign){
   const s=downhill(c.field,h.x,h.y), n=W.nations[h.o];
   const [gx,gy] = s ?? (n.capTile>=0 ? doorOf(n) : [n.ltx*2+1, n.lty*2+1]);
   const dx=gx-h.x, dy=gy-h.y, d=Math.hypot(dx,dy); if (d<1e-6) return;
-  const st=Math.min(d,pace(h)*TICK); h.x+=dx/d*st; h.y+=dy/d*st;
+  const st=Math.min(d,pace(h)*TICK); wallStep(h,h.x+dx/d*st,h.y+dy/d*st);
 }
 /** One tick for a soldier in a campaign. */
 export function marchStep(h: Human){
   const c=camps.get(h.war); if (!c){ h.war=-1; backToRoam(h); return; }
   if (h.cool>0) h.cool--;
   if (c.phase===2){ homeward(h,c); return; }
-  if (!c.raid && c.target<0 && c.phase===1 && (h.id+W.tickN)%CAPTURE_EVERY===0) capture(h,c);
+  if (!c.raid && c.target<0 && c.phase===1 && W.wars[c.a*W.M+c.d] && (h.id+W.tickN)%CAPTURE_EVERY===0) capture(h,c);
   reclaim(h);   // passing by our own occupied land
   if ((h.id+W.tickN)%4===0) choose(h,c);
   let foe=h.foe>=0 ? byId.get(h.foe) : undefined;

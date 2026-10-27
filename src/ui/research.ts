@@ -17,7 +17,7 @@ const NEXT = [
   ['', '', 'Each villager pays 0.2 gold a second.', 'Each villager pays 0.3 gold a second.'],
   ['', '', 'Reinforced soldiers: 10 hit points, 1.5 damage. Needs a blacksmith.', 'Heavy armour: 15 hit points, 2 damage.'],
   ['', '', 'Builders can rebuild watchtowers to shoot every 3.5 s for 3 damage and take 30 blows (10 stone, 4 wood).', 'Builders can rebuild them to shoot every 3 s for 4 damage and take 40 blows (20 stone, 8 wood).'],
-  ['', '', 'The castle shoots twice every 3.5 s for 3 damage and takes 200 blows.', 'The castle shoots twice every 3 s for 4 damage and takes 300 blows.'],
+  ['', '', 'The castle shoots twice every 3.5 s for 3 damage and takes 400 blows.', 'The castle shoots twice every 3 s for 4 damage and takes 600 blows.'],
   ['', '', 'Plantations, quarries and copper mines side by side join in pairs: +5 wood, +3 stone, +3 copper.', 'Four in a square join into one: +15 wood, +10 stone, +10 copper.'],
 ];
 const ROWS: Record<number, string> = { [R_HOUSING]:'rHousing', [R_INFANTRY]:'rInfantry', [R_TOWERS]:'rTowers', [R_CASTLE]:'rCastle', [R_GATHER]:'rGather', [R_TAXES]:'rTaxes' };

@@ -14,6 +14,7 @@ import { placeAt, clickOwnBuilding, stopPlacing, toggleBuildPanel } from './buil
 import { openDiplomacy, closeDiplomacy, diplomacyOpen, closePop } from './diplomacy';
 import { researchOpen, closeResearch } from './research';
 import { armyOpen, closeArmy } from './army';
+import { rightClick, deselect } from './command';
 
 interface Drag { sx: number; sy: number; lx: number; ly: number; moved: boolean; button: number; }
 const pointers=new Map<number,{x: number; y: number}>(); let drag: Drag | null=null, pinch: {d: number; mx: number; my: number} | null=null;
@@ -42,7 +43,8 @@ function endPointer(e: PointerEvent){
   if (pointers.size<2) pinch=null;
   if (pointers.size===1){ const p=[...pointers.values()][0]; drag={sx:p.x,sy:p.y,lx:p.x,ly:p.y,moved:true,button:0}; }
   if (pointers.size===0){
-    if (drag && !drag.moved && drag.button===0 && e.type==='pointerup'){
+    if (drag && !drag.moved && drag.button===2 && e.type==='pointerup' && client.state==='play'){ const [sx,sy]=devXY(e); rightClick(sx,sy); }
+    else if (drag && !drag.moved && drag.button===0 && e.type==='pointerup'){
       const [sx,sy]=devXY(e), t=tileAt(sx,sy);
       if (client.state==='spawn') trySpawn(t);
       else if (client.state==='play'){
@@ -116,6 +118,7 @@ export function bindInput(){
     else if (e.key===' ' && client.state==='play'){ e.preventDefault(); centerHome(); }
     else if (e.key==='p' || e.key==='P'){ if (client.state==='play') setPaused(!client.paused); }
     else if (e.key==='b' || e.key==='B'){ if (client.state==='play') toggleBuildPanel(); }
+    else if (e.key==='Escape' && client.selected>=0) deselect();   // let go of the army first
     else if (e.key==='Escape'){ closePop(); closeExpand(); if (client.placing) stopPlacing(); else if (researchOpen()) closeResearch(); else if (diplomacyOpen()) closeDiplomacy(); else toggleBuildPanel(false); }
     else if (e.key==='+' || e.key==='='){ zoomAt(1.3,view.width/2,view.height/2); }
     else if (e.key==='-'){ zoomAt(1/1.3,view.width/2,view.height/2); }

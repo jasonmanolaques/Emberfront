@@ -5,7 +5,7 @@
    neighbours, and plots of the same kind and owner join up, so fields merge into one farmland,
    barracks into one long hall, minters into one workshop, and towers link with walls. */
 import { RW, RH, PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY } from '../core/constants';
-import { pType, pOwner, pVar, pMain, pAband, pTier } from '../sim/state';
+import { pType, pOwner, pVar, pMain, pAband, pTier, pBurn } from '../sim/state';
 import { styleOf, type NationStyle } from './style';
 import { towerTier, castleTier, wear } from '../sim/defense';
 import { dims } from '../sim/buildings';
@@ -32,7 +32,7 @@ const N_=1, E_=2, S_=4, W_=8;
 /** Which neighbours of plot q are the same kind of building with the same owner (N/E/S/W bits). */
 function joins(q: number){
   const ty=pType[q], o=pOwner[q], x=q%PW, y=(q/PW)|0;
-  const same=(k: number)=>pType[k]===ty && pOwner[k]===o;
+  const same=(k: number)=>pType[k]===ty && pOwner[k]===o && !(ty===B_TOWER && (pBurn[k]>0 || pBurn[q]>0));   // a fallen tower brings its walls down
   return (y>0&&same(q-PW)?N_:0) | (x<PW-1&&same(q+1)?E_:0) | (y<PH-1&&same(q+PW)?S_:0) | (x>0&&same(q-1)?W_:0);
 }
 const SH = 'rgba(14,24,8,.3)';

@@ -1,17 +1,18 @@
 // War: diplomacy, raids, attacks, fighting, peace, and the fall of a kingdom.
 // Most of these play on a flat all-grass map, so distances and borders are predictable.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NT, NP, PW, T_GRASS, B_HOUSE, B_FARM, B_TOWER, B_BARRACKS, B_RUINS } from '../src/core/constants';
+import { TW, TH, NT, NP, PW, WAGE, T_GRASS, B_HOUSE, B_FARM, B_TOWER, B_BARRACKS, B_RUINS } from '../src/core/constants';
 import { W, owner, occ, isLand, terr, resType, resLeft, pBuild, pType, pOwner, pBurn, pCenter, pHp, type Human, type Nation } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { listen, on } from '../src/sim/events';
 import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
 import { build, plotProblem, structureOf, togglePriority, finishHouse } from '../src/sim/buildings';
-import { H_SOLDIER, H_VILLAGER, TASK_STORE, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, switching, pace } from '../src/sim/population';
-import { UNIT_SIZE, buildUnits, station, unitAt } from '../src/sim/army';
+import { H_SOLDIER, H_VILLAGER, TASK_STORE, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, switching, pace, maxHp } from '../src/sim/population';
+import { UNIT_SIZE, buildUnits, station, unitAt, SOLDIER_DMG } from '../src/sim/army';
+import { wallOf, walledFor } from '../src/sim/defense';
 import { allied, atWar, available, ready, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
-  RANKS, rankFor, leaderlessIn, M_MARCH, M_HOLD, M_ASSAULT, M_FALLBACK, M_REGROUP, M_BLIND, HOLD_BELOW, READY_AT, BREAK_AT, RETREAT_CHANCE } from '../src/sim/war';
+  RANKS, rankFor, leaderlessIn, O_MOVE, O_HUNT, O_LAND, orderKind, giveOrder, orderProblem, M_MARCH, M_HOLD, M_ASSAULT, M_FALLBACK, M_REGROUP, M_BLIND, HOLD_BELOW, READY_AT, BREAK_AT, RETREAT_CHANCE } from '../src/sim/war';
 
 const N = (i: number) => W.nations[i];
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
@@ -260,11 +261,11 @@ describe('at war', () => {
     expect(bags).toBeGreaterThan(0);
     queueCommand({ type:'endWar', nation:1, target:2 }); tick();
     expect(c.phase).toBe(2);
-    const gold0=N(1).gold;
+    const gold0=N(1).gold, t0=W.tickN;
     until(() => !W.campaigns.includes(c), 4000);
     expect(plunder.length).toBeGreaterThan(0);
     expect(plunder.every(p => p[0]===1 && p[3]===LOOT_GOLD)).toBe(true);
-    expect(N(1).gold-gold0).toBeGreaterThanOrEqual(plunder.length*LOOT_GOLD);
+    expect(N(1).gold-gold0).toBeGreaterThanOrEqual(plunder.length*LOOT_GOLD-(W.tickN-t0)*0.1*WAGE*men.length);   // (less the wages paid meanwhile)
     expect(men.filter(h => W.humans.includes(h)).every(h => !h.loot && h.war===-1)).toBe(true);
     expect(atWar(1,2)).toBe(false);   // home again, the raid is over
   });
@@ -696,6 +697,150 @@ describe('army leaders', () => {
     makePeace(1,2);
     until(() => !W.campaigns.includes(c), 3000);
     expect(orders.filter(o => o[0]==='fell' || o[0]==='slain')).toHaveLength(0);
+  });
+
+  it('take double the blows of their soldiers for each rank, and go back to a soldier\'s once home', () => {
+    const { c }=attack(20);   // a general: rank 2
+    const l=byId(c.leader)!;
+    expect(l.lead).toBe(2);
+    expect(maxHp(l)).toBe(SOLDIER_HP[l.tier]*4);
+    expect(l.hp).toBe(SOLDIER_HP[l.tier]*4);
+    expect(HIT_DMG[l.tier]).toBe(SOLDIER_DMG[l.tier]);   // he hits no harder
+    makePeace(1,2);
+    until(() => l.war<0, 3000); run(1);
+    expect([l.lead, maxHp(l)]).toEqual([0, SOLDIER_HP[l.tier]]);
+    expect(l.hp).toBeLessThanOrEqual(SOLDIER_HP[l.tier]);
+  });
+
+  describe('under the player\'s command', () => {
+    /** The middle of tile t, in pixels. */
+    const at = (t: number): [number, number] => [(t%TW)*2+1, ((t/TW)|0)*2+1];
+    /** A tile `dist` tiles from kingdom n's castle, in the direction (dx,dy). */
+    const away = (n: Nation, dx: number, dy: number, dist: number) => { const L=Math.hypot(dx,dy); return Math.round(((n.capTile/TW)|0)+dy/L*dist)*TW+Math.round(n.capTile%TW+dx/L*dist); };
+
+    it('gathers where it is told on open ground, forms ranks there, and stays in the player\'s hands', () => {
+      const { c }=attack(10);
+      const orders=collect('order');
+      const [ax,ay]=at(N(1).capTile), [bx,by]=at(N(2).capTile);
+      const t=away(N(1),ax-bx,ay-by,12);   // behind us, away from the enemy
+      expect(owner[t]===0 || owner[t]===1).toBe(true);
+      expect(orderKind(c,...at(t))).toBe(O_MOVE);
+      queueCommand({ type:'order', nation:1, campaign:c.id, x:at(t)[0], y:at(t)[1] }); tick();
+      expect(c.manual).toBe(O_MOVE);
+      expect(orders.map(o => o[0])).toEqual(['toMove']);
+      until(() => c.orderDone, 3000);
+      expect(Math.hypot(c.bx-at(t)[0],c.by-at(t)[1])).toBeLessThan(5);
+      run(300);
+      expect([c.manual, c.orderDone, c.phase]).toEqual([O_MOVE, true, 1]);   // nothing to make the leader take over
+      // under fire for 3 seconds, its leader takes over
+      for (let i=0;i<31;i++){ c.hitAt=W.tickN; tick(); }
+      expect(c.manual).toBe(0);
+      expect(orders.map(o => o[0])).toEqual(['toMove','resume']);
+    });
+
+    it('attacks the place it is sent to in enemy land, then hands back to its leader after 3 seconds there', () => {
+      const { c }=attack(10);
+      const orders=collect('order');
+      until(() => c.phase===1, 400);
+      const [ax,ay]=at(N(1).capTile), [bx,by]=at(N(2).capTile);
+      const t=away(N(2),-(ay-by),ax-bx,16);   // off to one side of their castle, not on the way to it
+      expect(owner[t]).toBe(2);
+      queueCommand({ type:'order', nation:1, campaign:c.id, x:at(t)[0], y:at(t)[1] }); tick();
+      expect([c.manual, c.d]).toEqual([O_LAND, 2]);
+      expect(orders.map(o => o[0])).toEqual(['toLand']);
+      until(() => c.orderDone || c.manual===0, 4000);
+      expect(Math.hypot(c.bx-at(t)[0],c.by-at(t)[1])).toBeLessThan(5);
+      until(() => c.manual===0, 31);
+      expect(orders.map(o => o[0])).toContain('resume');
+    });
+
+    it('hunts an enemy army it is set on, and holds once it is gone; the leader can be given the army back', () => {
+      world(1); quiet(); paintToward(1,2);
+      soldiers(N(1),8); soldiers(N(2),6); run(1);
+      expect(declare(2,1,false,6)).toBe(true);
+      const E=W.campaigns[0];
+      expect(declare(1,2,false,8)).toBe(true);
+      const c=W.campaigns.find(k => k.a===1)!;
+      noDraft(2);
+      run(50);
+      queueCommand({ type:'order', nation:1, campaign:c.id, x:0, y:0, foe:E.id }); tick();
+      expect([c.manual, c.orderFoe]).toEqual([O_HUNT, E.id]);
+      const gap=() => Math.hypot(c.bx-E.bx,c.by-E.by), g0=gap();
+      run(60);
+      expect(gap()).toBeLessThan(g0);
+      for (const id of E.members) byId(id)!.hp=0;
+      until(() => c.orderDone, 100);
+      expect(c.manual).toBe(O_HUNT);
+      queueCommand({ type:'auto', nation:1, campaign:c.id }); tick();
+      expect(c.manual).toBe(0);
+    });
+
+    it('can\'t be given orders without its leader: his death ends the player\'s command for good', () => {
+      const { c }=attack(10);
+      const [ax,ay]=at(N(1).capTile);
+      expect(giveOrder(1,c.id,ax,ay+20)).toBe(true);
+      expect(c.manual).toBe(O_MOVE);
+      byId(c.leader)!.hp=0; run(2);
+      expect([c.leader, c.manual]).toEqual([-1, 0]);
+      expect(orderProblem(1,c.id)).toMatch(/leader/);
+      expect(giveOrder(1,c.id,ax,ay+20)).toBe(false);
+      expect(orderKind(c,-5,-5)).toBe(0);   // nowhere
+    });
+
+    it('can\'t attack the land of a kingdom it is not at war with', () => {
+      world(2); quiet(); paintToward(1,2); paintToward(1,3);
+      soldiers(N(1),10); run(1);
+      expect(declare(1,2,false,10)).toBe(true);
+      const c=W.campaigns[0];
+      expect(orderKind(c,...at(N(3).capTile))).toBe(0);
+      expect(orderKind(c,...at(N(2).capTile))).toBe(O_LAND);
+    });
+  });
+});
+
+describe('walls', () => {
+  it('join two watchtowers side by side, keep out everyone but their kingdom and its allies, and fall with a tower', () => {
+    world(1); quiet(); paintDisc(N(2),20);
+    const q=place(N(2),B_TOWER,N(1).capTile);
+    N(2).stock=[50,50,50];
+    const q2=[q+1,q-1,q+PW,q-PW].find(k => !plotProblem(N(2),k))!;
+    expect(build(N(2),q2,B_TOWER)).toBe(true);
+    tick();
+    const tiles=Array.from({ length: NT }, (_, t) => t).filter(t => wallOf[t]);
+    expect(tiles.length).toBeGreaterThan(4);
+    expect(tiles.every(t => wallOf[t]===2)).toBe(true);
+    expect(walledFor(1,tiles[0])).toBe(true);
+    expect(walledFor(2,tiles[0])).toBe(false);
+    W.ally[1*W.M+2]=W.ally[2*W.M+1]=1;
+    expect(walledFor(1,tiles[0])).toBe(false);
+    W.ally[1*W.M+2]=W.ally[2*W.M+1]=0;
+    pBurn[q2]=50; tick();
+    expect(tiles.some(t => wallOf[t])).toBe(false);
+  });
+
+  it('an army walled out knocks down a tower to get in', () => {
+    world(1); quiet(); paintDisc(N(2),24); paintToward(1,2);
+    // a ring of towers round their castle (2 by 2 plots), two plots out
+    const cx=N(2).capPlot%PW, cy=(N(2).capPlot/PW)|0, ring: number[]=[];
+    for (let y=cy-2;y<=cy+3;y++) for (let x=cx-2;x<=cx+3;x++){
+      if (x>cx-2 && x<cx+3 && y>cy-2 && y<cy+3) continue;
+      const k=y*PW+x; N(2).stock=[50,50,50];
+      if (!plotProblem(N(2),k)) build(N(2),k,B_TOWER);
+      if (pType[k]!==B_TOWER){ pType[k]=B_TOWER; pOwner[k]=2; N(2).blds.push(k); }
+      ring.push(k);
+    }
+    const inside=(h: Human) => h.x>(cx-1)*8 && h.x<(cx+3)*8 && h.y>(cy-1)*8 && h.y<(cy+3)*8;
+    const men=soldiers(N(1),10);
+    for (const h of men){ h.tier=3; }
+    expect(declare(1,2,false,10)).toBe(true);
+    let breached=-1;
+    for (let i=0;i<9000 && breached<0;i++){
+      for (const h of men) if (h.hp>0) h.hp=1000;   // (no matter the arrows)
+      tick();
+      const broken=ring.some(k => pType[k]!==B_TOWER || pBurn[k]>0);
+      if (men.some(h => W.humans.includes(h) && inside(h))){ expect(broken).toBe(true); breached=i; }
+    }
+    expect(breached).toBeGreaterThan(0);
   });
 });
 

@@ -63,6 +63,7 @@ export interface Human {
   load: number;                      // blacksmiths: carrying 1 copper, or armour of tier 2 or 3 (0 = nothing)
   make: number;                      // blacksmiths: tier of the armour the current job is for (0 = no job)
   dest: number;                      // blacksmiths: plot of the barracks the armour is for, or -1
+  lead: number;                      // soldiers leading an army: their rank (RANKS in war.ts), doubling their hit points each rank; 0 otherwise
 }
 /** An army in the field: a war (taking land, pushing for the capital) or a raid (burning buildings). */
 export interface Campaign {
@@ -86,6 +87,12 @@ export interface Campaign {
   rank: number;                      // the leader's rank by the army's size when it set out (RANKS in war.ts; 0 none)
   mode: number;                      // attacks: marching, holding at the border, assault, falling back, regrouping or charging leaderless (M_* in war.ts)
   stand: boolean;                    // its leader chose to fight to the death: no more retreats
+  manual: number;                    // the player commands it (O_* in war.ts: gather, hunt an army, attack a place), or 0: its leader decides
+  orderAt: number;                   // manual: the tile it was sent to; orderFoe: the enemy army it hunts (campaign id), or -1
+  orderFoe: number;
+  orderDone: boolean;                // manual: it got there, formed up, or the army it hunted is gone
+  calm: number;                      // manual, order done: ticks on enemy land or under fire, until its leader takes over again
+  hitAt: number;                     // tick one of its soldiers was last hit
 }
 export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; }   // gold still to spend on this front
 
@@ -102,7 +109,9 @@ export type Command =
   | { type: 'intercept'; nation: number; campaign: number; soldiers?: number; units?: number[] }   // send armies after an enemy army
   | { type: 'peace'; nation: number; target: number }                 // accept the target's peace offer
   | { type: 'research'; nation: number; topic: number }               // study this topic next (R_* in research.ts)
-  | { type: 'invest'; nation: number; share: number };               // city investment (0..1)
+  | { type: 'invest'; nation: number; share: number }                // city investment (0..1)
+  | { type: 'order'; nation: number; campaign: number; x: number; y: number; foe?: number }   // take command of an army: gather at (x,y), attack there, or hunt army `foe`
+  | { type: 'auto'; nation: number; campaign: number };              // hand an army back to its leader
 
 export const elev = new Float32Array(NT), moist = new Float32Array(NT);
 // resources: at most one per tile (R_* in resources.ts), harvests left, claimed by a villager

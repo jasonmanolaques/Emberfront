@@ -8,6 +8,7 @@ import { client } from '../client';
 import { updateWarChips, refreshDiplomacy } from './diplomacy';
 import { refreshResearch } from './research';
 import { refreshArmy } from './army';
+import { refreshCommand } from './command';
 import { $ } from './dom';
 import { perMinute } from '../sim/ledger';
 
@@ -68,6 +69,7 @@ export function updateHUD(now: number){
   refreshDiplomacy();
   refreshResearch();
   refreshArmy();
+  refreshCommand();
 }
 
 export function log(text: string, kind?: string){
