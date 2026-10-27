@@ -76,7 +76,7 @@ function pick(s: Structure){
   if (client.placing===s.type){ stopPlacing(); return; }
   if (!canAfford(me,s)){ toast(`Not enough resources for a ${s.name.toLowerCase()}`); return; }
   client.placing=s.type;
-  ui.banner.textContent=`Placing a ${s.name.toLowerCase()}: click your land · Esc to stop`; ui.banner.hidden=false;
+  ui.banner.textContent=`Placing a ${s.name.toLowerCase()}: click your land (over a building, it replaces it) · Esc to stop`; ui.banner.hidden=false;
   refreshBuildPanel();
 }
 export function stopPlacing(){
@@ -92,7 +92,7 @@ export function toggleBuildPanel(open=panel.hidden){
 /** A click on the map while placing: build there if the plot is good. */
 export function placeAt(t: number){
   const me=W.nations[PLAYER], s=structureOf(client.placing); if (!me || !s || t<0) return;
-  const q=((t/TW|0)>>2)*PW+((t%TW)>>2), problem=placeProblem(me,q,s.type);
+  const q=((t/TW|0)>>2)*PW+((t%TW)>>2), problem=placeProblem(me,q,s.type,'any');
   if (problem){ toast(problem); return; }
   if (!canAfford(me,s)){ toast(`Not enough resources for a ${s.name.toLowerCase()}`); stopPlacing(); return; }
   queueCommand({ type:'build', nation:PLAYER, plot:q, kind:s.type });

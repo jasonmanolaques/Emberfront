@@ -19,7 +19,9 @@ export const TICK = 0.1;                  // simulation step in seconds
 
 export const T_DEEP=0,T_WATER=1,T_SHALLOW=2,T_BEACH=3,T_GRASS=4,T_DRY=5,T_FOREST=6,T_DESERT=7,T_HILLS=8,T_MOUNT=9,T_SNOW=10;
 export const TNAME = ['Deep sea','Sea','Shallows','Beach','Grassland','Savanna','Forest','Desert','Hills','Mountains','Snowfield'];
-export const TMULT = [0,0,0,1.1,1,1,1.4,1.2,1.8,3,2.4];   // attack cost multiplier by terrain
+// how much harder rough ground is to settle, by terrain: a fifth of what it once was (beach 1.1, forest 1.4,
+// desert 1.2, hills 1.8, mountains 3, snow 2.4), so every kind of ground is worth settling
+export const TMULT = [0,0,0,1.1,1,1,1.4,1.2,1.8,3,2.4].map(m => m && +(1+(m-1)*0.2).toFixed(3));
 export const B_EMPTY=0,B_HOUSE=1,B_FARM=2,B_TOWER=3,B_MINE=4,B_CASTLE=5,B_CPART=6,B_RUINS=7,B_BARRACKS=8,B_MINTER=9,B_SITE=10;   // B_SITE: a house being built
 // buildings bigger than one plot: the top-left plot holds the type, the others are B_PART pointing at it (pMain)
 export const B_PLANTATION=11, B_QUARRY=12, B_COPPERMINE=13, B_PART=14;

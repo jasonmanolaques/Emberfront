@@ -14,7 +14,7 @@ import { scanContacts, census } from './census';
 import { botThink } from './bots';
 import { updatePopulation } from './population';
 import { genResources, clearPlot } from './resources';
-import { resetWar, declare, intercept, proposeAlliance, endWar, makePeace, giveOrder, handBack } from './war';
+import { resetWar, declare, intercept, proposeAlliance, endWar, makePeace, setOffensive } from './war';
 import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
 import { turnLedger, resetLedger } from './ledger';
@@ -205,7 +205,7 @@ function applyCommand(c: Command){
     const n=W.nations[c.nation]; if (!n || !n.alive) return;
     n.soldierShare=Math.min(1,Math.max(0,c.share));
   } else if (c.type==='build'){
-    const n=W.nations[c.nation]; if (n) build(n,c.plot,c.kind);
+    const n=W.nations[c.nation]; if (n) build(n,c.plot,c.kind,'any');   // the player may build over his own buildings
   } else if (c.type==='priority'){
     const n=W.nations[c.nation]; if (n && n.alive) togglePriority(n,c.plot);
   } else if (c.type==='ally'){
@@ -215,10 +215,8 @@ function applyCommand(c: Command){
     declare(c.nation,c.target,c.raid,c.units ?? c.soldiers ?? 0);
   } else if (c.type==='intercept'){
     intercept(c.nation,c.campaign,c.units ?? c.soldiers ?? 0);
-  } else if (c.type==='order'){
-    giveOrder(c.nation,c.campaign,c.x,c.y,c.foe ?? -1);
-  } else if (c.type==='auto'){
-    handBack(c.nation,c.campaign);
+  } else if (c.type==='offensive'){
+    setOffensive(c.nation,c.target,c.go);
   } else if (c.type==='endWar'){
     endWar(c.nation,c.target);
   } else if (c.type==='peace'){

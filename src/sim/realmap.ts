@@ -106,7 +106,7 @@ export function genRealMap(id: string, seed: number){
     const px=q%PW, py=(q/PW)|0; let n=0;
     for (let y=py*4;y<py*4+4;y++) for (let x=px*4;x<px*4+4;x++) n+=isLand[y*TW+x];
     const c=pCenter[q];
-    pBuild[q] = n>=12 && isLand[c] && terr[c]!==T_SNOW ? 1 : 0;
+    pBuild[q] = n>=12 && isLand[c] ? 1 : 0;   // mountains and snowfields too: any ground with room
   }
 }
 

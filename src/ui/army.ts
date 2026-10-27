@@ -5,7 +5,7 @@ import { PLAYER, PS, B_BARRACKS } from '../core/constants';
 import { W, pType, pOwner } from '../sim/state';
 import { unitAt, units, armorWanted, TIER_NAME, UNIT_SIZE } from '../sim/army';
 import { R_INFANTRY } from '../sim/research';
-import { RANKS, M_HOLD, M_ASSAULT, M_FALLBACK, M_REGROUP, M_BLIND, leaderlessIn } from '../sim/war';
+import { RANKS, M_MARCH, M_HOLD, F_GATHER, F_READY, F_PUSH } from '../sim/war';
 import { drawIcon } from '../render/sprites';
 import { styleOf } from '../render/style';
 import { armyName } from './armies';
@@ -30,16 +30,15 @@ const nm = (id: number) => W.nations[id]?.name ?? 'the enemy';
 /** What this barracks' army is doing out there, and who leads it. */
 function fieldReport(key: number){
   const c=W.campaigns.find(c => c.a===PLAYER && c.unit===key && c.phase<2);
-  const lost=leaderlessIn(PLAYER,key);
-  if (!c) return lost>=0 ? `Leaderless in the war with ${nm(lost)}: new soldiers charge on their own` : 'At home';
-  const what=c.raid ? `raiding ${nm(c.d)}` : c.target>=0 ? `intercepting ${nm(c.d)}'s army`
-    : c.mode===M_BLIND ? `charging ${nm(c.d)} leaderless, one by one`
-    : c.mode===M_HOLD ? `holding at ${nm(c.d)}'s border for reinforcements`
-    : c.mode===M_REGROUP ? `regrouping outside ${nm(c.d)}`
-    : c.mode===M_FALLBACK ? `falling back from ${nm(c.d)}`
-    : c.mode===M_ASSAULT ? (c.stand ? `fighting to the death in ${nm(c.d)}` : `attacking ${nm(c.d)}`)
-    : `marching on ${nm(c.d)}`;
-  const who=c.leader>=0 ? `${RANKS[c.rank]}, ` : c.rank && c.mode!==M_BLIND ? 'Leaderless, ' : '';
+  if (!c) return 'At home';
+  const st=W.offensive[c.a*W.M+c.d];
+  const what=c.raid ? (c.go ? (c.mode===M_MARCH ? `marching on ${nm(c.d)} to raid it` : `raiding ${nm(c.d)}`) : c.mode===M_HOLD ? `waiting at ${nm(c.d)}'s border for your word to raid` : `marching to ${nm(c.d)}'s border to raid`)
+    : c.target>=0 ? `intercepting ${nm(c.d)}'s raiders`
+    : st===F_GATHER ? `gathering on the front with ${nm(c.d)}`
+    : st===F_READY ? `ready on the front with ${nm(c.d)}, waiting for your word`
+    : st===F_PUSH ? `attacking ${nm(c.d)} along the front`
+    : `holding the front against ${nm(c.d)}`;
+  const who=c.leader>=0 ? `${RANKS[c.rank]}, ` : c.rank ? 'Leaderless, ' : '';
   return `${who}${c.members.length} men ${what}`;
 }
 

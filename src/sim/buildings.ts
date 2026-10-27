@@ -5,7 +5,7 @@
    at tier 3 four of a kind in a square join into one of 2×2 (tier 3); a joined building makes far
    more than its parts did apart. ---------- */
 import { plannedWall } from './fort';
-import { TW, PW, PH, NP, T_MOUNT, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, isStructure } from '../core/constants';
+import { TW, PW, PH, NP, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, isStructure } from '../core/constants';
 import { W, owner, occ, terr, isLand, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, pMain, pHp, pTier, pSpan, pArmor, type Nation } from './state';
 import { R_GATHER } from './research';
 import { on } from './events';
@@ -38,8 +38,6 @@ function anyWithin(q: number, id: number, r: number, pred: (k: number, id: numbe
 const isOwnBld = (k: number, id: number) => isBld(pType[k]) && pOwner[k]===id;
 export const isEnemyLand = (k: number, id: number) => { const o=owner[pCenter[k]]; return o!==0 && o!==id; };
 export { anyWithin };
-
-const houseFits = (q: number) => terr[pCenter[q]]!==T_MOUNT;
 
 function buildRoad(a: number, b: number){
   let x0=a%TW, y0=(a/TW)|0; const x1=b%TW, y1=(b/TW)|0;
@@ -77,7 +75,7 @@ function placeBuilding(q: number, id: number, type: number, isNew: boolean){
 /** How well plot q suits a new house: towns grow outward from their edges and along their roads,
     dense cores fill slowly, and open countryside now and then seeds a new village. 0 = unsuitable. */
 export function homeScore(n: Nation, q: number){
-  if (plotProblem(n,q) || !houseFits(q) || plannedWall(n,q)) return 0;   // a bot's houses keep off the line of its wall
+  if (plotProblem(n,q) || plannedWall(n,q)) return 0;   // a bot's houses keep off the line of its wall
   const nb=nbBuildings(q,n.id);
   let w = nb>0 ? (nb<=3 ? 1+nb*1.4 : nb<=5 ? 1.6 : 0.35) : n.bCount<2 ? 0.3 : (!anyWithin(q,n.id,5,isOwnBld) ? 0.9 : 0.03);
   if (pType[q]===B_RUINS) w*=1.8;   // rebuilding on the ashes
@@ -137,36 +135,76 @@ export const STRUCTURES: Structure[] = [
 export const structureOf = (type: number) => STRUCTURES.find(s => s.type===type);
 export const canAfford = (n: Nation, s: Structure) => s.cost.every((c,g) => n.stock[g]>=c);
 
+/** What a new building may replace: nothing ('none'), a house or the frame of one ('houses': what bots
+    clear for a wall tower or a workshop), or any building of the kingdom's but its castle ('any': the player). */
+export type Over = 'none' | 'houses' | 'any';
+const mainOf = (q: number) => pType[q]===B_PART ? pMain[q] : q;
+/** Could a new building go over what stands on plot q (as far as `over` allows)? */
+function replaceable(n: Nation, q: number, over: Over){
+  const ty=pType[q], m=mainOf(q);
+  if (over==='none' || pOwner[m]!==n.id || pBurn[m]>0 || ty===B_CASTLE || ty===B_CPART) return false;
+  return over==='any' ? isStructure(pType[m]) || ty===B_SITE : ty===B_HOUSE || ty===B_SITE;
+}
 /** Why kingdom n can't build on plot q, or null if it can. */
-export function plotProblem(n: Nation, q: number): string | null {
+export function plotProblem(n: Nation, q: number, over: Over='none'): string | null {
   if (q<0 || q>=NP || !pBuild[q]) return 'There is no room to build there';
   if (owner[pCenter[q]]!==n.id) return 'Build on your own land';
   if (occ[pCenter[q]]) return 'The enemy holds that ground';
-  if ((pType[q]!==B_EMPTY && pType[q]!==B_RUINS) || pBurn[q]>0) return 'Something already stands there';
+  if (((pType[q]!==B_EMPTY && pType[q]!==B_RUINS) || pBurn[q]>0) && !replaceable(n,q,over)) return 'Something already stands there';
   const px=(q%PW)*4, py=((q/PW)|0)*4;
   for (let y=py;y<py+4;y++) for (let x=px;x<px+4;x++){ const o=owner[y*TW+x]; if (o && o!==n.id) return 'Too close to the border'; }
   return null;
 }
 
-/** Why kingdom n can't put a `type` building with its top-left on plot q, or null if it can. */
-export function placeProblem(n: Nation, q: number, type: number): string | null {
+/** Why kingdom n can't put a `type` building with its top-left on plot q, or null if it can. With
+    `over`, it may go over buildings of the kingdom's (they are pulled down), but not over one just like it. */
+export function placeProblem(n: Nation, q: number, type: number, over: Over='none'): string | null {
   const [w,h]=SIZE[type] ?? [1,1];
   if (q<0 || q%PW+w>PW || ((q/PW)|0)+h>PH) return 'There is no room to build there';
-  for (const k of footprint(q,type)){ const p=plotProblem(n,k); if (p) return w*h>1 && p==='Something already stands there' ? `Needs ${w}×${h} free plots` : p; }
+  for (const k of footprint(q,type)){ const p=plotProblem(n,k,over); if (p) return w*h>1 && p==='Something already stands there' ? `Needs ${w}×${h} free plots` : p; }
+  if (w*h===1 && pType[q]===type) return 'One already stands there';
   return null;
 }
+/** The buildings a `type` building placed on plot q would pull down (main plots). */
+export function underneath(q: number, type: number){
+  const out: number[]=[];
+  for (const k of footprint(q,type)){ const ty=pType[k]; if ((isStructure(ty) || ty===B_SITE) && !out.includes(mainOf(k))) out.push(mainOf(k)); }
+  return out;
+}
+/** Pulls down the building on plot q (all of it, if it covers several plots): its plots are left bare. */
+export function demolish(q: number){
+  const m=mainOf(q), ty=pType[m], o=pOwner[m], n=W.nations[o];
+  const plots=ty===B_SITE ? [m] : cover(m);
+  for (const k of plots){
+    pType[k]=B_EMPTY; pOwner[k]=0; pMain[k]=0; pTimer[k]=0; pPrio[k]=0; pAband[k]=0; pHp[k]=0; pTier[k]=0; pSpan[k]=0; pArmor[2][k]=pArmor[3][k]=0;
+    on.plotChanged(k);
+  }
+  if (!n) return;
+  if (!isStructure(ty)) return;   // (a house frame isn't counted)
+  const i=n.blds.indexOf(m); if (i>=0) n.blds.splice(i,1);
+  n.bCount=Math.max(0,n.bCount-1);
+  countDown(n,ty);
+}
 
-/** Pays for and places a building. Returns false if it can't be afforded or placed. */
-export function build(n: Nation, q: number, type: number){
+/** Pays for and places a building, pulling down what it goes over (as far as `over` allows).
+    Returns false if it can't be afforded or placed. */
+export function build(n: Nation, q: number, type: number, over: Over='none'){
   const s=structureOf(type);
-  if (!s || !n.alive || !canAfford(n,s) || placeProblem(n,q,type)) return false;
+  if (!s || !n.alive || !canAfford(n,s) || placeProblem(n,q,type,over)) return false;
   s.cost.forEach((c,g) => n.stock[g]-=c);
+  for (const m of underneath(q,type)) demolish(m);
   for (const k of footprint(q,type).slice(1)){ pType[k]=B_PART; pOwner[k]=n.id; pMain[k]=q; pBurn[k]=0; pAband[k]=0; pPrio[k]=0; clearPlot(k); }
   placeBuilding(q,n.id,type,false);
   // count it right away rather than at the next census, so its effect starts now
   countUp(n,type);
   if (isGatherer(type)) joinGatherers(n);
   return true;
+}
+function countDown(n: Nation, type: number){
+  if (type===B_HOUSE){ n.houses=Math.max(0,n.houses-1); n.beds=Math.max(0,n.beds-1); }   // (the census counts beds exactly, once a second)
+  else if (type===B_FARM) n.farms--; else if (type===B_BARRACKS) n.barracks--; else if (type===B_TOWER) n.towers--; else if (type===B_MINTER) n.minters--;
+  else if (type===B_PLANTATION) n.plantations--; else if (type===B_QUARRY) n.quarries--; else if (type===B_COPPERMINE) n.copperMines--;
+  else if (type===B_RESEARCH) n.labs--; else if (type===B_GUILD) n.guilds--; else if (type===B_SMITHY) n.smithies--;
 }
 export function countUp(n: Nation, type: number){
   if (type===B_FARM) n.farms++; else if (type===B_BARRACKS) n.barracks++; else if (type===B_TOWER) n.towers++; else if (type===B_MINTER) n.minters++;

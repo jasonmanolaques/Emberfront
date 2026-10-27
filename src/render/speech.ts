@@ -10,18 +10,10 @@ export const LINES: Record<string, string[]> = {
   // soldiers marching in a counter-attack
   revenge: ['Once more into the breach!', 'They will pay for that mistake!', 'Now you will see our wrath!', "Gather up! It's time for revenge!"],
   // an army's leader giving his orders (sim order events)
-  march: ['Form ranks! Forward, march!', 'Keep the line and follow me!', 'Banners high! On to their border!'],
-  hold: ['Halt! We are too few.', 'Hold here until more men come up!', 'Not yet. We wait for reinforcements.'],
+  march: ['To the border! Form the line!', 'Spread out along their border, men!', 'Banners high! To the front!'],
+  ready: ['In position! We await the word.', 'The line is formed. Say the word!', 'Every man in his place. Ready!'],
+  hold: ['Halt! Hold this line!', 'Dig in! Not a step back!', 'Hold here, and close the gaps!'],
   assault: ['Charge!', 'Into their land! Break them!', 'Forward, all of you! Attack!', 'Now! For the crown!'],
-  retreat: ['Fall back! Fall back!', 'Retreat to the border and regroup!', 'Pull back, we need more men!'],
-  stand: ['No retreat! We fight to the last!', 'Stand your ground! To the death!', 'We will not run from them!'],
-  regroup: ['Regroup here! Fresh men are coming.', 'Close ranks and catch your breath.', 'We wait here until we are strong again.'],
-  home: ['No help is coming. Back home, all of you.', 'Enough. We march home.'],
-  // the player's orders, as the leader passes them on (sim/war.ts giveOrder), and taking over again
-  toMove: ['To my mark! Form ranks there!', 'Gather on me there, and dress the line!', 'Shoulder arms! We regroup over there.'],
-  toHunt: ['Their army is there! Run them down!', 'After them! Cut that army to pieces!', 'Turn about! We take their army head on!'],
-  toLand: ['Strike their land there! Forward!', 'That is where we break them! March!', 'Over their border, there! Burn and take it!'],
-  resume: ['Right, I have it from here.', 'Leave it to me now, I know this ground.', 'The field is mine to lead again!'],
 };
 const SHOW_MS = 2600, FADE_MS = 250;
 interface Bubble { text: string; t0: number; }

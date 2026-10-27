@@ -1,10 +1,11 @@
 /* ---------- diplomacy: click another kingdom to propose an alliance or go to war; the war chips,
-   and the menu under a chip for meeting an army marching on you (ask for peace, or intercept it) ---------- */
+   the word under a chip (attack along the front, hold it, or send the raiders in), and the menu
+   under a chip for meeting an army marching on you (ask for peace, or intercept raiders) ---------- */
 import { PLAYER } from '../core/constants';
 import { fmt } from '../core/util';
 import { W } from '../sim/state';
 import { queueCommand } from '../sim/sim';
-import { allied, atWar, available, allyProblem, warProblem, interceptProblem, OFFER_TICKS, LOOT_GOLD } from '../sim/war';
+import { allied, atWar, available, allyProblem, warProblem, interceptProblem, OFFER_TICKS, LOOT_GOLD, PRESENT, F_GATHER, F_READY, F_PUSH, M_HOLD } from '../sim/war';
 import type { Campaign, Human } from '../sim/state';
 import { toast } from './hud';
 import { ArmyPicker, armyName } from './armies';
@@ -67,7 +68,7 @@ function refreshWar(force: boolean){
   picker.refresh();
   const k=picker.count(), picked=picker.chosen().length;
   $('dCommitVal').textContent=`${k} soldier${k===1?'':'s'}`;
-  $('dSplit').textContent = armies.length ? `${picked} arm${picked===1?'y':'ies'} chosen: each marches on its own. Soldiers without room in a barracks stay home to defend.` : '';
+  $('dSplit').textContent = armies.length ? `${picked} arm${picked===1?'y':'ies'} chosen. An attack spreads them along the border; a raid marches to it. Either way they wait there for your word. Soldiers without room in a barracks stay home to defend.` : '';
   if (force || performance.now()-raidAt>1000){ raidAt=performance.now(); raidWhy=warProblem(PLAYER,target,true); }
   const attackWhy=warProblem(PLAYER,target,false);
   const raid=$('dRaid') as HTMLButtonElement, attack=$('dAttack') as HTMLButtonElement;
@@ -152,7 +153,11 @@ function groupsOf(o: number, side: number, byId: Map<number, Human>){
   for (const c of W.campaigns){
     if (c.a!==k || !between(c,o) || c.phase===2) continue;
     let here=0, coming=0;
-    for (const id of c.members){ const h=byId.get(id); if (!h) continue; if ((h.x-c.bx)**2+(h.y-c.by)**2<40*40) here++; else coming++; }
+    for (const id of c.members){
+      const h=byId.get(id); if (!h) continue;
+      // on a front, with the army means at his place in the line; on a march, near its banner
+      if (c.front ? h.fk>=0 && (h.x-h.fx)**2+(h.y-h.fy)**2<(PRESENT*3)**2 : (h.x-c.bx)**2+(h.y-c.by)**2<40*40) here++; else coming++;
+    }
     const u=unitAt(c.unit), n=W.nations[k];
     const name=u && u.o===k ? armyName(n,u).replace(/ barracks$/i,' army').replace(/^Barracks$/,'Army') : 'Army';
     const tip=`${here} with the army, room for ${u?.cap ?? c.startSoldiers}`+(coming ? `, ${coming} reinforcement${coming===1?'':'s'} on the way` : '');
@@ -202,13 +207,40 @@ export function updateWarChips(){
     const inc=f.incoming.reduce((k,c)=>k+c.members.length,0);
     const men=(inc ? ` · ${inc} coming` : '')+(f.fleeing ? ` · ${f.fleeing} fleeing` : '')+(f.intercepting ? ` · ${f.intercepting} intercepting` : '')+(f.men-f.intercepting>0 ? ` · ${f.men-f.intercepting} out` : '');
     const chip=`<button class="chip war${f.theyOffer||f.ready?' offer':''}${open?' threat':''}" data-o="${f.o}" data-act="${act}" ${off||!act?'disabled':''}><i class="flag" style="${flagCSS(W.nations[f.a].code)}"></i>${esc(nameOf(f.a))} – ${esc(nameOf(f.d))} · ${kind}${men}<b>${label}</b></button>`;
-    return `<div class="front" data-o="${f.o}">${chip}${powerBar(f,track(f.o,byId),byId)}</div>`;
+    return `<div class="front" data-o="${f.o}">${chip}${word(f.o,byId)}${powerBar(f,track(f.o,byId),byId)}</div>`;
   }).join('');
   if (html!==lastChips){ lastChips=html; wars.innerHTML=html; placePop(); }
   if (!pop.hidden){
     if (popCounter){ if (!W.ready[PLAYER*W.M+popFor]) closePop(); }
     else if (!incomingFrom(popFor) && popCamp<0) closePop(); else if (!popSend.hidden) refreshPop();
   }
+}
+/** Under the chip, the word for our armies against o: gathering on the border (and how many are in
+    place), then a button to attack all along the front, to hold it, and to attack again; for raiders
+    waiting at o's border, to send them in. For o's offensive against us, how it stands. */
+function word(o: number, byId: Map<number, Human>){
+  const M=W.M, key=PLAYER*M+o, st=W.offensive[key];
+  const mine=W.campaigns.filter(c => c.a===PLAYER && c.d===o && c.phase<2 && c.hostile);
+  if (mine.some(c => c.front)){
+    let men=0, here=0;
+    for (const c of mine) if (c.front) for (const id of c.members){
+      const h=byId.get(id); if (!h || h.id===c.leader) continue;
+      men++; if (h.fk===key && (h.x-h.fx)**2+(h.y-h.fy)**2<=(PRESENT*2)**2) here++;
+    }
+    if (st===F_GATHER) return `<button class="fword" disabled title="Your armies are taking their places along the border">Gathering on the border · ${here}/${men} in place</button>`;
+    if (st===F_PUSH) return `<button class="fword hold" data-o="${o}" data-go="" title="Your armies stop and hold the ground they have taken">❚❚ Hold the front</button>`;
+    return `<button class="fword go" data-o="${o}" data-go="1" title="Your armies push into ${esc(W.nations[o].name)} all along the front">⚔ ${st===F_READY ? 'Attack!' : 'Attack again'}</button>`;
+  }
+  const raid=mine.find(c => c.raid && !c.go);
+  if (raid) return raid.mode===M_HOLD
+    ? `<button class="fword go" data-o="${o}" data-go="1" title="Your raiders cross the border and burn what they find">⚔ Start the raid</button>`
+    : `<button class="fword" disabled title="They wait at the border for your word">Raiders marching to the border</button>`;
+  const theirs=o*M+PLAYER;
+  if (W.campaigns.some(c => c.front && c.a===o && c.d===PLAYER && c.phase<2)){
+    const s=W.offensive[theirs];
+    return `<button class="fword them" disabled>${s===F_PUSH ? 'Their army attacks along the front' : s===F_GATHER || s===F_READY ? 'Their army masses on your border' : 'Their army holds the front'}</button>`;
+  }
+  return '';
 }
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]!);
 
@@ -258,6 +290,8 @@ export function setupDiplomacy(){
   $('dRaid').onclick=()=>send(true);
   $('dAttack').onclick=()=>send(false);
   wars.addEventListener('click',e=>{
+    const w=(e.target as HTMLElement).closest('button.fword') as HTMLButtonElement | null;
+    if (w){ if (!w.disabled){ queueCommand({ type:'offensive', nation:PLAYER, target:+w.dataset.o!, go:!!w.dataset.go }); lastChips=''; w.disabled=true; } return; }
     const b=(e.target as HTMLElement).closest('button.chip') as HTMLButtonElement | null; if (!b || b.disabled) return;
     const o=+b.dataset.o!, act=b.dataset.act;
     if (act==='respond'){ if (!pop.hidden && popFor===o) closePop(); else openPop(o); return; }

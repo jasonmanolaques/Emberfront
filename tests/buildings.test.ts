@@ -1,6 +1,6 @@
 // Buildings a kingdom places, and the gold economy.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, GOLD_START, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
+import { TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
 import { W, owner, isLand, pType, pCenter, pBuild, type Human } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { listen } from '../src/sim/events';
@@ -94,7 +94,7 @@ describe('building costs and placement', () => {
     const types = new Set<number>();
     for (let q=0;q<NP;q++) if (owner[pCenter[q]]===1) types.add(pType[q]);
     expect(types.has(B_HOUSE)).toBe(true);
-    for (const t of types) expect([B_EMPTY, B_HOUSE, B_CASTLE, B_CPART, B_RUINS]).toContain(t);
+    for (const t of types) expect([B_EMPTY, B_HOUSE, B_SITE, B_CASTLE, B_CPART, B_RUINS]).toContain(t);   // (a house going up)
   });
 });
 

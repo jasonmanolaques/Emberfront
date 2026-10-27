@@ -157,7 +157,7 @@ describe('population', () => {
   });
 
   it('walks people around the castle walls instead of across them', () => {
-    expand(8);   // the founding circle barely covers the castle's corners; give them room to walk round
+    expand(12);   // the founding circle barely covers the castle's corners; give them room to walk round
     const n = me(), ox = (n.capPlot%PW)*8, oy = ((n.capPlot/PW)|0)*8;
     let onWalls = 0, samples = 0;
     for (let i=0;i<3000;i++){

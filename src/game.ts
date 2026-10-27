@@ -92,14 +92,14 @@ listen({
   armored: (id,x,y,tier) => { gatePuff(x,y-2,1); if (W.humans.find(h => h.id===id)?.o===PLAYER) floats.push({ x, y:y-6, text:`Armour ${TIER_NAME[tier]}`, t0:performance.now(), c:'#dfe6ec' }); },
   // an army's leader gives his orders aloud, and the log tells of those that matter to you
   order: (kind,a,d,rank,id,x,y) => {
-    const r=RANKS[rank].toLowerCase();
+    const r=rank ? RANKS[rank].toLowerCase() : 'army';
     if (kind==='fell' || kind==='slain'){
       // whoever is nearest cries it out
       let best=-1, bd=40*40; for (const h of W.humans) if (h.o===a && h.kind===1 && h.hp>0 && h.id!==id){ const e=(h.x-x)**2+(h.y-y)**2; if (e<bd){ bd=e; best=h.id; } }
       if (best>=0) say(best,`The ${r} has fallen!`);
     } else if (LINES[kind]) say(id,pick(LINES[kind]));
     const t=ORDER_LOG[kind]; if (!t) return;
-    if (a===PLAYER){ const [text,mood]=t.mine(r,nm(d)); log(text,mood); if (kind==='fell' || kind==='slain' || kind==='retreat') toast(text.split(':')[0]); }
+    if (a===PLAYER){ const [text,mood]=t.mine(r,nm(d)); log(text,mood); if (kind==='fell' || kind==='slain' || kind==='ready') toast(text.split(':')[0]); }
     else if (d===PLAYER && t.theirs){ const [text,mood]=t.theirs(r,nm(a)); log(text,mood); }
   },
   annexed: (loser,winner) => { if (winner===PLAYER){ log(`You took the castle of ${nm(loser)}: its land and people are yours`,'good'); toast(`${nm(loser)} is yours`); } },
@@ -107,21 +107,14 @@ listen({
 const GOOD_COL=['#e9b26a','#dcd6cc','#ffa060'];
 type Mood = 'good' | 'bad' | undefined;
 const ORDER_LOG: Record<string, { mine: (r: string, foe: string) => [string, Mood]; theirs?: (r: string, foe: string) => [string, Mood] }> = {
-  hold: { mine: (r,f) => [`Your ${r} halts at the border of ${f}: too few men to attack, he waits for reinforcements`,'bad'],
-          theirs: (r,f) => [`The ${r} of ${f}'s army halts at your border, waiting for reinforcements`,'good'] },
+  ready: { mine: (r,f) => [`Your ${r} stands ready on the border of ${f}: give the word in the war bar`,'good'],
+           theirs: (_r,f) => [`An army of ${f} masses on your border`,'bad'] },
   assault: { mine: (r,f) => [`Your ${r} gives the order: into ${f}, attack!`,'good'],
-             theirs: (r,f) => [`An army of ${f} under its ${r} crosses into your land`,'bad'] },
-  retreat: { mine: (r,f) => [`Your army in ${f} is bled white: its ${r} falls back to make good the losses`,'bad'],
-             theirs: (r,f) => [`${f}'s army falls back from your land to regroup`,'good'] },
-  stand: { mine: (r,f) => [`Your ${r} refuses to retreat: your army in ${f} fights to the death!`,'good'],
-           theirs: (r,f) => [`${f}'s ${r} refuses to retreat: his army fights to the death`,'bad'] },
-  regroup: { mine: (r,f) => [`Your ${r} regroups outside ${f}: he attacks again once 60% of his army is back`,undefined],
-             theirs: (_r,f) => [`${f}'s army regroups at your border`,'bad'] },
-  home: { mine: (r,f) => [`No reinforcements came: your ${r} takes the army home from ${f}`,'bad'],
-          theirs: (_r,f) => [`${f}'s army gives up and goes home`,'good'] },
-  fell: { mine: (r,f) => [`Your ${r} has fallen: for the rest of the war with ${f}, his barracks' soldiers charge leaderless, one by one`,'bad'],
+             theirs: (r,f) => [`${f}'s ${r} attacks along the front`,'bad'] },
+  hold: { mine: (r,f) => [`Your ${r} halts and holds the front against ${f}`,undefined],
+          theirs: (_r,f) => [`${f}'s army halts and holds the front`,'good'] },
+  fell: { mine: (r,f) => [`Your ${r} has fallen: his soldiers fight on against ${f} without him`,'bad'],
           theirs: (r,f) => [`You killed the ${r} of ${f}'s army: its soldiers fight on leaderless`,'good'] },
-  resume: { mine: (r,_f) => [`Your ${r} takes charge of his army again`,undefined] },
   slain: { mine: (r,f) => [`Your ${r} has fallen fighting ${f}`,'bad'],
            theirs: (r,f) => [`You killed the ${r} of ${f}'s army`,'good'] },
 };

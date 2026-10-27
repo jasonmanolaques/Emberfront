@@ -38,7 +38,7 @@ export interface SimEvents {
   builderHired(q: number, o: number, replaced: boolean): void; // a villager took up the tools at the builders guild or blacksmith on plot q
   forged(q: number, o: number, tier: number): void;            // a blacksmith left armour of `tier` at the barracks plot q
   armored(id: number, x: number, y: number, tier: number): void;   // soldier id put on armour of `tier`
-  order(kind: string, a: number, d: number, rank: number, leader: number, x: number, y: number): void;   // an army's leader gives an order ('march', 'hold', 'assault', 'retreat', 'stand', 'regroup', 'home') or falls ('fell' on an attack, leaving his barracks leaderless; 'slain' on a raid or intercept)
+  order(kind: string, a: number, d: number, rank: number, leader: number, x: number, y: number): void;   // an army's leader (leader -1 and rank 0: an army without one) gives an order ('march' setting out, 'ready' in place at the border, 'assault', 'hold') or falls ('fell' on an attack, 'slain' on a raid or intercept)
   deserted(o: number, x: number, y: number, tier: number, gold: number): void;   // an unpaid soldier of tier `tier` went back to work; his armour scrapped for `gold`
 }
 

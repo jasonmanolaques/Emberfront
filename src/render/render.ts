@@ -17,7 +17,6 @@ import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, psize, floats, 
 import { H_SOLDIER, TASK_HARVEST, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, TASK_FORGE, indoors, maxHp } from '../sim/population';
 import { units, unitLabel } from '../sim/army';
 import { chatter, drawSpeech } from './speech';
-import { orderPing } from '../ui/command';
 import { paintSmallFlag, flagImage } from './flags';
 import { G_WOOD, G_STONE, G_COPPER } from '../sim/resources';
 import { allied, atWar, HIT_TICKS, RANKS } from '../sim/war';
@@ -87,7 +86,7 @@ function drawStandard(o: number, rank: number, bx: number, fy: number, left: boo
 }
 
 /** The army the player has in hand: a gold ring at each of its soldiers' feet (a bigger one for
-    the leader), and where it was sent. */
+    the leader). */
 function drawSelection(now: number){
   const c=client.selected>=0 ? W.campaigns.find(k => k.id===client.selected) : undefined;
   if (c && c.leader>=0 && c.phase<2){
@@ -98,18 +97,6 @@ function drawSelection(now: number){
       ctx.fillStyle=INK; ctx.fillRect(x-w-1,y-1,w*2+3,3); ctx.fillRect(x-w,y-2,w*2+1,5);
       ctx.fillStyle=pulse ? '#ffe27a' : '#ffd23f'; ctx.fillRect(x-w,y-1,w*2+1,1); ctx.fillRect(x-w,y+1,w*2+1,1); ctx.fillRect(x-w,y,1,1); ctx.fillRect(x+w,y,1,1);
     }
-    if (c.manual && !c.orderDone && c.orderAt>=0){   // the order's mark: a gold cross where it goes, red for an attack
-      const x=(c.orderAt%TW)*RS+RS/2, y=((c.orderAt/TW)|0)*RS+RS/2, col=c.manual===1 ? '#ffd23f' : '#ff7562';
-      ctx.fillStyle=INK; for (let k=-3;k<=3;k++){ ctx.fillRect(x+k-1,y+k-1,3,3); ctx.fillRect(x+k-1,y-k-1,3,3); }
-      ctx.fillStyle=col; for (let k=-3;k<=3;k++){ ctx.fillRect(x+k,y+k,1,1); ctx.fillRect(x+k,y-k,1,1); }
-    }
-  }
-  // the right-click itself: a ring closing in on the spot
-  const age=now-orderPing.t0;
-  if (age<500){
-    const r=Math.round(10*(1-age/500))+2, x=Math.round(orderPing.x*K), y=Math.round(orderPing.y*K);
-    ctx.strokeStyle=orderPing.kind===1 ? '#ffd23f' : '#ff7562'; ctx.lineWidth=1.5; ctx.globalAlpha=1-age/600;
-    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1;
   }
 }
 
@@ -235,12 +222,13 @@ function drawLoot(bx: number, fy: number){
   ctx.fillStyle='#ffd23f'; ctx.fillRect(x+1,y,2,1);
 }
 
-/** Each army's banner on a pole, in its kingdom's colours; a raid flies a black mark. */
+/** Each raid's and intercept's banner on a pole, in its kingdom's colours; a raid flies a black mark.
+    (An army on a front has none: its leader carries its standard.) */
 function drawBanners(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
   const wave=reduceMotion ? 0 : ((now/260)|0)%3;
   for (const c of W.campaigns){
     const x=Math.round(c.bx*K), y=Math.round(c.by*K);
-    if (c.phase===2 || x<vx0-10||y<vy0||x>vx1+10||y>vy1+20) continue;
+    if (c.phase===2 || c.front || x<vx0-10||y<vy0||x>vx1+10||y>vy1+20) continue;
     ctx.fillStyle='rgba(12,22,6,.35)'; ctx.fillRect(x-2,y+1,5,1);
     ctx.fillStyle=INK; ctx.fillRect(x-1,y-16,3,18); ctx.fillRect(x+1,y-16,8,6);
     ctx.fillStyle='#5a4030'; ctx.fillRect(x,y-15,1,16);
@@ -353,7 +341,7 @@ export function render(now: number, dt: number){
     const hx=hover.tile%TW, hy=(hover.tile/TW)|0;
     if (client.state==='play' && client.placing){
       const q=(hy>>2)*PW+(hx>>2), me=W.nations[PLAYER], s=structureOf(client.placing);
-      const ok=!!me && !!s && canAfford(me,s) && !placeProblem(me,q,client.placing), [fw,fh]=SIZE[client.placing] ?? [1,1];
+      const ok=!!me && !!s && canAfford(me,s) && !placeProblem(me,q,client.placing,'any'), [fw,fh]=SIZE[client.placing] ?? [1,1];
       ctx.globalAlpha=0.7; ctx.drawImage(ghostOf(client.placing),(hx>>2)*PS,(hy>>2)*PS); ctx.globalAlpha=1;
       ctx.strokeStyle=ok?'rgba(143,227,155,.95)':'rgba(255,90,70,.9)'; ctx.lineWidth=2*dpr/zoom;
       ctx.strokeRect((hx>>2)*PS,(hy>>2)*PS,fw*PS,fh*PS);

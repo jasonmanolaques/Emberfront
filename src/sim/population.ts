@@ -259,11 +259,12 @@ function goBuildHome(h: Human){
     if (w>0 && !cands.some(c=>c[1]===q)) cands.push([w,q]);
   }
   cands.sort((a,b)=>b[0]-a[0] || a[1]-b[1]);
-  for (const [,q] of cands.slice(0,3)){
+  // the best he can walk to round the castle; failing that, a roof matters more than looks: a builder
+  // may cut across the castle, but never leaves the kingdom's land
+  for (const picky of [true,false]) for (const [,q] of cands.slice(0,8)){
     const [x,y]=frontOf(q);
     h.tx=x; h.ty=y; h.task=TASK_HOME_GO;
-    // a roof matters more than looks: a builder may cut across the castle, but never leaves the kingdom's land
-    if (route(h)){ startSite(q,h.o); h.home=q; h.wait=0; housing[h.o].builders++; return true; }
+    if (route(h,picky)){ startSite(q,h.o); h.home=q; h.wait=0; housing[h.o].builders++; return true; }
   }
   h.task=TASK_ROAM;
   return false;
@@ -295,7 +296,7 @@ function think(h: Human){
 export function makeHuman(n: Nation, kind: number, x: number, y: number): Human {
   return { id:++W.humanSeq, o:n.id, kind, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+W.prand()*2,
     res:-1, carry:-1, amount:0, hp:kind===H_SOLDIER?SOLDIER_HP[1]:VILLAGER_HP, post:-1, site:-1, home:-1, housed:false, homeless:0, beggar:false,
-    war:-1, loot:false, foe:-1, aim:-1, cool:0, slot:0, brave:-1, calm:0, work:-1, fix:-1, lead:0,
+    war:-1, loot:false, foe:-1, aim:-1, cool:0, slot:0, brave:-1, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
     tier:kind===H_SOLDIER?1:0, base:-1, load:0, make:0, dest:-1 };
 }
 /** A new villager walks out of the capital; a new soldier out of the barracks nearest the capital. */

@@ -65,6 +65,6 @@ export function genMap(seed: number){
     const px=q%PW, py=(q/PW)|0; let land=0;
     for (let y=py*4;y<py*4+4;y++) for (let x=px*4;x<px*4+4;x++) land+=isLand[y*TW+x];
     const c=pCenter[q];
-    pBuild[q] = land>=12 && isLand[c] && terr[c]!==T_SNOW ? 1 : 0;
+    pBuild[q] = land>=12 && isLand[c] ? 1 : 0;   // mountains and snowfields too: any ground with room
   }
 }

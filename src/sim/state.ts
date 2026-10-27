@@ -68,15 +68,20 @@ export interface Human {
   make: number;                      // blacksmiths: tier of the armour the current job is for (0 = no job)
   dest: number;                      // blacksmiths: plot of the barracks the armour is for, or -1
   lead: number;                      // soldiers leading an army: their rank (RANKS in war.ts), doubling their hit points each rank; 0 otherwise
+  fk: number;                        // soldiers on a front (sim/front.ts): the offensive it belongs to (attacker*M+defender), or -1
+  line: number;                      // ...their rank there: 0 the front rank, 1 the rank behind it, …
+  fx: number; fy: number;            // ...and where they stand, in pixels (slot: how far along the line)
 }
-/** An army in the field: a war (taking land, pushing for the capital) or a raid (burning buildings). */
+/** An army in the field: an attack (holding its part of a front, and pushing it on when the offensive
+    is on), a raid (burning buildings) or an intercept (going after an enemy army). */
 export interface Campaign {
   id: number; a: number; d: number;  // attacker, defender
   raid: boolean;
   target: number;                    // intercepts: id of the enemy campaign they go after (-1 for raids and attacks)
   hostile: boolean;                  // still fighting: false once peace is made and the army walks home
   members: number[];                 // ids of the soldiers still in it, rebuilt each tick
-  phase: number;                     // 0 mustering, 1 marching, 2 going home
+  front: boolean;                    // an attack: its men stand on the front of its kingdom's offensive (sim/front.ts)
+  phase: number;                     // 0 mustering, 1 out (marching, or on the front), 2 going home
   bx: number; by: number;            // the banner, in pixels
   dx: number; dy: number;            // marching direction (unit)
   rx: number; ry: number;            // rally point while mustering
@@ -89,13 +94,8 @@ export interface Campaign {
   inspired: boolean;                 // a counter-attack: thirsty for revenge, it hits harder and marches faster
   leader: number;                    // id of the soldier leading it, or -1 (none for 5 or fewer, or he fell)
   rank: number;                      // the leader's rank by the army's size when it set out (RANKS in war.ts; 0 none)
-  mode: number;                      // attacks: marching, holding at the border, assault, falling back, regrouping or charging leaderless (M_* in war.ts)
-  stand: boolean;                    // its leader chose to fight to the death: no more retreats
-  manual: number;                    // the player commands it (O_* in war.ts: gather, hunt an army, attack a place), or 0: its leader decides
-  orderAt: number;                   // manual: the tile it was sent to; orderFoe: the enemy army it hunts (campaign id), or -1
-  orderFoe: number;
-  orderDone: boolean;                // manual: it got there, formed up, or the army it hunted is gone
-  calm: number;                      // manual, order done: ticks on enemy land or under fire, until its leader takes over again
+  mode: number;                      // raids: marching to the border, waiting there for the word, or raiding (M_* in war.ts); attacks: its offensive's state (F_*)
+  go: boolean;                       // raids: given the word to cross the border and raid
   hitAt: number;                     // tick one of its soldiers was last hit
 }
 export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; }   // gold still to spend on this front
@@ -114,8 +114,7 @@ export type Command =
   | { type: 'peace'; nation: number; target: number }                 // accept the target's peace offer
   | { type: 'research'; nation: number; topic: number }               // study this topic next (R_* in research.ts)
   | { type: 'invest'; nation: number; share: number }                // city investment (0..1)
-  | { type: 'order'; nation: number; campaign: number; x: number; y: number; foe?: number }   // take command of an army: gather at (x,y), attack there, or hunt army `foe`
-  | { type: 'auto'; nation: number; campaign: number };              // hand an army back to its leader
+  | { type: 'offensive'; nation: number; target: number; go: boolean };   // attack along the front (and send raiders waiting at the border in), or hold it
 
 export let elev = new Float32Array(NT), moist = new Float32Array(NT);
 // resources: at most one per tile (R_* in resources.ts), harvests left, claimed by a villager
@@ -165,5 +164,5 @@ export const W = {
   occCount: new Int32Array(1),       // [o*M+b] tiles of o's that b occupies
   lost: new Uint8Array(1),           // [o*M+b] b has occupied some of o's land in this war (cleared when o has it all back)
   ready: new Int32Array(1),          // [o*M+b] tick o's army took all its land back from b and stands ready to counter-attack (0 = not)
-  orphans: [] as number[],           // barracks whose army lost its leader in a war still going: flat [kingdom, barracks plot, enemy]
+  offensive: new Uint8Array(1),      // [a*M+d] a's offensive against d: gathering at the border, ready, attacking or holding (F_* in war.ts)
 };

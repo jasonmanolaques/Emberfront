@@ -156,7 +156,8 @@ describe('soldier tiers and the blacksmith', () => {
     smith.hp=0; run(1);
     expect(pTimer[s]).toBeGreaterThan(0);
     run(REHIRE_TICKS-5); expect(mine().filter(h => h.work===s)).toHaveLength(0);
-    run(10); expect(mine().filter(h => h.work===s)).toHaveLength(1);
+    until(() => mine().some(h => h.work===s), 600);   // the first villager free after that (not one building his house)
+    expect(mine().filter(h => h.work===s)).toHaveLength(1);
     expect([pType[s], pOwner[s]]).toEqual([B_SMITHY, 1]);
   });
 });

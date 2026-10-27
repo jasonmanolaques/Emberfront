@@ -1,13 +1,13 @@
 /* ---------- bots ---------- */
-import { B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, PW, NP, WAGE } from '../core/constants';
+import { B_EMPTY, B_RUINS, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, PW, NP, WAGE } from '../core/constants';
 import { W, pType, pOwner, pPrio, type Nation } from './state';
 import { launch } from './territory';
 import { grossIncome } from './sim';
 import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, TOPICS, setStudy, maxed } from './research';
 import { UNIT_SIZE, units } from './army';
-import { STRUCTURES, canAfford, placeProblem, build, togglePriority, anyWithin, isEnemyLand } from './buildings';
+import { STRUCTURES, canAfford, placeProblem, build, togglePriority, anyWithin, isEnemyLand, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, guardsOpening, standingTower, WALL_MAX } from './fort';
-import { allied, atWar, ready, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge } from './war';
+import { allied, atWar, ready, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, F_PUSH, F_HOLD } from './war';
 
 const WALL = -1;   // a tower of the town wall, in a wishlist
 const TOWN = [B_BARRACKS, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY];   // workshops: inside the wall
@@ -64,7 +64,7 @@ function planRing(n: Nation, from: number){
   let best=from, bf=-1;
   for (let R=from;R<=WALL_MAX;R++){
     const ring=wallPlots(n,R); if (!ring.length) continue;
-    const fit=ring.filter(q => standingTower(q,n.id) || !placeProblem(n,q,B_TOWER)).length/ring.length;
+    const fit=ring.filter(q => standingTower(q,n.id) || !placeProblem(n,q,B_TOWER,'houses')).length/ring.length;
     if (fit>=0.6) return R;
     if (fit>bf){ bf=fit; best=R; }
   }
@@ -83,9 +83,9 @@ function wallPlot(n: Nation){
   const T=Math.hypot(tx,ty)||1;
   let best=-1, bs=-Infinity;
   for (const q of wallPlots(n)){
-    if (placeProblem(n,q,B_TOWER)) continue;
+    if (placeProblem(n,q,B_TOWER,'houses')) continue;   // a house in the way of the wall comes down
     const dx=q%PW+0.5-cx, dy=((q/PW)|0)+0.5-cy, L=Math.hypot(dx,dy)||1;
-    const s=(wallNeighbours(q,n.id) ? 10 : 0)+8*(dx*tx+dy*ty)/(L*T)+W.srand()*2;
+    const s=(wallNeighbours(q,n.id) ? 10 : 0)+8*(dx*tx+dy*ty)/(L*T)-(pType[q]===B_EMPTY || pType[q]===B_RUINS ? 0 : 3)+W.srand()*2;
     if (s>bs){ bs=s; best=q; }
   }
   return best;
@@ -108,11 +108,13 @@ function barracksPlot(n: Nation){
   const d=(q: number) => (q%PW-cap%PW)**2+((q/PW|0)-(cap/PW|0))**2;
   for (const u of U){
     let best=-1;
-    for (const p of u.plots) for (const q of [p-PW,p+1,p+PW,p-1]) if (q>=0 && q<NP && Math.abs(q%PW-p%PW)<=1 && !placeProblem(n,q,B_BARRACKS) && (best<0 || d(q)<d(best) || (d(q)===d(best) && q<best))) best=q;
+    for (const p of u.plots) for (const q of [p-PW,p+1,p+PW,p-1]) if (q>=0 && q<NP && Math.abs(q%PW-p%PW)<=1 && !placeProblem(n,q,B_BARRACKS,'houses') && (best<0 || d(q)<d(best) || (d(q)===d(best) && q<best))) best=q;
     if (best>=0) return best;
   }
   return -1;
 }
+/** What a bot's new building of `type` may go over: workshops and towers a house; the rest only bare ground. */
+const over = (type: number): Over => TOWN.includes(type) || type===B_TOWER ? 'houses' : 'none';
 /** Picks a plot for `type`: towers go toward enemies; barracks join the biggest barracks; the rest
     gather next to their own kind, near the capital. */
 function pickPlot(n: Nation, type: number){
@@ -120,9 +122,10 @@ function pickPlot(n: Nation, type: number){
   const srand=W.srand, cap=n.capPlot; let best=-1, bs=-Infinity;
   for (let k=0;k<24 && n.plots.length;k++){
     const q=n.plots[(srand()*n.plots.length)|0];
-    if (placeProblem(n,q,type) || plannedWall(n,q)) continue;   // the line of the wall is kept clear
+    // workshops and towers may go over a house where they are wanted (its people build another)
+    if (placeProblem(n,q,type,over(type)) || plannedWall(n,q)) continue;   // the line of the wall is kept clear
     const d=Math.hypot(q%PW-cap%PW, ((q/PW)|0)-((cap/PW)|0));
-    let s = type===B_TOWER ? (anyWithin(q,n.id,2,isEnemyLand) ? 20 : 0) - d*0.2 : -d + (sameNeighbour(q,type,n.id) ? 12 : 0);
+    let s = (pType[q]===B_EMPTY || pType[q]===B_RUINS ? 0 : -6) + (type===B_TOWER ? (anyWithin(q,n.id,2,isEnemyLand) ? 20 : 0) - d*0.2 : -d + (sameNeighbour(q,type,n.id) ? 12 : 0));
     // with a wall planned, a proper town: fields outside it, workshops inside
     if (n.wallR && type!==B_TOWER){ const inside=ringOf(n,q)<n.wallR; s += type===B_FARM ? (inside ? -8 : 6) : TOWN.includes(type) ? (inside ? 8 : -4) : 0; }
     s += srand()*3;
@@ -150,7 +153,7 @@ function botBuild(n: Nation, exposed: boolean){
     if (!canAfford(n,s)){ if (type===WALL && danger(n,exposed)) saving=true; continue; }
     if (type===WALL){
       const q=wallPlot(n);
-      if (q>=0 && build(n,q,B_TOWER)){ n.nextWall=W.simTime+(WALL_GAP[danger(n,exposed)]+W.srand()*5)*(n.stock[1]>40 ? 0.5 : 1); return; }   // faster with stone to spare
+      if (q>=0 && build(n,q,B_TOWER,'houses')){ n.nextWall=W.simTime+(WALL_GAP[danger(n,exposed)]+W.srand()*5)*(n.stock[1]>40 ? 0.5 : 1); return; }   // faster with stone to spare
       // the ring is done (or can't be built further): a new one further out once the town outgrows it,
       // or sooner if this one could hardly be built at all
       const R=townRing(n), ring=wallPlots(n), built=ring.filter(k => standingTower(k,n.id)).length;
@@ -159,7 +162,7 @@ function botBuild(n: Nation, exposed: boolean){
       continue;
     }
     const q=pickPlot(n,type);
-    if (q>=0 && build(n,q,type)) return;
+    if (q>=0 && build(n,q,type,over(type))) return;
   }
 }
 
@@ -218,9 +221,10 @@ function botWar(n: Nation){
     if (!W.offers[o*M+id]) continue;
     if (wantsPeace(n,o)) makePeace(id,o); else refusePeace(o,id);
   }
-  // an army is coming: meet it with about as many idle soldiers, if there are enough to matter
+  // raiders are coming: meet them with about as many idle soldiers, if there are enough to matter
+  // (an attack is met on the front by the soldiers at home)
   for (const E of W.campaigns){
-    if (E.d!==id || E.phase===2 || !E.hostile || E.target>=0) continue;
+    if (E.d!==id || E.phase===2 || !E.hostile || E.target>=0 || !E.raid) continue;
     if (W.campaigns.some(c => c.a===id && c.target===E.id && c.phase<2)) continue;
     const idle=ready(n), need=E.members.length;
     if (idle>=3 && idle>=need*(dug ? 1 : 0.6)) intercept(id,E.id,Math.min(idle,need+2));   // outnumbered, only a fair fight
@@ -233,6 +237,15 @@ function botWar(n: Nation){
     const army=biggest(n);
     if (pool>=5 && army>=0 && !dug && outlook(n,o)>-0.3 && W.contact[id*M+o]){ declare(id,o,false,[army]); n.nextWave=W.simTime+waveGap(n); }
     else offerPeace(id,o);
+  }
+  // on the front: hold while the line is badly outnumbered by the defenders facing it, attack again once it is not
+  for (let o=1;o<M;o++){
+    const st=W.offensive[id*M+o]; if (st!==F_PUSH && st!==F_HOLD) continue;
+    let mine=0, away=0;
+    for (const c of W.campaigns){ if (c.a===id && c.d===o && c.front && c.phase<2) mine+=c.members.length; if (c.a===o && c.phase<2) away+=c.members.length; }
+    const guard=Math.max(0,W.nations[o].soldiers-away);
+    if (st===F_PUSH && mine<guard*0.5) setOffensive(id,o,false);
+    else if (st===F_HOLD && mine>=guard*0.8) setOffensive(id,o,true);
   }
   let busy=false;
   for (const c of W.campaigns){
