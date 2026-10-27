@@ -999,13 +999,15 @@ function pickBuilding(h: Human, c: Campaign){
     const q=D.capPlot, cx=(q%PW)*8+8, cy=((q/PW)|0)*8+8;
     if ((c.bx-cx)**2+(c.by-cy)**2<24*24 && targetable(q,c)) return q;   // the army stands before the castle
   }
-  const R=c.raid ? RAID_R : TOWER_RANGE+4, [bx,by]=c.mode===M_BLIND ? [h.x,h.y] : [c.bx,c.by];   // a leaderless man looks about himself
-  const qx0=Math.max(0,Math.floor((bx-R)/8)), qx1=Math.min(PW-1,Math.floor((bx+R)/8)), qy0=Math.max(0,Math.floor((by-R)/8)), qy1=Math.min(PH-1,Math.floor((by+R)/8));
+  // raiders burn what is near their banner; anyone goes for a tower that can shoot them
+  const R=c.raid ? RAID_R : TOWER_RANGE+4, S=Math.max(R,TOWER_RANGE+4), [bx,by]=c.mode===M_BLIND ? [h.x,h.y] : [c.bx,c.by];   // a leaderless man looks about himself
+  const qx0=Math.max(0,Math.floor((bx-S)/8)), qx1=Math.min(PW-1,Math.floor((bx+S)/8)), qy0=Math.max(0,Math.floor((by-S)/8)), qy1=Math.min(PH-1,Math.floor((by+S)/8));
   let best=-1, bs=Infinity;
   for (let y=qy0;y<=qy1;y++) for (let x=qx0;x<=qx1;x++){
     const q=mainOf(y*PW+x); if (!targetable(q,c) || pType[q]===B_CASTLE) continue;
     const [x0,y0,x1,y1]=rectOf(q), d=Math.hypot(clamp(h.x,x0,x1)-h.x, clamp(h.y,y0,y1)-h.y), tower=pType[q]===B_TOWER;
     if (d>(tower ? TOWER_RANGE+4 : ENGAGE_R+8)) continue;
+    if (!tower && Math.hypot(clamp(bx,x0,x1)-bx, clamp(by,y0,y1)-by)>R) continue;
     const s=d-(tower ? 40 : 0);   // a tower that can shoot us comes first: it bleeds the whole army while it stands
     if (s<bs || (s===bs && q<best)){ bs=s; best=q; }
   }

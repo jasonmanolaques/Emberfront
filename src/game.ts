@@ -1,5 +1,6 @@
 /* ---------- game flow: ties the simulation to this browser's screen ---------- */
-import { TW, PLAYER, PLAYER_COL, B_SMITHY, B_TOWER } from './core/constants';
+import { TW, PLAYER, B_SMITHY, B_TOWER } from './core/constants';
+import { flagCSS } from './render/flags';
 import { clamp, fmt } from './core/util';
 import { W, owner, isLand, pType } from './sim/state';
 import { listen } from './sim/events';
@@ -129,8 +130,22 @@ const TIER_NEWS=[['','','your builders guild can raise stone houses','your build
   ['','','your castle is rebuilt into a fortress','your castle is rebuilt into a citadel'],
   ['','','plantations, quarries and copper mines side by side join in pairs','plantations, quarries and copper mines join in squares of four']];
 const nm = (id: number) => W.nations[id]?.name ?? 'Someone';
+/** The maps, in the order New map goes through them: three generated ones, then three of the real world. */
+export const MAPS: { name: string; map: string; seed?: number }[] = [
+  { name:'Emberland', map:'gen', seed:4242 },
+  { name:'Greywater', map:'gen', seed:987654321 },
+  { name:'Highmarch', map:'gen', seed:12345 },
+  { name:'Balkans & Anatolia', map:'balkans' },
+  { name:'Europe', map:'europe' },
+  { name:'The World', map:'world' },
+];
+/** Starts afresh on the current map (MAPS), or with `seed`, on a map generated from it. */
 export function newGame(seed?: number){
-  newWorld(seed ?? (Math.random()*2147483647)|0);
+  const m=MAPS[client.mapIndex];
+  if (seed!==undefined) newWorld(seed);
+  else newWorld(m.seed ?? (Math.random()*2147483647)|0, m.map);
+  $('mapName').textContent=`${m.name} · ${client.mapIndex+1}/${MAPS.length}`;
+  ui.banner.textContent = W.map==='gen' ? 'Tap open land to found your capital' : 'Tap open land to found your capital: you play the country whose capital is nearest';
   resetStyles(); resetLabels(); resetEffects(); resetGhosts(); resetPeople(); resetSpeech();
   toggleBuildPanel(false); resetDiplomacy(); closeResearch(); closeArmy(); deselect();
   client.overShown=false; client.lastVillageLog=-99; client.paused=false; client.speed=1; $('speed').textContent='1×';
@@ -138,6 +153,9 @@ export function newGame(seed?: number){
   buildBase(); paintAll(); drawNature();
   fitCam();
 }
+
+/** On to the next map of MAPS. */
+export function nextMap(){ client.mapIndex=(client.mapIndex+1)%MAPS.length; newGame(); }
 
 /** One simulation step plus the checks this client makes after it. */
 export function step(){
@@ -149,7 +167,7 @@ export function trySpawn(t: number){
   if (t<0) return;
   if (!startMatch(t, +($('rivals') as HTMLSelectElement).value)){ toast('Pick open land away from water and mountains'); return; }
   const me=W.nations[PLAYER];
-  $('meName').textContent=me.name; $('meCrest').style.background=PLAYER_COL;
+  $('meName').textContent=me.name; $('meCrest').style.cssText=flagCSS(me.code);
   client.state='play'; ui.banner.hidden=true; showHUD(true);
   setupBuildPanel(); setupDiplomacy();
   focusOn(me.capTile, Math.max(cam.fitZ*2.2, 1.8*cam.dpr));

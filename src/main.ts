@@ -41,6 +41,6 @@ function toSpawn(){ if (client.state!=='spawn'){ $('intro').hidden=true; $('scri
   get campaigns(){return W.campaigns;}, get W(){return W;},
   get shots(){return shots;},
   setHp:(q: number, v: number)=>{ pHp[q]=v; }, redraw:(q: number)=>drawPlotAndNeighbours(q), openArmy,
-  newWorld:(seed?: number)=>newGame(seed),
+  newWorld:(seed?: number)=>newGame(seed), loadMap:(i: number)=>{ client.mapIndex=i; newGame(); },
   freePlots:()=>{ const n=W.nations[1], out: number[]=[]; if (n) for (let q=0;q<NP;q++) if (!plotProblem(n,q)) out.push(q); return out; },
   dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, wbuf, obj:octx.getImageData(0,0,RW,RH).data, attacks:W.attacks, campaigns:W.campaigns, tickN:W.tickN }) };

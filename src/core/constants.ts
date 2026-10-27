@@ -34,5 +34,4 @@ export const GOLD_PER_TILE = 1;           // cost of settling one unclaimed tile
 export const STR_TILE = 1, STR_VILLAGER = 50, STR_SOLDIER = 100, STR_GOLD = 3;
 
 export const PLAYER = 1;                  // nation id of the local player
-export const PLAYER_COL = '#ffd23f';
-export const BOT_COLS = ['#e5483b','#3d7fe0','#9a5fe0','#ec63a3','#f08a2c','#2ec4e6','#f4f0e6','#94562f','#cf45dc','#2c49b0','#16907f','#2b2b35'];
+export const PLAYER_COL = '#ffd23f';     // the player's highlight (kingdoms take their colours from their flags: core/countries.ts)

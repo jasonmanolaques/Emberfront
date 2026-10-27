@@ -17,13 +17,14 @@ npm run build      # type-check and build a static site into dist/
 
 ```
 src/
-  core/      constants, colour/number helpers, seeded random & noise
+  core/      constants, colour/number helpers, seeded random & noise, countries and their flags
   sim/       the game itself: map generation, territory, buildings, people, research, war & diplomacy, bots
   render/    camera, terrain & territory pixels, building, nature & people sprites, effects, frame drawing
   ui/        HUD, log & toasts, buildings & research panels, diplomacy & war chips, mouse/touch/keyboard input
   game.ts    connects the simulation to the screen (new game, spawn, player orders)
   main.ts    boot and the main loop
 tests/       scripted matches checked against recorded results
+tools/       realmaps.ts: draws the real-world maps from Natural Earth
 ```
 
 **The one rule: `src/sim` never touches the page.** No `document`, no canvas, no `Math.random`. The simulation:
@@ -33,6 +34,14 @@ tests/       scripted matches checked against recorded results
 - reports what happened through **events** (`sim/events.ts`: tile changed, building placed, capital fell, …). Rendering and UI subscribe to these; with no subscribers (a server, a test) the simulation runs the same, just without visuals.
 
 That split is what makes online multiplayer possible later: every browser runs the same simulation and only commands go over the network.
+
+## Maps and kingdoms
+
+**New map** on the start card goes round six maps (`MAPS` in `game.ts`): three generated ones, always the same (*Emberland*, *Greywater*, *Highmarch*), then three of the real world: **Balkans & Anatolia**, **Europe** and **The World**.
+
+The real-world maps (`sim/realmap.ts`) are drawn from [Natural Earth](https://www.naturalearthdata.com/) (public domain): its coastlines and lakes, and its named mountain ranges, deserts and plateaus. Each is framed on the 400×248 grid (`sim/mapview.ts`): the Balkans and Anatolia from the Adriatic to the Caucasus, Europe from Portugal to the Urals, and the world cut through the Bering Strait. `tools/realmaps.ts` turns the data into a compact grid of ground kinds in `sim/maps.ts` (`node tools/realmaps.ts <folder of Natural Earth GeoJSON>`; it lists the files it needs). Islands too small to matter are dropped. The rest are joined to the mainland by **land bridges** (sandbars) across the narrowest straits: Dover, the Bosporus, Messina, Korea, Torres and so on. A few are drawn by hand: Java along the Lesser Sundas to Australia, and the Americas by Baffin Island, Greenland, Iceland and the Faroes to Scotland. So every kingdom can reach every other. In the game, high ranges carry snow, lesser ones are mountains with hills about them, deserts have dry fringes, and elsewhere the climate goes by latitude and distance from the sea: rainforest at the equator, dry subtropics, temperate grass and woods, northern forest, then tundra and ice.
+
+**Every kingdom is a real country** (`core/countries.ts`), with its name and its flag, drawn as 12×8 pixel art. The flag gives the kingdom its colour, flies on its leaders' standards and its armies' banners (halved to 6×4), and marks it in the panels and on the leaderboard. On a generated map the countries are drawn at random. On a real-world map the bots are founded at their countries' real capitals (or as near as the ground allows), as far apart as the map allows. You found your capital where you like, and you play the country whose capital is nearest. Countries in one match get colours that tell them apart.
 
 ## How it looks
 
@@ -97,7 +106,7 @@ A joined building is one building: the top-left plot holds it and the rest point
 
 ## Research, better homes and armour
 
-Each research station earns 1 research point a second, and all of them go to the one topic the kingdom is studying: **housing**, **infantry**, **watchtowers**, the **castle** or **taxation** (`sim/research.ts`). Clicking a station opens the research panel: a button per topic with its tier, and a progress bar below; the lit one is being studied, and clicking the other switches (progress on both is kept). Housing is studied first, from the moment the first station stands. Every topic starts at tier 1 and goes up to tier 3: 50 points for tier 2 and 100 more for tier 3 (infantry: 100, then 150; watchtowers and the castle: 100, then 200). A finished topic gives way to the next. What is learned is kept for good, even if every station burns.
+Each research station earns 1 research point a second, and all of them go to the one topic the kingdom is studying: **housing**, **infantry**, **watchtowers**, the **castle** or **taxation** (`sim/research.ts`). Clicking a station opens the research panel: a button per topic with its tier, and a progress bar below; the lit one is being studied, and clicking the other switches (progress on both is kept). Housing is studied first, from the moment the first station stands. Every topic starts at tier 1 and goes up to tier 3: 100 points for tier 2 and 200 more for tier 3 (infantry: 200, then 300; watchtowers, the castle and resource gathering: 200, then 400). A finished topic gives way to the next. What is learned is kept for good, even if every station burns.
 
 - **Infantry** lets the blacksmith forge reinforced armour (tier 2) and then heavy armour (tier 3) for the barracks (above).
 - **Watchtowers** lets the builders rebuild each watchtower a tier up, and the **castle** rebuilds the castle at once, free (`sim/defense.ts`):

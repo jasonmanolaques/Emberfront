@@ -8,7 +8,7 @@ import { view, cam, clampCam, zoomAt, tileAt } from '../render/camera';
 import { hover } from '../render/render';
 import { ui, showHUD } from './hud';
 import { $ } from './dom';
-import { newGame, trySpawn, setInvest, setSoldierShare, centerHome, setPaused } from '../game';
+import { newGame, nextMap, trySpawn, setInvest, setSoldierShare, centerHome, setPaused } from '../game';
 import { openExpand, closeExpand, expandOpen } from './expand';
 import { placeAt, clickOwnBuilding, stopPlacing, toggleBuildPanel } from './build';
 import { openDiplomacy, closeDiplomacy, diplomacyOpen, closePop } from './diplomacy';
@@ -108,8 +108,8 @@ export function bindInput(){
   $('pause').onclick=()=>setPaused(!client.paused);
   $('build').onclick=()=>toggleBuildPanel();
   $('start').onclick=()=>{ $('intro').hidden=true; $('scrim').hidden=true; client.state='spawn'; ui.banner.hidden=false; };
-  $('newMap').onclick=()=>newGame();
-  $('again').onclick=()=>{ $('over').hidden=true; $('scrim').hidden=true; showHUD(false); client.state='spawn'; newGame(); ui.banner.hidden=false; };
+  $('newMap').onclick=nextMap;
+  $('again').onclick=()=>{ $('over').hidden=true; $('scrim').hidden=true; showHUD(false); client.state='spawn'; nextMap(); ui.banner.hidden=false; };
   $('watch').onclick=()=>{ $('over').hidden=true; $('scrim').hidden=true; };
   window.addEventListener('keydown',e=>{
     const tag=(e.target as HTMLElement).tagName;

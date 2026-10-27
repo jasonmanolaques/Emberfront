@@ -18,6 +18,7 @@ import { H_SOLDIER, TASK_HARVEST, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TA
 import { units, unitLabel } from '../sim/army';
 import { chatter, drawSpeech } from './speech';
 import { orderPing } from '../ui/command';
+import { paintSmallFlag, flagImage } from './flags';
 import { G_WOOD, G_STONE, G_COPPER } from '../sim/resources';
 import { allied, atWar, HIT_TICKS, RANKS } from '../sim/war';
 
@@ -70,17 +71,16 @@ function box(x: number, y: number, w: number, h: number, c: string){ ctx.fillSty
 
 /** Each army's leader (person id) and his rank. */
 function leaders(){ const m=new Map<number, number>(); for (const c of W.campaigns) if (c.leader>=0) m.set(c.leader,c.rank); return m; }
-/** The leader's standard on his back, in his kingdom's colours, and his rank in gold pips above it. */
+/** The leader's standard on his back, his country's flag, and his rank in gold pips above it. */
 function drawStandard(o: number, rank: number, bx: number, fy: number, left: boolean, now: number){
-  const st=styleOf(o), x=left ? bx+4 : bx-1, wave=reduceMotion ? 0 : ((now/300)|0)&1;
+  const x=left ? bx+4 : bx-1, wave=reduceMotion ? 0 : ((now/300)|0)&1;
   ctx.fillStyle=INK; ctx.fillRect(x-1,fy-17,3,14);
   ctx.fillStyle='#6a4a2c'; ctx.fillRect(x,fy-16,1,13);
   ctx.fillStyle='#e8c860'; ctx.fillRect(x,fy-17,1,1);   // the finial
-  const fx=left ? x+1 : x-4;                              // the flag streams behind him
-  ctx.fillStyle=INK; ctx.fillRect(fx-1,fy-17,5,6);
-  ctx.fillStyle=st.roof; ctx.fillRect(fx,fy-16,4,4);
-  ctx.fillStyle=st.roofL; ctx.fillRect(fx,fy-16,4,1);
-  ctx.fillStyle=INK; ctx.fillRect(left ? fx+3 : fx,fy-15+wave,1,1);
+  const fx=left ? x+1 : x-6;                              // the flag streams behind him, its hoist at the pole
+  ctx.fillStyle=INK; ctx.fillRect(fx-1,fy-17,8,6);
+  paintSmallFlag(ctx,W.nations[o].code,fx,fy-16,!left);
+  ctx.fillStyle=INK; ctx.globalAlpha=0.35; ctx.fillRect(left ? fx+5 : fx,fy-15+wave,1,2); ctx.globalAlpha=1;   // a ripple at the fly
   const w=rank*2+1, px=Math.round(bx+2-w/2);
   ctx.fillStyle=INK; ctx.fillRect(px,fy-21,w,3);
   ctx.fillStyle='#ffd23f'; for (let i=0;i<rank;i++) ctx.fillRect(px+1+i*2,fy-20,1,1);
@@ -241,15 +241,12 @@ function drawBanners(now: number, vx0: number, vy0: number, vx1: number, vy1: nu
   for (const c of W.campaigns){
     const x=Math.round(c.bx*K), y=Math.round(c.by*K);
     if (c.phase===2 || x<vx0-10||y<vy0||x>vx1+10||y>vy1+20) continue;
-    const st=styleOf(c.a);
     ctx.fillStyle='rgba(12,22,6,.35)'; ctx.fillRect(x-2,y+1,5,1);
-    ctx.fillStyle=INK; ctx.fillRect(x-1,y-16,3,18); ctx.fillRect(x+1,y-16,8,7);
+    ctx.fillStyle=INK; ctx.fillRect(x-1,y-16,3,18); ctx.fillRect(x+1,y-16,8,6);
     ctx.fillStyle='#5a4030'; ctx.fillRect(x,y-15,1,16);
     ctx.fillStyle='#d8c890'; ctx.fillRect(x,y-16,1,1);
-    // the cloth ripples: the trailing edge shifts as it waves
-    ctx.fillStyle=st.roof; ctx.fillRect(x+1,y-15,6,5);
-    ctx.fillStyle=st.roofL; ctx.fillRect(x+1,y-15,6,1);
-    ctx.fillStyle=st.roofD; ctx.fillRect(x+1,y-11,6,1);
+    // the country's flag; its fly ripples as it waves
+    paintSmallFlag(ctx,W.nations[c.a].code,x+1,y-15);
     ctx.fillStyle=INK; ctx.fillRect(x+7,y-15+wave,1,1); ctx.fillRect(x+7,y-13+(wave>>1),1,1);
     if (c.raid){ ctx.fillStyle='#16110d'; ctx.fillRect(x+3,y-14,2,2); ctx.fillRect(x+3,y-12,1,1); ctx.fillRect(x+4,y-12,1,1); }
   }
@@ -400,7 +397,7 @@ export function render(now: number, dt: number){
       if (sx<-80||sy<-20||sx>w+80||sy>h+20) continue;
       const text=unitLabel(u), tw=ctx.measureText(text).width, sq=Math.round(fs*0.55);
       ctx.fillStyle='rgba(8,14,22,.9)'; ctx.fillRect(sx-tw/2-sq-5*dpr,sy-sq/2-1*dpr,sq+2*dpr,sq+2*dpr);
-      ctx.fillStyle=N[i].hex; ctx.fillRect(sx-tw/2-sq-4*dpr,sy-sq/2,sq,sq);   // the kingdom's colour
+      ctx.imageSmoothingEnabled=false; ctx.drawImage(flagImage(N[i].code),sx-tw/2-sq*1.5-4*dpr,sy-sq/2,sq*1.5,sq);   // the kingdom's flag
       ctx.fillStyle=i===PLAYER ? '#ffe27a' : '#f2f5f8'; ctx.strokeText(text,sx,sy); ctx.fillText(text,sx,sy);
     }
   }

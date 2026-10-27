@@ -9,6 +9,7 @@ import { updateWarChips, refreshDiplomacy } from './diplomacy';
 import { refreshResearch } from './research';
 import { refreshArmy } from './army';
 import { refreshCommand } from './command';
+import { flagCSS } from '../render/flags';
 import { $ } from './dom';
 import { perMinute } from '../sim/ledger';
 
@@ -57,12 +58,12 @@ export function updateHUD(now: number){
       if (shown>=6 && !n.isPlayer) continue; if (!n.alive && !n.isPlayer) continue;
       shown++;
       const rel=allied(PLAYER,n.id) ? ' ally' : atWar(PLAYER,n.id) ? ' war' : '';
-      html+=`<li class="${n.isPlayer?'you':''}${n.alive?'':' dead'}${rel}"><i style="background:${n.hex}"></i><span class="nm">${n.name}${n.isPlayer?' (you)':''}</span><span class="tr">${fmt(n.strength)}</span><span class="pc">${(n.tiles/landCount*100).toFixed(1)}%</span></li>`;
+      html+=`<li class="${n.isPlayer?'you':''}${n.alive?'':' dead'}${rel}"><i class="flag" style="${flagCSS(n.code)}"></i><span class="nm">${n.name}${n.isPlayer?' (you)':''}</span><span class="tr">${fmt(n.strength)}</span><span class="pc">${(n.tiles/landCount*100).toFixed(1)}%</span></li>`;
     }
     ui.boardList.innerHTML=html;
     let ah='';
     for (const A of W.attacks){ if (A.done || A.att!==PLAYER) continue; const d=W.nations[A.def];
-      ah+=`<span class="chip"><i style="background:${A.def?d.hex:'#cfc6a8'}"></i>${A.def?d.name:'Unclaimed land'} · ${fmt(A.gold)} gold</span>`; }
+      ah+=`<span class="chip"><i ${A.def ? `class="flag" style="${flagCSS(d.code)}"` : 'style="background:#cfc6a8"'}></i>${A.def?d.name:'Unclaimed land'} · ${fmt(A.gold)} gold</span>`; }
     ui.attacks.innerHTML=ah;
   }
   updateWarChips();

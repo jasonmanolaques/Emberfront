@@ -9,6 +9,7 @@ import type { Campaign, Human } from '../sim/state';
 import { toast } from './hud';
 import { ArmyPicker, armyName } from './armies';
 import { unitAt } from '../sim/army';
+import { flagCSS } from '../render/flags';
 import { $ } from './dom';
 
 const panel=$('diplo'), talk=$('dTalk'), warView=$('dWarView'), wars=$('wars');
@@ -45,7 +46,7 @@ export function refreshDiplomacy(force=false){
   if (panel.hidden) return;
   const me=W.nations[PLAYER], n=W.nations[target];
   if (!me || !n || !n.alive || !me.alive){ closeDiplomacy(); return; }
-  $('dCrest').style.background=n.hex;
+  $('dCrest').style.cssText=flagCSS(n.code);
   $('dName').textContent=n.name;
   if (!warView.hidden){ refreshWar(force); return; }
   $('dStrength').textContent=fmt(n.strength);
@@ -200,7 +201,7 @@ export function updateWarChips(){
       ['Offer peace', 'end', false];
     const inc=f.incoming.reduce((k,c)=>k+c.members.length,0);
     const men=(inc ? ` · ${inc} coming` : '')+(f.fleeing ? ` · ${f.fleeing} fleeing` : '')+(f.intercepting ? ` · ${f.intercepting} intercepting` : '')+(f.men-f.intercepting>0 ? ` · ${f.men-f.intercepting} out` : '');
-    const chip=`<button class="chip war${f.theyOffer||f.ready?' offer':''}${open?' threat':''}" data-o="${f.o}" data-act="${act}" ${off||!act?'disabled':''}><i style="background:${W.nations[f.a].hex}"></i>${esc(nameOf(f.a))} – ${esc(nameOf(f.d))} · ${kind}${men}<b>${label}</b></button>`;
+    const chip=`<button class="chip war${f.theyOffer||f.ready?' offer':''}${open?' threat':''}" data-o="${f.o}" data-act="${act}" ${off||!act?'disabled':''}><i class="flag" style="${flagCSS(W.nations[f.a].code)}"></i>${esc(nameOf(f.a))} – ${esc(nameOf(f.d))} · ${kind}${men}<b>${label}</b></button>`;
     return `<div class="front" data-o="${f.o}">${chip}${powerBar(f,track(f.o,byId),byId)}</div>`;
   }).join('');
   if (html!==lastChips){ lastChips=html; wars.innerHTML=html; placePop(); }

@@ -43,7 +43,7 @@ body{height:100%;margin:0;background:var(--sea);color:var(--text);font-family:va
 /* Player kingdom card */
 #me{top:16px;left:max(16px,env(safe-area-inset-left,0px));width:min(250px,calc(52% - 24px));padding:10px 12px 12px;display:grid;gap:8px}
 .me-head{display:flex;align-items:center;gap:8px;min-width:0}
-.crest{width:14px;height:14px;flex:none;border:2px solid var(--ink);box-shadow:0 0 0 1px rgba(255,255,255,.25)}
+.crest{width:21px;height:14px;flex:none;border:2px solid var(--ink);box-shadow:0 0 0 1px rgba(255,255,255,.25)}
 .me-name{font-weight:600;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
 .clock{font-family:var(--f-tag);font-size:11px;color:var(--muted);flex:none}
 .troops{display:flex;align-items:baseline;gap:5px;flex-wrap:wrap}
@@ -91,8 +91,9 @@ input[type=range]:disabled{opacity:.35;cursor:not-allowed}
 #board{top:16px;right:max(16px,env(safe-area-inset-right,0px));width:min(230px,calc(48% - 24px));padding:10px 12px;display:grid;gap:6px}
 #board .head{display:flex;justify-content:space-between}
 #boardList{list-style:none;margin:0;padding:0;display:grid;gap:4px}
-#boardList li{display:grid;grid-template-columns:10px minmax(0,1fr) auto auto;gap:7px;align-items:center;font-size:14px}
+#boardList li{display:grid;grid-template-columns:15px minmax(0,1fr) auto auto;gap:7px;align-items:center;font-size:14px}
 #boardList li i{width:10px;height:10px;border:1px solid var(--ink)}
+#boardList li i.flag,.chip i.flag{width:15px;height:10px}
 #boardList .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #boardList .tr{color:var(--muted);font-size:12px}
 #boardList .pc{min-width:3.2em;text-align:right;font-weight:600}
@@ -156,6 +157,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--gold);outline-
 .how li::before{content:"";position:absolute;left:2px;top:.45em;width:6px;height:6px;background:var(--ember)}
 .how b{color:var(--gold);font-weight:600}
 .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.mapname{flex:1;min-width:0;font-weight:600;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
 .row .tag{margin-right:-2px}
 .keys{font-size:13px;color:var(--muted)}
 
@@ -167,7 +169,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--gold);outline-
   .stats{grid-template-columns:repeat(2,1fr);gap:4px 8px}
   .stats.people{grid-template-columns:repeat(2,1fr)}
   #board{padding:8px 10px}
-  #boardList li{font-size:13px;grid-template-columns:10px minmax(0,1fr) auto}
+  #boardList li{font-size:13px;grid-template-columns:15px minmax(0,1fr) auto}
   #boardList .tr,#board .head .tr{display:none}
   #boardList li:nth-child(n+5):not(.you){display:none}
   #bar{left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));width:auto;transform:none}

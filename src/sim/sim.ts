@@ -1,10 +1,12 @@
 /* ---------- simulation entry points: worlds, matches, commands, ticks ----------
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
-import { TW, TH, NT, PW, PH, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, BOT_COLS, PLAYER_COL, GOLD_START, GOLD_PER_SEC, TAX_PER_VILLAGER, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
+import { TW, TH, NT, PW, PH, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOLD_PER_SEC, TAX_PER_VILLAGER, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
 import { mulberry32 } from '../core/rng';
 import { W, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
 import { genMap } from './mapgen';
+import { genRealMap, capitalsOn, REAL_MAPS } from './realmap';
+import { COUNTRIES, MAJOR, colourGap, type Country } from '../core/countries';
 import { setOwner, stepAttack, launch, touches } from './territory';
 import { toRuins, build, togglePriority, produce } from './buildings';
 import { scanContacts, census } from './census';
@@ -16,30 +18,31 @@ import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
 import { turnLedger, resetLedger } from './ledger';
 
-const SYL1 = ['Val','Mor','Ost','Kar','Bre','Thal','Ves','Dun','Ard','Sel','Hal','Ner','Cor','Ith','Rav','Lun','Gor','Eld','Tor','Fen','Ash','Ul','Bel','Kes','Myr','Oak','Sar','Wen'];
-const SYL2 = ['mark','heim','dor','gard','ia','or','wyn','vale','mere','rath','holm','ford','ain','esk','ora','burg','moor','reach','fell','haven'];
 
 /* ---------- nations ---------- */
-function blankNation(id: number, name: string, hex: string, isPlayer: boolean): Nation {
-  return { id, name, hex, isPlayer,
+function blankNation(id: number, name: string, hex: string, isPlayer: boolean, code=''): Nation {
+  return { id, name, hex, isPlayer, code,
     gold:0, income:0, strength:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
     plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, beds:0,
     sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0, nextWave:0, wallR:0, nextWall:0, unpaid:0,
     soldierShare:0, humanProg:0, villagers:0, soldiers:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0,
     study:R_HOUSING, tier:[1,1,1,1,1,1], xp:[0,0,0,0,0,0], invest:0.5, gain:new Array(180).fill(0), spend:new Array(180).fill(0) };
 }
-function makeNation(id: number, name: string, hex: string, isPlayer: boolean): Nation {
+function makeNation(id: number, k: Country, isPlayer: boolean): Nation {
   const srand=W.srand;
-  const n={ ...blankNation(id,name,hex,isPlayer), gold:GOLD_START, alive:true,
+  const n={ ...blankNation(id,k.name,k.hex,isPlayer,k.code), gold:GOLD_START, alive:true,
     expandAt:0.22+srand()*0.25, attackAt:0.5+srand()*0.3, ratio:0.3+srand()*0.25, nextThink:1+srand()*2, nextWar:100+srand()*100 };
   // the player starts with no soldiers requested; bots keep a fixed share of their own
   n.soldierShare = isPlayer ? 0 : 0.15+W.prand()*0.35;
   return n;
 }
-function nameGen(used: Set<string>){
-  const srand=W.srand;
-  for (let i=0;i<60;i++){ const n=SYL1[(srand()*SYL1.length)|0]+SYL2[(srand()*SYL2.length)|0]; if (!used.has(n)){ used.add(n); return n; } }
-  return 'Realm '+used.size;
+/** A country for a new kingdom from `pool`, its colour far enough from those taken (less fussy if it must). */
+function pickCountry(pool: Country[], taken: Country[]){
+  for (const gap of [0.3, 0.18, 0]){
+    const ok=pool.filter(k => !taken.includes(k) && taken.every(o => colourGap(o.hex,k.hex)>=gap));
+    if (ok.length) return ok[(W.srand()*ok.length)|0];
+  }
+  return undefined;
 }
 
 function blockOK(bx: number, by: number){
@@ -70,11 +73,11 @@ function spawnNation(n: Nation, bx: number, by: number){
 
 /* ---------- game flow ---------- */
 /** Generates a fresh map from `seed` and clears all match state. */
-export function newWorld(seed: number){
-  W.mapSeed=seed;
+export function newWorld(seed: number, map='gen'){
+  W.mapSeed=seed; W.map=REAL_MAPS.includes(map) ? map : 'gen';
   W.srand=mulberry32(seed^0x5bd1e995);
   W.prand=mulberry32(seed^0x2f6b3a1d);
-  genMap(seed);
+  if (W.map==='gen') genMap(seed); else genRealMap(W.map,7);   // a real map's ground is the same every match
   genResources();
   owner.fill(0); occ.fill(0); road.fill(0); frontMark.fill(0);
   pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0); pPrio.fill(0); pAband.fill(0); pHp.fill(0); pTier.fill(0); pSpan.fill(0); pArmor[2].fill(0); pArmor[3].fill(0); W.prioSeq=0;
@@ -86,15 +89,18 @@ export function newWorld(seed: number){
   resetWar(1); resetStories(1); resetLedger();
 }
 
-/** Founds the player's capital near tile t and places `rivals` bot kingdoms. Returns false if t has no room. */
+/** Founds the player's capital near tile t and places `rivals` bot kingdoms. Returns false if t has no room.
+    Every kingdom is a real country. On a real-world map the player is the country whose capital is
+    nearest where they settle, and the bots are founded at their countries' real capitals. */
 export function startMatch(t: number, rivals: number){
   if (t<0) return false;
   const b=findBlock(t%TW,(t/TW)|0,4);
   if (!b) return false;
-  const srand=W.srand, N=W.nations, used=new Set<string>();
-  const me=makeNation(1,nameGen(used),PLAYER_COL,true);
-  N.push(me);
-  for (let i=0;i<rivals;i++) N.push(makeNation(i+2,nameGen(used),BOT_COLS[i%BOT_COLS.length],false));
+  if (W.map!=='gen') return startReal(b,rivals);
+  const srand=W.srand, N=W.nations, taken: Country[]=[];
+  const add=(id: number, player: boolean) => { const k=pickCountry(COUNTRIES,taken)!; taken.push(k); const n=makeNation(id,k,player); N.push(n); return n; };
+  const me=add(1,true);
+  for (let i=0;i<rivals;i++) add(i+2,false);
   W.M=N.length; W.contact=new Int32Array(W.M*W.M);
   resetWar(W.M); resetStories(W.M);
   spawnNation(me,b[0],b[1]);
@@ -112,6 +118,38 @@ export function startMatch(t: number, rivals: number){
     }
     if (!placed){ n.alive=false; }
   }
+  census();
+  return true;
+}
+
+/** startMatch on a real-world map: the player founded at block b, the bots at real capitals,
+    as far apart as the map allows, in colours that tell them apart. */
+function startReal(b: [number, number], rivals: number){
+  const N=W.nations, caps=capitalsOn(W.map), cx=(b[0]+1)*4, cy=(b[1]+1)*4;
+  const near=caps.slice().sort((p,q) => Math.hypot(p.tile%TW-cx,((p.tile/TW)|0)-cy)-Math.hypot(q.tile%TW-cx,((q.tile/TW)|0)-cy));
+  const mine=near[0]?.country ?? pickCountry(COUNTRIES,[])!;
+  const me=makeNation(1,mine,true); N.push(me);
+  // the bots' countries: capitals far enough apart, colours distinct, in a shuffled order
+  const pool=caps.filter(p => p.country!==mine);
+  for (let i=pool.length-1;i>0;i--){ const j=(W.srand()*(i+1))|0; [pool[i],pool[j]]=[pool[j],pool[i]]; }
+  // on the world map, the great powers first, and only then the rest
+  const groups=W.map==='world' ? [pool.filter(p => MAJOR.has(p.country.code)), pool.filter(p => !MAJOR.has(p.country.code))] : [pool];
+  const chosen: { country: Country; block: [number, number] }[]=[], placed=[[cx,cy]], taken=[mine];
+  for (const group of groups) for (const [minD, gap] of [[16,0.3],[16,0.18],[11,0.12],[8,0]] as const){
+    for (const p of group){
+      if (chosen.length>=rivals) break;
+      if (chosen.some(c => c.country===p.country)) continue;
+      const x=p.tile%TW, y=(p.tile/TW)|0;
+      if (placed.some(([px,py]) => Math.hypot(px-x,py-y)<minD) || taken.some(o => colourGap(o.hex,p.country.hex)<gap)) continue;
+      const blk=findBlock(x,y,3); if (!blk) continue;
+      chosen.push({ country:p.country, block:blk }); placed.push([(blk[0]+1)*4,(blk[1]+1)*4]); taken.push(p.country);
+    }
+  }
+  chosen.forEach((c,i) => N.push(makeNation(i+2,c.country,false)));
+  W.M=N.length; W.contact=new Int32Array(W.M*W.M);
+  resetWar(W.M); resetStories(W.M);
+  spawnNation(me,b[0],b[1]);
+  chosen.forEach((c,i) => { const n=N[i+2], blk=findBlock((c.block[0]+1)*4,(c.block[1]+1)*4,3); if (blk) spawnNation(n,blk[0],blk[1]); else n.alive=false; });
   census();
   return true;
 }

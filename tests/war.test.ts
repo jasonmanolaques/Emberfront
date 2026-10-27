@@ -482,12 +482,16 @@ describe('occupation', () => {
   });
 
   it('doesn\'t burn what stands on the ground it occupies: the army has to break it', () => {
-    world(1); quiet(); paintToward(1,2); paintDisc(N(1),14);
-    const c2=N(2).capTile, d=(q: number) => ((pCenter[q]%TW)-(c2%TW))**2+(((pCenter[q]/TW)|0)-((c2/TW)|0))**2;
-    const farm=Array.from({ length: NP }, (_, q) => q).filter(q => !plotProblem(N(1),q)).sort((a,b) => d(a)-d(b) || a-b)[0];
-    N(1).stock=[10,10,0]; expect(build(N(1),farm,B_FARM)).toBe(true);
+    world(1); quiet(); paintToward(1,2); paintDisc(N(1),28);
     soldiers(N(2),10); run(1);
     expect(declare(2,1,false,10)).toBe(true);
+    // a farm of ours just ahead of the army as it marches in, well short of our castle (by the castle,
+    // it would besiege that first)
+    const c=W.campaigns[0], [ax,ay]=[(N(1).capPlot%PW)*8+8, ((N(1).capPlot/PW)|0)*8+8];
+    until(() => c.phase===1 && Math.hypot(c.bx-ax,c.by-ay)<110 && owner[((c.by/2)|0)*TW+((c.bx/2)|0)]===1, 4000);
+    const px=c.bx+c.dx*20, py=c.by+c.dy*20;
+    const farm=Array.from({ length: NP }, (_, q) => q).filter(q => !plotProblem(N(1),q)).sort((a,b) => Math.hypot((a%PW)*8+4-px,((a/PW)|0)*8+4-py)-Math.hypot((b%PW)*8+4-px,((b/PW)|0)*8+4-py) || a-b)[0];
+    N(1).stock=[10,10,0]; expect(build(N(1),farm,B_FARM)).toBe(true);
     until(() => occ[pCenter[farm]]===2, 4000);
     expect([pType[farm], pBurn[farm]]).toEqual([B_FARM, 0]);   // still standing on occupied ground
     until(() => pHp[farm]>0, 600);                             // until they set about it

@@ -42,7 +42,7 @@ function place(type: number){
 }
 
 describe('research', () => {
-  it('earns a point a second per station, for housing first, and goes up a tier at 50 then 100', () => {
+  it('earns a point a second per station, for housing first, and goes up a tier at 100 then 200', () => {
     start(12345); run(20);
     expect(me().study).toBe(R_HOUSING);
     expect(me().tier).toEqual([1,1,1,1,1,1]);
@@ -51,17 +51,17 @@ describe('research', () => {
     expect(me().xp[R_HOUSING]).toBe(100);       // 10 points, in tenths
     place(B_RESEARCH); run(100);                // two stations: twice as fast
     expect(me().xp[R_HOUSING]).toBe(300);
-    run(100); expect(me().tier[R_HOUSING]).toBe(2); expect(me().xp[R_HOUSING]).toBe(0);
-    expect(TIER_XP[R_HOUSING][2]).toBe(100);
+    run(350); expect(me().tier[R_HOUSING]).toBe(2); expect(me().xp[R_HOUSING]).toBe(0);   // 100 points
+    expect(TIER_XP[R_HOUSING][2]).toBe(200);
   });
 
-  it('takes 100 points for infantry tier 2 and 150 more for tier 3', () => {
-    expect(TIER_XP[R_INFANTRY].slice(1)).toEqual([100,150]);
+  it('takes 200 points for infantry tier 2 and 300 more for tier 3', () => {
+    expect(TIER_XP[R_INFANTRY].slice(1)).toEqual([200,300]);
     start(12345); run(20);
     me().study=R_INFANTRY; place(B_RESEARCH); place(B_RESEARCH);   // 2 points a second
-    run(499); expect(me().tier[R_INFANTRY]).toBe(1);
+    run(999); expect(me().tier[R_INFANTRY]).toBe(1);
     run(1);   expect(me().tier[R_INFANTRY]).toBe(2);
-    run(750); expect(me().tier[R_INFANTRY]).toBe(3);
+    run(1500); expect(me().tier[R_INFANTRY]).toBe(3);
   });
 
   it('studies one topic at a time and keeps what the other has learned', () => {

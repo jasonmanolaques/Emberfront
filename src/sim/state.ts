@@ -5,6 +5,7 @@ import type { Rng } from '../core/rng';
 
 export interface Nation {
   id: number; name: string; hex: string; isPlayer: boolean;
+  code: string;                      // the real country it is (core/countries.ts): its name, flag and colour
   gold: number; income: number;      // treasury and gold per second
   strength: number;                  // tiles + people + gold, weighted (STR_* in constants)
   tiles: number; alive: boolean; capTile: number; capPlot: number;
@@ -131,6 +132,7 @@ export const pSpan = new Uint8Array(NP);   // plantations, quarries, copper mine
 export const pPrio = new Int32Array(NP);   // watchtowers calling for a garrison: order they asked in (0 = not asking)
 
 export const W = {
+  map: 'gen',   // 'gen' for a generated map, else a real-world one (sim/realmap.ts)
   mapSeed: 1, srand: Math.random as Rng, seaLevel: 0, heightRange: 1, landCount: 1, landTiles: new Int32Array(0),
   nations: [] as Nation[], M: 1, contact: new Int32Array(1), attacks: [] as Attack[], burning: [] as number[], attackSeq: 0,
   commands: [] as Command[], simTime: 0, tickN: 0,
