@@ -24,7 +24,7 @@ function blankNation(id: number, name: string, hex: string, isPlayer: boolean): 
   return { id, name, hex, isPlayer,
     gold:0, income:0, strength:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
     plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, beds:0,
-    sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0, nextWave:0, unpaid:0,
+    sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0, nextWave:0, wallR:0, nextWall:0, unpaid:0,
     soldierShare:0, humanProg:0, villagers:0, soldiers:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0,
     study:R_HOUSING, tier:[1,1,1,1,1,1], xp:[0,0,0,0,0,0], invest:0.5, gain:new Array(180).fill(0), spend:new Array(180).fill(0) };
 }

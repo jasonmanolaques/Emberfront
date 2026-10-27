@@ -4,6 +4,7 @@
    research at tier 2, two of a kind side by side join into one building of 2×1 plots (tier 2), and
    at tier 3 four of a kind in a square join into one of 2×2 (tier 3); a joined building makes far
    more than its parts did apart. ---------- */
+import { plannedWall } from './fort';
 import { TW, PW, PH, NP, T_MOUNT, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, isStructure } from '../core/constants';
 import { W, owner, occ, terr, isLand, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, pMain, pHp, pTier, pSpan, pArmor, type Nation } from './state';
 import { R_GATHER } from './research';
@@ -76,7 +77,7 @@ function placeBuilding(q: number, id: number, type: number, isNew: boolean){
 /** How well plot q suits a new house: towns grow outward from their edges and along their roads,
     dense cores fill slowly, and open countryside now and then seeds a new village. 0 = unsuitable. */
 export function homeScore(n: Nation, q: number){
-  if (plotProblem(n,q) || !houseFits(q)) return 0;
+  if (plotProblem(n,q) || !houseFits(q) || plannedWall(n,q)) return 0;   // a bot's houses keep off the line of its wall
   const nb=nbBuildings(q,n.id);
   let w = nb>0 ? (nb<=3 ? 1+nb*1.4 : nb<=5 ? 1.6 : 0.35) : n.bCount<2 ? 0.3 : (!anyWithin(q,n.id,5,isOwnBld) ? 0.9 : 0.03);
   if (pType[q]===B_RUINS) w*=1.8;   // rebuilding on the ashes

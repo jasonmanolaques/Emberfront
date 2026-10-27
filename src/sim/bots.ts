@@ -6,16 +6,29 @@ import { grossIncome } from './sim';
 import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, TOPICS, setStudy, maxed } from './research';
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, canAfford, placeProblem, build, togglePriority, anyWithin, isEnemyLand } from './buildings';
+import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, guardsOpening, standingTower, WALL_MAX } from './fort';
 import { allied, atWar, ready, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge } from './war';
 
+const WALL = -1;   // a tower of the town wall, in a wishlist
+const TOWN = [B_BARRACKS, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY];   // workshops: inside the wall
 /** What a bot would build next, most wanted first. */
 function wishlist(n: Nation, exposed: boolean){
   const w: number[]=[];
+  // soldiers left without room in a barracks guard the wall's openings
+  let towers=0, outposts=0, gates=0;
+  for (const q of n.blds) if (pType[q]===B_TOWER && pOwner[q]===n.id){ towers++; if (!wallNeighbours(q,n.id)) outposts++; else if (guardsOpening(n,q)) gates++; }
+  const guards=Math.min(gates*2, n.soldiers>>2);
   if (!n.barracks && n.soldierShare>0) w.push(B_BARRACKS);
   // room in the barracks for the army it keeps (new modules join the old, making one bigger army)
-  else if (n.soldiers>n.barracks*UNIT_SIZE-2 && n.barracks<2+(n.tiles/400|0)) w.push(B_BARRACKS);
-  if (exposed && n.towers < 1+(n.tiles/900|0)) w.push(B_TOWER);
+  else if (n.soldiers-guards>n.barracks*UNIT_SIZE-2 && n.barracks<2+(n.tiles/400|0)) w.push(B_BARRACKS);
+  // lone towers out on the border facing its neighbours: outposts
+  if (exposed && outposts < 1+(n.tiles/900|0)) w.push(B_TOWER);
   if (n.farms < 1+(n.tiles/600|0)) w.push(B_FARM);
+  if (wallDue(n,exposed)){
+    // a wall is built of stone: quarries to feed it first
+    if (n.quarries<3+(n.tiles/1000|0) && n.stock[1]<20) w.push(B_QUARRY);
+    w.push(WALL);
+  }
   if (n.minters < 1+(n.tiles/1500|0)) w.push(B_MINTER);
   // learning once the kingdom has found its feet, and a guild to build on what it learns
   if (n.farms && n.tiles>=300 && !TOPICS.every(t => maxed(n,t)) && n.labs < 1+(n.tiles/2500|0)) w.push(B_RESEARCH);
@@ -29,6 +42,61 @@ function wishlist(n: Nation, exposed: boolean){
   if (stone===few && n.quarries < enough) w.push(B_QUARRY);
   if (wood===few && n.plantations < enough) w.push(B_PLANTATION);
   return w;
+}
+/** How much danger a bot sees: 0 nobody next door, 1 neighbours, 2 at war, 3 at war and outnumbered. */
+function danger(n: Nation, exposed: boolean){
+  let war=false; for (let o=1;o<W.M;o++) if (o!==n.id && atWar(n.id,o)){ war=true; break; }
+  return war ? (outnumbered(n) ? 3 : 2) : exposed ? 1 : 0;
+}
+const WALL_GAP = [45, 24, 10, 6];   // seconds between towers of the wall, by danger
+/** Is it time for another tower of the town wall? Planning it first, once the town is worth guarding. */
+function wallDue(n: Nation, exposed: boolean){
+  if (n.capTile<0 || !n.farms || W.simTime<n.nextWall) return false;
+  if (!n.wallR){
+    if (n.tiles<(exposed ? 250 : 450) || n.bCount<6) return false;
+    n.wallR=planRing(n,townRing(n));
+  }
+  return true;
+}
+/** Picks the ring for a town wall, from `from` out: the first where at least 60% of the line can
+    hold a tower (free ground of ours, or a tower already), else the one where most can. */
+function planRing(n: Nation, from: number){
+  let best=from, bf=-1;
+  for (let R=from;R<=WALL_MAX;R++){
+    const ring=wallPlots(n,R); if (!ring.length) continue;
+    const fit=ring.filter(q => standingTower(q,n.id) || !placeProblem(n,q,B_TOWER)).length/ring.length;
+    if (fit>=0.6) return R;
+    if (fit>bf){ bf=fit; best=R; }
+  }
+  return best;
+}
+/** Where the next tower of the wall goes: on the planned ring, beside one already standing where it
+    can, facing the neighbours first. -1 if the ring has nowhere left to build. */
+function wallPlot(n: Nation){
+  const cx=n.capPlot%PW+1, cy=((n.capPlot/PW)|0)+1, M=W.M;   // (the castle's middle, in plots)
+  let tx=0, ty=0;
+  for (let o=1;o<M;o++){
+    const D=W.nations[o]; if (o===n.id || !D.alive || D.capTile<0 || !W.contact[n.id*M+o] || allied(n.id,o)) continue;
+    const dx=D.capPlot%PW-cx, dy=((D.capPlot/PW)|0)-cy, L=Math.hypot(dx,dy)||1, k=(atWar(n.id,o) ? 3 : 1)*(D.strength+1)/(n.strength+1);
+    tx+=dx/L*k; ty+=dy/L*k;
+  }
+  const T=Math.hypot(tx,ty)||1;
+  let best=-1, bs=-Infinity;
+  for (const q of wallPlots(n)){
+    if (placeProblem(n,q,B_TOWER)) continue;
+    const dx=q%PW+0.5-cx, dy=((q/PW)|0)+0.5-cy, L=Math.hypot(dx,dy)||1;
+    const s=(wallNeighbours(q,n.id) ? 10 : 0)+8*(dx*tx+dy*ty)/(L*T)+W.srand()*2;
+    if (s>bs){ bs=s; best=q; }
+  }
+  return best;
+}
+/** The towers flanking the wall's openings call for a garrison; the rest, outposts included, don't. */
+function garrisonGates(n: Nation){
+  for (const q of n.blds){
+    if (pType[q]!==B_TOWER || pOwner[q]!==n.id) continue;
+    const want=n.barracks>0 && guardsOpening(n,q);
+    if (!!pPrio[q]!==want) togglePriority(n,q);
+  }
 }
 const sameNeighbour = (q: number, type: number, id: number) =>
   [q-1,q+1,q-PW,q+PW].some(k => k>=0 && pType[k]===type && pOwner[k]===id);
@@ -52,9 +120,11 @@ function pickPlot(n: Nation, type: number){
   const srand=W.srand, cap=n.capPlot; let best=-1, bs=-Infinity;
   for (let k=0;k<24 && n.plots.length;k++){
     const q=n.plots[(srand()*n.plots.length)|0];
-    if (placeProblem(n,q,type)) continue;
+    if (placeProblem(n,q,type) || plannedWall(n,q)) continue;   // the line of the wall is kept clear
     const d=Math.hypot(q%PW-cap%PW, ((q/PW)|0)-((cap/PW)|0));
     let s = type===B_TOWER ? (anyWithin(q,n.id,2,isEnemyLand) ? 20 : 0) - d*0.2 : -d + (sameNeighbour(q,type,n.id) ? 12 : 0);
+    // with a wall planned, a proper town: fields outside it, workshops inside
+    if (n.wallR && type!==B_TOWER){ const inside=ringOf(n,q)<n.wallR; s += type===B_FARM ? (inside ? -8 : 6) : TOWN.includes(type) ? (inside ? 8 : -4) : 0; }
     s += srand()*3;
     if (s>bs){ bs=s; best=q; }
   }
@@ -71,16 +141,25 @@ function botStudy(n: Nation, exposed: boolean){
 
 function botBuild(n: Nation, exposed: boolean){
   botStudy(n,exposed);
+  garrisonGates(n);
   n.invest=0.4+n.expandAt*0.8;   // the builders may spend 58% to 78% of the goods coming in, by temper
+  let saving=false;   // threatened and short of a wall tower: lesser works don't get its stone
   for (const type of wishlist(n,exposed)){
-    const s=STRUCTURES.find(s=>s.type===type)!;
-    if (!canAfford(n,s)) continue;
-    const q=pickPlot(n,type);
-    if (q>=0 && build(n,q,type)){
-      // a tower facing an enemy usually calls for a garrison
-      if (type===B_TOWER && n.barracks && anyWithin(q,n.id,2,isEnemyLand) && W.srand()<0.6 && !pPrio[q]) togglePriority(n,q);
-      return;
+    const s=STRUCTURES.find(s=>s.type===(type===WALL ? B_TOWER : type))!;
+    if (saving && s.cost[1]>0) continue;
+    if (!canAfford(n,s)){ if (type===WALL && danger(n,exposed)) saving=true; continue; }
+    if (type===WALL){
+      const q=wallPlot(n);
+      if (q>=0 && build(n,q,B_TOWER)){ n.nextWall=W.simTime+(WALL_GAP[danger(n,exposed)]+W.srand()*5)*(n.stock[1]>40 ? 0.5 : 1); return; }   // faster with stone to spare
+      // the ring is done (or can't be built further): a new one further out once the town outgrows it,
+      // or sooner if this one could hardly be built at all
+      const R=townRing(n), ring=wallPlots(n), built=ring.filter(k => standingTower(k,n.id)).length;
+      if (q<0 && (R>n.wallR+1 || built<ring.length*0.6) && n.wallR<WALL_MAX) n.wallR=planRing(n,Math.max(R,n.wallR+1));
+      else n.nextWall=W.simTime+30;
+      continue;
     }
+    const q=pickPlot(n,type);
+    if (q>=0 && build(n,q,type)) return;
   }
 }
 

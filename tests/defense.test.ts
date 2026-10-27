@@ -1,12 +1,14 @@
 // Watchtowers and the castle by tier, battle damage, and soldiers' wages.
 import { describe, it, expect } from 'vitest';
 import { TW, TH, NT, NP, PW, T_GRASS, B_FARM, B_TOWER, B_CASTLE, WAGE, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD } from '../src/core/constants';
-import { W, owner, isLand, terr, resType, resLeft, pBuild, pType, pHp, pTier, type Human, type Nation } from '../src/sim/state';
+import { W, owner, isLand, terr, resType, resLeft, pBuild, pType, pOwner, pHp, pTier, pPrio, type Human, type Nation } from '../src/sim/state';
+import { botThink } from '../src/sim/bots';
+import { wallPlots, ringOf, isGate, plannedWall, wallNeighbours } from '../src/sim/fort';
 import { newWorld, startMatch, tick, grossIncome } from '../src/sim/sim';
 import { listen } from '../src/sim/events';
 import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
-import { build, plotProblem, structureOf } from '../src/sim/buildings';
+import { build, plotProblem, structureOf, finishHouse, togglePriority } from '../src/sim/buildings';
 import { H_SOLDIER, H_VILLAGER, makeHuman, doorOf } from '../src/sim/population';
 import { declare } from '../src/sim/war';
 import { bldHp, wear, TOWER_RELOADS, TOWER_DMGS, TOWER_HP, CASTLE_HP } from '../src/sim/defense';
@@ -153,5 +155,38 @@ describe('wages', () => {
     N(1).soldierShare=1; N(1).humanProg=-1e9;
     N(1).gold=-1; run(UNPAID_TICKS-10);
     N(1).gold=100; run(1); expect(N(1).unpaid).toBe(0);
+  });
+});
+
+describe('bots fortifying', () => {
+  it('lay out a square town wall round the castle with a gate in the middle of each side', () => {
+    world(1);
+    const n=N(1); n.wallR=3;
+    const ring=wallPlots(n);
+    expect(ring).toHaveLength(6*4-4-4);   // a 6 by 6 ring of plots, its 4 gates left open
+    const cx=n.capPlot%PW, cy=(n.capPlot/PW)|0;
+    expect(ring.every(q => ringOf(n,q)===3)).toBe(true);
+    for (const q of [(cy-2)*PW+cx, (cy+3)*PW+cx, cy*PW+cx-2, cy*PW+cx+3]){ expect(isGate(n,q)).toBe(true); expect(plannedWall(n,q)).toBe(false); }
+    expect(ringOf(n,n.capPlot)).toBe(1);
+  });
+
+  it('build it up tower by tower once the town is worth guarding, keep its line clear, and garrison the towers flanking its openings, not lone outposts', () => {
+    world(1); paintDisc(N(2),30);
+    const n=N(2);
+    for (let i=0;i<8;i++){ const q=Array.from({ length: NP }, (_, k) => k).filter(k => !plotProblem(n,k)).sort((a,b) => Math.abs(a-n.capPlot)-Math.abs(b-n.capPlot))[i*3]; finishHouse(q,2); }
+    place(n,B_FARM); place(n,8);   // a farm, and a barracks for the garrisons
+    census(); n.soldierShare=0;
+    const before=new Set(Array.from({ length: NP }, (_, k) => k).filter(k => pType[k]));
+    for (let i=0;i<80;i++){ n.stock=[500,500,500]; W.simTime+=60; n.nextThink=0; botThink(n); census(); }
+    expect(n.wallR).toBeGreaterThanOrEqual(3);
+    const ring=wallPlots(n), built=ring.filter(q => pType[q]===B_TOWER && pOwner[q]===2);
+    expect(built.length).toBeGreaterThan(ring.length*0.6);
+    expect(ring.every(q => pType[q]===B_TOWER || !pType[q] || before.has(q))).toBe(true);   // nothing new on the line but towers
+    for (const q of n.blds) if (pType[q]===B_TOWER) expect(!!pPrio[q]).toBe(wallNeighbours(q,2)===1);
+    // a tower standing alone: an outpost, no garrison
+    const lone=Array.from({ length: NP }, (_, k) => k).find(k => !plotProblem(n,k) && ringOf(n,k)!==n.wallR && !wallNeighbours(k,2))!;
+    n.stock=[50,50,50]; expect(build(n,lone,B_TOWER)).toBe(true); togglePriority(n,lone);
+    W.simTime+=60; n.nextThink=0; botThink(n);
+    expect(pPrio[lone]).toBe(0);
   });
 });

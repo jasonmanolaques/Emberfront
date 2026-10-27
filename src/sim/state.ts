@@ -16,6 +16,7 @@ export interface Nation {
   expandAt: number; attackAt: number; ratio: number; nextThink: number;  // bot personality
   nextWar: number; nextOffer: number;   // bots: sim time before which they start no campaign, offer no peace
   nextWave: number;                  // bots: sim time before which they send no more armies to a war under way
+  wallR: number; nextWall: number;   // bots: the ring of their town wall, in plots from the castle (0: none planned yet), and sim time of its next tower (sim/fort.ts)
   unpaid: number;                    // ticks the treasury has been below zero, soldiers unpaid
   invest: number;                    // city investment: share of the goods coming in (0..1) the builders may spend
   gain: number[]; spend: number[];   // goods in and goods spent by the builders and smiths, per second for the last minute: [second*3+good]
