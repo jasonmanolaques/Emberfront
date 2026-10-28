@@ -5,7 +5,7 @@
    in different places has two armies, and four modules joined together make one army of 20.
    Its room is all the trained soldiers a kingdom can have: those it raises beyond it are militia,
    trained at the castle (sim/population.ts), who patrol the city, guard watchtowers, and go to war
-   only when called up as reserves (sim/war.ts). Militia are weaker: 6 hit points and 0.75 a blow.
+   only when called up as reserves (sim/war.ts). Militia are weaker: 5 hit points and 1 a blow, and no armour.
    Soldiers come in three tiers: archaic (tier 1, everyone starts there), reinforced (tier 2)
    and heavy armour (tier 3). The blacksmith forges armour once infantry research allows it and
    carries it to the barracks; a soldier of that barracks who comes by takes the best piece on the
@@ -20,7 +20,7 @@ export const UNIT_SIZE = 5;                         // soldiers and armour racks
 export const SOLDIER_HP = [0, 8, 10, 15];           // by tier
 export const SOLDIER_DMG = [0, 1, 1.5, 2];          // a blow, by tier
 export const VILLAGER_HP = 4;
-export const MILITIA_HP = 6, MILITIA_HIT = 0.75;    // a militiaman's hit points, and his blow
+export const MILITIA_HP = 5, MILITIA_HIT = 1;       // a militiaman's hit points, and his blow
 export const TIER_NAME = ['', 'I', 'II', 'III'];
 const H_SOLDIER = 1;                                // (population.ts; repeated here to keep this module standalone)
 const RACK_R = 14;                                  // pixels from a barracks door a soldier picks up armour

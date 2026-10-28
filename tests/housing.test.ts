@@ -4,7 +4,8 @@ import { TW, TH, NT, NP, PW, B_HOUSE, B_SITE, B_EMPTY, B_MINTER, GOLD_PER_SEC, T
 import { W, owner, isLand, pType, pOwner, pAband, pCenter, pBuild } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { build, plotProblem } from '../src/sim/buildings';
-import { H_VILLAGER, H_SOLDIER, TASK_ROAM, TASK_HOME_GO, TASK_HOME_BUILD, TASK_GATHER, BUILD_TICKS, ABANDON_TICKS, BEG_TICKS } from '../src/sim/population';
+import { H_VILLAGER, H_SOLDIER, TASK_ROAM, TASK_HOME_GO, TASK_HOME_BUILD, TASK_GATHER, BUILD_TICKS, ABANDON_TICKS, BEG_TICKS, STARVE_TICKS } from '../src/sim/population';
+import { listen } from '../src/sim/events';
 import { B_BARRACKS } from '../src/core/constants';
 
 const me = () => W.nations[1];
@@ -190,8 +191,27 @@ describe('homeless people and beggars', () => {
     run(BEG_TICKS+10);
     const beggars=mine().filter(h => h.beggar);
     expect(beggars.length).toBeGreaterThan(0);
-    queueCommand({ type: 'soldiers', nation: 1, share: 1 }); run(600);
+    queueCommand({ type: 'soldiers', nation: 1, share: 1 }); run(200);   // (before they die of want)
     for (const h of beggars) expect(W.humans.includes(h) && h.kind===H_VILLAGER && h.beggar).toBe(true);
+  });
+
+  it('lets a beggar homeless for a minute and a half die of want: he drops where he stands, unwounded', () => {
+    crowded(); run(BEG_TICKS+10);
+    const b=mine().find(h => h.beggar)!, died: unknown[][]=[];
+    listen({ died: (...a: unknown[]) => { died.push(a); } });
+    expect(STARVE_TICKS).toBe(900);
+    while (b.homeless<STARVE_TICKS-1){ expect(W.humans.includes(b)).toBe(true); tick(); }
+    run(2);
+    expect(W.humans.includes(b)).toBe(false);
+    const d=died.find(a => a[3]===b.id)!;
+    expect([d[4], d[6]]).toEqual([2, true]);   // a beggar, dead of want (no blood)
+    listen({ died: () => {} });
+  });
+
+  it('pays no tax on beggars', () => {
+    crowded(); run(BEG_TICKS+10);
+    expect(me().beggars).toBeGreaterThan(0);
+    expect(me().taxpayers).toBe(mine().filter(h => h.kind===H_VILLAGER && h.housed && !h.beggar).length);
   });
 
   it('takes a beggar off the street once a home comes free', () => {

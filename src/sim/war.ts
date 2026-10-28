@@ -90,6 +90,8 @@ const LEVEL_PASSES = 3;               // tiles deep a corner where the line has 
 const STEP = 5;                       // a tile's length in the measure of how far the line has to go
 const STRIP_DEEP = 3;                 // tiles deep one strip may go, where a stretch catches up
 const NO_FRONT = 300;                 // ticks an offensive with no front left (no border) waits before going home
+const STALL_EVERY = 300;              // ticks between looks at how a war's border has moved (30 s)...
+const STALL_TILES = 25, STALL_SHARE = 0.03;   // ...and how far it must have moved (tiles, or this share of the smaller kingdom's land) not to count as stalled
 const OUTMATCHED = 1;                 // a bot calls its crisis off when more than this, plus its temper (0.5 to 0.8), times its men stand against it
 export const REVENGE_DMG = 1.25, REVENGE_PACE = 1.1;   // a counter-attack's soldiers hit 25% harder and march 10% faster
 const REFIELD = 20;                   // ticks between working out the way again (2 s)
@@ -142,7 +144,7 @@ const DIRS8 = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
 export function resetWar(M: number){
   W.campaigns=[]; W.campSeq=0;
   W.ally=new Uint8Array(M*M); W.atWar=new Uint8Array(M*M); W.offers=new Int32Array(M*M); W.grudge=new Int32Array(M*M).fill(-1e9);
-  W.wars=new Uint8Array(M*M); W.aggr=new Uint8Array(M*M); W.warSince=new Int32Array(M*M); W.occCount=new Int32Array(M*M); W.lost=new Uint8Array(M*M); W.ready=new Int32Array(M*M); W.offensive=new Uint8Array(M*M);
+  W.wars=new Uint8Array(M*M); W.aggr=new Uint8Array(M*M); W.warSince=new Int32Array(M*M); W.occCount=new Int32Array(M*M); W.lost=new Uint8Array(M*M); W.ready=new Int32Array(M*M); W.offensive=new Uint8Array(M*M); W.kills=new Int32Array(M*M); W.stall=new Int32Array(M*M); W.lastNet=new Int32Array(M*M);
   if (queue.length!==NT){ heldAt=new Int32Array(NT); heldBy=new Uint8Array(NT); queue=new Int32Array(NT); scratch=new Int16Array(NT); want=new Int32Array(NT); wantSeq=0; seen=new Int32Array(NT); seenSeq=0; came=new Int32Array(NT); }   // the map changed size
   byId.clear(); camps.clear(); troops.clear(); armies=[]; posts=[]; warring=new Uint8Array(M); rallies=[]; homeField=[]; homeFieldFor=[]; heldAt.fill(0); resetWalls();
   offensives.clear(); defended=new Uint8Array(M);
@@ -342,6 +344,7 @@ export function escalate(a: number, d: number){
   const M=W.M; if (!inCrisis(a,d)) return false;
   W.wars[a*M+d]=W.wars[d*M+a]=1; W.warSince[a*M+d]=W.warSince[d*M+a]=W.tickN;
   W.atWar[a*M+d]=W.atWar[d*M+a]=1;
+  for (const i of [a*M+d, d*M+a]){ W.kills[i]=0; W.stall[i]=0; W.lastNet[i]=0; }   // this war's dead and its border, counted afresh
   for (const [k,st] of [[a*M+d,F_PUSH],[d*M+a,F_HOLD]]){
     if (!offensives.has(k)) continue;
     W.offensive[k]=st;
@@ -536,7 +539,7 @@ export function makePeace(a: number, b: number){
   // each side keeps the land it occupies that joins on to its own; pockets cut off inside the other's
   // borders go back to their owner, so the new border has no islands in it
   cede(a,b); cede(b,a);
-  for (const i of [a*M+b, b*M+a]){ W.offers[i]=0; W.atWar[i]=0; W.wars[i]=0; W.aggr[i]=0; W.lost[i]=0; W.ready[i]=0; }
+  for (const i of [a*M+b, b*M+a]){ W.offers[i]=0; W.atWar[i]=0; W.wars[i]=0; W.aggr[i]=0; W.stall[i]=0; W.lost[i]=0; W.ready[i]=0; }
   on.peaceMade(a,b);
 }
 /** At peace, the land o occupies of d's becomes o's where it joins on to o's own land (through
@@ -578,9 +581,9 @@ export function warAge(a: number, b: number){
   return W.tickN-since;
 }
 /** A bot weighing peace with o: it holds out while it thinks it can win, and gives in when it is
-    in trouble; a long war wears it down. */
+    in trouble; a long war wears it down, and one whose border has stopped moving all the more. */
 export function wantsPeace(n: Nation, o: number){
-  return outlook(n,o) + (W.srand()-0.5)*0.5 - Math.min(1,warAge(n.id,o)/6000) < 0;
+  return outlook(n,o) + (W.srand()-0.5)*0.5 - Math.min(1,warAge(n.id,o)/6000) - Math.min(1.5,stalled(n.id,o)/2400) < 0;
 }
 /** Why a can't propose an alliance to b, or null. */
 export function allyProblem(a: number, b: number): string | null {
@@ -879,7 +882,7 @@ function push(o: Offensive){
   const gap=F.len/o.k;
   o.progress+=Math.min(1,DENSE/gap); if (o.progress<1) return;
   o.progress-=1;
-  const T=F.tiles, take=new Uint8Array(T.length), a=o.a, d=o.d, tw=TW, R2=(PRESENT*2+gap*2+16)**2;   // (when the line closes up, a thin line's men have further to go)
+  const T=F.tiles, take=new Uint8Array(T.length), a=o.a, d=o.d, tw=TW, R2=(PRESENT*2+gap)**2;   // (pixels: a little more room for a thin line, whose men have further to go when it closes up)
   for (const h of o.men){
     if (h.fk!==o.key || h.line!==0 || (h.x-h.fx)**2+(h.y-h.fy)**2>R2) continue;
     const lo=h.slot-gap/2-DENSE, hi=h.slot+gap/2+DENSE;
@@ -1072,8 +1075,22 @@ export function updateWar(){
   if (W.tickN%5===0) findRallies();
   lineUp();
   if (W.tickN%10===0) checkReconquest();
+  if (W.tickN%STALL_EVERY===STALL_EVERY>>1) watchBorders();
   towersFire();
 }
+/** Every STALL_EVERY ticks, for each war: has the border between them moved (the land each holds of
+    the other's, taken together) by more than a little? If not, the war has stalled that much longer. */
+function watchBorders(){
+  const M=W.M, N=W.nations;
+  for (let a=1;a<M;a++) for (let b=a+1;b<M;b++){
+    const i=a*M+b, j=b*M+a; if (!W.wars[i]) continue;
+    const net=W.occCount[b*M+a]-W.occCount[a*M+b], tol=Math.max(STALL_TILES, STALL_SHARE*Math.min(N[a].tiles,N[b].tiles));
+    if (Math.abs(net-W.lastNet[i])<tol) W.stall[i]=W.stall[j]=W.stall[i]+STALL_EVERY; else W.stall[i]=W.stall[j]=0;
+    W.lastNet[i]=net; W.lastNet[j]=-net;
+  }
+}
+/** Ticks the war between a and b has gone without its border moving much. */
+export const stalled = (a: number, b: number) => W.stall[a*W.M+b];
 
 /* ---------- the home guard ---------- */
 /** For each kingdom at war: where its home guard should stand. Facing the nearest enemy army
@@ -1241,7 +1258,7 @@ function towersFire(){
       const s=h.kind===H_SOLDIER;
       if ((s && !soldier) || (s===soldier && (d<bd || (d===bd && target!==null && h.id<target.id)))){ target=h; bd=d; soldier=s; }
     }
-    if (target){ target.hp-=dmg; underFire(target); on.towerShot(x,y,target.x,target.y-2,target.hp<=0,target.id); }
+    if (target){ const was=target.hp; target.hp-=dmg; underFire(target); if (was>0 && target.hp<=0) W.kills[i*W.M+target.o]++; on.towerShot(x,y,target.x,target.y-2,target.hp<=0,target.id); }
   };
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive || !warring[i]) continue;
@@ -1260,10 +1277,15 @@ function towersFire(){
 /** Notes that soldier h's army has come under attack. */
 function underFire(h: Human){ if (h.war>=0){ const c=camps.get(h.war); if (c) c.hitAt=W.tickN; } }
 function strike(h: Human, e: Human){
-  if (h.cool>0) return;
+  if (h.cool>0 || h.beggar) return;   // a beggar strikes no blow: he only stands in the way
   h.cool=HIT_TICKS;
   on.swing(h.id,e.id);
-  if (W.prand()<HIT_CHANCE){ e.hp-=(h.kind!==H_SOLDIER ? MILITIA_DMG : h.militia ? MILITIA_HIT : HIT_DMG[h.tier])*(revenge(h) ? REVENGE_DMG : 1); underFire(e); on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id); }
+  if (W.prand()<HIT_CHANCE){
+    const was=e.hp;
+    e.hp-=(h.kind!==H_SOLDIER ? MILITIA_DMG : h.militia ? MILITIA_HIT : HIT_DMG[h.tier])*(revenge(h) ? REVENGE_DMG : 1); underFire(e);
+    if (was>0 && e.hp<=0) W.kills[h.o*W.M+e.o]++;
+    on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id);
+  }
   if (e.foe<0 && (e.kind===H_SOLDIER || e.brave>=1)) e.foe=h.id;   // he turns to fight back
 }
 /** Steps toward (gx,gy): straight if the way is open, otherwise along the army's way. */
@@ -1630,8 +1652,9 @@ export function raiseMob(o: number, x: number, y: number, r: number, dry=false){
 /** A villager of a kingdom at war with enemies close: the first time, he decides (even odds)
     to run or to fight. Runners flee away from the danger, staying on their land; fighters join
     the home guard's line, or go for the nearest enemy if there is no line; a mob goes straight
-    for the nearest enemy. After a while with no enemy near, he goes back to work. Returns true
-    while he is caught up in it. */
+    for the nearest enemy. Beggars always go, but strike no blow: they only stand in the enemy's way,
+    to be cut down instead of someone else. After a while with no enemy near, he goes back to work.
+    Returns true while he is caught up in it. */
 export function alarmStep(h: Human): boolean {
   if (indoors(h) || switching(h)) return false;
   if (!warring[h.o]){ if (h.brave>=0) calmDown(h); return false; }
@@ -1641,7 +1664,7 @@ export function alarmStep(h: Human): boolean {
     if (e){
       h.calm=0;
       if (h.brave<0){
-        h.brave = h.beggar ? 0 : W.prand()<0.5 ? 1 : 0;
+        h.brave = h.beggar || W.prand()<0.5 ? 1 : 0;   // beggars always stand in the way
         release(h); h.carry=-1; h.amount=0; h.task=TASK_ROAM; h.path=[]; h.wait=0;   // whatever he was doing, he drops it
       }
       if (h.brave===0) h.foe=e.id;   // the one he is running from

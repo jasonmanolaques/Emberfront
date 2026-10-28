@@ -12,7 +12,7 @@ import { W, owner, occ, pType, pOwner, type Human } from './state';
 
 export const MIN_GAP = 2;              // tiles between men of the front rank, shoulder to shoulder
 export const RANK_GAP = 2;             // tiles between one rank and the next behind it
-export const A_OFF = 2, D_OFF = 0.5;   // tiles from the line's tiles back to the attacker's front rank, and in to the defender's
+export const A_OFF = 1, D_OFF = 0.5;   // tiles from the line's tiles back to the attacker's front rank, and in to the defender's
 const STEP_CAP = 3;                    // a break in the line (the sea, a castle) counts as at most this many tiles
 const SMOOTH = 3;                      // tiles either way along the line that the way back is averaged over
 

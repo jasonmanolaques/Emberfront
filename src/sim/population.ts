@@ -68,6 +68,7 @@ export const TOWER_RANGE = 32;   // pixels a watchtower can shoot
 const SEARCH_R = 40;             // tiles a villager looks around for work
 export const BUILD_TICKS = 40;   // ticks to put up a house (4 s)
 export const BEG_TICKS = 600;    // ticks homeless before a villager turns beggar (60 s)
+export const STARVE_TICKS = 900; // ticks homeless before a beggar dies of want (90 s)
 export const ABANDON_TICKS = 200;// ticks with more houses than people before the extra ones stand empty (20 s)
 export const FIX_TICKS = 50;     // ticks a builder works to raise a house a tier (5 s)
 export const FIX_COST = [3,3,0]; // what each improvement costs: [wood, stone, copper]
@@ -443,7 +444,8 @@ function garrison(n: Nation, mine: Human[]){
   }
 }
 
-/** Hands out the houses, longest-standing people first, and turns long-homeless villagers into beggars. */
+/** Hands out the houses, longest-standing people first, turns long-homeless villagers into beggars,
+    and lets beggars homeless for 90 seconds die of want. */
 function house(n: Nation, mine: Human[]){
   let free=n.beds;
   for (const h of [...mine].sort((a,b)=>a.id-b.id)){
@@ -451,9 +453,12 @@ function house(n: Nation, mine: Human[]){
     if (h.housed){
       h.homeless=0;
       if (h.beggar){ h.beggar=false; h.sp=3+W.prand()*2; think(h); }   // a home at last: back to work
-    } else if (h.kind===H_VILLAGER && !h.beggar && ++h.homeless>=BEG_TICKS){
-      // a minute without a roof: he gives up work, drops what he carries, and begs
-      h.carry=-1; h.amount=0; release(h); h.beggar=true; h.sp=1; h.task=TASK_ROAM; h.path=[]; roamTarget(h);
+    } else if (h.kind===H_VILLAGER){
+      ++h.homeless;
+      if (!h.beggar && h.homeless>=BEG_TICKS){
+        // a minute without a roof: he gives up work, drops what he carries, and begs
+        h.carry=-1; h.amount=0; release(h); h.beggar=true; h.sp=1; h.task=TASK_ROAM; h.path=[]; roamTarget(h);
+      } else if (h.beggar && h.homeless>=STARVE_TICKS) h.hp=0;   // half a minute more, and he dies where he stands
     }
   }
 }
@@ -688,7 +693,7 @@ export function updatePopulation(){
   for (let i=H.length-1;i>=0;i--){
     const h=H[i];
     if (!N[h.o].alive || !mayStand(h,owner[tileOf(h.x,h.y)]) || h.hp<=0){
-      if (h.hp<=0 && N[h.o].alive) on.died(h.x,h.y,h.o,h.id,h.kind===H_SOLDIER ? 1 : h.beggar ? 2 : 0,h.militia ? 0 : h.tier);   // they drop where they fell
+      if (h.hp<=0 && N[h.o].alive) on.died(h.x,h.y,h.o,h.id,h.kind===H_SOLDIER ? 1 : h.beggar ? 2 : 0,h.militia ? 0 : h.tier,h.beggar && h.homeless>=STARVE_TICKS);   // they drop where they fell
       if (h.work>=0 && (pType[h.work]===B_GUILD || pType[h.work]===B_SMITHY)) pTimer[h.work]=REHIRE_TICKS+1;   // the workshop waits a while for a new hand
       release(h); H[i]=H[H.length-1]; H.pop();
     }

@@ -49,7 +49,10 @@ listen({
   hit: (x,y,kill,victim,attacker) => { addHit(x,y,kill); noteBlow(victim,attacker); },
   swing: noteSwing,
   story: onStory,
-  died: (x,y,o,id,kind,tier) => { addCorpse(x,y,o,id,kind,tier); noteDeath(id,o,kind); },
+  died: (x,y,o,id,kind,tier,starved) => {
+    addCorpse(x,y,o,id,kind,tier,starved); noteDeath(id,o,kind);
+    if (starved && o===PLAYER && performance.now()-starvedAt>30000){ starvedAt=performance.now(); log('Your beggars are dying in the streets: build houses, or improve them with a builders guild','bad'); }
+  },
   occupied: paintTile,
   bldHit: dustPuff,
   plunder: (id,x,y,gold) => { if (id===PLAYER) floats.push({ x, y:y-4, text:`+${gold} gold`, t0:performance.now(), c:'#ffe27a' }); },
@@ -148,6 +151,7 @@ const TIER_NEWS=[['','','your builders guild can raise stone houses','your build
   ['','','your castle is rebuilt into a fortress','your castle is rebuilt into a citadel'],
   ['','','plantations, quarries and copper mines side by side join in pairs','plantations, quarries and copper mines join in squares of four']];
 const nm = (id: number) => W.nations[id]?.name ?? 'Someone';
+let starvedAt=-1e9;   // when the log last told of beggars dying of want
 const men = (k: number) => `${k} soldier${k===1 ? '' : 's'}`;
 /** The maps, in the order New map goes through them: three generated ones, then three of the real world. */
 export const MAPS: { name: string; map: string; seed?: number }[] = [

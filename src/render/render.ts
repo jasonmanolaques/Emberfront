@@ -204,13 +204,15 @@ function drawFallen(now: number, vx0: number, vy0: number, vx1: number, vy1: num
   for (const c of corpses){
     const x=Math.round(c.x*K), y=Math.floor(c.y*K)+1; if (x<vx0-10||y<vy0-8||x>vx1+10||y>vy1+8) continue;
     const age=now-c.t0, fade=age>CORPSE_MS-5000 ? (CORPSE_MS-age)/5000 : 1, grow=Math.min(1,age/1600);
-    // the pool spreads for a moment and then stays, dark and wide
-    ctx.globalAlpha=0.8*fade; ctx.fillStyle='#6e100c';
-    const rx=Math.round(2+grow*4), ry=Math.round(1+grow*2);
-    for (let j=-ry;j<=ry;j++){ const w=Math.round(rx*Math.sqrt(1-(j/(ry+0.5))**2)); ctx.fillRect(x-w,y+j,w*2+1,1); }
-    ctx.fillStyle='#9a1a14'; ctx.fillRect(x-Math.max(1,rx-2),y-Math.max(0,ry-1),Math.max(1,rx-2)*2,1);
+    // the pool spreads for a moment and then stays, dark and wide (no blood for those who died of want)
+    if (!c.clean){
+      ctx.globalAlpha=0.8*fade; ctx.fillStyle='#6e100c';
+      const rx=Math.round(2+grow*4), ry=Math.round(1+grow*2);
+      for (let j=-ry;j<=ry;j++){ const w=Math.round(rx*Math.sqrt(1-(j/(ry+0.5))**2)); ctx.fillRect(x-w,y+j,w*2+1,1); }
+      ctx.fillStyle='#9a1a14'; ctx.fillRect(x-Math.max(1,rx-2),y-Math.max(0,ry-1),Math.max(1,rx-2)*2,1);
+    }
     ctx.globalAlpha=fade;
-    const s=corpseSprite(c.o,c.kind,c.look,c.tier); ctx.drawImage(s,x-7,y-7);
+    const s=corpseSprite(c.o,c.kind,c.look,c.tier,c.clean); ctx.drawImage(s,x-7,y-7);
   }
   ctx.globalAlpha=1;
 }

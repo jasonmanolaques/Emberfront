@@ -33,7 +33,7 @@ export interface SimEvents {
   hit(x: number, y: number, killed: boolean, victim: number, attacker: number): void;   // a blow landed in a fight (ids)
   swing(attacker: number, victim: number): void;               // someone struck at someone, hit or miss
   bldHit(q: number): void;                                     // a soldier struck the building on plot q
-  died(x: number, y: number, o: number, id: number, kind: number, tier: number): void;   // someone fell (kind 0 villager, 1 soldier, 2 beggar; soldiers' tier)
+  died(x: number, y: number, o: number, id: number, kind: number, tier: number, starved: boolean): void;   // someone fell (kind 0 villager, 1 soldier, 2 beggar; soldiers' tier, 0 militia), or a beggar died of want (starved)
   occupied(t: number): void;                                   // tile t was occupied or freed
   counterReady(o: number, enemy: number): void;                // o's army has won its land back and is ready to counter-attack
   intercepting(o: number, enemy: number, soldiers: number): void;   // o sent soldiers after an army of enemy's

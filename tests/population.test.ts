@@ -209,7 +209,7 @@ describe('population with bots', () => {
     newWorld(4242); startMatch(40500, 9); setShare(0.5);
     let tiles = me().tiles, lost = 0;
     for (let i=0;i<1500;i++){
-      const before = new Set(mine().map(h => h.id));
+      const before = new Set(mine().filter(h => !h.beggar).map(h => h.id));   // (beggars can die of want)
       tick();
       const dead = [...before].filter(id => !W.humans.some(h => h.id === id)).length;
       if (me().tiles >= tiles) lost += dead;

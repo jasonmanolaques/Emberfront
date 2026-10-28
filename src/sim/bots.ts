@@ -1,19 +1,40 @@
 /* ---------- bots ---------- */
-import { B_EMPTY, B_RUINS, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, PW, NP, WAGE } from '../core/constants';
-import { W, pType, pOwner, pPrio, type Nation } from './state';
+import { B_EMPTY, B_RUINS, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOUSE, PW, PH, NP, WAGE } from '../core/constants';
+import { W, pType, pOwner, pPrio, pAband, type Nation } from './state';
 import { launch } from './territory';
 import { grossIncome } from './sim';
 import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, TOPICS, setStudy, maxed } from './research';
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, canAfford, placeProblem, build, togglePriority, anyWithin, isEnemyLand, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, guardsOpening, standingTower, WALL_MAX } from './fort';
-import { allied, atWar, ready, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD } from './war';
+import { allied, atWar, ready, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD } from './war';
 
 const WALL = -1;   // a tower of the town wall, in a wishlist
+const STALE = 1800;   // ticks a war's border may stand still (3 minutes) before a bot thinks of ending it
+const LOPSIDED = 2;   // ...when one side has lost this many times the other's dead (and enough have died to tell)
+/** Is n losing people to homelessness: a tenth of them or more without a home (on their way to
+    begging, and to dying of want)? */
+export function beggarProblem(n: Nation){
+  const people=n.villagers+n.soldiers+n.beggars;
+  return people>=8 && n.homeless>=3 && n.homeless>=people*0.1;
+}
+/** A beggar problem with no peaceful way out: no open land to settle, and its houses as good as its
+    research and builders make them (or two minutes of trying). */
+export const stuck = (n: Nation) => beggarProblem(n) && !W.contact[n.id*W.M] && ((maxed(n,R_HOUSING) && n.guilds>0) || W.simTime-n.hungry>120);
+/** More homes than people: a house may come down for something the kingdom needs. */
+const spareHomes = (n: Nation) => !beggarProblem(n) && (n.abandoned>0 || n.beds>=n.villagers+n.soldiers+n.beggars+3);
+/** How many of n's plots stand empty. */
+const emptyPlots = (n: Nation) => { let k=0; for (const q of n.plots) if (pType[q]===B_EMPTY || pType[q]===B_RUINS) k++; return k; };
 const TOWN = [B_BARRACKS, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY];   // workshops: inside the wall
 /** What a bot would build next, most wanted first. */
 function wishlist(n: Nation, exposed: boolean){
-  const w: number[]=[];
+  const w: number[]=[], hungry=beggarProblem(n);
+  // beggars in the streets: better houses before anything else (a guild's builders raise them, once
+  // housing research allows it; a research station to get there)
+  if (hungry){
+    if (n.tier[R_HOUSING]>=2 && n.guilds<1+(n.tiles/1500|0)) w.push(B_GUILD);
+    else if (n.tier[R_HOUSING]<2 && !n.labs && n.tiles>=150) w.push(B_RESEARCH);
+  }
   // soldiers left without room in a barracks guard the wall's openings
   let towers=0, outposts=0, gates=0;
   for (const q of n.blds) if (pType[q]===B_TOWER && pOwner[q]===n.id){ towers++; if (!wallNeighbours(q,n.id)) outposts++; else if (guardsOpening(n,q)) gates++; }
@@ -23,7 +44,10 @@ function wishlist(n: Nation, exposed: boolean){
   else if (n.soldiers-guards>n.barracks*UNIT_SIZE-2 && n.barracks<2+(n.tiles/400|0)) w.push(B_BARRACKS);
   // lone towers out on the border facing its neighbours: outposts
   if (exposed && outposts < 1+(n.tiles/900|0)) w.push(B_TOWER);
-  if (n.farms < 1+(n.tiles/600|0)) w.push(B_FARM);
+  // farms bring people faster: none while beggars crowd the streets; with land lying empty, more,
+  // grown together into one big farmland
+  if (!hungry && n.farms < 1+(n.tiles/600|0)) w.push(B_FARM);
+  else if (!n.homeless && n.beds>=n.villagers+n.soldiers && n.plots.length>=20 && n.farms<1+(n.tiles/300|0) && emptyPlots(n)>n.plots.length*0.4) w.push(B_FARM);   // (only while everyone has a home)
   if (wallDue(n,exposed)){
     // a wall is built of stone: quarries to feed it first
     if (n.quarries<3+(n.tiles/1000|0) && n.stock[1]<20) w.push(B_QUARRY);
@@ -41,6 +65,8 @@ function wishlist(n: Nation, exposed: boolean){
   if (copper===few && n.copperMines < enough) w.push(B_COPPERMINE);
   if (stone===few && n.quarries < enough) w.push(B_QUARRY);
   if (wood===few && n.plantations < enough) w.push(B_PLANTATION);
+  // short of homes and of room to build them: the free plots are kept for houses (but for what improves them)
+  if (hungry && emptyPlots(n)<n.homeless*2) return w.filter(t => t===B_GUILD || t===B_RESEARCH);
   return w;
 }
 /** How much danger a bot sees: 0 nobody next door, 1 neighbours, 2 at war, 3 at war and outnumbered. */
@@ -113,8 +139,18 @@ function barracksPlot(n: Nation){
   }
   return -1;
 }
-/** What a bot's new building of `type` may go over: workshops and towers a house; the rest only bare ground. */
-const over = (type: number): Over => TOWN.includes(type) || type===B_TOWER ? 'houses' : 'none';
+/** What a bot's new building of `type` may go over: workshops and towers a house, and anything a
+    house while the kingdom has more homes than people; otherwise only bare ground. */
+const over = (n: Nation, type: number): Over => TOWN.includes(type) || type===B_TOWER || spareHomes(n) ? 'houses' : 'none';
+/** How many of plot q's neighbours (corners counting less) are farms of n's: fields grow together. */
+function fieldNeighbours(q: number, id: number){
+  const x=q%PW, y=(q/PW)|0; let s=0;
+  for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){
+    if ((!dx && !dy) || x+dx<0 || y+dy<0 || x+dx>=PW || y+dy>=PH) continue;
+    const k=q+dy*PW+dx; if (pType[k]===B_FARM && pOwner[k]===id) s+=dx && dy ? 1 : 3;
+  }
+  return s;
+}
 /** Picks a plot for `type`: towers go toward enemies; barracks join the biggest barracks; the rest
     gather next to their own kind, near the capital. */
 function pickPlot(n: Nation, type: number){
@@ -123,9 +159,13 @@ function pickPlot(n: Nation, type: number){
   for (let k=0;k<24 && n.plots.length;k++){
     const q=n.plots[(srand()*n.plots.length)|0];
     // workshops and towers may go over a house where they are wanted (its people build another)
-    if (placeProblem(n,q,type,over(type)) || plannedWall(n,q)) continue;   // the line of the wall is kept clear
+    if (placeProblem(n,q,type,over(n,type)) || plannedWall(n,q)) continue;   // the line of the wall is kept clear
     const d=Math.hypot(q%PW-cap%PW, ((q/PW)|0)-((cap/PW)|0));
-    let s = (pType[q]===B_EMPTY || pType[q]===B_RUINS ? 0 : -6) + (type===B_TOWER ? (anyWithin(q,n.id,2,isEnemyLand) ? 20 : 0) - d*0.2 : -d + (sameNeighbour(q,type,n.id) ? 12 : 0));
+    // bare ground first, then an empty house, and a lived-in one last
+    let s = (pType[q]===B_EMPTY || pType[q]===B_RUINS ? 0 : pType[q]===B_HOUSE && pAband[q] ? -1 : -6)
+      + (type===B_TOWER ? (anyWithin(q,n.id,2,isEnemyLand) ? 20 : 0) - d*0.2
+        : type===B_FARM ? -d*0.4 + 4*fieldNeighbours(q,n.id)   // fields together, in one big farmland
+        : -d + (sameNeighbour(q,type,n.id) ? 12 : 0));
     // with a wall planned, a proper town: fields outside it, workshops inside
     if (n.wallR && type!==B_TOWER){ const inside=ringOf(n,q)<n.wallR; s += type===B_FARM ? (inside ? -8 : 6) : TOWN.includes(type) ? (inside ? 8 : -4) : 0; }
     s += srand()*3;
@@ -137,6 +177,7 @@ function pickPlot(n: Nation, type: number){
 /** Bots study whichever topic is furthest behind: housing first, then infantry, the watchtowers,
     the castle and taxation; a kingdom with enemies on its border puts its towers before its houses. */
 function botStudy(n: Nation, exposed: boolean){
+  if (beggarProblem(n) && !maxed(n,R_HOUSING)){ setStudy(n,R_HOUSING); return; }   // room for the beggars first
   const order=exposed ? [R_TOWERS, R_GATHER, R_HOUSING, R_INFANTRY, R_CASTLE, R_TAXES] : [R_GATHER, R_HOUSING, R_INFANTRY, R_TOWERS, R_CASTLE, R_TAXES];
   let best=order[0]; for (const t of order) if (n.tier[t]<n.tier[best]) best=t;
   setStudy(n,best);
@@ -145,7 +186,7 @@ function botStudy(n: Nation, exposed: boolean){
 function botBuild(n: Nation, exposed: boolean){
   botStudy(n,exposed);
   garrisonGates(n);
-  n.invest=0.4+n.expandAt*0.8;   // the builders may spend 58% to 78% of the goods coming in, by temper
+  n.invest=beggarProblem(n) ? 1 : 0.4+n.expandAt*0.8;   // the builders may spend 58% to 78% of the goods coming in, by temper (all of it, with beggars to house)
   let saving=false;   // threatened and short of a wall tower: lesser works don't get its stone
   for (const type of wishlist(n,exposed)){
     const s=STRUCTURES.find(s=>s.type===(type===WALL ? B_TOWER : type))!;
@@ -162,7 +203,7 @@ function botBuild(n: Nation, exposed: boolean){
       continue;
     }
     const q=pickPlot(n,type);
-    if (q>=0 && build(n,q,type,over(type))) return;
+    if (q>=0 && build(n,q,type,over(n,type))) return;
   }
 }
 
@@ -280,17 +321,31 @@ function botWar(n: Nation){
     if (o===id || !atWar(id,o) || W.offers[id*M+o] || warAge(id,o)<300 || outlook(n,o)>-0.4) continue;
     endWar(id,o); n.nextOffer=W.simTime+30;   // losing for a while: raids turn home and wars get a peace offer, at most every 30 s
   }
-  // an attack under way gets the next army as a wave, one at a time, while the war goes its way
+  // a war that has stalled, its border hardly moving for minutes while one side bleeds far more than
+  // the other (or for twice as long, whatever the dead): no more armies thrown at it, the front holds,
+  // the reserves go home, and it offers peace
+  for (let o=1;o<M;o++){
+    if (o===id || !W.wars[id*M+o] || stalled(id,o)<STALE) continue;
+    const lost=W.kills[o*M+id], killed=W.kills[id*M+o];
+    if (!(lost+killed>=20 && (lost>killed*LOPSIDED || killed>lost*LOPSIDED)) && stalled(id,o)<STALE*2) continue;
+    if (W.offensive[id*M+o]===F_PUSH) setOffensive(id,o,false);
+    const out=reservesOf(id); if (out && out.d===o) callReserves(id,o,false);
+    if (!W.offers[id*M+o] && W.simTime>=n.nextOffer){ endWar(id,o); n.nextOffer=W.simTime+30; }
+  }
+  // an attack under way gets the next army as a wave, one at a time, while the war goes its way (not once it has stalled)
   if (W.simTime>=n.nextWave && !dug){
-    const front=W.campaigns.find(c => c.a===id && c.front && !c.militia && c.hostile && c.phase===1 && W.wars[id*M+c.d] && W.aggr[id*M+c.d]);   // (a war under way that it started)
+    const front=W.campaigns.find(c => c.a===id && c.front && !c.militia && c.hostile && c.phase===1 && W.wars[id*M+c.d] && W.aggr[id*M+c.d] && stalled(id,c.d)<STALE);   // (a war under way that it started)
     const army=front ? biggest(n) : -1;
     if (front && army>=0 && outlook(n,front.d)>-0.3){ declare(id,front.d,false,[army]); n.nextWave=W.simTime+waveGap(n); }
   }
   // after a campaign it rests a while (the bold less), so a winner digests its gains first
-  if (busy){ n.nextWar=Math.max(n.nextWar, W.simTime+50+(0.8-n.attackAt)*150); return; }
+  // beggars it can't house any other way: war is the way out (the dead leave homes behind), so it rests
+  // less between wars and takes worse odds
+  const desperate=stuck(n);
+  if (busy){ n.nextWar=Math.max(n.nextWar, W.simTime+(desperate ? 20 : 50+(0.8-n.attackAt)*150)); return; }
   if (W.simTime<n.nextWar || dug) return;   // badly outnumbered: stay home and hold
   const pool=ready(n); if (pool<5) return;
-  const need=1.4-(n.attackAt-0.5)*2;   // 1.4 for the cautious, 0.8 for the bold
+  const need=(1.4-(n.attackAt-0.5)*2)*(desperate ? 0.6 : 1);   // 1.4 for the cautious, 0.8 for the bold
   // a kingdom two armies are already on is left to them
   const beset=new Uint8Array(M); for (const c of W.campaigns) if (c.hostile && c.phase<2) beset[c.d]++;
   let best=0, bs=need, raid=false;
@@ -312,11 +367,13 @@ export function botThink(n: Nation){
   n.nextThink=W.simTime+1.1+srand()*2.4;
   const b=n.id*M;
   let exposed=false; for (let o=1;o<M;o++) if (o!==n.id && contact[b+o] && W.nations[o].alive){ exposed=true; break; }
+  const hungry=beggarProblem(n);
+  if (!hungry) n.hungry=0; else if (!n.hungry) n.hungry=W.simTime;
   botBuild(n,exposed);
   botWar(n);
   let active=0; for (const A of W.attacks) if (!A.done && A.att===n.id) active++;
   if (active>=2) return;
-  // personality: how much gold it lets pile up before settling more land
-  const g=n.gold, expandAt=20+n.expandAt*200;
-  if (contact[b]>0 && g>expandAt) launch(n.id,0,g*n.ratio);
+  // personality: how much gold it lets pile up before settling more land (little, with beggars to find room for)
+  const g=n.gold, expandAt=hungry ? 20 : 20+n.expandAt*200;
+  if (contact[b]>0 && g>expandAt) launch(n.id,0,g*(hungry ? Math.max(n.ratio,0.6) : n.ratio));
 }

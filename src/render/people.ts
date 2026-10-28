@@ -115,11 +115,11 @@ export function personSprite(o: number, kind: number, look: number, frame: numbe
   return c;
 }
 /** Someone who fell: the figure on its side, eyes to the sky. */
-export function corpseSprite(o: number, kind: number, look: number, tier=1){
-  const key='dead|'+o+'|'+kind+'|'+look+'|'+tier;
+export function corpseSprite(o: number, kind: number, look: number, tier=1, clean=false){
+  const key='dead|'+o+'|'+kind+'|'+look+'|'+tier+'|'+(+clean);
   let c=cache.get(key);
   if (c) return c;
-  const s=personSprite(o,kind,look,0,false,kind===1 ? 2 : 1,tier);
+  const s=personSprite(o,kind,look,0,false,clean ? 0 : kind===1 ? 2 : 1,tier);   // (dead of want: no wound)
   c=document.createElement('canvas'); c.width=s.height; c.height=s.width;
   const ctx=c.getContext('2d')!; ctx.translate(c.width,0); ctx.rotate(Math.PI/2); ctx.drawImage(s,0,0);
   cache.set(key,c);
