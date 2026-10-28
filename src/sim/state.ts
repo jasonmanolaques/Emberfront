@@ -86,7 +86,8 @@ export interface Campaign {
   hostile: boolean;                  // still fighting: false once peace is made and the army walks home
   members: number[];                 // ids of the soldiers still in it, rebuilt each tick
   front: boolean;                    // an attack, or an army defending a border: its men stand on the front of its kingdom's offensive (sim/front.ts)
-  militia: boolean;                  // the kingdom's militia, called up as reserves to a front (no barracks of its own)
+  militia: boolean;                  // militia (no barracks of their own): sent with an attack or a raid, or called up as reserves to a front
+  all: boolean;                      // militia on a front: every one at home was called up, and those raised meanwhile follow
   phase: number;                     // 0 mustering, 1 out (marching, or on the front), 2 going home
   bx: number; by: number;            // the banner, in pixels
   dx: number; dy: number;            // marching direction (unit)
@@ -114,7 +115,7 @@ export type Command =
   | { type: 'build'; nation: number; plot: number; kind: number }     // kind: B_FARM, B_BARRACKS, B_TOWER or B_MINTER
   | { type: 'priority'; nation: number; plot: number }                // toggle a watchtower's call for a garrison
   | { type: 'ally'; nation: number; target: number }                  // propose an alliance
-  | { type: 'war'; nation: number; target: number; raid: boolean; soldiers?: number; units?: number[] }   // units: barracks plots, each army marches on its own
+  | { type: 'war'; nation: number; target: number; raid: boolean; soldiers?: number; units?: number[]; militia?: number }   // units: barracks plots, each army marches on its own; militia: how many of the militia at home go too
   | { type: 'endWar'; nation: number; target: number }                // recall a raid, or offer peace
   | { type: 'intercept'; nation: number; campaign: number; soldiers?: number; units?: number[] }   // send armies after an enemy army
   | { type: 'peace'; nation: number; target: number }                 // accept the target's peace offer

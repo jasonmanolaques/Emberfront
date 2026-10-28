@@ -123,6 +123,6 @@ export function clickOwnBuilding(t: number){
   }
   if (pType[q]!==B_TOWER) return false;
   queueCommand({ type:'priority', nation:PLAYER, plot:q });
-  toast(pPrio[q] ? 'Watchtower no longer calls for a garrison' : me.barracks ? 'Watchtower calls for 5 soldiers from those without room in a barracks' : 'Watchtower calls for soldiers: build a barracks to raise them');
+  toast(pPrio[q] ? 'Watchtower no longer calls for a garrison' : me.militia ? 'Watchtower calls for 5 militia from those at home' : 'Watchtower calls for 5 militia: raise some with the soldier slider');
   return true;
 }

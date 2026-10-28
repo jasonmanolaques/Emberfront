@@ -1,5 +1,5 @@
 /* ---------- Emberfront: boot & main loop ---------- */
-import { TW, TH, RW, RH, NP, TICK } from './core/constants';
+import { TW, TH, RW, RH, RS, NP, TICK } from './core/constants';
 import { W, owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, pHp } from './sim/state';
 import { findBlock, queueCommand } from './sim/sim';
 import { plotProblem } from './sim/buildings';
@@ -34,7 +34,7 @@ requestAnimationFrame(frame);
 
 // test hook
 function toSpawn(){ if (client.state!=='spawn'){ $('intro').hidden=true; $('scrim').hidden=true; client.state='spawn'; } }
-(window as any).emberfront = { get TW(){return TW;}, get TH(){return TH;}, get state(){return client.state;}, get nations(){return W.nations;}, get simTime(){return W.simTime;}, get landCount(){return W.landCount;},
+(window as any).emberfront = { get TW(){return TW;}, get TH(){return TH;}, RS, get state(){return client.state;}, get nations(){return W.nations;}, get simTime(){return W.simTime;}, get landCount(){return W.landCount;},
   spawnAt:(tx: number,ty: number)=>{ if (client.state==="play") return; toSpawn(); trySpawn(ty*TW+tx); },   // (once a match is under way, no second founding)
   randomSpawn:()=>{ toSpawn(); for (let i=0;i<500 && client.state==='spawn';i++){ const t=W.landTiles[(Math.random()*W.landTiles.length)|0]; const b=findBlock(t%TW,(t/TW)|0,0); if (b) trySpawn(t); } },
   run:(n: number)=>{ for (let i=0;i<n;i++) step(); }, attack:(t: number, r?: number)=>playerAttack(t,r), setInvest, setSoldierShare, command:(c: unknown)=>queueCommand(c as never), get humans(){return W.humans;}, get cam(){return cam;},

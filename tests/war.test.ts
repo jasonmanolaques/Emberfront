@@ -243,7 +243,7 @@ describe('at war', () => {
     // four of its people are inside the castle when it falls
     const people: Human[]=[];
     for (let i=0;i<4;i++){ const [x,y]=doorOf(N(2)); const v=makeHuman(N(2),H_VILLAGER,x,y); v.task=TASK_STORE; v.wait=1e9; W.humans.push(v); people.push(v); }
-    N(2).gold=500; N(2).stock=[9,9,9]; N(1).stock=[3,4,5];
+    N(2).gold=500; N(2).stock=[9,9,9]; N(1).stock=[3,4,5]; N(2).soldierShare=0;   // (they stay villagers, with no barracks to make them militia)
     const theirLand=Array.from({ length: NT }, (_, i) => i).filter(i => owner[i]===2);
     soldiers(N(1),30);
     const annexed=collect('annexed');
@@ -574,9 +574,9 @@ describe('occupation', () => {
     const guard=soldiers(N(1),6);
     soldiers(N(2),6); run(1);
     expect(declare(2,1,false,6)).toBe(true);
-    run(250);
+    until(() => guard.filter(h => h.fk===2*W.M+1 && Math.hypot(h.x-h.fx,h.y-h.fy)<=PRESENT*2).length>=4, 600);   // (a longer walk from a bigger kingdom)
     const F=offensiveFront(2,1)!.F!;
-    for (const h of guard){
+    for (const h of guard.filter(h => W.humans.includes(h))){   // (one may have fallen already)
       expect(h.fk).toBe(2*W.M+1);
       expect(owner[(((h.y/2)|0)*TW+((h.x/2)|0))]).toBe(1);   // without leaving home
       // placed on the line, or (the border here is short) in ranks behind it
@@ -854,8 +854,8 @@ describe('the front', () => {
   });
 
   it('a man of the front rank who falls is replaced by the one behind him', () => {
-    world(1); quiet(); paintToward(1,2);
-    soldiers(N(1),30); noDraft();
+    world(1,11); quiet(); paintToward(1,2);   // (a front whose slots stay put while he falls: where the line is laid out again just then, the gap goes to whoever is nearest)
+    soldiers(N(1),30); noDraft(); N(2).soldierShare=0;
     expect(declare(1,2,false,30)).toBe(true);
     until(() => W.offensive[1*W.M+2]===F_READY, 3000);
     const front=W.humans.find(h => h.o===1 && h.line===0 && W.humans.some(e => e.o===1 && e.line===1 && e.slot===h.slot))!;
@@ -1061,6 +1061,41 @@ describe('crisis', () => {
 
 describe('militia', () => {
   const M = () => W.M;
+  it('can go with an attack, as many as asked; calling the reserves at war then calls up the rest', () => {
+    world(1); quiet(); paintToward(1,2);
+    const mil=soldiers(N(1),8,false); noDraft(); run(2);   // no barracks: militia only
+    expect(mil.every(h => h.militia)).toBe(true);
+    expect(available(N(1))).toHaveLength(0);
+    queueCommand({ type:'war', nation:1, target:2, raid:false, units:[], militia:5 }); tick();
+    expect(inCrisis(1,2)).toBe(true);   // an attack of militia alone masses on the border all the same
+    const R=reservesOf(1,2)!;
+    expect([R.militia, R.front, R.all, R.members.length]).toEqual([true, true, false, 5]);
+    run(20);
+    expect(R.members).toHaveLength(5);   // the rest stay home: they were not called
+    expect(N(1).called).toBe(5);
+    expect(reservesProblem(1,2,true)).toBeNull();   // the rest can still be called up
+    queueCommand({ type:'reserves', nation:1, target:2, call:true }); tick();
+    expect(R.all).toBe(true);
+    expect(R.members).toHaveLength(8);
+    expect(W.campaigns.filter(c => c.militia && c.a===1)).toHaveLength(1);   // all in one band
+    expect(reservesProblem(1,2,true)).toMatch(/already on that front/);
+  });
+
+  it('can go raiding, alone or beside an army', () => {
+    world(1); quiet(); place(N(2),B_FARM);
+    const mil=soldiers(N(1),6,false); noDraft(); run(2);
+    expect(warProblem(1,2,true)).toBeNull();
+    expect(declare(1,2,true,0,4)).toBe(true);
+    const raid=W.campaigns.find(c => c.a===1 && c.raid)!;
+    expect([raid.militia, raid.front, raid.members.length]).toEqual([true, false, 4]);
+    expect(mil.filter(h => h.war===raid.id)).toHaveLength(4);
+    expect(declare(1,2,true,0,0)).toBe(false);   // nobody to send
+    const army=soldiers(N(1),5); run(2);   // (a full barracks, so the militia at home have no places to fill in it)
+    expect(declare(1,2,true,5,2)).toBe(true);   // an army, and the last 2 militia beside it, each band on its own
+    expect(army.every(h => h.war>=0 && h.war!==raid.id)).toBe(true);
+    expect(mil.every(h => h.war>=0)).toBe(true);
+  });
+
   it('stay home when the armies march, and are called up as reserves from the war bar: paid while out, home again when sent', () => {
     world(1); quiet(); paintToward(1,2);
     soldiers(N(1),10); const mil=soldiers(N(1),12,false); noDraft(); run(2);
@@ -1130,9 +1165,20 @@ describe('beggars, militia and stalemates', () => {
     expect(maxHp(beggars[0])).toBe(4);
   });
 
+  it('every kingdom starts with 10 wood, 10 stone and 10 copper, and the land within 8 tiles of its castle', () => {
+    world(3);
+    for (const n of W.nations.slice(1)){
+      expect(n.stock).toEqual([10,10,10]);
+      const cx=n.capTile%TW, cy=(n.capTile/TW)|0;
+      let disc=0; for (let dy=-8;dy<=8;dy++) for (let dx=-8;dx<=8;dx++) if (dx*dx+dy*dy<=64) disc++;
+      expect(n.tiles).toBe(disc);   // (all grass here, far apart)
+      expect(owner[(cy+8)*TW+cx]).toBe(n.id);
+    }
+  });
+
   it('militia have 5 hit points and strike for 1', () => {
     expect([MILITIA_HP, MILITIA_HIT]).toEqual([5, 1]);
-    world(1); const [m]=soldiers(N(1),1,false); run(1);
+    world(1); const [m]=soldiers(N(1),1,false); N(1).soldierShare=1; run(1);
     expect([m.militia, maxHp(m)]).toEqual([true, 5]);
   });
 

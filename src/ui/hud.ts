@@ -42,9 +42,8 @@ export function updateHUD(now: number){
   ui.meMilitia.textContent=me.called ? `${me.militia} (${me.called} called up)` : String(me.militia); ui.meMilitiaRow.hidden=!me.militia; ui.meTraining.textContent=String(me.training);
   const perTick=1+FARM_BONUS*me.farms;
   ui.meNext.textContent = me.alive && me.capTile>=0 ? `Next human in ${Math.max(0,Math.ceil((HUMAN_EVERY-me.humanProg)/perTick*TICK))}s${me.farms?` · farms +${Math.round(FARM_BONUS*me.farms*100)}%`:''}` : 'No capital: no new humans';
-  // soldiers need a barracks
-  const canTrain=me.alive && me.barracks>0;
-  ui.soldiers.disabled=!canTrain; ui.soldiersHint.hidden=canTrain;
+  // without a barracks, everyone under arms trains at the castle as militia
+  ui.soldiers.disabled=!me.alive; ui.soldiersHint.hidden=!me.alive || me.barracks>0;
   // city investment opens up with the first builders guild; beside it, the goods of the last minute
   const canInvest=me.alive && me.guilds>0;
   ui.invest.disabled=!canInvest; ui.investHint.hidden=canInvest;

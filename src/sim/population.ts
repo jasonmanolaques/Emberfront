@@ -356,21 +356,17 @@ function roomIn(n: Nation, mine: Human[]){
   }
   return room;
 }
-/** True while n's militia are called up to a front: they fight as they are, and nobody fills the barracks from them. */
-const reservesOut = (n: Nation) => W.campaigns.some(c => c.militia && c.a===n.id && c.phase<2);
+/** True while all n's militia are called up to a front: they fight as they are, and nobody fills the barracks from them. */
+const reservesOut = (n: Nation) => W.campaigns.some(c => c.militia && c.all && c.a===n.id && c.phase<2);
 
 /** Moves the kingdom's headcount toward its requested share under arms. Free places in the barracks
     go to militia first, one at a time to each barracks; then to villagers; once the barracks are
-    full, villagers train at the castle as militia. With too many under arms, militia stand down first. */
+    full (or with no barracks at all), villagers train at the castle as militia. With too many under
+    arms, militia stand down first. */
 function balance(n: Nation, mine: Human[], barracks: number[]){
   if (n.capTile<0){
     // no capital: nowhere to store anything, so loads are dropped and gathering stops
     for (const h of mine) if (h.kind===H_VILLAGER && h.task>=TASK_GATHER && h.task<=TASK_STORE){ h.carry=-1; h.amount=0; backToRoam(h); }
-  }
-  if (!barracks.length){
-    // no barracks: nobody can train; anyone on the way turns back, anyone inside walks back out
-    for (const h of mine) if (switching(h)) backToRoam(h);
-    return;
   }
   const room=roomIn(n,mine);
   // militia at home (not on guard at a watchtower) take the free places, one walking to each barracks at a time
@@ -394,7 +390,7 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
   if (diff>0 && n.gold<0) return;   // nobody signs up while there is no money for wages
   // first turn back anyone still walking to switch the other way
   for (const h of mine){ if (!diff) return; if (h.task===TASK_TO_TRAIN && (diff>0 ? h.to===T_VILLAGER : h.kind===H_VILLAGER)){ backToRoam(h); diff+=diff>0 ? -1 : 1; } }
-  const away=(h: Human)=>{ const [x,y]=frontOf(nearestPlot(barracks,h.x,h.y)); return (h.x-x)**2+(h.y-y)**2; };
+  const [gx,gy]=doorOf(n), away=(h: Human)=>{ const [x,y]=barracks.length ? frontOf(nearestPlot(barracks,h.x,h.y)) : [gx,gy]; return (h.x-x)**2+(h.y-y)**2; };
   const free=(h: Human) => !switching(h) && !h.beggar && h.task!==TASK_STORE && h.carry<0 && h.home<0 && h.war<0 && h.work<0;
   if (diff>0){
     // villagers nearest a barracks: into its free places while there are any, else to the castle as militia
@@ -411,7 +407,7 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
   // too many: militia go back to work first (at the castle), then soldiers (at a barracks), the least armoured first
   diff=-diff;
   const cands=mine.filter(h => free(h) && h.kind===H_SOLDIER).sort((a,b)=>(+b.militia - +a.militia) || a.tier-b.tier || away(a)-away(b) || a.id-b.id);
-  for (const h of cands){ if (!diff) return; if (h.militia ? n.capTile>=0 && sendToTrain(h,n.capPlot,T_VILLAGER) : sendToTrain(h,nearestPlot(barracks,h.x,h.y),T_VILLAGER)) diff--; }
+  for (const h of cands){ if (!diff) return; if (h.militia || !barracks.length ? n.capTile>=0 && sendToTrain(h,n.capPlot,T_VILLAGER) : sendToTrain(h,nearestPlot(barracks,h.x,h.y),T_VILLAGER)) diff--; }
 }
 /** Trained soldiers at home with no place in a barracks (theirs fell, or shrank) serve on as militia. */
 function demote(mine: Human[]){
@@ -719,8 +715,8 @@ export function updatePopulation(){
     if (n.capTile>=0 && (n.humanProg+=1+FARM_BONUS*n.farms)>=HUMAN_EVERY){
       n.humanProg-=HUMAN_EVERY;
       // newcomers fill the ranks first while the kingdom is short of soldiers (if it has a barracks):
-      // a soldier while a barracks has room the militia aren't taking, else a militiaman
-      const soldier = barracks.length>0 && n.gold>=0 && armed(mine)<Math.round(n.soldierShare*(mine.length+1));
+      // a soldier while a barracks has room the militia aren't taking, else (or with no barracks) a militiaman
+      const soldier = n.gold>=0 && armed(mine)<Math.round(n.soldierShare*(mine.length+1));
       let room=0; if (soldier){ for (const k of roomIn(n,mine).values()) room+=Math.max(0,k); if (!reservesOut(n)) room-=mine.filter(h => homeMilitia(h) && h.post<0).length; }
       spawnHuman(n, soldier ? H_SOLDIER : H_VILLAGER, barracks, soldier && room<=0);
       mine.push(H[H.length-1]);

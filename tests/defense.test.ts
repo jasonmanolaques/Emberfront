@@ -111,7 +111,7 @@ describe('invaders and towers', () => {
     const men: Human[]=[]; const [x,y]=doorOf(N(1));
     for (let i=0;i<5;i++){ const h=makeHuman(N(1),H_SOLDIER,x+i,y); W.humans.push(h); men.push(h); }
     N(1).stock=[50,50,50]; place(N(1),8);   // a barracks for them
-    run(2); N(1).soldierShare=1;
+    N(1).soldierShare=1; run(2);
     expect(declare(1,2,true,5)).toBe(true);
     until(() => men.some(h => h.aim>=0), 4000);
     run(20);

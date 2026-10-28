@@ -7,8 +7,7 @@ import { PLAYER } from '../core/constants';
 import { fmt } from '../core/util';
 import { W } from '../sim/state';
 import { queueCommand } from '../sim/sim';
-import { allied, atWar, available, allyProblem, warProblem, interceptProblem, defendProblem, reservesOf, reservesProblem, inCrisis, OFFER_TICKS, LOOT_GOLD, PRESENT, F_GATHER, F_READY, F_PUSH, M_HOLD } from '../sim/war';
-import { homeMilitia } from '../sim/population';
+import { allied, atWar, available, callable, allyProblem, warProblem, interceptProblem, defendProblem, reservesOf, reservesProblem, inCrisis, OFFER_TICKS, LOOT_GOLD, PRESENT, F_GATHER, F_READY, F_PUSH, M_HOLD } from '../sim/war';
 import type { Campaign, Human } from '../sim/state';
 import { toast } from './hud';
 import { ArmyPicker, armyName } from './armies';
@@ -20,6 +19,7 @@ const panel=$('diplo'), talk=$('dTalk'), warView=$('dWarView'), wars=$('wars');
 const pop=$('warPop'), popMenu=$('wpMenu'), popSend=$('wpSend');
 const picker=new ArmyPicker($('dArmies'), () => refreshWar(false)), popPicker=new ArmyPicker($('wpArmies'), () => refreshPop());
 let target=0;
+let milOn=false, milPick=-1;   // the war screen: send militia too, and how many (-1: all of them, until moved)
 let popFor=0, popCamp=-1;   // the enemy whose army the menu is about, and that army (-2: our border with them, to hold)
 let popCounter=false;       // the menu is for our land being free again: counter-attack or peace
 // raid routes take a search of the map: worked out at most once a second while the war screen is open
@@ -42,6 +42,7 @@ function showWarView(){
   const me=W.nations[PLAYER]; if (!me) return;
   talk.hidden=true; warView.hidden=false;
   picker.reset(); raidAt=-1e9;
+  milOn=!available(me).length && callable(PLAYER).length>0; milPick=-1;   // with no armies, the militia are all there is
   refreshDiplomacy(true);
 }
 
@@ -66,29 +67,41 @@ export function refreshDiplomacy(force=false){
   $('dNote').textContent = no && no!=='You are already allies' ? no : '';
 }
 
+/** How many militia the war screen sends: none unless chosen, else the slider's (all of them to start with). */
+function milSent(){ const mil=callable(PLAYER).length; return milOn ? Math.min(mil, milPick<0 ? mil : milPick) : 0; }
 function refreshWar(force: boolean){
   const me=W.nations[PLAYER], armies=available(me);
   picker.refresh();
-  const k=picker.count(), picked=picker.chosen().length;
-  $('dCommitVal').textContent=`${k} soldier${k===1?'':'s'}`;
-  const mil=W.humans.filter(h => h.o===PLAYER && homeMilitia(h)).length;
-  $('dSplit').textContent = (armies.length ? `${picked} arm${picked===1?'y':'ies'} chosen${mil ? `, and ${mil} militia in reserve (call them up from the war bar)` : ''}. An attack masses them along the border: a crisis, not yet a war, until you give the word. A raid marches to the border and waits there for your word.` : '')
-    + (mil && !armies.length ? `${mil} militia in reserve: they can only be called up once a crisis or war is under way.` : '');
+  const soldiers=picker.count(), picked=picker.chosen().length;
+  $('dCommitVal').textContent=`${soldiers} soldier${soldiers===1?'':'s'}`;
+  // the militia at home (not the watchtowers' guards): a toggle, then a slider for how many
+  const mil=callable(PLAYER).length, m=milSent(), slider=$('dMil') as HTMLInputElement, tog=$('dMilOn') as HTMLButtonElement;
+  if (!mil) milOn=false;
+  tog.disabled=!mil; tog.setAttribute('aria-pressed',String(milOn));
+  $('dMilAt').textContent=mil ? `${milOn ? m+' of ' : ''}${mil} at home` : 'none at home';
+  $('dMilBox').hidden=!milOn;
+  slider.max=String(mil); if (document.activeElement!==slider) slider.value=String(m);
+  slider.style.setProperty('--fill',(mil ? m/mil*100 : 0)+'%');
+  $('dMilVal').textContent=String(m);
+  const k=soldiers+m;
+  $('dSplit').textContent = (picked || m ? `${picked ? `${picked} arm${picked===1?'y':'ies'}` : ''}${picked && m ? ' and ' : ''}${m ? `${m} militia` : ''} chosen. ` : '')
+    + 'An attack masses them along the border: a crisis, not yet a war, until you give the word. A raid marches to the border and waits there for your word.'
+    + (mil && !milOn ? ` You have ${mil} militia at home: use them too, or call them up from the war bar later.` : '');
   if (force || performance.now()-raidAt>1000){ raidAt=performance.now(); raidWhy=warProblem(PLAYER,target,true); }
   const attackWhy=warProblem(PLAYER,target,false);
   const raid=$('dRaid') as HTMLButtonElement, attack=$('dAttack') as HTMLButtonElement;
   raid.disabled=!!raidWhy || k<1; attack.disabled=!!attackWhy || k<1;
   const why: string[]=[];
-  if (k<1 && armies.length) why.push('Choose the armies to send');
+  if (k<1) why.push(armies.length || mil ? 'Choose who to send' : 'No armies and no militia: raise some with the soldier slider');
   if (raidWhy) why.push('Raid: '+raidWhy.toLowerCase());
   if (attackWhy) why.push('Attack: '+attackWhy.toLowerCase());
   $('dWhy').textContent=why.join(' · ');
 }
 
 function send(raid: boolean){
-  const units=picker.chosen(); if (!target || !units.length) return;
+  const units=picker.chosen(), militia=milSent(); if (!target || (!units.length && !militia)) return;
   if (allied(PLAYER,target)) toast(`Your alliance with ${W.nations[target].name} is over`);
-  queueCommand({ type:'war', nation:PLAYER, target, raid, units });
+  queueCommand({ type:'war', nation:PLAYER, target, raid, units, militia });
   closeDiplomacy();
 }
 
@@ -262,15 +275,16 @@ function word(o: number, byId: Map<number, Human>){
   }
   return '';
 }
-/** The militia reserves on the war with o: call them up to the front, or send them home. */
+/** The militia on the war with o: call up those at home (all of them, or the rest of them when some
+    went with the attack), or send them home. */
 function reserves(o: number){
-  const out=reservesOf(PLAYER);
-  if (out && out.d===o) return `<button class="fres out" data-o="${o}" data-call="" title="Your militia go home: no more wages, and they go back to patrolling">Send reserves home · ${out.members.length} militia</button>`;
+  const out=reservesOf(PLAYER,o), k=callable(PLAYER).length;
+  const home=out ? `<button class="fres out" data-o="${o}" data-call="" title="Your militia go home: no more wages, and they go back to patrolling">Send ${out.all ? 'reserves' : 'militia'} home · ${out.members.length} militia</button>` : '';
+  if (out?.all) return home;
   const why=reservesProblem(PLAYER,o,true);
-  if (why==='No crisis or war with them' || why==='Needs a shared border') return '';
-  const k=W.humans.filter(h => h.o===PLAYER && homeMilitia(h) && h.post<0).length;
-  if (!k && !out) return '';
-  return `<button class="fres" data-o="${o}" data-call="1" ${why?'disabled':''} title="${why ? esc(why) : 'Every militiaman at home (but the watchtowers\' guards) joins this front. Called up they are paid a soldier\'s wage, and they die easily'}">Call reserves · ${k} militia</button>`;
+  if (why==='No crisis or war with them' || why==='Needs a shared border' || !k) return home;
+  const call=`<button class="fres" data-o="${o}" data-call="1" ${why?'disabled':''} title="${why ? esc(why) : `Every militiaman at home (but the watchtowers' guards) joins this front${out ? `, beside the ${out.members.length} already there` : ''}. Called up they are paid a soldier's wage, and they die easily`}">${out ? 'Call the rest' : 'Call reserves'} · ${k} militia</button>`;
+  return home ? `<div class="fresrow">${call}${home}</div>` : call;
 }
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]!);
 
@@ -319,7 +333,7 @@ function showDefend(){
 const massed = (o: number) => W.campaigns.reduce((k,c) => k+(c.front && c.a===o && c.d===PLAYER && c.phase<2 ? c.members.length : 0),0);
 function refreshPop(){
   const me=W.nations[PLAYER]; if (!me){ closePop(); return; }
-  const ready=available(me).reduce((s,a) => s+a.men.length,0), mil=W.humans.filter(h => h.o===PLAYER && homeMilitia(h)).length;
+  const ready=available(me).reduce((s,a) => s+a.men.length,0), mil=callable(PLAYER).length;
   let theirs: number;
   if (popCamp===-2){ if (!canDefend(popFor)){ closePop(); return; } theirs=massed(popFor); }
   else { const E=W.campaigns.find(c => c.id===popCamp); if (!E || interceptProblem(PLAYER,E.id)){ closePop(); return; } theirs=E.members.length; }
@@ -337,6 +351,8 @@ export function setupDiplomacy(){
   $('dWar').onclick=showWarView;
   $('dBack').onclick=()=>{ talk.hidden=false; warView.hidden=true; refreshDiplomacy(true); };
   $('dRaid').onclick=()=>send(true);
+  $('dMilOn').onclick=()=>{ milOn=!milOn; refreshWar(false); };
+  $('dMil').oninput=e=>{ milPick=+(e.target as HTMLInputElement).value; refreshWar(false); };
   $('dAttack').onclick=()=>send(false);
   wars.addEventListener('click',e=>{
     const w=(e.target as HTMLElement).closest('button.fword') as HTMLButtonElement | null;

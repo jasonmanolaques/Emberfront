@@ -134,11 +134,16 @@ describe('population', () => {
     expect(Math.hypot(newest.x-dx, newest.y-dy)).toBeLessThan(3);
   });
 
-  it('makes no soldiers at all without a barracks', () => {
+  it('without a barracks, trains everyone under arms at the castle as militia', () => {
     start(12345, 0, false);
-    run(10*E); setShare(1); run(600);
-    expect(count(H_SOLDIER)).toBe(0);
-    expect(switching()).toHaveLength(0);
+    run(10*E); setShare(0.5);
+    soon(() => switching().length>0);
+    const [dx, dy] = doorOf(me());
+    expect(switching().every(h => h.to===T_MILITIA && Math.hypot(h.tx-dx, h.ty-dy) < 1)).toBe(true);
+    me().humanProg=-1e9; settle();
+    expect(me().soldiers).toBe(Math.round(0.5*mine().length));
+    expect(me().militia).toBe(me().soldiers);
+    expect(mine().filter(h => h.kind===H_SOLDIER).every(h => h.militia && h.hp===MILITIA_HP)).toBe(true);
   });
 
   it('counts a born soldier toward the target, so one fewer villager has to convert', () => {

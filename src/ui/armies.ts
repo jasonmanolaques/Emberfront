@@ -49,7 +49,7 @@ export class ArmyPicker {
     const html=U.map(u => {
       const k=ready.get(u.key) ?? 0, on=this.picked.has(u.key) && k>0;
       return `<button class="army" data-key="${u.key}" aria-pressed="${on}" ${k?'':'disabled'}><span class="an">${armyName(me,u)}</span><span class="at">${unitLabel(u)}</span></button>`;
-    }).join('') || '<p class="dnote">No armies: build a barracks. Each one houses an army of 5, more where barracks stand side by side.</p>';
+    }).join('') || '<p class="dnote">No armies: a barracks trains soldiers, an army of 5 each, more where barracks stand side by side. Militia can go instead.</p>';
     if (html!==this.html){ this.html=html; this.el.innerHTML=html; }
   }
 }

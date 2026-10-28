@@ -32,6 +32,7 @@ export const isStructure = (ty: number) => ty===B_HOUSE || ty===B_FARM || ty===B
 
 /* ---------- economy ---------- */
 export const GOLD_START = 250;            // gold each kingdom starts with
+export const GOODS_START = [10, 10, 10];  // wood, stone and copper each kingdom starts with
 export const WAGE = 0.2;                  // gold a second each soldier is paid
 export const UNPAID_TICKS = 100;          // ticks below zero gold before unpaid soldiers start to desert (10 s)
 export const DESERT_TICKS = 30;           // then one deserts every 3 s, the least armoured first

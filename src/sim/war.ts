@@ -327,10 +327,11 @@ export function warProblem(a: number, d: number, raid: boolean): string | null {
   return null;
 }
 
-/** Sends a's armies against d: the barracks named, or armies enough for `pick` soldiers. Each
+/** Sends a's armies against d: the barracks named, or armies enough for `pick` soldiers, and
+    `militia` of its militia at home (the nearest the castle first) as one band of their own. Each
     army marches on its own. An attack on a kingdom it is not at war with begins a crisis: its armies
     mass on the border and nobody fights until it gives the word (escalate). Returns false if none could go. */
-export function declare(a: number, d: number, raid: boolean, pick: number | number[]){
+export function declare(a: number, d: number, raid: boolean, pick: number | number[], militia=0){
   if (warProblem(a,d,raid)) return false;
   const A=W.nations[a], D=W.nations[d];
   const M=W.M, counter=!raid && W.ready[a*M+d]>0;   // our land is back: this one is for revenge
@@ -341,7 +342,18 @@ export function declare(a: number, d: number, raid: boolean, pick: number | numb
     c.inspired=counter;
     if (muster(c,men,unit)){ sent++; first??=c; }
   }
-  if (!sent) return false;
+  const mil=militiaFor(a,militia);
+  if (mil.length){
+    const out=raid ? undefined : reservesOf(a,d);
+    if (out) for (const h of mil) enlist(out,h,1e5);   // more of them, to the militia already on that front
+    else {
+      const c=newCampaign(a,d,raid,-1,mil.length,D.tiles,-1);
+      c.militia=true; c.inspired=counter;
+      if (muster(c,mil)){ sent++; first??=c; }
+    }
+    if (!first) first=out;
+  }
+  if (!first) return false;
   if (allied(a,d)){ W.ally[a*W.M+d]=W.ally[d*W.M+a]=0; on.allianceBroken(a,d); }
   W.grudge[d*W.M+a]=W.tickN;
   if (counter) on.story('revenge',a,first!.bx,first!.by,d);
@@ -417,16 +429,25 @@ export function defend(n: number, o: number, pick: number | number[]){
   return true;
 }
 
-/** n's militia called up to a front, if they are. */
-export const reservesOf = (n: number) => W.campaigns.find(c => c.militia && c.a===n && c.phase<2);
+/** n's militia on a front (against o, if given), if they are out. */
+export const reservesOf = (n: number, o?: number) => W.campaigns.find(c => c.militia && c.front && c.a===n && (o===undefined || c.d===o) && c.phase<2);
 /** Militia of n's at home who would answer a call-up: all but the watchtowers' guards. */
-const callable = (n: number) => W.humans.filter(h => h.o===n && homeMilitia(h) && h.post<0);
-/** Why n can't call its militia up against o (or, `call` false, send them home), or null. */
+export const callable = (n: number) => W.humans.filter(h => h.o===n && homeMilitia(h) && h.post<0);
+/** The k of n's militia at home nearest its castle, to send with an attack or a raid. */
+function militiaFor(n: number, k: number){
+  k=Math.floor(k); if (k<=0) return [];
+  const N=W.nations[n], [x,y]=N.capTile>=0 ? doorOf(N) : [0,0];
+  return callable(n).sort((a,b) => ((a.x-x)**2+(a.y-y)**2)-((b.x-x)**2+(b.y-y)**2) || a.id-b.id).slice(0,k);
+}
+/** Why n can't call its militia up against o (or, `call` false, send them home), or null. A front
+    that has some of them (sent with the attack) can still call up the rest. */
 export function reservesProblem(n: number, o: number, call: boolean): string | null {
-  const M=W.M, out=reservesOf(n);
-  if (!call) return out && out.d===o ? null : 'Your reserves are at home';
+  const M=W.M, out=reservesOf(n,o);
+  if (!call) return out ? null : 'Your reserves are at home';
   if (!W.nations[o]?.alive || !(W.wars[n*M+o] || W.aggr[n*M+o] || W.aggr[o*M+n])) return 'No crisis or war with them';
-  if (out) return out.d===o ? 'Your reserves are already on that front' : 'Your reserves are on another front';
+  if (out?.all) return 'Your reserves are already on that front';
+  const all=W.campaigns.find(c => c.militia && c.front && c.all && c.a===n && c.phase<2);
+  if (all) return 'Your reserves are on another front';
   if (!W.contact[n*M+o]) return 'Needs a shared border';
   if (!callable(n).length) return 'You have no militia at home';
   return null;
@@ -435,17 +456,21 @@ export function reservesProblem(n: number, o: number, call: boolean): string | n
     those it raises while they are out follow), paying them a soldier's wage; or sends them home. */
 export function callReserves(n: number, o: number, call: boolean){
   if (reservesProblem(n,o,call)) return false;
-  if (!call){ sendHome(reservesOf(n)!,'recall'); on.reserves(n,o,0,false); return true; }
-  const men=callable(n), c=newCampaign(n,o,false,-1,men.length,W.nations[o].tiles,-1);
-  c.militia=true;
-  muster(c,men);
+  if (!call){ sendHome(reservesOf(n,o)!,'recall'); on.reserves(n,o,0,false); return true; }
+  const men=callable(n), out=reservesOf(n,o);
+  if (out){ for (const h of men) enlist(out,h,1e5); out.all=true; }   // the rest join those sent with the attack
+  else {
+    const c=newCampaign(n,o,false,-1,men.length,W.nations[o].tiles,-1);
+    c.militia=true; c.all=true;
+    muster(c,men);
+  }
   if (W.wars[n*W.M+o]) W.atWar[n*W.M+o]=W.atWar[o*W.M+n]=1;
   on.reserves(n,o,men.length,true);
   return true;
 }
 function newCampaign(a: number, d: number, raid: boolean, target: number, size: number, tiles: number, unit: number): Campaign {
   const front=!raid && target<0;   // an attack: its men go to the front (its way there is its offensive's)
-  return { id:++W.campSeq, a, d, raid, target, hostile:true, front, militia:false, members:[], phase:0, bx:0, by:0, dx:1, dy:0, rx:0, ry:0, goal:-1,
+  return { id:++W.campSeq, a, d, raid, target, hostile:true, front, militia:false, all:false, members:[], phase:0, bx:0, by:0, dx:1, dy:0, rx:0, ry:0, goal:-1,
     field:front ? offensiveOf(a,d).walk : new Field(), fieldAt:W.tickN, started:W.tickN, startSoldiers:size, startTiles:tiles, stall:0, why:'', unit, inspired:false, leader:-1, rank:0,
     mode:front ? W.offensive[a*W.M+d] : M_MARCH, go:false, hitAt:-1e9 };
 }
@@ -802,7 +827,7 @@ function leaderFell(c: Campaign){
 export function reinforce(){
   for (const c of W.campaigns){
     if (!c.front || !c.hostile || c.phase===2) continue;
-    if (c.militia){ for (const h of callable(c.a)) enlist(c,h,1e5); continue; }
+    if (c.militia){ if (c.all) for (const h of callable(c.a)) enlist(c,h,1e5); continue; }
     if (c.unit<0) continue;
     const u=unitAt(c.unit); if (!u || u.o!==c.a) continue;
     for (const h of u.members) if (h.war<0 && h.hp>0 && !switching(h) && !indoors(h)) enlist(c,h,1e5);

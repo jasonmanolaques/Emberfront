@@ -116,7 +116,7 @@ describe('what the buildings do', () => {
     me().humanProg=-1e9;   // nobody arrives, so there is nobody to pay tax
     const g0=me().gold; run(100);
     expect(me().gold).toBe(g0);   // no passive income
-    start(12345, 0); run(10*E);
+    start(12345, 0); expand(3); run(10*E);   // (room for the minters beside the houses)
     const n=me(); n.humanProg=-1e9;
     expect(n.taxpayers).toBeGreaterThan(0);
     expect(n.income).toBeCloseTo(TAX_PER_VILLAGER*n.taxpayers, 9);

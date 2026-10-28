@@ -1,6 +1,6 @@
 /* ---------- simulation entry points: worlds, matches, commands, ticks ----------
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
-import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, TAX_PER_VILLAGER, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
+import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
 import { mulberry32 } from '../core/rng';
 import { W, resizeGrid, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
@@ -31,7 +31,7 @@ function blankNation(id: number, name: string, hex: string, isPlayer: boolean, c
 }
 function makeNation(id: number, k: Country, isPlayer: boolean): Nation {
   const srand=W.srand;
-  const n={ ...blankNation(id,k.name,k.hex,isPlayer,k.code), gold:GOLD_START, alive:true,
+  const n={ ...blankNation(id,k.name,k.hex,isPlayer,k.code), gold:GOLD_START, stock:[...GOODS_START], alive:true,
     expandAt:0.22+srand()*0.25, attackAt:0.5+srand()*0.3, ratio:0.3+srand()*0.25, nextThink:1+srand()*2, nextWar:100+srand()*100 };
   // the player starts with no soldiers requested; bots keep a fixed share of their own
   n.soldierShare = isPlayer ? 0 : 0.15+W.prand()*0.35;
@@ -60,10 +60,11 @@ export function findBlock(tx: number, ty: number, maxR: number): [number, number
   }
   return null;
 }
+const START_R = 8;   // tiles round its castle a kingdom starts with
 function spawnNation(n: Nation, bx: number, by: number){
   const cx=(bx+1)*4, cy=(by+1)*4; n.capTile=cy*TW+cx;
-  for (let dy=-6;dy<=6;dy++) for (let dx=-6;dx<=6;dx++){
-    if (dx*dx+dy*dy>40) continue; const x=cx+dx, y=cy+dy;
+  for (let dy=-START_R;dy<=START_R;dy++) for (let dx=-START_R;dx<=START_R;dx++){
+    if (dx*dx+dy*dy>START_R*START_R) continue; const x=cx+dx, y=cy+dy;
     if (x<0||y<0||x>=TW||y>=TH) continue; const t=y*TW+x;
     if (isLand[t] && !owner[t]) setOwner(t,n.id);
   }
@@ -212,7 +213,7 @@ function applyCommand(c: Command){
     proposeAlliance(c.nation,c.target);
   } else if (c.type==='war'){
     scanContacts(false);
-    declare(c.nation,c.target,c.raid,c.units ?? c.soldiers ?? 0);
+    declare(c.nation,c.target,c.raid,c.units ?? c.soldiers ?? 0,c.militia ?? 0);
   } else if (c.type==='intercept'){
     intercept(c.nation,c.campaign,c.units ?? c.soldiers ?? 0);
   } else if (c.type==='offensive'){
