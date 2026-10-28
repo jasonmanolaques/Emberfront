@@ -2,7 +2,8 @@
    Villagers wear their kingdom's colour. Soldiers come in three tiers: archaic (bare-headed, a
    tunic in the kingdom's colour and a wooden spear with a flint head), reinforced (mail under a
    tabard and a crested helmet) and heavy armour (plate, a closed helm with a plume, a kite shield
-   in the kingdom's colours). They carry their spear upright and thrust it as they strike. Beggars hunch in grey rags. Everyone faces the way they walk, and is outlined
+   in the kingdom's colours). Militia wear homespun with a sash in the kingdom's colour and carry a
+   pitchfork. They carry their spear upright and thrust it as they strike. Beggars hunch in grey rags. Everyone faces the way they walk, and is outlined
    in a dark shade of their kingdom's colour, so mixed crowds stay apart. */
 import { rows, sprite, flipped, type Pal } from './pixel';
 import { styleOf } from './style';
@@ -35,7 +36,14 @@ const HEAVY = [
   ['....','.PP.','PPeQ','PttQ','PttQ','PPPQ','.PQ.','.ff.'],
   ['....','.PP.','PPeQ','PttQ','PttQ','PPPQ','P..Q','f..f'],
 ];
-const TIERS = [SOLDIER, ARCHAIC, SOLDIER, HEAVY];
+// militia: a homespun shirt with a sash across it in the kingdom's colour
+const MILITIA = [
+  ['.hh.','hhse','hss.','tlll','ltll','bbtT','.ll.','.ff.'],
+  ['.hh.','hhse','hss.','tlll','ltll','bbtT','l..l','f..f'],
+  ['....','.hh.','hhse','tlll','ltll','bbtT','.ll.','.ff.'],
+  ['....','.hh.','hhse','tlll','ltll','bbtT','l..l','f..f'],
+];
+const TIERS = [MILITIA, ARCHAIC, SOLDIER, HEAVY];   // (tier 0: militia)
 const BEGGAR = [
   ['....','.hh.','hse.','gggs','gGgg','gGg.','.l..','.ff.'],
   ['....','.hh.','hse.','gggs','gGgg','gGg.','.l.l','f..f'],
@@ -79,16 +87,19 @@ export function personSprite(o: number, kind: number, look: number, frame: numbe
       if (tier===2){ ctx.fillStyle=n.roof; ctx.fillRect(BODY_X+1,FEET_Y-8+top,2,1); }
       if (tier===3){ ctx.fillStyle=n.roof; ctx.fillRect(BODY_X+1,FEET_Y-9+top,2,2); ctx.fillStyle=n.roofL; ctx.fillRect(BODY_X+1,FEET_Y-9+top,1,1); }
       // archaic spears are a stick with a flint head; armoured ones carry steel
-      const shaft=tier===1 ? '#8f6a3c' : '#7a5634', head=tier===1 ? '#a3988a' : tier===3 ? '#f4f6f8' : '#e6e2d6';
+      const shaft=tier<=1 ? '#8f6a3c' : '#7a5634', head=tier===0 ? '#c9cdd1' : tier===1 ? '#a3988a' : tier===3 ? '#f4f6f8' : '#e6e2d6';
       if (frame===2){
         // spear thrust forward at shoulder height
         ctx.fillStyle=shaft; ctx.fillRect(BODY_X+3,FEET_Y-4,5,1);
         ctx.fillStyle=head; ctx.fillRect(BODY_X+8,FEET_Y-4,tier===3 ? 2 : 1,1);
+        if (tier===0){ ctx.fillRect(BODY_X+8,FEET_Y-5,2,1); ctx.fillRect(BODY_X+8,FEET_Y-3,2,1); }   // the pitchfork's tines
         ctx.fillStyle=tier===3 ? pal.Q : pal.s; ctx.fillRect(BODY_X+3,FEET_Y-3,1,1);
       } else {
         // spear held upright
         ctx.fillStyle=shaft; ctx.fillRect(BODY_X+4,FEET_Y-9,1,9);
-        ctx.fillStyle=head; ctx.fillRect(BODY_X+4,FEET_Y-11,1,2);
+        ctx.fillStyle=head;
+        if (tier===0){ ctx.fillRect(BODY_X+3,FEET_Y-10,3,1); ctx.fillRect(BODY_X+3,FEET_Y-12,1,2); ctx.fillRect(BODY_X+5,FEET_Y-12,1,2); }   // a pitchfork
+        else ctx.fillRect(BODY_X+4,FEET_Y-11,1,2);
         if (tier===1){ ctx.fillStyle=head; ctx.fillRect(BODY_X+4,FEET_Y-12,1,1); }   // a long knapped point
         ctx.fillStyle=tier===3 ? pal.Q : pal.s; ctx.fillRect(BODY_X+4,FEET_Y-3,1,1);   // the hand (a gauntlet in plate)
         if (wound===2){ ctx.fillStyle=BLOOD; ctx.fillRect(BODY_X+4,FEET_Y-8,1,1); }

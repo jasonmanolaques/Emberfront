@@ -12,6 +12,7 @@ export const LINES: Record<string, string[]> = {
   // an army's leader giving his orders (sim order events)
   march: ['To the border! Form the line!', 'Spread out along their border, men!', 'Banners high! To the front!'],
   ready: ['In position! We await the word.', 'The line is formed. Say the word!', 'Every man in his place. Ready!'],
+  guard: ['Hold the border! Nobody strikes first.', 'Stand fast. Let them make the first move.', 'Eyes on their line, men. Steady.'],
   hold: ['Halt! Hold this line!', 'Dig in! Not a step back!', 'Hold here, and close the gaps!'],
   assault: ['Charge!', 'Into their land! Break them!', 'Forward, all of you! Attack!', 'Now! For the crown!'],
 };

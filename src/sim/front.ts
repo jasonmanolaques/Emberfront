@@ -1,6 +1,7 @@
 /* ---------- fronts: the line an attack is fought along ----------
-   An attack is fought on a front: every tile of the defender's free land (not occupied) that
-   touches the attacker's ground (its own land, and the defender's land it occupies). The tiles are
+   An attack is fought on a front: every tile of the defender's ground (its free land, and any of the
+   attacker's land it occupies) that touches the attacker's ground (its own free land, and the
+   defender's land it occupies). Each side of a war has a front of its own on the same border. The tiles are
    put in order along the line by their bearing from the defender's castle and measured off, so men
    can be spaced evenly along all of it: the attacker's front rank a little behind the line on its
    side, the defender's on the line on its own, and on each side the men the line has no room for in
@@ -25,6 +26,8 @@ export interface Front {
 
 /** Is tile t the attacker's ground in a's war on d: a's own land (unoccupied), or d's land a occupies? */
 export const holds = (a: number, d: number, t: number) => (owner[t]===a && !occ[t]) || (owner[t]===d && occ[t]===a);
+/** Is tile t the ground a's attack on d is to take: d's ground in their war (holds(d,a,t))? */
+export const enemyOf = (a: number, d: number, t: number) => (owner[t]===d && !occ[t]) || (owner[t]===a && occ[t]===d);
 /** Is tile t part of d's free land (its own, unoccupied)? */
 export const freeOf = (d: number, t: number) => owner[t]===d && !occ[t];
 /** Is tile t under d's castle (which holds until it is broken)? */
@@ -39,13 +42,17 @@ export function originOf(d: number): [number, number] {
     round it, until the castle stands cut off with no free ground of its own beside it (or is all that
     is left), and then its walls are part of the front too, ringed by men who break it. */
 export function lineOf(a: number, d: number): Front {
-  const D=W.nations[d], tw=TW, th=TH, own=owner, oc=occ, all: number[]=[];
+  const D=W.nations[d], A=W.nations[a], tw=TW, th=TH, own=owner, oc=occ, all: number[]=[];
   const held=(k: number) => (own[k]===a && !oc[k]) || (own[k]===d && oc[k]===a);
-  // (only round d's land: every tile of it lies inside its box)
-  for (let y=Math.max(0,D.y0);y<=Math.min(th-1,D.y1);y++) for (let x=Math.max(0,D.x0), t=y*tw+x;x<=Math.min(tw-1,D.x1);x++,t++){
-    if (own[t]!==d || oc[t]) continue;
-    if ((x>0 && held(t-1)) || (x<tw-1 && held(t+1)) || (y>0 && held(t-tw)) || (y<th-1 && held(t+tw))) all.push(t);
-  }
+  // (only round d's land, and a's that d occupies: every tile of a kingdom's lies inside its box)
+  const scan=(K: typeof D, mine: (t: number) => boolean) => {
+    for (let y=Math.max(0,K.y0);y<=Math.min(th-1,K.y1);y++) for (let x=Math.max(0,K.x0), t=y*tw+x;x<=Math.min(tw-1,K.x1);x++,t++){
+      if (!mine(t)) continue;
+      if ((x>0 && held(t-1)) || (x<tw-1 && held(t+1)) || (y>0 && held(t-tw)) || (y<th-1 && held(t+tw))) all.push(t);
+    }
+  };
+  scan(D, t => own[t]===d && !oc[t]);
+  if (W.occCount[a*W.M+d]>0) scan(A, t => own[t]===a && oc[t]===d);
   const open=all.filter(t => !underCastle(d,t)), walls=all.filter(t => underCastle(d,t));
   const island=walls.length>0 && D.capTile>=0 && (() => {   // nothing of theirs left beside the castle but the castle
     const q=D.capPlot, x0=(q%PW)*4, y0=((q/PW)|0)*4;

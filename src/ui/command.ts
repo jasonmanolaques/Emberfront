@@ -1,14 +1,15 @@
 /* ---------- army command: right-click an army's leader to see it, and give its war the word ----------
    While an army is selected its soldiers are ringed in gold, and a small panel says what it is
-   doing: gathering on the front, ready, attacking or holding; a raid marching to the border,
-   waiting there or raiding. Its button gives the word for its war (sim/war.ts setOffensive), the
-   same as the button under the war chip: attack all along the front, or hold where it stands; a
-   raid waiting at the border, go in. Esc, the × or right-clicking elsewhere lets go. A leaderless
+   doing: gathering on the front, ready, attacking or holding (in a crisis, massed on the border, or
+   holding our own); a raid marching to the border, waiting there or raiding. Its button gives the
+   word for its war (sim/war.ts setOffensive), the same as the button under the war chip: attack all
+   along the front (in a crisis we started, declaring war), or hold where it stands; a raid waiting at
+   the border, go in. Esc, the × or right-clicking elsewhere lets go. A leaderless
    army can't be selected, and losing the leader ends the selection. */
 import { K, PLAYER } from '../core/constants';
 import { W, type Campaign } from '../sim/state';
 import { queueCommand } from '../sim/sim';
-import { RANKS, F_READY, F_PUSH, F_HOLD, M_MARCH, M_HOLD } from '../sim/war';
+import { RANKS, F_GATHER, F_READY, F_PUSH, F_HOLD, M_MARCH, M_HOLD } from '../sim/war';
 import { unitAt } from '../sim/army';
 import { client } from '../client';
 import { cam } from '../render/camera';
@@ -40,10 +41,12 @@ function word(c: Campaign): [string, boolean, boolean, string] {
     return c.mode===M_HOLD ? ['Start the raid', true, true, `Waiting at the border of ${foe} for your word.`]
       : ['Raid on arrival', true, true, `Marching to the border of ${foe}, where it waits for your word (or give it now).`];
   }
-  const st=W.offensive[c.a*W.M+c.d];
+  const key=c.a*W.M+c.d, st=W.offensive[key];
+  if (!W.wars[key] && !W.aggr[key]) return ['Holding the border', false, false, `Holding your side of the border against ${foe}. It is not war: they fight only if ${foe} attacks.`];
+  if (!W.wars[key]) return ['Attack · declare war', true, true, st===F_GATHER ? `Massing on the border of ${foe}: a crisis, not yet war. The word starts the war.` : `In place on the border of ${foe}. The word starts the war; or call the crisis off from the war bar.`];
   if (st===F_PUSH) return ['Hold the front', false, true, `Attacking ${foe} all along the front. Hold, and it stands where it is.`];
-  if (st===F_HOLD) return ['Attack', true, true, `Holding the front against ${foe}.`];
-  if (st===F_READY) return ['Attack', true, true, `In place on the border of ${foe}: give the word to attack.`];
+  if (st===F_HOLD) return [W.aggr[key] ? 'Attack' : 'Counter-attack', true, true, `Holding the front against ${foe}.`];
+  if (st===F_READY) return [W.aggr[key] ? 'Attack' : 'Counter-attack', true, true, `In place on the border of ${foe}: give the word to attack.`];
   return ['Attack', true, true, `Gathering on the border of ${foe}. You can give the word before everyone is in place.`];
 }
 

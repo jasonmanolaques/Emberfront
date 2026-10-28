@@ -12,10 +12,11 @@ import { refreshCommand } from './command';
 import { flagCSS } from '../render/flags';
 import { $ } from './dom';
 import { perMinute } from '../sim/ledger';
+import { paid } from '../sim/sim';
 
 export const ui={ meGold:$('meGold'), meRate:$('meRate'), meLand:$('meLand'), meHouses:$('meHouses'), meStrength:$('meStrength'),
   meWood:$('meWood'), meStone:$('meStone'), meCopper:$('meCopper'),
-  meVillagers:$('meVillagers'), meWages:$('meWages'), meHomeless:$('meHomeless'), meSoldiers:$('meSoldiers'), meTraining:$('meTraining'), meNext:$('meNext'),
+  meVillagers:$('meVillagers'), meWages:$('meWages'), meHomeless:$('meHomeless'), meSoldiers:$('meSoldiers'), meMilitia:$('meMilitia'), meMilitiaRow:$('meMilitiaRow'), meTraining:$('meTraining'), meNext:$('meNext'),
   soldiers:$('soldiers') as HTMLInputElement, soldiersHint:$('soldiersHint'), invest:$('invest') as HTMLInputElement, investHint:$('investHint'),
   clock:$('clock'), boardList:$('boardList'), attacks:$('attacks'), log:$('log'), toast:$('toast'), tip:$('tip'), banner:$('banner') };
 
@@ -26,9 +27,9 @@ export function updateHUD(now: number){
   ui.meGold.textContent=fmt(me.gold); const inc=me.alive?me.income:0;
   ui.meRate.textContent=(inc<0?'':'+')+inc.toFixed(1)+'/s'; ui.meRate.classList.toggle('neg',inc<0); ui.meGold.classList.toggle('neg',me.gold<0);
   // soldiers' wages, and what happens when they go unpaid
-  ui.meWages.hidden=!me.soldiers;
+  ui.meWages.hidden=!paid(me);
   ui.meWages.classList.toggle('ok',me.gold>=0);
-  ui.meWages.textContent = me.gold>=0 ? `Soldiers' wages ${(me.soldiers*WAGE).toFixed(1)} gold/s`
+  ui.meWages.textContent = me.gold>=0 ? `Soldiers' wages ${(paid(me)*WAGE).toFixed(1)} gold/s`
     : me.unpaid<UNPAID_TICKS ? `No gold for wages: soldiers desert in ${Math.ceil((UNPAID_TICKS-me.unpaid)*TICK)}s` : 'Unpaid soldiers are deserting, one every 3 s';
   ui.meLand.textContent=(me.tiles/landCount*100).toFixed(1)+'%';
   ui.meHouses.textContent=String(me.houses);
@@ -37,7 +38,8 @@ export function updateHUD(now: number){
   ui.meWood.textContent=fmt(me.stock[0]); ui.meStone.textContent=fmt(me.stock[1]); ui.meCopper.textContent=fmt(me.stock[2]);
   ui.meHomeless.hidden=!me.homeless;
   ui.meHomeless.textContent=`${me.homeless} homeless${me.beggars?` · ${me.beggars} begging`:''} · homeless villagers pay no tax`;
-  ui.meVillagers.textContent=String(me.villagers); ui.meSoldiers.textContent=String(me.soldiers); ui.meTraining.textContent=String(me.training);
+  ui.meVillagers.textContent=String(me.villagers); ui.meSoldiers.textContent=String(me.soldiers-me.militia);
+  ui.meMilitia.textContent=me.called ? `${me.militia} (${me.called} called up)` : String(me.militia); ui.meMilitiaRow.hidden=!me.militia; ui.meTraining.textContent=String(me.training);
   const perTick=1+FARM_BONUS*me.farms;
   ui.meNext.textContent = me.alive && me.capTile>=0 ? `Next human in ${Math.max(0,Math.ceil((HUMAN_EVERY-me.humanProg)/perTick*TICK))}s${me.farms?` · farms +${Math.round(FARM_BONUS*me.farms*100)}%`:''}` : 'No capital: no new humans';
   // soldiers need a barracks

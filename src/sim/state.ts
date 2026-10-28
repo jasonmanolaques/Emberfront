@@ -24,7 +24,8 @@ export interface Nation {
   gain: number[]; spend: number[];   // goods in and goods spent by the builders and smiths, per second for the last minute: [second*3+good]
   soldierShare: number;              // share of the population the kingdom wants as soldiers (0..1)
   humanProg: number;                 // progress toward the next human; one arrives at HUMAN_EVERY (farms speed it up)
-  villagers: number; soldiers: number; training: number;   // headcount, updated every tick; training = switching role
+  villagers: number; soldiers: number; training: number;   // headcount, updated every tick; soldiers: everyone under arms (militia too); training = switching role
+  militia: number; called: number;   // of the soldiers, the militia, and of them those called up to a front (who are paid)
   beggars: number; homeless: number; taxpayers: number;     // villagers turned beggar; people without a home; housed working villagers
   stock: number[];                   // goods stored in the capital: [wood, stone, copper]
   abandoned: number;                 // houses standing empty
@@ -38,6 +39,8 @@ export interface Nation {
 export interface Human {
   id: number; o: number;             // owning nation
   kind: number;                      // H_VILLAGER | H_SOLDIER
+  militia: boolean;                  // soldiers: militia, trained at the capital beyond the barracks' room: unpaid at home, they patrol and guard watchtowers
+  to: number;                        // switching role: what they come out as (T_* in population.ts)
   task: number;                      // TASK_* in population.ts
   x: number; y: number; tx: number; ty: number;
   path: number[];                    // waypoints before (tx,ty), flat x,y pairs: the way around the castle
@@ -47,7 +50,7 @@ export interface Human {
   carry: number; amount: number;     // good being hauled home (G_* in resources.ts, -1 = nothing) and how much
   hp: number;                        // soldiers: hit points, lost to enemy watchtowers
   post: number;                      // soldiers: plot of the watchtower they guard, or -1 (waiting at a barracks)
-  site: number;                      // plot of the barracks they are heading to or training in, or -1
+  site: number;                      // plot of the barracks (or, for militia, the castle) they are heading to or training in, or -1
   home: number;                      // villagers: plot of the house they are building, or -1
   housed: boolean;                   // has a home this tick (the longest-standing people get the houses)
   homeless: number;                  // ticks spent without a home
@@ -80,7 +83,8 @@ export interface Campaign {
   target: number;                    // intercepts: id of the enemy campaign they go after (-1 for raids and attacks)
   hostile: boolean;                  // still fighting: false once peace is made and the army walks home
   members: number[];                 // ids of the soldiers still in it, rebuilt each tick
-  front: boolean;                    // an attack: its men stand on the front of its kingdom's offensive (sim/front.ts)
+  front: boolean;                    // an attack, or an army defending a border: its men stand on the front of its kingdom's offensive (sim/front.ts)
+  militia: boolean;                  // the kingdom's militia, called up as reserves to a front (no barracks of its own)
   phase: number;                     // 0 mustering, 1 out (marching, or on the front), 2 going home
   bx: number; by: number;            // the banner, in pixels
   dx: number; dy: number;            // marching direction (unit)
@@ -114,7 +118,10 @@ export type Command =
   | { type: 'peace'; nation: number; target: number }                 // accept the target's peace offer
   | { type: 'research'; nation: number; topic: number }               // study this topic next (R_* in research.ts)
   | { type: 'invest'; nation: number; share: number }                // city investment (0..1)
-  | { type: 'offensive'; nation: number; target: number; go: boolean };   // attack along the front (and send raiders waiting at the border in), or hold it
+  | { type: 'offensive'; nation: number; target: number; go: boolean }   // attack along the front (in a crisis: go to war), send raiders waiting at the border in, or hold the front
+  | { type: 'deescalate'; nation: number; target: number }            // call off the crisis our massed armies started: everyone goes home
+  | { type: 'defend'; nation: number; target: number; units: number[] }   // send armies to stand on our side of the border with target
+  | { type: 'reserves'; nation: number; target: number; call: boolean };  // call the militia up to the front against target, or send them home
 
 export let elev = new Float32Array(NT), moist = new Float32Array(NT);
 // resources: at most one per tile (R_* in resources.ts), harvests left, claimed by a villager
@@ -159,7 +166,8 @@ export const W = {
   atWar: new Uint8Array(1),          // [a*M+b] 1 while any campaign runs between them, rebuilt each tick
   grudge: new Int32Array(1),         // [a*M+b] tick b last went to war against a
   offers: new Int32Array(1),         // [a*M+b] tick a offered b peace (0 = none)
-  wars: new Uint8Array(1),           // [a*M+b] 1 while a and b are at war: from an attack until peace, whatever the armies do
+  wars: new Uint8Array(1),           // [a*M+b] 1 while a and b are at war: from the first attack until peace, whatever the armies do
+  aggr: new Uint8Array(1),           // [a*M+b] a has massed an attack on b's border: a crisis until a attacks (then a war), or calls it off
   warSince: new Int32Array(1),       // [a*M+b] tick that war began
   occCount: new Int32Array(1),       // [o*M+b] tiles of o's that b occupies
   lost: new Uint8Array(1),           // [o*M+b] b has occupied some of o's land in this war (cleared when o has it all back)

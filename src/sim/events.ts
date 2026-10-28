@@ -14,8 +14,13 @@ export interface SimEvents {
   stored(id: number, good: number, amount: number): void;   // a villager delivered goods to the capital
   towerShot(x0: number, y0: number, x1: number, y1: number, killed: boolean, victim: number): void;   // a watchtower or castle hit someone
   produced(q: number, id: number, good: number, amount: number): void;   // a plantation, quarry or copper mine delivered
-  warBegan(a: number, d: number, raid: boolean): void;         // a sent an army against d
-  armyHome(a: number, d: number, raid: boolean, why: string): void;   // a's army turned for home: 'recall', 'cut', 'done', 'peace' or 'won'
+  warBegan(a: number, d: number, raid: boolean): void;         // a sent an army against d (a raid, or more armies to a war)
+  crisis(a: number, d: number): void;                          // a massed its armies on d's border: a crisis, not yet a war
+  escalated(a: number, d: number): void;                       // a gave the word on its crisis with d: it is war
+  deescalated(a: number, d: number): void;                     // a called its crisis with d off: everyone goes home
+  defending(o: number, enemy: number, soldiers: number): void; // o sent soldiers to hold its border with enemy
+  reserves(o: number, enemy: number, militia: number, call: boolean): void;   // o called its militia up to its front with enemy (call), or sent them home
+  armyHome(a: number, d: number, raid: boolean, why: string): void;   // a's army turned for home: 'recall', 'cut', 'done', 'peace', 'calm' (a crisis called off) or 'won'
   armyGone(a: number, d: number, raid: boolean, why: string): void;   // the last of it is home or dead ('lost': all fell)
   peaceOffered(from: number, to: number): void;
   peaceRefused(from: number, to: number): void;
@@ -38,7 +43,7 @@ export interface SimEvents {
   builderHired(q: number, o: number, replaced: boolean): void; // a villager took up the tools at the builders guild or blacksmith on plot q
   forged(q: number, o: number, tier: number): void;            // a blacksmith left armour of `tier` at the barracks plot q
   armored(id: number, x: number, y: number, tier: number): void;   // soldier id put on armour of `tier`
-  order(kind: string, a: number, d: number, rank: number, leader: number, x: number, y: number): void;   // an army's leader (leader -1 and rank 0: an army without one) gives an order ('march' setting out, 'ready' in place at the border, 'assault', 'hold') or falls ('fell' on an attack, 'slain' on a raid or intercept)
+  order(kind: string, a: number, d: number, rank: number, leader: number, x: number, y: number): void;   // an army's leader (leader -1 and rank 0: an army without one) gives an order ('march' setting out, 'ready' in place at the border, 'guard' in place holding its own border, 'assault', 'hold') or falls ('fell' on an attack, 'slain' on a raid or intercept)
   deserted(o: number, x: number, y: number, tier: number, gold: number): void;   // an unpaid soldier of tier `tier` went back to work; his armour scrapped for `gold`
 }
 
@@ -47,7 +52,7 @@ export const on: SimEvents = {
   tileChanged: noop, plotChanged: noop, roadBuilt: noop, plotIgnited: noop,
   buildingPlaced: noop, capitalFell: noop, eliminated: noop, roleChanged: noop,
   resChanged: noop, stored: noop, towerShot: noop, produced: noop,
-  warBegan: noop, armyHome: noop, armyGone: noop, peaceOffered: noop, peaceRefused: noop, peaceMade: noop,
+  warBegan: noop, crisis: noop, escalated: noop, deescalated: noop, defending: noop, reserves: noop, armyHome: noop, armyGone: noop, peaceOffered: noop, peaceRefused: noop, peaceMade: noop,
   allied: noop, allyRefused: noop, allianceBroken: noop, annexed: noop, plunder: noop, hit: noop, bldHit: noop,
   died: noop, occupied: noop, counterReady: noop, intercepting: noop, swing: noop, story: noop, researched: noop, upgraded: noop, builderHired: noop, forged: noop, armored: noop, deserted: noop, order: noop,
 };

@@ -1,11 +1,11 @@
 // Humans: spawning from the capital and switching between villager and soldier at a barracks.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { TW, TH, PW, NP, B_BARRACKS } from '../src/core/constants';
+import { TW, TH, PW, NP, B_BARRACKS, WAGE } from '../src/core/constants';
 import { W, owner, isLand, pType } from '../src/sim/state';
 import { build, plotProblem } from '../src/sim/buildings';
-import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
+import { newWorld, startMatch, queueCommand, tick, grossIncome } from '../src/sim/sim';
 import { setOwner } from '../src/sim/territory';
-import { H_SOLDIER, H_VILLAGER, TASK_ROAM, TASK_TO_TRAIN, TASK_INSIDE, doorOf, frontOf, switching as isSwitching, indoors } from '../src/sim/population';
+import { H_SOLDIER, H_VILLAGER, T_SOLDIER, T_MILITIA, MILITIA_HP, TASK_ROAM, TASK_TO_TRAIN, TASK_INSIDE, doorOf, frontOf, switching as isSwitching, indoors } from '../src/sim/population';
 
 const me = () => W.nations[1];
 const mine = () => W.humans.filter(h => h.o === 1);
@@ -93,14 +93,36 @@ describe('population', () => {
     expect(me().soldiers).toBe(count(H_SOLDIER));
   });
 
-  it('spawns newcomers as soldiers at the barracks while the kingdom is short of them', () => {
-    run(1000); setShare(1); tick();
-    expect(switching().length).toBeGreaterThan(5);
+  it('spawns newcomers as soldiers at the barracks while the kingdom is short of them and the barracks has room', () => {
+    run(1000); setShare(0.42); tick();   // 4 of 10, and 5 of 11: the newcomer is the fifth, with room for him
+    expect(switching()).toHaveLength(4);
     while (mine().length < 11) tick();
     const newest = mine().reduce((a, b) => a.id > b.id ? a : b), [bx, by] = frontOf(barracks);
     expect(newest.kind).toBe(H_SOLDIER);
+    expect(newest.militia).toBe(false);
     expect(newest.task).toBe(TASK_ROAM);   // born a soldier, no detour to train
     expect(Math.hypot(newest.x-bx, newest.y-by)).toBeLessThan(15);   // came out of the barracks, not the capital
+  });
+
+  it('trains the rest as militia at the castle once the barracks are full: unpaid, and paying no tax', () => {
+    run(1000); setShare(1); tick();
+    expect(switching().length).toBeGreaterThanOrEqual(8);   // (anyone busy with a load or a house follows later)
+    expect(switching().filter(h => h.to===T_SOLDIER)).toHaveLength(5);   // the barracks' room
+    const cap = switching().filter(h => h.to===T_MILITIA), [dx, dy] = doorOf(W.nations[1]);
+    expect(cap.length).toBeGreaterThanOrEqual(3);
+    expect(cap.every(h => Math.hypot(h.tx-dx, h.ty-dy) < 1)).toBe(true);   // to the castle gate
+    const due=W.nations[1].humanProg; W.nations[1].humanProg=-1e9;
+    settle(); W.nations[1].humanProg=due;
+    const n=W.nations[1];
+    expect(n.soldiers-n.militia).toBe(5);   // the barracks full of trained soldiers...
+    expect(n.militia).toBeGreaterThanOrEqual(4);   // ...and the rest militia (a beggar can't be recruited)
+    expect(mine().filter(h => h.militia).every(h => h.base<0 && h.hp===MILITIA_HP)).toBe(true);
+    const was=n.taxpayers; tick(); expect(n.taxpayers).toBe(was);
+    expect(n.income).toBeCloseTo(grossIncome(n)-5*WAGE, 6);   // only the 5 in the barracks are paid
+    while (mine().length < 11) tick();
+    const newest = mine().reduce((a, b) => a.id > b.id ? a : b);
+    expect([newest.kind, newest.militia]).toEqual([H_SOLDIER, true]);   // born a militiaman, at the castle
+    expect(Math.hypot(newest.x-dx, newest.y-dy)).toBeLessThan(3);
   });
 
   it('makes no soldiers at all without a barracks', () => {

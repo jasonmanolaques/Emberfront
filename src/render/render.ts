@@ -140,7 +140,7 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
       let b=bleeding.get(p.id); if (!b){ b=[now,0]; bleeding.set(p.id,b); }
       if (moving && now-b[0]<TRAIL_MS && now-b[1]>DROP_MS){ b[1]=now; addDrip(p.x+(Math.random()-0.5)*0.8,p.y); }
     } else bleeding.delete(p.id);
-    const spr = personSprite(p.o,kind,look,frame,left,wound,p.tier || 1);
+    const spr = personSprite(p.o,kind,look,frame,left,wound,p.militia ? 0 : p.tier || 1);
     const bx = Math.round(rx+px)-2, fy = Math.floor(ry+py)+1;   // body's left column, and its feet row
     const sx = left ? bx-(spr.width-BODY_X-4) : bx-BODY_X;
     ctx.drawImage(spr, sx, fy-FEET_Y);

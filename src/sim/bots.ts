@@ -7,7 +7,7 @@ import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, TOPICS, s
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, canAfford, placeProblem, build, togglePriority, anyWithin, isEnemyLand, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, guardsOpening, standingTower, WALL_MAX } from './fort';
-import { allied, atWar, ready, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, F_PUSH, F_HOLD } from './war';
+import { allied, atWar, ready, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD } from './war';
 
 const WALL = -1;   // a tower of the town wall, in a wishlist
 const TOWN = [B_BARRACKS, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY];   // workshops: inside the wall
@@ -182,7 +182,7 @@ function affordable(n: Nation){
 function wantedShare(n: Nation){
   const M=W.M, id=n.id, peace=0.12+(n.attackAt-0.5)*0.5;   // 12% to 27% by temper
   let enemies=0, war=false, incoming=0;
-  for (let o=1;o<M;o++) if (o!==id && atWar(id,o) && W.nations[o].alive){ war=true; enemies+=W.nations[o].soldiers; }
+  for (let o=1;o<M;o++) if (o!==id && (atWar(id,o) || W.aggr[id*M+o] || W.aggr[o*M+id]) && W.nations[o].alive){ war=true; enemies+=W.nations[o].soldiers; }   // (a crisis counts)
   for (const c of W.campaigns) if (c.d===id && c.hostile && c.phase<2) incoming+=c.members.length;
   if (!war){
     let worst=0; for (let o=1;o<M;o++) if (o!==id && W.contact[id*M+o] && !allied(id,o) && W.nations[o].alive) worst=Math.max(worst,W.nations[o].soldiers);
@@ -207,10 +207,15 @@ function biggest(n: Nation){
 /** Seconds between the armies a bot sends to a war under way: the bold sooner. */
 const waveGap = (n: Nation) => 18+(1-n.attackAt)*30+W.srand()*10;
 
-/** War for a bot: answer peace offers, send idle soldiers to meet armies marching on it, counter-
-    attack once its land is back (or sue for peace if it can't), bring raids home and end wars that
-    go badly, and now and then send its free soldiers against the weakest kingdom in reach: at war
-    if it shares a border, raiding if not. Its personality (attackAt) sets how big an edge it wants. */
+/** Who stands against a's front on d: d's armies on its own front against a, and d's guard on a's. */
+const facing = (a: number, d: number) => { let k=menOn(d,a); const key=a*W.M+d; for (const h of W.humans) if (h.o===d && h.fk===key && h.war<0) k++; return k; };
+
+/** War for a bot: answer peace offers, send armies to hold its border against armies massing on it
+    and idle soldiers to meet raiders, call up its militia when its armies on a front are badly
+    outnumbered, counter-attack once its land is back (or sue for peace if it can't), bring raids home
+    and end wars that go badly, and now and then send its free soldiers against the weakest kingdom in
+    reach: an attack if it shares a border (a crisis first), raiding if not. Its personality
+    (attackAt) sets how big an edge it wants. */
 function botWar(n: Nation){
   const srand=W.srand, M=W.M, id=n.id;
   // raise or stand down the army as the times demand (quickly up, slowly down)
@@ -221,8 +226,26 @@ function botWar(n: Nation){
     if (!W.offers[o*M+id]) continue;
     if (wantsPeace(n,o)) makePeace(id,o); else refusePeace(o,id);
   }
+  // armies massing on our border, or on a front against us: about as many of ours on our side of it
+  for (let o=1;o<M;o++){
+    if (o===id || !W.nations[o].alive || defendProblem(id,o)) continue;
+    const theirs=menOn(o,id), mine=menOn(id,o);
+    if (!theirs || mine>=theirs*1.2) continue;
+    const pool=available(n).sort((x,y) => y.men.length-x.men.length || x.unit.key-y.unit.key), send: number[]=[];
+    for (let got=mine, i=0; i<pool.length && got<theirs*1.2; i++){ send.push(pool[i].unit.key); got+=pool[i].men.length; }
+    if (send.length) defend(id,o,send);
+  }
+  // the militia, called up only when our armies on a front are badly outnumbered (they pay no tax and
+  // die easily, and called up they are paid); home again once the front is safe
+  const out=reservesOf(id);
+  for (let o=1;o<M;o++){
+    if (o===id || !(W.wars[id*M+o] || W.aggr[id*M+o] || W.aggr[o*M+id])) continue;
+    const theirs=facing(id,o), mine=menOn(id,o)-(out && out.d===o ? out.members.length : 0);
+    const need = W.wars[id*M+o] ? theirs>mine*1.3 && (W.occCount[id*M+o]>0 || theirs>mine*2) : !!W.aggr[o*M+id] && theirs>(mine+ready(n))*1.5;
+    if (!out && need && !reservesProblem(id,o,true)){ callReserves(id,o,true); break; }
+    if (out && out.d===o && mine>=theirs*1.2 && !W.occCount[id*M+o]) callReserves(id,o,false);
+  }
   // raiders are coming: meet them with about as many idle soldiers, if there are enough to matter
-  // (an attack is met on the front by the soldiers at home)
   for (const E of W.campaigns){
     if (E.d!==id || E.phase===2 || !E.hostile || E.target>=0 || !E.raid) continue;
     if (W.campaigns.some(c => c.a===id && c.target===E.id && c.phase<2)) continue;
@@ -238,14 +261,13 @@ function botWar(n: Nation){
     if (pool>=5 && army>=0 && !dug && outlook(n,o)>-0.3 && W.contact[id*M+o]){ declare(id,o,false,[army]); n.nextWave=W.simTime+waveGap(n); }
     else offerPeace(id,o);
   }
-  // on the front: hold while the line is badly outnumbered by the defenders facing it, attack again once it is not
+  // on the front: a war it started, hold while the line is badly outnumbered by those facing it and
+  // attack again once it is not; defending, hold, and strike back once it clearly has the upper hand
   for (let o=1;o<M;o++){
-    const st=W.offensive[id*M+o]; if (st!==F_PUSH && st!==F_HOLD) continue;
-    let mine=0, away=0;
-    for (const c of W.campaigns){ if (c.a===id && c.d===o && c.front && c.phase<2) mine+=c.members.length; if (c.a===o && c.phase<2) away+=c.members.length; }
-    const guard=Math.max(0,W.nations[o].soldiers-away);
-    if (st===F_PUSH && mine<guard*0.5) setOffensive(id,o,false);
-    else if (st===F_HOLD && mine>=guard*0.8) setOffensive(id,o,true);
+    const st=W.offensive[id*M+o]; if ((st!==F_PUSH && st!==F_HOLD) || !W.wars[id*M+o]) continue;
+    const mine=menOn(id,o), theirs=facing(id,o), aggr=!!W.aggr[id*M+o];
+    if (st===F_PUSH && mine<theirs*(aggr ? 0.5 : 0.8)) setOffensive(id,o,false);
+    else if (st===F_HOLD && mine>=Math.max(3,theirs*(aggr ? 0.8 : 1.3))) setOffensive(id,o,true);
   }
   let busy=false;
   for (const c of W.campaigns){
@@ -260,7 +282,7 @@ function botWar(n: Nation){
   }
   // an attack under way gets the next army as a wave, one at a time, while the war goes its way
   if (W.simTime>=n.nextWave && !dug){
-    const front=W.campaigns.find(c => c.a===id && !c.raid && c.target<0 && c.hostile && c.phase===1);
+    const front=W.campaigns.find(c => c.a===id && c.front && !c.militia && c.hostile && c.phase===1 && W.wars[id*M+c.d] && W.aggr[id*M+c.d]);   // (a war under way that it started)
     const army=front ? biggest(n) : -1;
     if (front && army>=0 && outlook(n,front.d)>-0.3){ declare(id,front.d,false,[army]); n.nextWave=W.simTime+waveGap(n); }
   }

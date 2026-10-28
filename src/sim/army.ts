@@ -3,7 +3,9 @@
    soldiers and has 5 armour racks. The soldiers a barracks has room for are its army: they wait
    in front of it and march out together, one army per barracks, so a kingdom with two barracks
    in different places has two armies, and four modules joined together make one army of 20.
-   Soldiers with no room in any barracks patrol the city and only ever defend.
+   Its room is all the trained soldiers a kingdom can have: those it raises beyond it are militia,
+   trained at the castle (sim/population.ts), who patrol the city, guard watchtowers, and go to war
+   only when called up as reserves (sim/war.ts). Militia are weaker: 6 hit points and 0.75 a blow.
    Soldiers come in three tiers: archaic (tier 1, everyone starts there), reinforced (tier 2)
    and heavy armour (tier 3). The blacksmith forges armour once infantry research allows it and
    carries it to the barracks; a soldier of that barracks who comes by takes the best piece on the
@@ -18,6 +20,7 @@ export const UNIT_SIZE = 5;                         // soldiers and armour racks
 export const SOLDIER_HP = [0, 8, 10, 15];           // by tier
 export const SOLDIER_DMG = [0, 1, 1.5, 2];          // a blow, by tier
 export const VILLAGER_HP = 4;
+export const MILITIA_HP = 6, MILITIA_HIT = 0.75;    // a militiaman's hit points, and his blow
 export const TIER_NAME = ['', 'I', 'II', 'III'];
 const H_SOLDIER = 1;                                // (population.ts; repeated here to keep this module standalone)
 const RACK_R = 14;                                  // pixels from a barracks door a soldier picks up armour
@@ -35,7 +38,7 @@ export interface Unit {
 export let units: Unit[][] = [];                    // per kingdom, rebuilt every tick
 const unitOf = new Map<number, Unit>();             // barracks plot -> its unit
 export const unitAt = (q: number) => unitOf.get(q);
-export const maxHp = (h: Human) => h.kind===H_SOLDIER ? SOLDIER_HP[h.tier]*2**h.lead : VILLAGER_HP;   // an army's leader: doubled for each rank
+export const maxHp = (h: Human) => h.kind!==H_SOLDIER ? VILLAGER_HP : h.militia ? MILITIA_HP : SOLDIER_HP[h.tier]*2**h.lead;   // an army's leader: doubled for each rank
 const frontOf = (q: number): [number, number] => [(q%PW)*8+4, ((q/PW)|0)*8+7.5];
 const standing = (q: number, o: number) => pType[q]===B_BARRACKS && pOwner[q]===o && pBurn[q]<=0;
 
@@ -70,7 +73,7 @@ export function buildUnits(){
 
 /** Gives kingdom n's soldiers their places: each keeps his barracks while it has room for him,
     and free places (a soldier fell, or a new barracks) go to new recruits: the newest soldiers
-    without one, never a watchtower's guards.
+    without one, never a watchtower's guards (militia train for them: sim/population.ts).
     Returns the soldiers who just joined an army, so they can walk over. */
 export function station(n: Nation, mine: Human[], switching: (h: Human) => boolean){
   const U=units[n.id] ?? [], joined: Human[]=[];
@@ -82,7 +85,7 @@ export function station(n: Nation, mine: Human[], switching: (h: Human) => boole
   }
   for (const u of U){
     if (u.members.length>=u.cap) continue;
-    const free=mine.filter(h => h.kind===H_SOLDIER && h.base<0 && h.post<0 && h.war<0 && h.hp>0 && !switching(h));
+    const free=mine.filter(h => h.kind===H_SOLDIER && !h.militia && h.base<0 && h.post<0 && h.war<0 && h.hp>0 && !switching(h));
     free.sort((a,b) => b.id-a.id);   // the newest recruits first
     for (const h of free){
       if (u.members.length>=u.cap) break;

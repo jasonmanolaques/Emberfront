@@ -274,6 +274,10 @@ button:disabled:active{transform:none;box-shadow:2px 2px 0 var(--ink)}
 .fword.hold{background:var(--plate);color:var(--gold);border-color:var(--edge)}
 .fword:disabled{cursor:default;background:var(--plate);color:var(--muted);border-color:var(--edge);font-weight:600;animation:none}
 .fword.them{color:#ffb0a4;border-color:#8a3a2e}
+/* the militia reserves: call them up to this front, or send them home */
+.fres{justify-self:center;pointer-events:auto;font:inherit;font-size:12px;font-weight:600;padding:3px 12px;color:var(--text);background:var(--plate);border:2px solid #6d5a2e;box-shadow:0 0 0 2px var(--ink),2px 2px 0 2px rgba(0,0,0,.3);cursor:pointer}
+.fres.out{color:var(--gold)}
+.fres:disabled{cursor:default;color:var(--muted);border-color:var(--edge)}
 @keyframes pulse-word{50%{border-color:#fff3b0;background:#ffe27a}}
 @media (prefers-reduced-motion:reduce){.fword.go{animation:none}}
 .pbar{display:flex;height:12px;border:2px solid var(--ink);box-shadow:0 0 0 2px var(--edge);background:#111;image-rendering:pixelated}

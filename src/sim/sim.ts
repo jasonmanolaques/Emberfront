@@ -14,7 +14,7 @@ import { scanContacts, census } from './census';
 import { botThink } from './bots';
 import { updatePopulation } from './population';
 import { genResources, clearPlot } from './resources';
-import { resetWar, declare, intercept, proposeAlliance, endWar, makePeace, setOffensive } from './war';
+import { resetWar, declare, intercept, proposeAlliance, endWar, makePeace, setOffensive, deescalate, defend, callReserves } from './war';
 import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
 import { turnLedger, resetLedger } from './ledger';
@@ -26,7 +26,7 @@ function blankNation(id: number, name: string, hex: string, isPlayer: boolean, c
     gold:0, income:0, strength:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
     plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, beds:0,
     sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0, nextWave:0, x0:1e9, y0:1e9, x1:-1, y1:-1, wallR:0, nextWall:0, unpaid:0,
-    soldierShare:0, humanProg:0, villagers:0, soldiers:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], resHere:[0,0,0], abandoned:0, surplusTicks:0,
+    soldierShare:0, humanProg:0, villagers:0, soldiers:0, militia:0, called:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], resHere:[0,0,0], abandoned:0, surplusTicks:0,
     study:R_HOUSING, tier:[1,1,1,1,1,1], xp:[0,0,0,0,0,0], invest:0.5, gain:new Array(180).fill(0), spend:new Array(180).fill(0) };
 }
 function makeNation(id: number, k: Country, isPlayer: boolean): Nation {
@@ -217,6 +217,12 @@ function applyCommand(c: Command){
     intercept(c.nation,c.campaign,c.units ?? c.soldiers ?? 0);
   } else if (c.type==='offensive'){
     setOffensive(c.nation,c.target,c.go);
+  } else if (c.type==='deescalate'){
+    deescalate(c.nation,c.target);
+  } else if (c.type==='defend'){
+    defend(c.nation,c.target,c.units);
+  } else if (c.type==='reserves'){
+    callReserves(c.nation,c.target,c.call);
   } else if (c.type==='endWar'){
     endWar(c.nation,c.target);
   } else if (c.type==='peace'){
@@ -230,6 +236,8 @@ function applyCommand(c: Command){
 
 /* ---------- simulation tick ---------- */
 /** Gold a second before wages: the passive income and the villagers' tax, with the minters' share. */
+/** How many of n's soldiers draw wages: the trained soldiers, and militia called up to a front. */
+export const paid = (n: Nation) => n.soldiers-n.militia+n.called;
 export const grossIncome = (n: Nation) => (GOLD_PER_SEC+TAX_PER_VILLAGER*n.tier[R_TAXES]*n.taxpayers)*(1+0.1*n.minters);
 export function tick(){
   if (W.commands.length){ for (const c of W.commands) applyCommand(c); W.commands.length=0; }
@@ -237,10 +245,10 @@ export function tick(){
   turnLedger();
   const N=W.nations;
   // passive income plus each villager's tax (more with taxation research), each coin minter adding
-  // 10% to that, less the soldiers' wages; the treasury can go below zero
+  // 10% to that, less the soldiers' wages (militia are paid only while called up); the treasury can go below zero
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive) continue;
-    n.income=grossIncome(n)-WAGE*n.soldiers; n.gold+=n.income*TICK;   // only housed, working villagers pay
+    n.income=grossIncome(n)-WAGE*paid(n); n.gold+=n.income*TICK;   // only housed, working villagers pay
   }
   for (const A of W.attacks) if (!A.done) stepAttack(A);
   if (W.tickN%2===0) W.attacks=W.attacks.filter(A=>!A.done);
@@ -254,6 +262,6 @@ export function tick(){
   updateStories();
   for (let i=1;i<N.length;i++){
     const n=N[i];
-    n.strength = n.alive ? n.tiles*STR_TILE + n.villagers*STR_VILLAGER + n.soldiers*STR_SOLDIER + Math.max(0,n.gold)*STR_GOLD : 0;
+    n.strength = n.alive ? n.tiles*STR_TILE + n.villagers*STR_VILLAGER + (n.soldiers-n.militia*0.5)*STR_SOLDIER + Math.max(0,n.gold)*STR_GOLD : 0;
   }
 }

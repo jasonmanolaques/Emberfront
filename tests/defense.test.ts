@@ -1,6 +1,6 @@
 // Watchtowers and the castle by tier, battle damage, and soldiers' wages.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NT, NP, PW, T_GRASS, B_FARM, B_TOWER, B_CASTLE, WAGE, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD } from '../src/core/constants';
+import { TW, TH, NT, NP, PW, T_GRASS, B_FARM, B_TOWER, B_CASTLE, B_BARRACKS, WAGE, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD } from '../src/core/constants';
 import { W, owner, isLand, terr, resType, resLeft, pBuild, pType, pOwner, pHp, pTier, pPrio, type Human, type Nation } from '../src/sim/state';
 import { botThink } from '../src/sim/bots';
 import { wallPlots, ringOf, isGate, plannedWall, wallNeighbours } from '../src/sim/fort';
@@ -120,11 +120,13 @@ describe('invaders and towers', () => {
 });
 
 describe('wages', () => {
-  it('cost 0.2 gold a second a soldier, and the treasury may go below zero', () => {
-    world(0);
+  it('cost 0.2 gold a second a soldier (militia at home nothing), and the treasury may go below zero', () => {
+    world(0); paintDisc(N(1),14);
+    place(N(1),B_BARRACKS); place(N(1),B_BARRACKS);   // room for 10
     const [x,y]=doorOf(N(1));
-    for (let i=0;i<10;i++) W.humans.push(makeHuman(N(1),H_SOLDIER,x,y));
+    for (let i=0;i<14;i++) W.humans.push(makeHuman(N(1),H_SOLDIER,x,y));
     N(1).soldierShare=1; N(1).humanProg=-1e9; run(2);
+    expect([N(1).soldiers, N(1).militia]).toEqual([14, 4]);   // the 4 without room in a barracks serve as militia
     expect(N(1).income).toBeCloseTo(grossIncome(N(1))-10*WAGE, 6);
     expect(WAGE).toBe(0.2);
     N(1).gold=-5; run(1);
@@ -132,7 +134,7 @@ describe('wages', () => {
   });
 
   it('unpaid for 10 seconds, soldiers lay down their arms one every 3 seconds, the least armoured first, their armour scrapped for 30 gold a tier', () => {
-    world(0);
+    world(0); paintDisc(N(1),14); place(N(1),B_BARRACKS);
     const [x,y]=doorOf(N(1)), men: Human[]=[];
     for (const t of [3,1,2,1]){ const h=makeHuman(N(1),H_SOLDIER,x,y+2); h.tier=t; W.humans.push(h); men.push(h); }
     N(1).soldierShare=1; N(1).humanProg=-1e9;

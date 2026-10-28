@@ -58,6 +58,29 @@ listen({
     else if (d===PLAYER){ log(`${nm(a)} ${raid?'is raiding you':'has declared war on you'}!`,'bad'); toast(`${nm(a)} ${raid?'raids':'attacks'} you`); }
     else log(`${nm(a)} ${raid?'raids':'goes to war with'} ${nm(d)}`);
   },
+  crisis: (a,d) => {
+    if (a===PLAYER) log(`Your armies mass on the border of ${nm(d)}: a crisis. Give the word to go to war, or call it off`,'good');
+    else if (d===PLAYER){ log(`${nm(a)} masses its armies on your border! Hold the border from the war bar: it is not war yet`,'bad'); toast(`Crisis: ${nm(a)} masses on your border`); }
+    else log(`Crisis: ${nm(a)} masses on the border of ${nm(d)}`);
+  },
+  escalated: (a,d) => {
+    if (a===PLAYER) log(`War with ${nm(d)}! Your armies attack all along the front`,'good');
+    else if (d===PLAYER){ log(`${nm(a)} attacks: it is war!`,'bad'); toast(`${nm(a)} attacks: war!`); }
+    else log(`${nm(a)} goes to war with ${nm(d)}`);
+  },
+  deescalated: (a,d) => {
+    if (a===PLAYER) log(`You call the crisis with ${nm(d)} off: your armies head home`);
+    else if (d===PLAYER){ log(`${nm(a)} backs down: its armies leave your border`,'good'); toast(`${nm(a)} backs down`); }
+    else log(`${nm(a)} backs down from ${nm(d)}`);
+  },
+  defending: (o,e,k) => {
+    if (o===PLAYER) log(`${k} of your soldiers march to hold your border with ${nm(e)}`,'good');
+    else if (e===PLAYER) log(`${nm(o)} sends ${men(k)} to its border with you`,'bad');
+  },
+  reserves: (o,e,k,call) => {
+    if (o===PLAYER){ if (call){ log(`You call up ${k} militia: they march to the front with ${nm(e)}, paid as soldiers`,'good'); toast(`${k} militia called up`); } else log('Your reserves head home to patrol again'); }
+    else if (e===PLAYER && call) log(`${nm(o)} calls up ${k} militia against you`,'bad');
+  },
   armyHome: (a,d,raid,why) => {
     if (d===PLAYER && raid && why==='recall'){ log(`${nm(a)} calls its raiders home: catch them before they get there`); return; }
     if (a!==PLAYER) return;
@@ -75,7 +98,7 @@ listen({
   counterReady: (o,e) => { if (o===PLAYER){ log(`Your land is free of ${nm(e)}: your army is ready to counter-attack`,'good'); toast('Ready to counter-attack'); } },
   intercepting: (o,e,k) => {
     if (o===PLAYER) log(`${k} of your soldiers march out to meet ${nm(e)}'s army`,'good');
-    else if (e===PLAYER) log(`${nm(o)} sends ${k} soldiers to meet your army`,'bad');
+    else if (e===PLAYER) log(`${nm(o)} sends ${men(k)} to meet your army`,'bad');
   },
   // research and the builders guild
   researched: (o,topic,tier) => {
@@ -107,6 +130,7 @@ listen({
 const GOOD_COL=['#e9b26a','#dcd6cc','#ffa060'];
 type Mood = 'good' | 'bad' | undefined;
 const ORDER_LOG: Record<string, { mine: (r: string, foe: string) => [string, Mood]; theirs?: (r: string, foe: string) => [string, Mood] }> = {
+  guard: { mine: (r,f) => [`Your ${r} holds your border with ${f}`,'good'] },
   ready: { mine: (r,f) => [`Your ${r} stands ready on the border of ${f}: give the word in the war bar`,'good'],
            theirs: (_r,f) => [`An army of ${f} masses on your border`,'bad'] },
   assault: { mine: (r,f) => [`Your ${r} gives the order: into ${f}, attack!`,'good'],
@@ -124,6 +148,7 @@ const TIER_NEWS=[['','','your builders guild can raise stone houses','your build
   ['','','your castle is rebuilt into a fortress','your castle is rebuilt into a citadel'],
   ['','','plantations, quarries and copper mines side by side join in pairs','plantations, quarries and copper mines join in squares of four']];
 const nm = (id: number) => W.nations[id]?.name ?? 'Someone';
+const men = (k: number) => `${k} soldier${k===1 ? '' : 's'}`;
 /** The maps, in the order New map goes through them: three generated ones, then three of the real world. */
 export const MAPS: { name: string; map: string; seed?: number }[] = [
   { name:'Emberland', map:'gen', seed:4242 },

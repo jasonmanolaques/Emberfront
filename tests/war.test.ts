@@ -3,16 +3,16 @@
 import { describe, it, expect } from 'vitest';
 import { TW, TH, NT, NP, PW, WAGE, T_GRASS, B_HOUSE, B_FARM, B_TOWER, B_BARRACKS, B_RUINS } from '../src/core/constants';
 import { W, owner, occ, isLand, terr, resType, resLeft, pBuild, pType, pOwner, pBurn, pCenter, pHp, type Human, type Nation } from '../src/sim/state';
-import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
+import { newWorld, startMatch, queueCommand, tick, grossIncome } from '../src/sim/sim';
 import { listen, on } from '../src/sim/events';
 import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
 import { build, plotProblem, structureOf, togglePriority, finishHouse } from '../src/sim/buildings';
-import { H_SOLDIER, H_VILLAGER, TASK_STORE, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, switching, pace, maxHp } from '../src/sim/population';
+import { H_SOLDIER, H_VILLAGER, TASK_STORE, TASK_TO_TRAIN, TASK_INSIDE, MILITIA_HP, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, switching, pace, maxHp } from '../src/sim/population';
 import { UNIT_SIZE, buildUnits, station, unitAt, SOLDIER_DMG } from '../src/sim/army';
 import { wallOf, walledFor } from '../src/sim/defense';
 import { allied, atWar, available, ready, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
-  RANKS, rankFor, M_MARCH, M_HOLD, M_ASSAULT, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
+  RANKS, rankFor, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, reservesOf, reservesProblem, menOn, M_MARCH, M_HOLD, M_ASSAULT, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
 import { MIN_GAP, RANK_GAP, A_OFF, holds, freeOf, underCastle } from '../src/sim/front';
 
 const N = (i: number) => W.nations[i];
@@ -155,14 +155,15 @@ describe('alliances', () => {
     expect(k).toBe(MAX_ALLIES);
   });
 
-  it('are broken by declaring war on the ally', () => {
+  it('are broken by massing an attack on the ally\'s border', () => {
     world(1); quiet(); paintToward(1,2);
     queueCommand({ type:'ally', nation:1, target:2 }); tick();
     expect(allied(1,2)).toBe(true);
     soldiers(N(1),3);
     queueCommand({ type:'war', nation:1, target:2, raid:false, soldiers:3 }); tick();
     expect(allied(1,2)).toBe(false);
-    expect(atWar(1,2)).toBe(true);
+    expect(inCrisis(1,2)).toBe(true);   // a crisis, not yet a war
+    expect(atWar(1,2)).toBe(false);
   });
 });
 
@@ -227,8 +228,9 @@ describe('at war', () => {
     expect(mine[0].hp).toBe(SOLDIER_HP[1]);
     // now 1 attacks with everything but that soldier, and fighting starts where the armies meet
     queueCommand({ type:'war', nation:1, target:2, raid:false, soldiers:6 }); tick();
-    expect(atWar(1,2)).toBe(true);
+    expect(atWar(1,2)).toBe(false);   // massing on the border is a crisis: nobody fights yet
     giveWord(1,2);
+    expect(atWar(1,2)).toBe(true);
     until(() => blows.length>5, 3000);
   });
 
@@ -320,7 +322,7 @@ describe('peace', () => {
     world(1); quiet(); paintToward(1,2);
     soldiers(N(1),20);
     queueCommand({ type:'war', nation:1, target:2, raid:false, soldiers:20 }); tick();
-    run(50);
+    escalate(1,2); run(50);
     const made=collect('peaceMade');
     queueCommand({ type:'endWar', nation:1, target:2 }); tick();
     expect(W.offers[1*W.M+2]).toBeGreaterThan(0);
@@ -335,6 +337,7 @@ describe('peace', () => {
     world(1); quiet(); paintToward(1,2);
     soldiers(N(1),3); soldiers(N(2),40); run(1);
     queueCommand({ type:'war', nation:1, target:2, raid:false, soldiers:3 }); tick();
+    escalate(1,2);
     const refused=collect('peaceRefused');
     endWar(1,2);
     N(2).nextThink=0; N(2).nextWar=1e9; tick();
@@ -404,7 +407,7 @@ describe('soldiers on the move', () => {
   it('keep some room between them in a fight instead of piling onto one spot', () => {
     world(1); quiet(); paintToward(1,2);
     soldiers(N(2),4); tick();
-    expect(declare(2,1,false,4)).toBe(true); tick();
+    expect(declare(2,1,false,4)).toBe(true); escalate(2,1); tick();
     const [x,y]=doorOf(N(1)), men=soldiers(N(1),6);
     for (const h of men){ h.x=x; h.y=y+4; }   // all on one spot just outside the gate
     for (let i=0;i<20;i++) spread();
@@ -420,10 +423,11 @@ describe('bots at war', () => {
     newWorld(987654321);
     outer: for (let r=0;r<60;r++) for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){ if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue; if (startMatch((TH/2+dy*3)*TW+TW/2+dx*3, 9)) break outer; }
     quiet();
-    const began=collect('warBegan'), annexed=collect('annexed');
+    const began=collect('warBegan'), crises=collect('crisis'), wars=collect('escalated'), annexed=collect('annexed');
     run(9500);   // armies big enough to break a castle take a while to raise
     expect(began.some(b => b[2])).toBe(true);    // raids
-    expect(began.some(b => !b[2])).toBe(true);   // and attacks
+    expect(crises.length).toBeGreaterThan(0);    // attacks: massed on a border...
+    expect(wars.length).toBeGreaterThan(0);      // ...and then war
     expect(annexed.length).toBeGreaterThan(0);
   });
 });
@@ -678,30 +682,32 @@ describe('army leaders', () => {
   });
 });
 
+/** Kingdoms 1 and 2 split a 200×120 box round the middle between their castles by a straight
+    border `deg` degrees off the vertical. Returns the box. */
+function split(deg: number){
+  world(1); quiet();
+  const [ax,ay]=[N(1).capTile%TW,(N(1).capTile/TW)|0], [bx,by]=[N(2).capTile%TW,(N(2).capTile/TW)|0];
+  const mx=(ax+bx)/2, my=(ay+by)/2, nx=Math.cos(deg*Math.PI/180), ny=-Math.sin(deg*Math.PI/180);
+  const box={ x0:Math.round(mx-100), x1:Math.round(mx+100), y0:Math.round(my-60), y1:Math.round(my+60), deg };
+  for (let y=box.y0;y<box.y1;y++) for (let x=box.x0;x<box.x1;x++) setOwner(y*TW+x, (x-mx)*nx+(y-my)*ny<0 ? 1 : 2);
+  census();
+  return box;
+}
+type Box = ReturnType<typeof split>;
+/** For each row of the box (bar its top and bottom 3), the furthest tile 1 holds: where its line is. */
+const lineAt = (b: Box) => { const out: number[]=[]; for (let y=b.y0+3;y<b.y1-3;y++){ let m=b.x0; for (let x=b.x0;x<b.x1;x++) if (holds(1,2,y*TW+x)) m=x; out.push(m); } return out; };
+
+/** How far the line strays from a straight one through it (tiles), by least squares; leaving out
+    the rows across 2's castle (which the line goes round) and the last few at each end. */
+function crooked(xs: number[], b: Box){
+  const cy=((N(2).capPlot/PW)|0)*4, n0=xs.length, pts: [number, number][]=[];
+  xs.forEach((x,i) => { const y=b.y0+3+i; if (i>=6 && i<n0-6 && (y<cy-1 || y>cy+8)) pts.push([y,x]); });
+  const n=pts.length, my=pts.reduce((a,p) => a+p[0],0)/n, mx=pts.reduce((a,p) => a+p[1],0)/n;
+  let sxy=0, syy=0; for (const [y,x] of pts){ sxy+=(y-my)*(x-mx); syy+=(y-my)**2; }
+  const k=sxy/syy; return Math.max(...pts.map(([y,x]) => Math.abs(x-(mx+k*(y-my)))));
+}
+
 describe('the front', () => {
-  /** Kingdoms 1 and 2 split a 200×120 box round the middle between their castles by a straight
-      border `deg` degrees off the vertical. Returns the box. */
-  function split(deg: number){
-    world(1); quiet();
-    const [ax,ay]=[N(1).capTile%TW,(N(1).capTile/TW)|0], [bx,by]=[N(2).capTile%TW,(N(2).capTile/TW)|0];
-    const mx=(ax+bx)/2, my=(ay+by)/2, nx=Math.cos(deg*Math.PI/180), ny=-Math.sin(deg*Math.PI/180);
-    const box={ x0:Math.round(mx-100), x1:Math.round(mx+100), y0:Math.round(my-60), y1:Math.round(my+60), deg };
-    for (let y=box.y0;y<box.y1;y++) for (let x=box.x0;x<box.x1;x++) setOwner(y*TW+x, (x-mx)*nx+(y-my)*ny<0 ? 1 : 2);
-    census();
-    return box;
-  }
-  type Box = ReturnType<typeof split>;
-  /** For each row of the box (bar its top and bottom 3), the furthest tile 1 holds: where its line is. */
-  const lineAt = (b: Box) => { const out: number[]=[]; for (let y=b.y0+3;y<b.y1-3;y++){ let m=b.x0; for (let x=b.x0;x<b.x1;x++) if (holds(1,2,y*TW+x)) m=x; out.push(m); } return out; };
-  /** How far the line strays from a straight one through it (tiles), by least squares; leaving out
-      the rows across 2's castle (which the line goes round) and the last few at each end. */
-  function crooked(xs: number[], b: Box){
-    const cy=((N(2).capPlot/PW)|0)*4, n0=xs.length, pts: [number, number][]=[];
-    xs.forEach((x,i) => { const y=b.y0+3+i; if (i>=6 && i<n0-6 && (y<cy-1 || y>cy+8)) pts.push([y,x]); });
-    const n=pts.length, my=pts.reduce((a,p) => a+p[0],0)/n, mx=pts.reduce((a,p) => a+p[1],0)/n;
-    let sxy=0, syy=0; for (const [y,x] of pts){ sxy+=(y-my)*(x-mx); syy+=(y-my)**2; }
-    const k=sxy/syy; return Math.max(...pts.map(([y,x]) => Math.abs(x-(mx+k*(y-my)))));
-  }
   /** Tiles of 2's free land left behind 1's line (not under the castle): ground the front missed. */
   const missed = (b: Box) => { const L=lineAt(b); let k=0; L.forEach((m,i) => { const y=b.y0+3+i; for (let x=b.x0;x<m;x++){ const t=y*TW+x; if (freeOf(2,t) && !underCastle(2,t)) k++; } }); return k; };
   const men = (o: number) => W.humans.filter(h => h.o===o && h.kind===H_SOLDIER);
@@ -813,7 +819,7 @@ describe('the front', () => {
     soldiers(N(1),40); noDraft(); noDraft(2);
     // one defender who can't be beaten, standing on their side of the border, in the middle
     const mid=(b.y0+b.y1)>>1, edge=lineAt(b)[mid-b.y0-3]+1, [d]=soldiers(N(2),1,false);
-    d.x=(edge+ZOC+1)*2+1; d.y=mid*2+1; d.sp=0;
+    d.x=(edge+ZOC+1)*2+1; d.y=mid*2+1; d.sp=0; d.militia=true;   // (a militiaman holds his ground like anyone)
     expect(declare(1,2,false,40)).toBe(true);
     giveWord(1,2);
     for (let i=0;i<200;i++){ d.hp=1e6; tick(); }
@@ -832,9 +838,10 @@ describe('the front', () => {
     expect(declare(1,2,false,30)).toBe(true);
     until(() => W.offensive[1*W.M+2]===F_READY, 3000);
     const front=W.humans.find(h => h.o===1 && h.line===0 && W.humans.some(e => e.o===1 && e.line===1 && e.slot===h.slot))!;
-    const behind=W.humans.find(e => e.o===1 && e.line===1 && e.slot===front.slot)!, u=front.slot;
+    const u=front.slot, second=new Set(W.humans.filter(e => e.o===1 && e.line===1 && e.slot===u).map(e => e.id));
     front.hp=0; run(12);
-    expect([behind.line, behind.slot]).toEqual([0, u]);   // he steps up into the gap
+    const behind=W.humans.find(h => h.o===1 && h.line===0 && h.slot===u)!;
+    expect(second.has(behind.id)).toBe(true);   // one from the rank behind steps up into the gap
     until(() => Math.hypot(behind.x-behind.fx,behind.y-behind.fy)<=PRESENT, 200);
   });
 
@@ -925,11 +932,162 @@ describe('intercepting', () => {
     until(() => !W.campaigns.includes(E) || E.phase===2, 4000);
     expect(blows.length).toBeGreaterThan(0);
     until(() => !W.campaigns.includes(I), 3000);   // its job done, the rest come home
-    // an attacking army can't be intercepted: the soldiers at home hold the front against it
+    // an attacking army can't be intercepted: armies are sent to hold the border against it instead
     soldiers(N(2),6); run(1);
     expect(declare(2,1,false,6)).toBe(true);
     const A=W.campaigns.find(c => c.a===2 && c.front)!;
-    expect(interceptProblem(1,A.id)).toMatch(/front/);
+    expect(interceptProblem(1,A.id)).toMatch(/border/);
+  });
+});
+
+describe('crisis', () => {
+  const M = () => W.M;
+  /** Everyone of kingdom o out with an army stands on o's own land. */
+  const home = (o: number) => W.humans.filter(h => h.o===o && h.war>=0).every(h => owner[((h.y/2)|0)*TW+((h.x/2)|0)]===o);
+
+  it('an attack begins as a crisis: both sides mass on the border and nobody fights until the attacker gives the word', () => {
+    split(0);
+    soldiers(N(1),20); soldiers(N(2),20); noDraft(); noDraft(2); run(1);
+    const blows=collect('hit'), crises=collect('crisis'), wars=collect('escalated');
+    expect(declare(1,2,false,20)).toBe(true);
+    expect(crises).toEqual([[1,2]]);
+    expect([inCrisis(1,2), atWar(1,2), W.wars[1*M()+2]]).toEqual([true, false, 0]);
+    expect(defend(2,1,20)).toBe(true);   // 2 sends its army to hold its side of the border
+    until(() => W.offensive[1*M()+2]===F_READY && W.offensive[2*M()+1]===F_READY, 3000);
+    run(200);
+    expect(blows).toHaveLength(0);
+    expect(atWar(1,2)).toBe(false);
+    expect(W.occCount[2*M()+1]+W.occCount[1*M()+2]).toBe(0);
+    expect(home(1) && home(2)).toBe(true);   // each on its own side
+    expect([menOn(1,2), menOn(2,1)]).toEqual([20, 20]);
+    // only the side that massed first can turn it into a war
+    expect(offensiveProblem(2,1,true)).toMatch(/not attacked/);
+    expect(setOffensive(2,1,true)).toBe(false);
+    expect(inCrisis(1,2)).toBe(true);
+    // the word: war. 1 attacks all along the front, 2's front holds, and the armies clash on the border
+    giveWord(1,2);
+    expect(wars).toEqual([[1,2]]);
+    expect([W.wars[1*M()+2], W.wars[2*M()+1], W.offensive[2*M()+1]]).toEqual([1, 1, F_HOLD]);
+    until(() => blows.length>10, 600);
+  });
+
+  it('the side that massed first can call it off: both sides go home and there is nothing to make peace over; at war it can\'t', () => {
+    world(1); quiet(); paintToward(1,2);
+    soldiers(N(1),10); soldiers(N(2),10); noDraft(); noDraft(2); run(1);
+    expect(declare(1,2,false,10)).toBe(true);
+    expect(defend(2,1,10)).toBe(true);
+    run(50);
+    expect(deescalateProblem(2,1)).toMatch(/No crisis/);
+    const calm=collect('deescalated');
+    queueCommand({ type:'deescalate', nation:1, target:2 }); tick();
+    expect(calm).toEqual([[1,2]]);
+    expect([inCrisis(1,2), W.aggr[1*M()+2], W.wars[1*M()+2]]).toEqual([false, 0, 0]);
+    expect(W.campaigns.every(c => c.phase===2 && !c.hostile)).toBe(true);   // both sides' armies head home
+    until(() => !W.campaigns.length, 2000);
+    expect(ready(N(1))).toBe(10);
+    // again, and this time to war: there is no calling that off
+    expect(declare(1,2,false,10)).toBe(true);
+    expect(escalate(1,2)).toBe(true);
+    expect(deescalateProblem(1,2)).toMatch(/peace/);
+    expect(deescalate(1,2)).toBe(false);
+  });
+
+  it('a bot massed on a border goes to war once ready, unless far more stand against it: then it backs down', () => {
+    world(1); quiet(); paintToward(1,2);
+    soldiers(N(2),10); soldiers(N(1),30); noDraft(); noDraft(2); N(2).attackAt=0.6; run(1);
+    const calm=collect('deescalated'), wars=collect('escalated');
+    expect(declare(2,1,false,10)).toBe(true);
+    expect(defend(1,2,30)).toBe(true);   // three times its men hold the other side
+    until(() => calm.length+wars.length>0, 3000);
+    expect([calm.length, wars.length]).toEqual([1, 0]);
+    until(() => !W.campaigns.length, 3000);
+    // a fair fight, and it goes to war
+    for (const h of W.humans.filter(h => h.o===1 && h.kind===H_SOLDIER).slice(5)) h.hp=0;
+    run(2);
+    expect(declare(2,1,false,10)).toBe(true);
+    expect(defend(1,2,5)).toBe(true);
+    until(() => wars.length>0, 3000);
+    expect(calm).toHaveLength(1);
+    expect(W.offensive[2*M()+1]).toBe(F_PUSH);
+  });
+
+  it('at war the defender can strike back from its own front: its own land first, then theirs', () => {
+    const b=split(0);
+    soldiers(N(1),10); soldiers(N(2),40); noDraft(); noDraft(2); run(1);
+    expect(declare(1,2,false,10)).toBe(true);
+    expect(defend(2,1,40)).toBe(true);
+    until(() => W.offensive[1*M()+2]===F_READY && W.offensive[2*M()+1]===F_READY, 3000);
+    expect(escalate(1,2)).toBe(true);
+    setOffensive(1,2,false);   // 1 holds; say it had taken a band of 2's land along the border
+    const line=lineAt(b);
+    for (let y=b.y0+3;y<b.y1-3;y++) for (let x=line[y-b.y0-3]+1;x<=line[y-b.y0-3]+4;x++){ const t=y*TW+x; if (owner[t]===2){ occ[t]=1; W.occCount[2*M()+1]++; } }
+    const taken=W.occCount[2*M()+1];
+    expect(taken).toBeGreaterThan(300);
+    run(30);   // the fronts move to the new line
+    expect(W.offensive[2*M()+1]).toBe(F_HOLD);
+    queueCommand({ type:'offensive', nation:2, target:1, go:true }); tick();
+    expect(W.offensive[2*M()+1]).toBe(F_PUSH);
+    // where its land was taken it takes it back first, while elsewhere along the line it is into 1's
+    let back=-1; until(() => { if (back<0 && W.occCount[2*M()+1]<taken/2) back=W.occCount[1*M()+2]; return W.occCount[2*M()+1]===0; }, 3000);
+    const inBand=(t: number) => { const y=(t/TW)|0, x=t%TW; return y>=b.y0+3 && y<b.y1-3 && x>line[y-b.y0-3] && x<=line[y-b.y0-3]+4; };
+    expect(Array.from({ length: NT }, (_, t) => t).some(t => inBand(t) && occ[t]===1)).toBe(false);
+    until(() => W.occCount[1*M()+2]>back+500, 3000);   // ...and then on into 1's, all along
+    const now=lineAt(b), mid=now.slice().sort((p,q) => p-q)[now.length>>1];
+    expect(now.filter(x => Math.abs(x-mid)<=1).length).toBeGreaterThan(now.length*0.9);   // a straight line (bar where 1's men still stand their ground)
+    expect(mid).toBeLessThan(Math.min(...line));   // and back past where the border was
+  });
+});
+
+describe('militia', () => {
+  const M = () => W.M;
+  it('stay home when the armies march, and are called up as reserves from the war bar: paid while out, home again when sent', () => {
+    world(1); quiet(); paintToward(1,2);
+    soldiers(N(1),10); const mil=soldiers(N(1),12,false); noDraft(); run(2);
+    expect([N(1).soldiers, N(1).militia, N(1).called]).toEqual([22, 12, 0]);
+    expect(mil.every(h => h.militia && h.hp===MILITIA_HP)).toBe(true);
+    expect(available(N(1)).reduce((k,a) => k+a.men.length,0)).toBe(10);   // only the barracks' army can be picked to march
+    expect(reservesProblem(1,2,true)).toMatch(/No crisis/);
+    expect(declare(1,2,false,10)).toBe(true);
+    expect(mil.every(h => h.war<0)).toBe(true);
+    queueCommand({ type:'reserves', nation:1, target:2, call:true }); tick();
+    const R=reservesOf(1)!;
+    expect(R.militia && R.front && R.d===2).toBe(true);
+    expect(R.members).toHaveLength(12);
+    tick();
+    expect(N(1).called).toBe(12);
+    expect(N(1).income).toBeCloseTo(grossIncome(N(1))-22*WAGE, 6);   // called up, they are paid like soldiers
+    until(() => mil.every(h => h.fk===1*W.M+2), 400);   // on the front with the army
+    queueCommand({ type:'reserves', nation:1, target:2, call:false }); tick();
+    expect(R.phase).toBe(2);
+    until(() => mil.every(h => h.war<0), 2000);
+    tick();
+    expect(N(1).called).toBe(0);
+    expect(N(1).income).toBeCloseTo(grossIncome(N(1))-10*WAGE, 6);
+  });
+
+  it('without reserves called, fill the places of fallen soldiers one at a time, and go to the front as soldiers', () => {
+    world(1); quiet(); paintToward(1,2);
+    const army=soldiers(N(1),10), mil=soldiers(N(1),6,false); noDraft(); run(2);
+    expect(declare(1,2,false,10)).toBe(true); run(20);
+    const c=W.campaigns.find(k => k.a===1 && k.front)!;
+    for (const h of army.slice(0,3)) h.hp=0;
+    run(2);
+    let most=0;
+    until(() => { most=Math.max(most, mil.filter(h => h.task===TASK_TO_TRAIN || h.task===TASK_INSIDE).length); return mil.filter(h => !h.militia).length===3; }, 3000);
+    expect(most).toBe(1);   // one at a time
+    expect(N(1).militia).toBe(3);
+    until(() => c.members.length===10, 600);   // and they join the army at the front
+  });
+
+  it('a bot calls its militia up only when its armies on a front are badly outnumbered', () => {
+    for (const [attackers, called] of [[30, true], [5, false]] as const){
+      world(1); quiet(); paintToward(1,2);
+      soldiers(N(2),5); soldiers(N(2),10,false); soldiers(N(1),attackers); noDraft(); noDraft(2); run(1);
+      expect(declare(1,2,false,attackers)).toBe(true);
+      for (let i=0;i<30;i++){ N(2).nextThink=0; tick(); }
+      expect(menOn(2,1)).toBeGreaterThanOrEqual(5);   // it holds its border with its army
+      expect(!!reservesOf(2)).toBe(called);
+    }
   });
 });
 
