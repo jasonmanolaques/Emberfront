@@ -229,9 +229,11 @@ export function setSoldierShare(v: number){
 }
 const soldiersEl=$('soldiers') as HTMLInputElement;
 const investEl=$('invest') as HTMLInputElement;
-/** City investment: the share (0..1) of the goods coming in that the builders may spend. */
+/** City investment: the share (0..1) of the goods coming in that the builders may spend; at 1, full
+    investment (the builders spend the whole stockpile). */
 export function setInvest(v: number){
-  v=clamp(v,0,1); investEl.value=String(Math.round(v*100)); $('investVal').textContent=Math.round(v*100)+'%'; investEl.style.setProperty('--fill',(v*100)+'%');
+  v=clamp(v,0,1); investEl.value=String(Math.round(v*100)); $('investVal').textContent=v>=1 ? 'Full' : Math.round(v*100)+'%';
+  investEl.title=v>=1 ? 'Full investment: your builders improve buildings non-stop with everything in the stockpile' : 'The share of the goods coming in each minute your builders may spend'; investEl.style.setProperty('--fill',(v*100)+'%');
   if (W.nations[PLAYER]) queueCommand({ type:'invest', nation:PLAYER, share:v });
 }
 

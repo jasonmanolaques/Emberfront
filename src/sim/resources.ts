@@ -1,9 +1,10 @@
 /* ---------- resources: trees, rocks and copper scattered by terrain ----------
    Every region has its own advantage: forests are full of timber, mountains of stone,
    deserts hold the copper. Placement comes from the map seed alone, so every client agrees.
-   Nothing grows back: once a region is stripped, a kingdom has to expand to find more. */
-import { TW, TH, NT, PW, T_MOUNT } from '../core/constants';
-import { W, terr, isLand, resType, resLeft, resBusy } from './state';
+   Nothing grows back: a tree felled or a rock used up is gone, and once a region is stripped, a
+   kingdom has to expand to find more. */
+import { TW, TH, NT, NP, PW, T_MOUNT } from '../core/constants';
+import { W, terr, isLand, owner, resType, resLeft, resBusy } from './state';
 import { on } from './events';
 
 export const R_NONE=0, R_TREE=1, R_TWIG=2, R_STONE=3, R_COPPER=4;   // what stands on a tile
@@ -46,15 +47,34 @@ export function genResources(){
     const type = r<pc ? R_COPPER : r<pc+ps ? R_STONE : r<pc+ps+pw ? R_TWIG : r<pc+ps+pw+pt ? R_TREE : R_NONE;
     if (type){ resType[t]=type; resLeft[t]=CHARGES[type]; }
   }
+  freeIn=new Uint16Array(NP);
+  for (let t=0;t<NT;t++) if (resLeft[t]>0) freeIn[plotOf(t)]++;
 }
 
 /** True if tile t has something to harvest that nobody has claimed. */
 export const available = (t: number) => resLeft[t]>0 && !resBusy[t];
+/** How many tiles of each building plot (4x4 tiles) have something nobody has claimed: a villager's
+    search for work skips the empty plots. */
+export let freeIn = new Uint16Array(0);
+const plotOf = (t: number) => ((((t/TW)|0)>>2)*PW)+((t%TW)>>2);
+/** Changes tile t (claims it, harvests it, clears it) by `change`, keeping freeIn right. */
+function counted(t: number, change: () => void){
+  const was=available(t); change();
+  const now=available(t); if (was!==now) freeIn[plotOf(t)]+=now ? 1 : -1;
+}
+/** A villager claims tile t to harvest, or lets it go. */
+export function claim(t: number){ counted(t,() => { resBusy[t]=1; }); }
+export function unclaim(t: number){ counted(t,() => { resBusy[t]=0; }); }
 
 /** One harvest at tile t. Returns the goods gained. */
 export function harvest(t: number){
   const type=resType[t]; if (!type || !resLeft[t]) return 0;
-  resLeft[t]--;   // at 0 a stump or bare gravel is left behind
+  counted(t,() => {
+    if (--resLeft[t]<=0){   // used up: it is gone, nothing is left standing there
+      const o=owner[t]; if (o) W.nations[o].resHere[GOOD_OF[type]]--;
+      resType[t]=0; resBusy[t]=0;
+    }
+  });
   on.resChanged(t);
   return YIELD[type];
 }
@@ -64,7 +84,8 @@ export function clearPlot(q: number){
   const px=(q%PW)*4, py=((q/PW)|0)*4;
   for (let y=py;y<py+4;y++) for (let x=px;x<px+4;x++){
     const t=y*TW+x; if (!resType[t]) continue;
-    resType[t]=0; resLeft[t]=0; resBusy[t]=0; on.resChanged(t);
+    if (resLeft[t]>0 && owner[t]) W.nations[owner[t]].resHere[GOOD_OF[resType[t]]]--;
+    counted(t,() => { resType[t]=0; resLeft[t]=0; resBusy[t]=0; }); on.resChanged(t);
   }
 }
 

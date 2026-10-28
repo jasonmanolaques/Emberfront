@@ -3,7 +3,7 @@
    when the tile is made, and redrawn locally whenever a resource is harvested, used up or cleared
    for a building. Sprites are small outlined pixel drawings, made once and stamped. */
 import { TW, TH, RS, T_FOREST, T_HILLS, T_MOUNT, T_DESERT, T_SNOW } from '../core/constants';
-import { terr, isLand, resType, resLeft } from '../sim/state';
+import { terr, isLand, resType } from '../sim/state';
 import { R_TREE, R_TWIG, R_STONE, R_COPPER } from '../sim/resources';
 import { hash2 } from './terrain';
 import { rows, sprite, type Pal } from './pixel';
@@ -19,7 +19,6 @@ const SNOWPINE: Pal = { h:'#ffffff', l:'#e6eff2', m:'#3b6e50', d:'#244b3a', t:'#
 const ROCK: Pal = { h:'#dcd6ca', l:'#bdb6aa', m:'#99928a', d:'#6c665d' };
 const ORE: Pal = { ...ROCK, g:'#ffe1ae', c:'#cf7a38', o:'#f0a45e' };
 const DRY: Pal = { o:'#a7a24e', O:'#c2bb5e', b:'#7d5a35', B:'#5a3c22' };
-const STUMP: Pal = { w:'#c79c64', b:'#6b4a2c', B:'#4a321e' };
 const CACTUS: Pal = { g:'#79b04c', G:'#4c7f33', f:'#f2d36b' };
 
 const OAK = [['..hll..','.hlllm.','hllmmmd','llmmmdd','lmmmddd','.mmddd.','..dtd..','...t...','...T...'],
@@ -27,7 +26,6 @@ const OAK = [['..hll..','.hlllm.','hllmmmd','llmmmdd','lmmmddd','.mmddd.','..dtd
              ['..hl.ll.','.hllmllm','hllmmmmd','lmmmmddd','.mmmddd.','...td...','...tT...']];
 const FIR = ['...h...','..hlm..','..lmd..','.hlmmd.','..lmmd.','.llmmdd','hlmmmdd','..mdd..','...t...','...T...'];
 const TWIG = ['O.....o','.b..O.b','..b.bb.','...bb..','...b...','...b...','...B...'];
-const STUMPG = ['.ww.','bwwb','bBBb'];
 const STONE = ['.hl.','hlmd','.md.'];
 const BOULDER = ['.hll.','hllmd','lmmdd','.mdd.'];
 const COPPER = ['..g..','.lco.','lmocd','moddc','.mdd.'];
@@ -45,23 +43,16 @@ function stand(c: HTMLCanvasElement, cx: number, by: number){ nctx.drawImage(c, 
 
 function drawTile(x: number, y: number){
   const t=y*TW+x; if (!isLand[t]) return;
-  const tr=terr[t], h=hash2(x*3+17,y*5+3), type=resType[t], left=resLeft[t]>0;
+  const tr=terr[t], h=hash2(x*3+17,y*5+3), type=resType[t];   // (a resource used up is gone: nothing is drawn)
   const cx=x*RS+1+((h*997|0)%3), by=y*RS+RS-1;
   if (type===R_TREE){
-    if (!left){ stand(spr('stump',STUMPG,STUMP),cx,by); return; }
     if (tr===T_SNOW) stand(spr('snowpine',FIR,SNOWPINE),cx,by);
     else if (tr===T_HILLS || (tr===T_FOREST && h<0.22)) stand(spr('pine',FIR,PINE),cx,by);
     else { const v=(h*7919|0)%3; stand(spr('oak'+v+(h<0.5?'a':'b'),OAK[v],h<0.5?LEAF:LEAF2),cx,by); }
   }
-  else if (type===R_TWIG){ stand(left ? spr('twig',TWIG,DRY) : spr('stump',STUMPG,STUMP),cx,by); }
-  else if (type===R_STONE){
-    if (left) stand(tr===T_MOUNT ? spr('boulder',BOULDER,ROCK,'rgba(40,36,30,0.55)') : spr('stone',STONE,ROCK,'rgba(40,36,30,0.55)'),cx,by);
-    else { nctx.fillStyle='rgba(150,144,134,.7)'; nctx.fillRect(cx-1,by,2,1); nctx.fillRect(cx+1,by-1,1,1); }
-  }
-  else if (type===R_COPPER){
-    if (left) stand(spr('copper',COPPER,ORE,'rgba(26,18,12,0.85)'),cx,by);
-    else { nctx.fillStyle='rgba(170,110,70,.7)'; nctx.fillRect(cx-1,by,2,1); }
-  }
+  else if (type===R_TWIG) stand(spr('twig',TWIG,DRY),cx,by);
+  else if (type===R_STONE) stand(tr===T_MOUNT ? spr('boulder',BOULDER,ROCK,'rgba(40,36,30,0.55)') : spr('stone',STONE,ROCK,'rgba(40,36,30,0.55)'),cx,by);
+  else if (type===R_COPPER) stand(spr('copper',COPPER,ORE,'rgba(26,18,12,0.85)'),cx,by);
   else if (tr===T_DESERT && hash2(x*7+5,y*11+1)<0.007) stand(spr('cactus',CACT,CACTUS),cx,by);
 }
 

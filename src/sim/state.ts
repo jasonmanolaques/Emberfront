@@ -31,7 +31,8 @@ export interface Nation {
   beggars: number; homeless: number; taxpayers: number;     // villagers turned beggar; people without a home; housed working villagers
   stock: number[];                   // goods stored in the capital: [wood, stone, copper]
   abandoned: number;                 // houses standing empty
-  resHere: number[];                 // trees, rocks and copper left on its land, by good (counted each census, and up as land is gained: never too few)
+  resHere: number[];                 // trees, rocks and copper left on its land, by good (kept exact as land and resources change)
+  fresh: number[];                   // resource tiles newly gained: the nearest villagers resting at home are woken for them
   surplusTicks: number;              // how long the kingdom has had more houses than people
   study: number;                     // research topic being studied (R_* in research.ts)
   tier: number[];                    // tier reached in each topic, 1..3: [housing, taxation]
@@ -54,6 +55,7 @@ export interface Human {
   post: number;                      // soldiers: plot of the watchtower they guard, or -1 (waiting at a barracks)
   site: number;                      // plot of the barracks (or, for militia, the castle) they are heading to or training in, or -1
   home: number;                      // villagers: plot of the house they are building, or -1
+  rest: number;                      // villagers: plot of the house they rest in (or are walking into), or -1
   housed: boolean;                   // has a home this tick (the longest-standing people get the houses)
   homeless: number;                  // ticks spent without a home
   beggar: boolean;                   // a villager homeless too long: idle, unrecruitable, pays no tax
@@ -134,6 +136,7 @@ export let frontMark = new Int32Array(NT);
 export let pType = new Uint8Array(NP), pOwner = new Uint8Array(NP), pVar = new Uint8Array(NP), pBuild = new Uint8Array(NP);
 export let pMain = new Int32Array(NP), pCenter = new Int32Array(NP), pBurn = new Float32Array(NP), pTimer = new Float32Array(NP);
 export let pAband = new Uint8Array(NP);   // houses standing empty, run down
+export let pIn = new Uint8Array(NP);      // houses: villagers resting inside, or on their way in (smoke rises from the chimney)
 export let occ = new Uint8Array(NT);      // a kingdom's land held by an enemy at war: the occupier (0 = free); the owner stays
 export let pHp = new Float32Array(NP);     // damage a building has taken (multi-plot buildings keep theirs on the main plot)
 export let pArmor = [new Uint8Array(0), new Uint8Array(0), new Uint8Array(NP), new Uint8Array(NP)];   // barracks: armour of tier 2 and 3 stored there
@@ -151,7 +154,7 @@ export function resizeGrid(w: number, h: number){
   terr=new Uint8Array(NT); isLand=new Uint8Array(NT); owner=new Uint8Array(NT); road=new Uint8Array(NT); frontMark=new Int32Array(NT); occ=new Uint8Array(NT);
   pType=new Uint8Array(NP); pOwner=new Uint8Array(NP); pVar=new Uint8Array(NP); pBuild=new Uint8Array(NP);
   pMain=new Int32Array(NP); pCenter=new Int32Array(NP); pBurn=new Float32Array(NP); pTimer=new Float32Array(NP);
-  pAband=new Uint8Array(NP); pHp=new Float32Array(NP); pArmor=[new Uint8Array(0), new Uint8Array(0), new Uint8Array(NP), new Uint8Array(NP)];
+  pAband=new Uint8Array(NP); pIn=new Uint8Array(NP); pHp=new Float32Array(NP); pArmor=[new Uint8Array(0), new Uint8Array(0), new Uint8Array(NP), new Uint8Array(NP)];
   pTier=new Uint8Array(NP); pSpan=new Uint8Array(NP); pPrio=new Int32Array(NP);
   placeCentres();
 }

@@ -24,14 +24,27 @@ export function tileCost(a: number, d: number, t: number){
   return c;
 }
 
+/** Keeps the shared border counts (W.contact) up to date as tile t goes from prev to o: each land
+    edge to a neighbour of another owner counts once for that pair. */
+function recountEdges(t: number, prev: number, o: number){
+  const M=W.M, C=W.contact, x=t%TW;
+  const edge=(k: number) => {
+    if (!isLand[k]) return; const n=owner[k];
+    if (n!==prev){ C[prev*M+n]--; C[n*M+prev]--; }
+    if (n!==o){ C[o*M+n]++; C[n*M+o]++; }
+  };
+  if (!isLand[t]) return;
+  if (x>0) edge(t-1); if (x<TW-1) edge(t+1); if (t>=TW) edge(t-TW); if (t<NT-TW) edge(t+TW);
+}
 export function setOwner(t: number, o: number){
   const prev=owner[t]; if (prev===o) return;
   if (occ[t]){ W.occCount[prev*W.M+occ[t]]--; occ[t]=0; }   // changing hands ends any occupation
+  recountEdges(t,prev,o);
   owner[t]=o;
-  if (prev) W.nations[prev].tiles--;
-  const x=t%TW, y=(t/TW)|0;
-  if (o){ const n=W.nations[o]; n.tiles++; if (x<n.x0) n.x0=x; if (x>n.x1) n.x1=x; if (y<n.y0) n.y0=y; if (y>n.y1) n.y1=y;
-    if (resLeft[t]>0) n.resHere[GOOD_OF[resType[t]]]++; }   // (the census counts exactly, once a second)
+  const x=t%TW, y=(t/TW)|0, g=resLeft[t]>0 ? GOOD_OF[resType[t]] : -1;
+  if (prev){ const P=W.nations[prev]; P.tiles--; P.sumX-=x; P.sumY-=y; if (g>=0) P.resHere[g]--; }
+  if (o){ const n=W.nations[o]; n.tiles++; n.sumX+=x; n.sumY+=y; if (x<n.x0) n.x0=x; if (x>n.x1) n.x1=x; if (y<n.y0) n.y0=y; if (y>n.y1) n.y1=y;
+    if (g>=0){ n.resHere[g]++; if (n.fresh.length<4000) n.fresh.push(t); } }   // (fresh: villagers resting at home are woken for it)   // (contacts, sums and what is left to gather are kept exact as tiles change: no scan of the map)
   on.tileChanged(t,o);
   if ((x&3)===2 && (y&3)===2){
     const q=(y>>2)*PW+(x>>2), ty=pType[q];

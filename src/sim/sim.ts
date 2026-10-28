@@ -2,7 +2,7 @@
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
 import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
 import { mulberry32 } from '../core/rng';
-import { W, resizeGrid, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
+import { W, resizeGrid, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pIn, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
 import { genMap } from './mapgen';
 import { genRealMap, capitalsOn, REAL_MAPS } from './realmap';
@@ -26,7 +26,7 @@ function blankNation(id: number, name: string, hex: string, isPlayer: boolean, c
     gold:0, income:0, strength:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
     plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, beds:0,
     sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0, nextWave:0, hungry:0, x0:1e9, y0:1e9, x1:-1, y1:-1, wallR:0, nextWall:0, unpaid:0,
-    soldierShare:0, humanProg:0, villagers:0, soldiers:0, militia:0, called:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], resHere:[0,0,0], abandoned:0, surplusTicks:0,
+    soldierShare:0, humanProg:0, villagers:0, soldiers:0, militia:0, called:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], resHere:[0,0,0], fresh:[], abandoned:0, surplusTicks:0,
     study:R_HOUSING, tier:[1,1,1,1,1,1], xp:[0,0,0,0,0,0], invest:0.5, gain:new Array(180).fill(0), spend:new Array(180).fill(0) };
 }
 function makeNation(id: number, k: Country, isPlayer: boolean): Nation {
@@ -83,7 +83,7 @@ export function newWorld(seed: number, map='gen'){
   else { resizeGrid(VIEWS[W.map].w,VIEWS[W.map].h); genRealMap(W.map,7); }   // a real map's ground is the same every match
   genResources();
   owner.fill(0); occ.fill(0); road.fill(0); frontMark.fill(0);
-  pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0); pPrio.fill(0); pAband.fill(0); pHp.fill(0); pTier.fill(0); pSpan.fill(0); pArmor[2].fill(0); pArmor[3].fill(0); W.prioSeq=0;
+  pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0); pPrio.fill(0); pAband.fill(0); pIn.fill(0); pHp.fill(0); pTier.fill(0); pSpan.fill(0); pArmor[2].fill(0); pArmor[3].fill(0); W.prioSeq=0;
   W.burning=[]; W.attacks=[]; W.attackSeq=0; W.commands.length=0;
   W.nations=[blankNation(0,'Unclaimed land','#cfc6a8',false)];
   W.M=1; W.contact=new Int32Array(1);
@@ -127,7 +127,7 @@ export function startMatch(t: number, rivals: number | string[], me?: string){
     }
     if (!placed){ n.alive=false; }
   }
-  census();
+  scanContacts(true); census();
   return true;
 }
 
@@ -178,7 +178,7 @@ function startReal(b: [number, number], rivals: number | string[], me?: string){
   spawnNation(meN,b[0],b[1]);
   // each at its capital, or as near it as there is room (close capitals push each other apart)
   chosen.forEach((c,i) => { const n=N[i+2], blk=findBlock(c.tile%TW,(c.tile/TW)|0,6); if (blk) spawnNation(n,blk[0],blk[1]); else n.alive=false; });
-  census();
+  scanContacts(true); census();
   return true;
 }
 
@@ -197,7 +197,6 @@ function applyCommand(c: Command){
     // gold settles unclaimed land; another kingdom's land is taken only by war (sim/war.ts)
     const n=W.nations[c.nation]; if (!n || !n.alive || c.tile<0 || !isLand[c.tile]) return;
     const o=owner[c.tile]; if (o!==0) return;
-    scanContacts(false);
     if (!W.contact[c.nation*W.M+o]) return;
     const send=n.gold*c.ratio;
     if (send<2) return;
@@ -212,7 +211,6 @@ function applyCommand(c: Command){
   } else if (c.type==='ally'){
     proposeAlliance(c.nation,c.target);
   } else if (c.type==='war'){
-    scanContacts(false);
     declare(c.nation,c.target,c.raid,c.units ?? c.soldiers ?? 0,c.militia ?? 0);
   } else if (c.type==='intercept'){
     intercept(c.nation,c.campaign,c.units ?? c.soldiers ?? 0);

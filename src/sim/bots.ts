@@ -214,6 +214,19 @@ const defence = (D: Nation) => 0.7*D.soldiers + 2*D.towers + 2;
     stronger army next door; many at war, and nearly everyone when an enemy far outnumbers it. */
 function armyShare(n: Nation){ const want=wantedShare(n); return Math.min(want, affordable(n, want>=0.45)); }
 const WAR_CHEST = 90;   // seconds a bot at war spreads its treasury over, paying wages beyond its tax
+const WAR_PLAN = 120;   // seconds of a war's extra wages a bot saves up before it starts one
+const PLAN_AHEAD = 60;  // seconds before it means to go to war that a bot starts saving (settling less)
+/** The treasury a bot wants before it starts a war: two minutes of what an army for it would cost
+    beyond its tax (60% of its people under arms, and the tax of the villagers who take them up lost). */
+export function warChest(n: Nation){
+  const people=n.villagers+n.soldiers; if (!people) return 0;
+  const armed=Math.max(n.soldiers, 0.6*people), recruits=armed-n.soldiers;
+  const tax=grossIncome(n)*Math.max(0,1-recruits/Math.max(1,n.villagers));
+  return Math.max(0,WAGE*armed-tax)*WAR_PLAN;
+}
+/** Is bot n saving up for a war it means to start soon? Only with an army ready to send, and
+    everyone housed: room for its people comes first. */
+const saving = (n: Nation) => W.simTime>=n.nextWar-PLAN_AHEAD && n.homeless<=2 && !beggarProblem(n) && ready(n)>=5;
 /** The share of its people a bot can pay as soldiers: wages up to 85% of its tax (more while its
     treasury is full, none to spare while it is empty), and at war the treasury too, spent down
     over a minute and a half (tax alone keeps only about a third of a kingdom under arms). */
@@ -347,6 +360,7 @@ function botWar(n: Nation){
   if (busy){ n.nextWar=Math.max(n.nextWar, W.simTime+(desperate ? 20 : 50+(0.8-n.attackAt)*150)); return; }
   if (W.simTime<n.nextWar || dug) return;   // badly outnumbered: stay home and hold
   const pool=ready(n); if (pool<5) return;
+  if (n.gold<warChest(n)*(desperate ? 0.5 : 1)) return;   // not before there is money to pay for it
   const need=(1.4-(n.attackAt-0.5)*2)*(desperate ? 0.6 : 1);   // 1.4 for the cautious, 0.8 for the bold
   // a kingdom two armies are already on is left to them
   const beset=new Uint8Array(M); for (const c of W.campaigns) if (c.hostile && c.phase<2) beset[c.d]++;
@@ -376,6 +390,7 @@ export function botThink(n: Nation){
   let active=0; for (const A of W.attacks) if (!A.done && A.att===n.id) active++;
   if (active>=2) return;
   // personality: how much gold it lets pile up before settling more land (little, with beggars to find room for)
-  const g=n.gold, expandAt=hungry ? 20 : 20+n.expandAt*200;
+  // (saving for a war: only what is beyond the war chest)
+  const g=n.gold-(saving(n) ? warChest(n) : 0), expandAt=hungry ? 20 : 20+n.expandAt*200;
   if (contact[b]>0 && g>expandAt) launch(n.id,0,g*(hungry ? Math.max(n.ratio,0.6) : n.ratio));
 }

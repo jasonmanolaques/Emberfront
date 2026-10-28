@@ -36,7 +36,7 @@
    reports ready to counter-attack. Guards stay by their watchtowers, and the castle shoots too.
    Everyone heals slowly. Allies open their land to each other's armies. */
 import { TW, TH, NT, NP, PW, PH, TICK, B_CASTLE, B_CPART, B_TOWER, B_HOUSE, B_FARM, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_MINE, B_RESEARCH, B_GUILD, isStructure } from '../core/constants';
-import { W, owner, occ, isLand, pType, pOwner, pBurn, pMain, pHp, pPrio, pCenter, pTier, type Campaign, type Human, type Nation } from './state';
+import { W, owner, occ, isLand, pType, pOwner, pBurn, pMain, pHp, pPrio, pCenter, pTier, pIn, type Campaign, type Human, type Nation } from './state';
 import { on } from './events';
 import { setOwner } from './territory';
 import { ignite, dims } from './buildings';
@@ -1376,7 +1376,14 @@ function targetable(q: number, c: Campaign){
   const ty=pType[q];
   if (c.target>=0 || pOwner[q]!==c.d || pBurn[q]>0) return false;
   if (ty===B_CASTLE) return !c.raid;
-  return isStructure(ty) && ty!==B_PART && (c.raid || ty===B_TOWER || occ[pCenter[q]]===c.a);
+  return isStructure(ty) && ty!==B_PART && (c.raid || ty===B_TOWER || occ[pCenter[q]]===c.a || (ty===B_HOUSE && pIn[q]>0));   // (a house with people resting inside draws them in)
+}
+/** House q is broken open: the people resting inside come out of the rubble and, with the enemy
+    upon them, fight. */
+function evict(q: number){
+  const x=(q%PW)*8+4, y=((q/PW)|0)*8+5, o=pOwner[q];
+  for (const h of W.humans) if (h.rest===q){ release(h); h.x=x+W.prand()*2-1; h.y=y; backToRoam(h); }
+  if (o) raiseMob(o,x,y,6);
 }
 function pickBuilding(h: Human, c: Campaign){
   if (c.target>=0) return -1;
@@ -1429,6 +1436,7 @@ function hitBuilding(h: Human, c: Campaign){
   if (pHp[q]<bldHp(q)){ if (wear(q)!==was) on.plotChanged(q); return; }   // it looks the worse for it
   h.aim=-1;
   if (ty===B_CASTLE){ annex(c.d,c.a); return; }
+  if (ty===B_HOUSE && pIn[q]) evict(q);
   ignite(q);
   if (c.raid) h.loot=true;   // plunder: one bag each
 }

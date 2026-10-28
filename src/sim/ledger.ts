@@ -3,7 +3,8 @@
    every good its builders and smiths spend is written into a bucket for the second it happened in;
    sixty buckets make a running minute. The city investment slider says what share of the goods
    coming in the builders may spend: a builder only starts on another improvement while what has
-   been spent this past minute, plus its cost, stays within that share of what came in. */
+   been spent this past minute, plus its cost, stays within that share of what came in. At 100% the
+   city is in full investment: the builders improve non-stop with anything in the stockpile. */
 import { W, type Nation } from './state';
 
 let lastSec = -1;
@@ -23,8 +24,10 @@ export function perMinute(n: Nation){
   for (let i=0;i<180;i++){ gain[i%3]+=n.gain[i]; spend[i%3]+=n.spend[i]; }
   return { gain, spend };
 }
-/** May the builders spend `cost` ([wood, stone, copper]) now, within the city investment? */
+/** May the builders spend `cost` ([wood, stone, copper]) now, within the city investment? At 100%,
+    full investment: whatever is in the stockpile, whatever comes in. */
 export function mayInvest(n: Nation, cost: number[]){
+  if (n.invest>=1) return true;
   const { gain, spend }=perMinute(n);
   return cost.every((c,g) => !c || spend[g]+c<=n.invest*gain[g]+1e-9);
 }

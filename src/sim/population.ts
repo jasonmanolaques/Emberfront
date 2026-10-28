@@ -12,6 +12,12 @@
    kingdom's workers: each one picks a resource, walks to it, harvests it, carries the load to the
    capital and stores it, then thinks about the next job. Houses nobody needs for a while stand
    empty, the outermost first, and fill again from the centre as the kingdom grows.
+   A villager with a home and nothing to gather goes home to rest: into the nearest house with room (one a bed),
+   out of sight, smoke rising from its chimney. Resting, he looks for work (things to gather, houses
+   to build) every 10 to 12 seconds,
+   and new land with something on it wakes the villagers resting nearest it, one for each thing to
+   gather. An enemy who finds a house with people inside breaks it open: they come out of the
+   rubble and fight.
    The people who have lived in the kingdom longest get the houses. A villager left homeless for a
    minute turns beggar: he crawls about town, does no work, pays no tax and can't be recruited,
    until a home comes free for him.
@@ -25,11 +31,11 @@
    to the barracks that needs it most nearly (sim/army.ts says which armour each one wants).
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, until the kingdom sends them to war (sim/war.ts). */
-import { TW, TH, PW, TICK, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY } from '../core/constants';
-import { W, owner, occ, pType, pOwner, pBurn, pPrio, pAband, pCenter, pTimer, pTier, pHp, pArmor, resType, resBusy, type Human, type Nation } from './state';
+import { TW, TH, PW, PH, TICK, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY } from '../core/constants';
+import { W, owner, occ, pType, pOwner, pBurn, pPrio, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, resType, type Human, type Nation } from './state';
 import { homeScore, startSite, cancelSite, finishHouse } from './buildings';
 import { on } from './events';
-import { GOOD_OF, YIELD, WORK_TICKS, available, harvest } from './resources';
+import { GOOD_OF, YIELD, WORK_TICKS, available, harvest, claim, unclaim, freeIn } from './resources';
 import { updateWar, reinforce, marchStep, guardStep, alarmStep, mayStand, spread } from './war';
 import { HOUSE_BEDS, R_HOUSING, R_TOWERS, MAX_TIER } from './research';
 import { gained, spent, mayInvest } from './ledger';
@@ -55,7 +61,9 @@ export const TASK_ROAM = 0,      // between jobs: villagers think or stroll betw
              TASK_SMITH_FETCH = 11,  // blacksmiths: walking to the castle for copper
              TASK_SMITH_BACK = 12,   // carrying it to the smithy
              TASK_FORGE = 13,        // forging armour
-             TASK_SMITH_DELIVER = 14;// carrying the armour to a barracks
+             TASK_SMITH_DELIVER = 14,// carrying the armour to a barracks
+             TASK_REST_GO = 15,      // villagers with nothing to do: walking home to rest
+             TASK_REST = 16;         // resting inside a house, out of sight
 export const HUMAN_EVERY = 200;  // progress per new human: 200 ticks (20 s), each farm adds 5% speed
 export const FARM_BONUS = 0.05;
 const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 s)
@@ -66,6 +74,9 @@ export const REGEN = 0.01;        // hit points everyone heals a tick (0.1 a sec
 export const GARRISON = 5;       // soldiers a watchtower calls for
 export const TOWER_RANGE = 32;   // pixels a watchtower can shoot
 const SEARCH_R = 40;             // tiles a villager looks around for work
+const LOOK_TICKS = 100;          // a villager with nothing to do looks for work again every 10 to 12 seconds
+const WAKE_PER_TICK = 8;         // villagers a kingdom wakes a tick for land newly gained
+const lookAgain = () => (LOOK_TICKS+W.prand()*20)|0;
 export const BUILD_TICKS = 40;   // ticks to put up a house (4 s)
 export const BEG_TICKS = 600;    // ticks homeless before a villager turns beggar (60 s)
 export const STARVE_TICKS = 900; // ticks homeless before a beggar dies of want (90 s)
@@ -80,7 +91,7 @@ const MANOR_SHARE = 0.4;         // with manors allowed, the innermost 40% of ho
 /** Switching role: walking to a barracks (or the castle) for it, or inside training. */
 export const switching = (h: Human) => h.task===TASK_TO_TRAIN || h.task===TASK_INSIDE;
 /** Out of sight inside the capital or a barracks. */
-export const indoors = (h: Human) => h.task===TASK_INSIDE || h.task===TASK_STORE;
+export const indoors = (h: Human) => h.task===TASK_INSIDE || h.task===TASK_STORE || h.task===TASK_REST;
 
 /** Pixel position just outside the capital's door. */
 export function doorOf(n: Nation): [number, number] { const q=n.capPlot; return [(q%PW)*8+8, ((q/PW)|0)*8+15]; }
@@ -224,20 +235,24 @@ function nearestResources(h: Human){
   const found: [number, number][][]=[[],[],[]];   // per good: [distance, tile], nearest first
   const here=W.nations[h.o].resHere;   // a good the kingdom has none of left needn't be looked for
   const far=(g: number)=>!here[g] ? -1 : found[g].length<CANDIDATES ? Infinity : found[g][CANDIDATES-1][0];
-  const cx=(h.x/2)|0, cy=(h.y/2)|0;
-  for (let r=0;r<=SEARCH_R;r++){
-    // a tile on ring r is at least 2r pixels away: stop once every good's list is closer than that
-    if (far(0)<2*r && far(1)<2*r && far(2)<2*r) break;
+  // ring by ring of building plots round his own (4x4 tiles each), looking only inside plots with
+  // something free in them
+  const px=(h.x/8)|0, py=(h.y/8)|0, R=SEARCH_R>>2;
+  for (let r=0;r<=R;r++){
+    // a tile in plot ring r is at least 8(r-1) pixels away: stop once every good's list is closer than that
+    if (far(0)<8*(r-1) && far(1)<8*(r-1) && far(2)<8*(r-1)) break;
     for (let dy=-r;dy<=r;dy++){
-      const y=cy+dy; if (y<0||y>=TH) continue;
+      const qy=py+dy; if (qy<0||qy>=PH) continue;
       const step = (dy===-r||dy===r) ? 1 : 2*r;
       for (let dx=-r;dx<=r;dx+=step || 1){
-        const x=cx+dx; if (x<0||x>=TW) continue;
-        const t=y*TW+x; if (owner[t]!==h.o || occ[t] || !available(t)) continue;
-        const g=GOOD_OF[resType[t]], [sx,sy]=workSpot(t), d=Math.sqrt((sx-h.x)**2+(sy-h.y)**2), L=found[g];
-        if (L.length===CANDIDATES && (d>L[CANDIDATES-1][0] || (d===L[CANDIDATES-1][0] && t>L[CANDIDATES-1][1]))) continue;
-        let i=L.length; while (i>0 && (L[i-1][0]>d || (L[i-1][0]===d && L[i-1][1]>t))) i--;
-        L.splice(i,0,[d,t]); if (L.length>CANDIDATES) L.pop();
+        const qx=px+dx; if (qx<0||qx>=PW || !freeIn[qy*PW+qx]) continue;
+        for (let k=0;k<16;k++){
+          const t=(qy*4+(k>>2))*TW+qx*4+(k&3); if (owner[t]!==h.o || occ[t] || !available(t)) continue;
+          const g=GOOD_OF[resType[t]], [sx,sy]=workSpot(t), d=Math.sqrt((sx-h.x)**2+(sy-h.y)**2), L=found[g];
+          if (L.length===CANDIDATES && (d>L[CANDIDATES-1][0] || (d===L[CANDIDATES-1][0] && t>L[CANDIDATES-1][1]))) continue;
+          let i=L.length; while (i>0 && (L[i-1][0]>d || (L[i-1][0]===d && L[i-1][1]>t))) i--;
+          L.splice(i,0,[d,t]); if (L.length>CANDIDATES) L.pop();
+        }
       }
     }
   }
@@ -245,7 +260,8 @@ function nearestResources(h: Human){
 }
 
 export function release(h: Human){
-  if (h.res>=0){ resBusy[h.res]=0; h.res=-1; }
+  if (h.res>=0){ unclaim(h.res); h.res=-1; }
+  unrest(h);
   if (h.home>=0){ cancelSite(h.home); h.home=-1; }   // an unfinished house is given up
   h.fix=-1;
 }
@@ -283,30 +299,89 @@ function goBuildHome(h: Human){
 
 /** A villager between jobs decides what to do next: first a roof over everyone's head, then work. */
 function think(h: Human){
-  const n=W.nations[h.o];
+  const n=W.nations[h.o], was=h.rest;
   release(h); h.task=TASK_ROAM;
   if (h.beggar){ roamTarget(h); return; }   // beggars just drift about town
   if (h.work>=0 && h.kind===H_VILLAGER){ if (!(pType[h.work]===B_SMITHY ? goForge(h) : goImprove(h))) roamTarget(h); return; }   // builders and smiths work, or wait at their workshop
   if (h.kind===H_VILLAGER && needsHome(n) && goBuildHome(h)) return;
   if (h.kind!==H_VILLAGER || n.capTile<0){ roamTarget(h); return; }   // nowhere to store anything without a capital
-  const found=nearestResources(h), have=n.stock.map((s,g)=>s+(pending[h.o]?.[g] ?? 0));
+  const found=freeWork(n) ? nearestResources(h) : [[],[],[]], have=n.stock.map((s,g)=>s+(pending[h.o]?.[g] ?? 0));
   for (let tries=0;tries<3*CANDIDATES;tries++){
     const g=chooseGood(have,found.map(L=>L.length ? L[0][0] : Infinity)); if (g<0) break;
-    const t=found[g].shift()![1], [sx,sy]=workSpot(t);
-    // the load has to come home too, so check the way back to the gate as well
-    const [dx,dy]=doorOf(n), back: Human={ ...h, x:sx, y:sy, tx:dx, ty:dy, path:[], task:TASK_HAUL };
-    h.tx=sx; h.ty=sy; h.task=TASK_GATHER;
-    if (route(back,true) && route(h,true)){ h.res=t; resBusy[t]=1; h.wait=0; return; }
+    if (gatherAt(h,found[g].shift()![1])) return;
     // can't get there and back without leaving our land or climbing the castle: try the next spot
   }
-  h.task=TASK_ROAM; roamTarget(h);
-  if (!found[0].length && !found[1].length && !found[2].length) h.wait=Math.max(h.wait,(4+W.prand()*4)/TICK);   // nothing to gather in reach: idle a while before looking again
+  h.task=TASK_ROAM;
+  if (h.housed && goRest(h,was)) return;   // nothing to gather in reach: home to rest (if he has one)
+  roamTarget(h);
+  h.wait=Math.max(h.wait,lookAgain());   // (nowhere to rest: idle a while before looking again)
+}
+/** Sends villager h to gather at tile t, if he can get there and back home with the load. */
+function gatherAt(h: Human, t: number){
+  const n=W.nations[h.o], [sx,sy]=workSpot(t), [dx,dy]=doorOf(n), was=[h.task,h.tx,h.ty] as const;
+  // the load has to come home too, so check the way back to the gate as well
+  const back: Human={ ...h, x:sx, y:sy, tx:dx, ty:dy, path:[], task:TASK_HAUL };
+  h.tx=sx; h.ty=sy; h.task=TASK_GATHER;
+  if (route(back,true) && route(h,true)){ h.res=t; claim(t); h.wait=0; return true; }
+  [h.task,h.tx,h.ty]=was; h.path=[];
+  return false;
+}
+/** Is there anything on n's land nobody has claimed yet? (A search can still find it out of reach.) */
+const freeWork = (n: Nation) => n.resHere[0]+n.resHere[1]+n.resHere[2]>(claimed[n.id] ?? 0);
+const claimed: number[]=[];   // resources each kingdom's villagers have claimed, counted every tick
+
+/** Can people of kingdom o rest in plot q: a house of theirs, standing and lived in? */
+const restsIn = (q: number, o: number) => q>=0 && pType[q]===B_HOUSE && pOwner[q]===o && pBurn[q]<=0 && !pAband[q];
+const room = (q: number) => HOUSE_BEDS[pTier[q]]-pIn[q];
+/** No longer resting (or on the way to): his place in the house is free. */
+function unrest(h: Human){ if (h.rest>=0){ pIn[h.rest]--; h.rest=-1; } }
+/** Villager h goes home to rest: into house `at` if he stands at its door and there is room,
+    else the nearest house with room. False if there is none (or no way there). */
+function goRest(h: Human, at=-1){
+  const n=W.nations[h.o];
+  let best=-1;
+  if (restsIn(at,h.o) && room(at)>0){ const [x,y]=frontOf(at); if ((x-h.x)**2+(y-h.y)**2<1) best=at; }
+  if (best<0){
+    let bd=Infinity;
+    for (const q of n.blds){
+      if (!restsIn(q,h.o) || room(q)<=0) continue;
+      const [x,y]=frontOf(q), d=(x-h.x)**2+(y-h.y)**2;
+      if (d<bd){ bd=d; best=q; }
+    }
+  }
+  if (best<0) return false;
+  const [x,y]=frontOf(best);
+  h.rest=best; pIn[best]++; h.tx=x; h.ty=y; h.wait=0;
+  if ((x-h.x)**2+(y-h.y)**2<1){ h.x=x; h.y=y; h.task=TASK_REST; h.wait=lookAgain(); return true; }   // already there
+  h.task=TASK_REST_GO;
+  if (route(h,true)) return true;
+  unrest(h); h.task=TASK_ROAM; h.path=[];
+  return false;
+}
+/** Land newly gained with something on it: for each thing, the villager resting nearest it (in
+    reach) gets up and goes for it, a few a tick. */
+function wake(n: Nation, mine: Human[]){
+  const resting=mine.filter(h => h.task===TASK_REST);
+  let k=0, i=0;
+  for (; i<n.fresh.length && k<WAKE_PER_TICK && resting.length; i++){
+    const t=n.fresh[i]; if (owner[t]!==n.id || !available(t)) continue;
+    const [sx,sy]=workSpot(t);
+    let bi=-1, bd=(SEARCH_R*2)**2;
+    for (let j=0;j<resting.length;j++){ const h=resting[j], d=(h.x-sx)**2+(h.y-sy)**2; if (d<bd){ bd=d; bi=j; } }
+    if (bi<0) continue;   // nobody resting near enough
+    const h=resting[bi], q=h.rest; k++;
+    unrest(h);
+    if (gatherAt(h,t)){ resting.splice(bi,1); continue; }
+    h.rest=q; pIn[q]++; h.task=TASK_REST;   // no way there: back to his rest
+  }
+  if (!resting.length) i=n.fresh.length;   // nobody left resting: those outside find the rest themselves
+  n.fresh.splice(0,i);
 }
 
 /** A new person of kingdom n standing at (x,y), with nothing to do yet. */
 export function makeHuman(n: Nation, kind: number, x: number, y: number): Human {
   return { id:++W.humanSeq, o:n.id, kind, militia:false, to:0, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+W.prand()*2,
-    res:-1, carry:-1, amount:0, hp:kind===H_SOLDIER?SOLDIER_HP[1]:VILLAGER_HP, post:-1, site:-1, home:-1, housed:false, homeless:0, beggar:false,
+    res:-1, carry:-1, amount:0, hp:kind===H_SOLDIER?SOLDIER_HP[1]:VILLAGER_HP, post:-1, site:-1, home:-1, rest:-1, housed:false, homeless:0, beggar:false,
     war:-1, loot:false, foe:-1, aim:-1, cool:0, slot:0, brave:-1, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
     tier:kind===H_SOLDIER?1:0, base:-1, load:0, make:0, dest:-1 };
 }
@@ -503,7 +578,7 @@ export function improvements(n: Nation){
   const houses=n.blds.filter(q => standing(q,B_HOUSE,n.id) && !pAband[q] && !occ[pCenter[q]]);
   const d=new Map(houses.map(q => [q,dist(q)*jitter(q)]));
   houses.sort((a,b)=>d.get(a)!-d.get(b)! || a-b);
-  const manors = top>=3 ? Math.ceil(houses.length*MANOR_SHARE) : 0;
+  const manors = top>=3 ? Math.ceil(houses.length*(n.invest>=1 ? 1 : MANOR_SHARE)) : 0;   // (full investment: every house a manor in the end)
   return [...towers, ...houses.filter((q,i) => pTier[q] < (i<manors ? 3 : 2))];
 }
 /** A builder sets off to improve the next building on the list that the kingdom can pay for, and
@@ -628,6 +703,12 @@ function step(h: Human){
     }
     return;
   }
+  if (h.task===TASK_REST){
+    if (!restsIn(h.rest,h.o) || !h.housed){ think(h); return; }   // the house is gone or lost, or he has lost his home: out he comes
+    if (--h.wait<=0){ h.wait=lookAgain(); if (freeWork(n) || needsHome(n)) think(h); }   // anything to gather, or houses to build? (else he rests on)
+    return;
+  }
+  if (h.task===TASK_REST_GO && !restsIn(h.rest,h.o)){ think(h); return; }
   if (h.kind===H_SOLDIER ? guardStep(h) : alarmStep(h)) return;   // at war: soldiers defend, villagers run or fight
   if (h.task===TASK_STORE){ if (--h.wait<=0){ store(h); backToRoam(h); } return; }
   if (h.task===TASK_HARVEST){
@@ -677,6 +758,7 @@ function step(h: Human){
       think(h); return;
     }
     if (h.task===TASK_HAUL){ h.task=TASK_STORE; h.x=h.tx; h.y=h.ty; h.wait=STORE_TICKS; return; }
+    if (h.task===TASK_REST_GO){ h.task=TASK_REST; h.wait=lookAgain(); return; }   // home: in he goes
     think(h); return;
   }
   const sp=h.carry>=0 ? h.sp*0.85 : pace(h);   // a little slower under a load
@@ -702,11 +784,15 @@ export function updatePopulation(){
     const n=N[i], mine=groups[i];
     // goods already promised to this kingdom, so villagers spread over what it lacks
     const p=pending[i] ??= [0,0,0]; p[0]=p[1]=p[2]=0;
+    let busy=0;
     for (const h of mine){
+      if (h.res>=0) busy++;
       if (h.carry>=0) p[h.carry]+=h.amount;
-      else if (h.res>=0) p[GOOD_OF[resType[h.res]]]+=YIELD[resType[h.res]];
+      else if (h.res>=0 && resType[h.res]) p[GOOD_OF[resType[h.res]]]+=YIELD[resType[h.res]];
     }
+    claimed[i]=busy;
     if (!n.alive) continue;
+    if (n.fresh.length) wake(n,mine);
     const k=housing[i] ??= { people:0, builders:0 };
     k.people=mine.length; k.builders=0; for (const h of mine) if (h.home>=0) k.builders++;
     if (W.tickN%10===3) upkeepHouses(n, mine.length);

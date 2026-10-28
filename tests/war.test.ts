@@ -2,19 +2,19 @@
 // Most of these play on a flat all-grass map, so distances and borders are predictable.
 import { describe, it, expect } from 'vitest';
 import { TW, TH, NT, NP, PW, WAGE, T_GRASS, B_HOUSE, B_FARM, B_TOWER, B_BARRACKS, B_RUINS } from '../src/core/constants';
-import { W, owner, occ, isLand, terr, resType, resLeft, pBuild, pType, pOwner, pBurn, pCenter, pHp, type Human, type Nation } from '../src/sim/state';
+import { W, owner, occ, isLand, terr, resType, resLeft, pBuild, pType, pOwner, pBurn, pCenter, pHp, pIn, type Human, type Nation } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick, grossIncome } from '../src/sim/sim';
 import { listen, on } from '../src/sim/events';
 import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
 import { build, plotProblem, structureOf, togglePriority, finishHouse } from '../src/sim/buildings';
-import { H_SOLDIER, H_VILLAGER, TASK_STORE, TASK_TO_TRAIN, TASK_INSIDE, MILITIA_HP, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, switching, pace, maxHp } from '../src/sim/population';
+import { H_SOLDIER, H_VILLAGER, TASK_REST, TASK_STORE, TASK_TO_TRAIN, TASK_INSIDE, MILITIA_HP, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, frontOf, switching, pace, maxHp } from '../src/sim/population';
 import { UNIT_SIZE, buildUnits, station, unitAt, SOLDIER_DMG } from '../src/sim/army';
 import { wallOf, walledFor } from '../src/sim/defense';
 import { allied, atWar, available, ready, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
   RANKS, rankFor, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, reservesOf, reservesProblem, menOn, M_MARCH, M_HOLD, M_ASSAULT, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
 import { MIN_GAP, RANK_GAP, A_OFF, holds, freeOf, underCastle } from '../src/sim/front';
-import { beggarProblem, stuck } from '../src/sim/bots';
+import { beggarProblem, stuck, warChest } from '../src/sim/bots';
 import { MILITIA_HIT } from '../src/sim/army';
 import { R_HOUSING } from '../src/sim/research';
 
@@ -1056,6 +1056,37 @@ describe('crisis', () => {
     const now=lineAt(b), mid=now.slice().sort((p,q) => p-q)[now.length>>1];
     expect(now.filter(x => Math.abs(x-mid)<=1).length).toBeGreaterThan(now.length*0.85);   // a straight line (bar where 1's men still stand their ground)
     expect(mid).toBeLessThan(Math.min(...line));   // and back past where the border was
+  });
+});
+
+describe('people resting at home in a war', () => {
+  it('draw raiders to their house, who break it open: they come out of the rubble and fight', () => {
+    world(1); quiet();
+    const q=place(N(2),B_HOUSE); N(2).humanProg=-1e9;
+    const [x,y]=frontOf(q), v=makeHuman(N(2),H_VILLAGER,x,y);
+    W.humans.push(v); v.rest=q; pIn[q]=1; v.task=TASK_REST; v.wait=1e9; run(2);
+    expect(v.task).toBe(TASK_REST);
+    soldiers(N(1),5); run(2);
+    expect(declare(1,2,true,5)).toBe(true);
+    until(() => { if (W.campaigns.some(c => c.a===1 && c.raid && c.mode===M_HOLD && !c.go)) queueCommand({ type:'offensive', nation:1, target:2, go:true }); return v.task!==TASK_REST; }, 4000);
+    expect(pBurn[q]>0 || pType[q]!==B_HOUSE).toBe(true);   // the house is broken
+    expect(pIn[q]).toBe(0);
+    expect(Math.hypot(v.x-((q%PW)*8+4), v.y-((q/PW|0)*8+5))).toBeLessThan(3);   // out of the rubble
+    expect(v.brave).toBe(MOB);   // and he fights
+  });
+});
+
+describe('bots going to war', () => {
+  it('save a war chest first: no war while the treasury could not pay two minutes of an army', () => {
+    world(1); quiet(); paintToward(1,2);
+    const B=N(2); soldiers(B,10); run(2);
+    expect(warChest(B)).toBeGreaterThan(100);
+    B.gold=0; B.nextWar=0; B.humanProg=-1e9;
+    for (let i=0;i<60;i++){ B.nextThink=0; B.soldierShare=1; B.gold=Math.min(B.gold,0); tick(); }   // (keeping its army)
+    expect(W.campaigns.some(c => c.a===2 && c.hostile)).toBe(false);
+    B.gold=warChest(B)+100;
+    for (let i=0;i<60 && !W.campaigns.some(c => c.a===2 && c.hostile);i++){ B.nextThink=0; B.soldierShare=1; tick(); }
+    expect(W.campaigns.some(c => c.a===2 && c.hostile)).toBe(true);
   });
 });
 

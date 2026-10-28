@@ -6,7 +6,9 @@ import { on } from './events';
 import { isBld, joinGatherers } from './buildings';
 import { GOOD_OF } from './resources';
 
-/** Counts shared border edges between every pair of nations into W.contact[a*M+b]. */
+/** Counts shared border edges between every pair of nations into W.contact[a*M+b], each kingdom's
+    tile sums and what is left to gather on its land, from scratch (at the start of a match: from
+    then on setOwner and harvest keep them up to date). */
 export function scanContacts(withSums: boolean){
   const N=W.nations, M=W.M, contact=W.contact, land=isLand, own=owner, tw=TW, th=TH;   // (locals: a hot loop over the whole map)
   contact.fill(0);
@@ -26,7 +28,6 @@ export function scanContacts(withSums: boolean){
 }
 export function census(){
   const N=W.nations;
-  scanContacts(true);
   for (const n of N){ n.plots.length=0; n.blds.length=0; n.houses=n.farms=n.towers=n.mines=n.barracks=n.minters=n.plantations=n.quarries=n.copperMines=n.labs=n.guilds=n.smithies=n.beds=0; n.bCount=0; }
   for (let q=0;q<NP;q++){
     const o=owner[pCenter[q]]; if (o && pBuild[q] && !occ[pCenter[q]]) N[o].plots.push(q);   // nobody builds on occupied ground

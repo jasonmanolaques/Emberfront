@@ -2,7 +2,7 @@
    Cosmetic only. These use Math.random freely because they never feed back into the simulation.
    Particles live in render pixels; shots, hits and floats keep the simulation's pixels they came in. */
 import { TW, NT, PW, PH, PS, RS, K, B_HOUSE } from '../core/constants';
-import { W, isLand, pType, pBurn, pVar, pAband, pTier } from '../sim/state';
+import { W, isLand, pType, pBurn, pVar, pIn, pTier } from '../sim/state';
 import { chimneyOf } from './sprites';
 
 export const FL=4096;
@@ -39,7 +39,7 @@ export function updateEffects(dt: number, vx0: number, vy0: number, vx1: number,
   if (zs>=2){
     const qx0=Math.max(0,Math.floor(vx0/PS)), qy0=Math.max(0,Math.floor(vy0/PS)), qx1=Math.min(PW-1,Math.floor(vx1/PS)), qy1=Math.min(PH-1,Math.floor(vy1/PS));
     for (let y=qy0;y<=qy1;y++) for (let x=qx0;x<=qx1;x++){
-      const q=y*PW+x; if (pType[q]!==B_HOUSE || pBurn[q]>0 || pAband[q]) continue;   // empty houses are cold
+      const q=y*PW+x; if (pType[q]!==B_HOUSE || pBurn[q]>0 || !pIn[q]) continue;   // smoke only where somebody rests inside
       if (Math.random()<0.35*dt){ const c=chimneyOf(pTier[q],pVar[q]); emitSmoke(x*PS+c[0]+0.5, y*PS+c[1], 2); }
     }
   }
