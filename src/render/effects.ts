@@ -81,7 +81,8 @@ export const floats: Float[]=[];
 export const glints = { x: new Float32Array(0), y: new Float32Array(0), ph: new Float32Array(0) };
 function initGlints(){
   const sx: number[]=[], sy: number[]=[], sp: number[]=[];
-  for (let i=0;i<1600 && sx.length<1000;i++){ const t=(Math.random()*NT)|0; if (isLand[t]) continue; sx.push((t%TW)*RS+(i&1)); sy.push(((t/TW)|0)*RS+((i>>1)&3)); sp.push(Math.random()*6.28); }
+  const want=Math.max(1000,Math.round(NT/900));   // (as thick on the waves on a big map as on a small one)
+  for (let i=0;i<want*1.6 && sx.length<want;i++){ const t=(Math.random()*NT)|0; if (isLand[t]) continue; sx.push((t%TW)*RS+(i&1)); sy.push(((t/TW)|0)*RS+((i>>1)&3)); sp.push(Math.random()*6.28); }
   glints.x=Float32Array.from(sx); glints.y=Float32Array.from(sy); glints.ph=Float32Array.from(sp);
 }
 

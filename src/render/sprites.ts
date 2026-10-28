@@ -1,21 +1,34 @@
-/* ---------- pixel sprites for buildings (drawn into the object layer) ----------
+/* ---------- pixel sprites for buildings (drawn into the buildings canvas of the picture's tiles) ----------
    A plot is PS×PS (16×16) pixels. Each building is drawn into a scratch canvas, outlined
-   where it meets open ground, and stamped onto the map.
+   where it meets open ground, and stamped onto every tile of the picture it falls in
+   (render/tiles.ts); a tile made later stamps the buildings standing in it then.
    Farms, barracks, watchtowers and coin minters are modular: each plot looks at its four
    neighbours, and plots of the same kind and owner join up, so fields merge into one farmland,
    barracks into one long hall, minters into one workshop, and towers link with walls. */
-import { RW, RH, PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY } from '../core/constants';
+import { PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY } from '../core/constants';
 import { W, pType, pOwner, pVar, pMain, pAband, pTier, pBurn } from '../sim/state';
 import { cultureOf, drawCapital, wearCapital } from './capitals';
 import { styleOf, type NationStyle } from './style';
 import { towerTier, castleTier, wear } from '../sim/defense';
 import { dims } from '../sim/buildings';
 import { rows, outline, type Pal } from './pixel';
+import { CH, painters, tilesIn, objectsCtx, type Tile } from './tiles';
+import { ovPlot } from './terrain';
 
-export const objC = document.createElement('canvas'); objC.width = RW; objC.height = RH;
-export const octx = objC.getContext('2d') as CanvasRenderingContext2D;
-/** Fits the buildings layer to the map's size, empty for a new game. */
-export function sizeObjects(){ if (objC.width!==RW || objC.height!==RH){ objC.width=RW; objC.height=RH; } else octx.clearRect(0,0,RW,RH); }
+let only: Tile | null = null;   // while a new tile is painted, the only one buildings are stamped on
+/** The tiles of the picture the rectangle (render pixels) falls in: those made, or just the new one. */
+const targets = (x: number, y: number, w: number, h: number) => only ? (only.x0<x+w && x<only.x0+CH && only.y0<y+h && y<only.y0+CH ? [only] : []) : tilesIn(x,y,w,h);
+/** Clears a rectangle of the buildings, wherever it has been drawn. */
+function clearAt(x: number, y: number, w: number, h: number){ for (const c of targets(x,y,w,h)) c.octx?.clearRect(x-c.x0,y-c.y0,w,h); }
+/** Paints the buildings of a new tile of the picture: every building with a plot in it (each from
+    its main plot, its top-left: those up to a plot above and left of the tile too). */
+function objectsOf(c: Tile){
+  const px0=Math.max(0,c.x0/PS-1), py0=Math.max(0,c.y0/PS-1), px1=Math.min(PW-1,(c.x0+CH)/PS-1), py1=Math.min(PH-1,(c.y0+CH)/PS-1);
+  only=c;
+  for (let y=py0;y<=py1;y++) for (let x=px0;x<=px1;x++){ const q=y*PW+x, ty=pType[q]; if (ty && ty!==B_PART && ty!==B_CPART) drawPlot(q); }
+  only=null;
+}
+painters.objects=objectsOf;
 const tmp = document.createElement('canvas'); tmp.width = 2*PS; tmp.height = 2*PS;
 const tctx = tmp.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
 let G = tctx;   // where P and R draw: the scratch canvas, or an icon
@@ -26,8 +39,9 @@ const EDGE = 'rgba(30,20,14,0.9)';
 
 /** Draws a w×h building at plot pixel (ox,oy) on the map: on scratch first, outlined, then stamped. */
 function stamp(ox: number, oy: number, w: number, h: number, draw: () => void){
+  const to=targets(ox,oy,w,h); if (!to.length) return;   // (nowhere it can be seen yet)
   G=tctx; tctx.clearRect(0,0,w,h); draw(); outline(tctx,0,0,w,h,EDGE);
-  octx.clearRect(ox,oy,w,h); octx.drawImage(tmp,0,0,w,h,ox,oy,w,h);
+  for (const c of to){ const o=objectsCtx(c); o.clearRect(ox-c.x0,oy-c.y0,w,h); o.drawImage(tmp,0,0,w,h,ox-c.x0,oy-c.y0,w,h); }
 }
 
 export const MODULAR = [B_FARM, B_BARRACKS, B_TOWER, B_MINTER];
@@ -381,9 +395,10 @@ function drawRuins(ox: number, oy: number, v: number){
 
 /** Redraws whatever stands on building plot q. */
 export function drawPlot(q: number){
+  if (!only) ovPlot(q);   // (the overview shows towns too)
   const ox=(q%PW)*PS, oy=((q/PW)|0)*PS, ty=pType[q];
   if (ty===B_CPART){ const m=pMain[q]; if (pType[m]===B_CASTLE){ drawPlot(m); return; } }
-  if (ty===B_PART){ const m=pMain[q]; if (BIG[pType[m]]){ drawPlot(m); return; } octx.clearRect(ox,oy,PS,PS); return; }
+  if (ty===B_PART){ const m=pMain[q]; if (BIG[pType[m]]){ drawPlot(m); return; } clearAt(ox,oy,PS,PS); return; }
   const n=styleOf(pOwner[q]);
   if (BIG[ty]){ const [w,h]=dims(q); stamp(ox,oy,w*PS,h*PS,()=>drawBig(0,0,ty,n,w,h)); return; }
   if (ty===B_CASTLE){
@@ -405,7 +420,7 @@ export function drawPlot(q: number){
   else if (ty===B_MINE) stamp(ox,oy,PS,PS,()=>drawMine(0,0,n));
   else if (ty===B_RUINS) stamp(ox,oy,PS,PS,()=>drawRuins(0,0,pVar[q]));
   else if (ty===B_CPART){ /* part of a burned castle still standing: leave */ }
-  else octx.clearRect(ox,oy,PS,PS);
+  else clearAt(ox,oy,PS,PS);
 }
 
 /** Redraws plot q and any modular neighbours whose joins it may have changed. */

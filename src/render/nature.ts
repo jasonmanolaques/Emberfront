@@ -1,17 +1,16 @@
-/* ---------- nature layer: the trees, rocks and copper the simulation placed, plus cacti ----------
-   Drawn into its own canvas under the buildings, and redrawn locally whenever a resource is
-   harvested, used up or cleared for a building. Sprites are small outlined pixel drawings,
-   made once and stamped. */
-import { TW, TH, RS, RW, RH, T_FOREST, T_HILLS, T_MOUNT, T_DESERT, T_SNOW } from '../core/constants';
+/* ---------- nature: the trees, rocks and copper the simulation placed, plus cacti ----------
+   Drawn into the nature canvas of each tile of the picture under its buildings (render/tiles.ts)
+   when the tile is made, and redrawn locally whenever a resource is harvested, used up or cleared
+   for a building. Sprites are small outlined pixel drawings, made once and stamped. */
+import { TW, TH, RS, T_FOREST, T_HILLS, T_MOUNT, T_DESERT, T_SNOW } from '../core/constants';
 import { terr, isLand, resType, resLeft } from '../sim/state';
 import { R_TREE, R_TWIG, R_STONE, R_COPPER } from '../sim/resources';
 import { hash2 } from './terrain';
 import { rows, sprite, type Pal } from './pixel';
+import { CH, painters, natureCtx, tilesIn, type Tile } from './tiles';
 
-export const natC = document.createElement('canvas'); natC.width = RW; natC.height = RH;
-const nctx = natC.getContext('2d') as CanvasRenderingContext2D;
-/** Fits the nature layer to the map's size. */
-export function sizeNature(){ if (natC.width!==RW || natC.height!==RH){ natC.width=RW; natC.height=RH; } }
+let nctx!: CanvasRenderingContext2D;   // the tile being drawn in, set up to take map render pixels
+function into(c: Tile){ nctx=natureCtx(c); nctx.setTransform(1,0,0,1,-c.x0,-c.y0); }
 
 const LEAF: Pal = { h:'#b2d86c', l:'#7fb34c', m:'#4f8a37', d:'#2e5b2a', t:'#6b4a2c', T:'#4a321e' };
 const LEAF2: Pal = { h:'#c6d66a', l:'#93b04a', m:'#5f8c36', d:'#365e29', t:'#6b4a2c', T:'#4a321e' };   // a yellower crown
@@ -66,16 +65,31 @@ function drawTile(x: number, y: number){
   else if (tr===T_DESERT && hash2(x*7+5,y*11+1)<0.007) stand(spr('cactus',CACT,CACTUS),cx,by);
 }
 
-export function drawNature(){
-  nctx.clearRect(0,0,RW,RH);
-  for (let y=1;y<TH;y++) for (let x=0;x<TW;x++) drawTile(x,y);
+/** Is there anything of nature to draw on tile t? */
+const natural = (t: number) => isLand[t]===1 && (resType[t]>0 || terr[t]===T_DESERT);
+/** Paints the nature of picture tile c: every map tile whose sprite may reach into it (they stand
+    up to three tiles tall and lean a little either side), in rows from the back. A tile with
+    nothing on it gets no canvas. */
+function natureOf(c: Tile){
+  const tx0=Math.max(0,c.x0/RS-2), ty0=Math.max(1,c.y0/RS), tx1=Math.min(TW-1,(c.x0+CH)/RS+1), ty1=Math.min(TH-1,(c.y0+CH)/RS+3);
+  let any=false;
+  for (let y=ty0;y<=ty1 && !any;y++) for (let x=tx0;x<=tx1;x++) if (natural(y*TW+x)){ any=true; break; }
+  if (!any) return;
+  into(c);
+  for (let y=ty0;y<=ty1;y++) for (let x=tx0;x<=tx1;x++) drawTile(x,y);
 }
+painters.nature=natureOf;
 
-/** Redraws the pixels around tile t, keeping the overlap order of neighbouring sprites. */
+/** Redraws the pixels around tile t, in each tile of the picture they fall in, keeping the overlap
+    order of neighbouring sprites. */
 export function redrawNature(t: number){
   const x=t%TW, y=(t/TW)|0, rx=x*RS-5, ry=y*RS-9, w=RS+11, h=RS+12;
-  nctx.save(); nctx.beginPath(); nctx.rect(rx,ry,w,h); nctx.clip();
-  nctx.clearRect(rx,ry,w,h);
-  for (let yy=Math.max(1,y-2);yy<=Math.min(TH-1,y+3);yy++) for (let xx=Math.max(0,x-3);xx<=Math.min(TW-1,x+3);xx++) drawTile(xx,yy);
-  nctx.restore();
+  for (const c of tilesIn(rx,ry,w,h)){
+    if (!c.nctx && !natural(t)) continue;   // (nothing was there, and nothing is)
+    into(c);
+    nctx.save(); nctx.beginPath(); nctx.rect(rx,ry,w,h); nctx.clip();
+    nctx.clearRect(rx,ry,w,h);
+    for (let yy=Math.max(1,y-2);yy<=Math.min(TH-1,y+3);yy++) for (let xx=Math.max(0,x-3);xx<=Math.min(TW-1,x+3);xx++) drawTile(xx,yy);
+    nctx.restore();
+  }
 }

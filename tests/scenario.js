@@ -22,7 +22,6 @@
       nations: hashStr(nat.join('|')), attacks: hashStr(att.join('|')), campaigns: hashStr(camps.join('|')),
     };
   }
-  function renderPrint(api){ const d = api.dump(); return { world: hashArr(d.wbuf), objects: hashArr(d.obj) }; }
 
   function pickTarget(d, preferEnemy){
     let enemy = -1, open = -1;
@@ -38,7 +37,7 @@
   }
 
   globalThis.efScenario = function(api, opts){
-    const { seed, steps = 150, every = 20, render = false } = opts;
+    const { seed, steps = 150, every = 20 } = opts;
     TW = api.TW; TH = api.TH;
     api.newWorld(seed);
     // spawn at the first valid spot spiralling out from the map centre
@@ -51,7 +50,7 @@
     for (let s=0;s<steps;s++){
       api.run(every);
       // compare at tick boundaries: an order given now is applied at the start of the next tick
-      if (s%10===9){ const cp = simPrint(api); if (render) Object.assign(cp, renderPrint(api)); out.checkpoints.push(cp); }
+      if (s%10===9) out.checkpoints.push(simPrint(api));
       const me = api.nations[1];
       if (me && me.alive){
         const t = pickTarget(api.dump(), s%3===0);

@@ -2,6 +2,7 @@
    Everything the simulation decides lives here. Rendering and UI may read it but never write it. */
 import { NT, NP, PW, TW, TH, setGrid } from '../core/constants';
 import type { Rng } from '../core/rng';
+import type { Field } from './field';
 
 export interface Nation {
   id: number; name: string; hex: string; isPlayer: boolean;
@@ -91,7 +92,7 @@ export interface Campaign {
   dx: number; dy: number;            // marching direction (unit)
   rx: number; ry: number;            // rally point while mustering
   goal: number;                      // attacks: the tile the banner heads for (raids head for the nearest building)
-  field: Int16Array; fieldAt: number;   // steps to the goal (or home) over land the army may cross, -1 = no way; tick it was worked out
+  field: Field; fieldAt: number;     // steps to the goal (or home) over land the army may cross, -1 = no way (sim/field.ts); tick it was worked out
   started: number; startSoldiers: number; startTiles: number;   // tick it began, with how many soldiers, and the defender's land then
   stall: number;                     // ticks the banner has waited for stragglers
   why: string;                       // why it is going home: 'recall', 'peace', 'cut', 'done', 'won'

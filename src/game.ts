@@ -9,8 +9,8 @@ import { newWorld, startMatch, bordersOn, queueCommand, tick } from './sim/sim';
 import { client } from './client';
 import { cam, fitCam, focusOn } from './render/camera';
 import { buildBase, paintAll, paintRoad, paintTile, repaint, sizeTerrain } from './render/terrain';
-import { drawPlotAndNeighbours, sizeObjects } from './render/sprites';
-import { drawNature, redrawNature, sizeNature } from './render/nature';
+import { drawPlotAndNeighbours } from './render/sprites';
+import { redrawNature } from './render/nature';
 import { addFlash, fireBurst, gatePuff, addShot, addHit, dustPuff, addCorpse, floats, resetEffects } from './render/effects';
 import { GOOD_NAME } from './sim/resources';
 import { PW } from './core/constants';
@@ -174,8 +174,8 @@ export function newGame(seed?: number){
   toggleBuildPanel(false); resetDiplomacy(); closeResearch(); closeArmy(); deselect();
   client.overShown=false; client.lastVillageLog=-99; client.paused=false; client.speed=1; $('speed').textContent='1×';
   setSoldierShare(0); setInvest(0.5);
-  sizeTerrain(); sizeNature(); sizeObjects();   // (the real-world maps are bigger)
-  buildBase(); paintAll(); drawNature();
+  sizeTerrain();   // (the real-world maps are bigger: the picture's tiles are let go and made again as they come into view)
+  buildBase(); paintAll();
   fitCam();
 }
 

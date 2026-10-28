@@ -1,16 +1,19 @@
 /* ---------- frame rendering: reads the simulation, never changes it ----------
    The world is drawn in render pixels (RS per tile, K per simulation pixel); the camera's zoom
-   is screen pixels per render pixel. */
-import { TW, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY } from '../core/constants';
+   is screen pixels per render pixel. Close in, the map is drawn from the tiles of its picture
+   (render/tiles.ts), a few made each frame, those nearest the middle of the screen first; far
+   out (a map tile under DETAIL_CSS screen pixels), from the overview, one pixel a map tile. */
+import { TW, TH, RW, RH, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY } from '../core/constants';
 import { clamp, fmt } from '../core/util';
 import { W, isLand, pType, pPrio, pTimer, pBurn, type Human } from '../sim/state';
 import { findBlock } from '../sim/sim';
 import { placeProblem, structureOf, canAfford, SIZE, PRODUCE_TICKS, dims } from '../sim/buildings';
 import { client, reduceMotion } from '../client';
 import { view, ctx, cam, stepCamAnim } from './camera';
-import { worldC, flushWorld, SEA } from './terrain';
-import { objC, drawIcon, drawWorking, BIG } from './sprites';
-import { natC } from './nature';
+import { ovC, flushWorld, SEA } from './terrain';
+import { drawIcon, drawWorking, BIG } from './sprites';
+import './nature';   // (it paints the trees into the picture's tiles)
+import { CH, MAKE_PER_FRAME, tileAt, makeTile, nextFrame, tileCols, tileRows, frame, type Tile } from './tiles';
 import { styleOf } from './style';
 import { personSprite, corpseSprite, woundStage, BODY_X, FEET_Y } from './people';
 import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, psize, floats, glints, shots, hits, corpses, drips, addDrip, CORPSE_MS, DRIP_MS, updateEffects } from './effects';
@@ -242,18 +245,44 @@ function drawBanners(now: number, vx0: number, vy0: number, vx1: number, vy1: nu
   }
 }
 
+const DETAIL_CSS = 2.5;   // screen (CSS) pixels a map tile must cover for the picture's tiles to be drawn
+/** The tiles of the picture on screen, made if need be (MAKE_PER_FRAME at most, nearest the middle
+    first); null where one isn't made yet. */
+function tilesOnScreen(vx0: number, vy0: number, vx1: number, vy1: number){
+  nextFrame();
+  const cx0=Math.max(0,Math.floor(vx0/CH)), cy0=Math.max(0,Math.floor(vy0/CH)), cx1=Math.min(tileCols()-1,Math.floor(vx1/CH)), cy1=Math.min(tileRows()-1,Math.floor(vy1/CH));
+  const mx=(vx0+vx1)/2/CH-0.5, my=(vy0+vy1)/2/CH-0.5, want: [number, number][]=[], out: { cx: number; cy: number; t: Tile | undefined }[]=[];
+  for (let cy=cy0;cy<=cy1;cy++) for (let cx=cx0;cx<=cx1;cx++) want.push([cx,cy]);
+  want.sort((a,b) => (a[0]-mx)**2+(a[1]-my)**2-(b[0]-mx)**2-(b[1]-my)**2);
+  let made=0;
+  for (const [cx,cy] of want){
+    let t=tileAt(cx,cy);
+    if (!t && made<MAKE_PER_FRAME){ t=makeTile(cx,cy); made++; }
+    if (t) t.seen=frame;
+    out.push({ cx, cy, t });
+  }
+  if (made) flushWorld();   // (a new tile's ground goes up at once)
+  return out;
+}
+
 export function render(now: number, dt: number){
   stepCamAnim(now);
   flushWorld();
   const w=view.width, h=view.height, zoom=cam.zoom, camX=cam.x, camY=cam.y, dpr=cam.dpr, zs=zoom*K/dpr;
   const vx0=camX, vy0=camY, vx1=camX+w/zoom, vy1=camY+h/zoom;
+  const detail=zoom*RS/dpr>=DETAIL_CSS;
   updateEffects(dt, vx0,vy0,vx1,vy1, zs);
 
   ctx.setTransform(1,0,0,1,0,0);
   ctx.fillStyle=SEA; ctx.fillRect(0,0,w,h);
   ctx.imageSmoothingEnabled=false;
   ctx.setTransform(zoom,0,0,zoom,-camX*zoom,-camY*zoom);
-  ctx.drawImage(worldC,0,0);
+  const shown=detail ? tilesOnScreen(vx0,vy0,vx1,vy1) : [];
+  if (!detail) ctx.drawImage(ovC,0,0,TW,TH,0,0,RW,RH);
+  else for (const { cx, cy, t } of shown){
+    if (t) ctx.drawImage(t.ground,t.x0,t.y0);
+    else { const n=CH/RS, sx=cx*n, sy=cy*n, sw=Math.min(n,TW-sx), sh=Math.min(n,TH-sy); ctx.drawImage(ovC,sx,sy,sw,sh,cx*CH,cy*CH,sw*RS,sh*RS); }   // not made yet: the overview meanwhile
+  }
 
   // sea glints: a short sparkle on the waves
   if (!reduceMotion){
@@ -268,11 +297,11 @@ export function render(now: number, dt: number){
     ctx.globalAlpha=0.8*(1-age/420); ctx.fillStyle=flO[i]?styleOf(flO[i]).light:'#ffffff'; ctx.fillRect(x,y,RS,RS);
   }
   ctx.globalAlpha=1;
-  ctx.drawImage(natC,0,0);
-  ctx.drawImage(objC,0,0);
+  for (const { t } of shown) if (t?.nature) ctx.drawImage(t.nature,t.x0,t.y0);
+  for (const { t } of shown) if (t?.objects) ctx.drawImage(t.objects,t.x0,t.y0);
 
   // production buildings at work: saplings growing, the quarry pulley, the mine's glow
-  {
+  if (detail){
     const qx0=Math.max(0,Math.floor(vx0/PS)-1), qy0=Math.max(0,Math.floor(vy0/PS)-1), qx1=Math.min(PW-1,Math.floor(vx1/PS)), qy1=Math.min(PH-1,Math.floor(vy1/PS));
     for (let y=qy0;y<=qy1;y++) for (let x=qx0;x<=qx1;x++){
       const q=y*PW+x, ty=pType[q]; if (!BIG[ty] || pBurn[q]>0) continue;
@@ -295,7 +324,7 @@ export function render(now: number, dt: number){
     ctx.fillRect(Math.floor(ppx[i]),Math.floor(ppy[i]),sz,sz);
   }
   // watchtowers calling for a garrison carry a "!"
-  {
+  if (detail){
     const qx0=Math.max(0,Math.floor(vx0/PS)), qy0=Math.max(0,Math.floor(vy0/PS)), qx1=Math.min(PW-1,Math.floor(vx1/PS)), qy1=Math.min(PH-1,Math.floor((vy1+PS)/PS));
     const bob=reduceMotion ? 0 : ((now/400)|0)&1;
     for (let y=qy0;y<=qy1;y++) for (let x=qx0;x<=qx1;x++){

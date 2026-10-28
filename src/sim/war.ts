@@ -43,6 +43,7 @@ import { ignite, dims } from './buildings';
 import { census } from './census';
 import { BLD_HP, bldHp, wear, towerTier, castleTier, TOWER_RELOADS, TOWER_DMGS, CASTLE_MEND, wallOf, wallTower, walledFor, buildWalls, resetWalls } from './defense';
 import { SOLDIER_DMG, MILITIA_HIT, units, unitAt, type Unit } from './army';
+import { Field } from './field';
 import { lineOf, deploy, placeAt, indexAt, holds, enemyOf, underCastle, type Front } from './front';
 import { H_SOLDIER, TASK_ROAM, TOWER_RANGE, maxHp, REGEN, pace, onCastle, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf, homeMilitia } from './population';
 
@@ -118,9 +119,10 @@ let warring = new Uint8Array(1);                // per nation: at war with anyon
 interface Rally { x: number; y: number; dx: number; dy: number; threat: boolean; n: number }
 let rallies: (Rally | null)[] = [];
 // per kingdom: steps to its rally over its own land, and the rally tile they were worked out for
-let homeField: Int16Array[] = [], homeFieldFor: number[] = [];
+let homeField: (Field | undefined)[] = [], homeFieldFor: number[] = [];
 let heldAt = new Int32Array(NT), heldBy = new Uint8Array(NT);   // tick a soldier last stood on or beside a tile his side holds, and whose
-let queue = new Int32Array(NT), scratch = new Int16Array(NT);
+let queue = new Int32Array(NT);
+const scratch = new Field();   // a field for a one-off search
 let want = new Int32Array(NT), wantSeq = 0;   // tiles a fill is looking for, stamped wantSeq
 let seen = new Int32Array(NT), seenSeq = 0;   // tiles a search has been to, stamped seenSeq
 let came = new Int32Array(NT);                 // ...and the tile it came from
@@ -128,11 +130,11 @@ let came = new Int32Array(NT);                 // ...and the tile it came from
 interface Offensive {
   key: number; a: number; d: number;
   F: Front | null;                // the front, worked out every REFRONT ticks
-  walk: Int16Array;               // steps to the men's places, over ground they may cross
+  walk: Field;                    // steps to the men's places, over ground they may cross
   k: number;                      // men in the front rank
   progress: number;               // toward the next strip of ground
   strips: number;                 // strips taken so far
-  depth: Int16Array | null;       // how far each tile of the defender's is from the line as the attack began (STEP a tile)
+  depth: Field | null;            // how far each tile of the defender's is from the line as the attack began (STEP a tile)
   since: number;                  // tick it began
   noFront: number;                // ticks it has had no front
   men: Human[]; camps: Campaign[];   // its men (leaders aside) and armies, this tick
@@ -145,7 +147,7 @@ export function resetWar(M: number){
   W.campaigns=[]; W.campSeq=0;
   W.ally=new Uint8Array(M*M); W.atWar=new Uint8Array(M*M); W.offers=new Int32Array(M*M); W.grudge=new Int32Array(M*M).fill(-1e9);
   W.wars=new Uint8Array(M*M); W.aggr=new Uint8Array(M*M); W.warSince=new Int32Array(M*M); W.occCount=new Int32Array(M*M); W.lost=new Uint8Array(M*M); W.ready=new Int32Array(M*M); W.offensive=new Uint8Array(M*M); W.kills=new Int32Array(M*M); W.stall=new Int32Array(M*M); W.lastNet=new Int32Array(M*M);
-  if (queue.length!==NT){ heldAt=new Int32Array(NT); heldBy=new Uint8Array(NT); queue=new Int32Array(NT); scratch=new Int16Array(NT); want=new Int32Array(NT); wantSeq=0; seen=new Int32Array(NT); seenSeq=0; came=new Int32Array(NT); }   // the map changed size
+  if (queue.length!==NT){ heldAt=new Int32Array(NT); heldBy=new Uint8Array(NT); queue=new Int32Array(NT); want=new Int32Array(NT); wantSeq=0; seen=new Int32Array(NT); seenSeq=0; came=new Int32Array(NT); }   // the map changed size
   byId.clear(); camps.clear(); troops.clear(); armies=[]; posts=[]; warring=new Uint8Array(M); rallies=[]; homeField=[]; homeFieldFor=[]; heldAt.fill(0); resetWalls();
   offensives.clear(); defended=new Uint8Array(M);
 }
@@ -168,45 +170,61 @@ export function mayStand(h: Human, o: number){
 }
 
 /** Fills f with steps to the nearest of `src` over land a's army may cross on its way to d
-    (with `any`, over all land), -1 where there is no way. It looks for the tiles `mark` stamps
-    (each stamped tile counts once; one is enough if `first`), and stops `margin` steps past the
-    last of them. Returns the first such tile reached, or -1. */
+    (with `any`, over all land), -1 where there is no way, within the box round a's and d's land (and
+    the sources), FIELD_MARGIN tiles wider. It looks for the tiles `mark` stamps (each stamped tile
+    counts once; one is enough if `first`), and stops `margin` steps past the last of them. Returns
+    the first such tile reached, or -1. */
 let breach=false;   // fill straight through enemy walls (when they leave no way round)
-function fill(f: Int16Array, src: number[], a: number, d: number, any: boolean, mark: (stamp: number) => number, first: boolean, margin: number){
+function fill(f: Field, src: number[], a: number, d: number, any: boolean, mark: (stamp: number) => number, first: boolean, margin: number){
   const stamp=++wantSeq, wanted=mark(stamp);
-  f.fill(-1);
+  fitBox(f,[a,d],src);
+  const F=f.d, w=f.w, h=f.h, x0=f.x0, y0=f.y0;
   let head=0, tail=0, found=-1, left=wanted, until=32000;
-  for (const s of src) if (f[s]<0){ f[s]=0; queue[tail++]=s; }
+  for (const s of src){ const l=f.idx(s); if (l>=0 && F[l]<0){ F[l]=0; queue[tail++]=l; } }
   // which owners' land the army may cross
   const pass=new Uint8Array(W.M); pass[0]=pass[a]=pass[d]=1;
   for (let o=1;o<W.M;o++) if (any || W.ally[a*W.M+o]) pass[o]=1;
   // whose walls stop it (none of them when breaching)
   const wall=new Uint8Array(W.M); if (!breach) for (let o=1;o<W.M;o++) wall[o]=o!==a && !W.ally[a*W.M+o] ? 1 : 0;
-  const tw=TW, nt=NT, land=isLand, own=owner, Q=queue, mk=want, wo=wallOf;   // local names: much faster in a hot loop than imports
+  const tw=TW, land=isLand, own=owner, Q=queue, mk=want, wo=wallOf;   // local names: much faster in a hot loop than imports
   while (head<tail){
-    const t=Q[head++], v=f[t];
+    const l=Q[head++], v=F[l], lx=l%w, ly=(l/w)|0, t=(ly+y0)*tw+lx+x0;   // (l in the box, t on the map)
     if (v>until) break;
     if (mk[t]===stamp){
       mk[t]=0; if (found<0) found=t;
       if (--left<=0 || first) until=Math.min(until,v+margin);
     }
-    const x=t%tw, nv=v+1;
-    let n=t-1;  if (x>0 && f[n]<0 && land[n] && pass[own[n]] && !wall[wo[n]]){ f[n]=nv; Q[tail++]=n; }
-    n=t+1;      if (x<tw-1 && f[n]<0 && land[n] && pass[own[n]] && !wall[wo[n]]){ f[n]=nv; Q[tail++]=n; }
-    n=t-tw;     if (t>=tw && f[n]<0 && land[n] && pass[own[n]] && !wall[wo[n]]){ f[n]=nv; Q[tail++]=n; }
-    n=t+tw;     if (t<nt-tw && f[n]<0 && land[n] && pass[own[n]] && !wall[wo[n]]){ f[n]=nv; Q[tail++]=n; }
+    const nv=v+1;
+    let n=t-1;  if (lx>0 && F[l-1]<0 && land[n] && pass[own[n]] && !wall[wo[n]]){ F[l-1]=nv; Q[tail++]=l-1; }
+    n=t+1;      if (lx<w-1 && F[l+1]<0 && land[n] && pass[own[n]] && !wall[wo[n]]){ F[l+1]=nv; Q[tail++]=l+1; }
+    n=t-tw;     if (ly>0 && F[l-w]<0 && land[n] && pass[own[n]] && !wall[wo[n]]){ F[l-w]=nv; Q[tail++]=l-w; }
+    n=t+tw;     if (ly<h-1 && F[l+w]<0 && land[n] && pass[own[n]] && !wall[wo[n]]){ F[l+w]=nv; Q[tail++]=l+w; }
   }
   return found;
 }
+const FIELD_MARGIN = 24;   // tiles a field reaches past the kingdoms it is worked out for
+/** Fits field f to the box round the land of kingdoms `ids` (every tile they ever held lies in their
+    boxes) and tiles `extra`, FIELD_MARGIN tiles wider. */
+function fitBox(f: Field, ids: number[], extra: number[]){
+  let x0=TW, y0=TH, x1=-1, y1=-1;
+  for (const id of ids){ const n=W.nations[id]; if (!id || !n || n.x1<0) continue; x0=Math.min(x0,n.x0); y0=Math.min(y0,n.y0); x1=Math.max(x1,n.x1); y1=Math.max(y1,n.y1); }
+  for (const t of extra){ const x=t%TW, y=(t/TW)|0; x0=Math.min(x0,x); y0=Math.min(y0,y); x1=Math.max(x1,x); y1=Math.max(y1,y); }
+  if (x1<0){ f.fit(0,0,-1,-1); return; }
+  f.fit(x0-FIELD_MARGIN,y0-FIELD_MARGIN,x1+FIELD_MARGIN,y1+FIELD_MARGIN);
+}
 /** Like fill, but if walls leave no way to what it looks for (`ok`), straight through them: the
     army will have to knock down a tower. */
-function fillOrBreach(f: Int16Array, src: number[], a: number, d: number, any: boolean, mark: (stamp: number) => number, first: boolean, margin: number, ok: (found: number) => boolean){
+function fillOrBreach(f: Field, src: number[], a: number, d: number, any: boolean, mark: (stamp: number) => number, first: boolean, margin: number, ok: (found: number) => boolean){
   let found=fill(f,src,a,d,any,mark,first,margin);
   if (!ok(found)){ breach=true; found=fill(f,src,a,d,any,mark,first,margin); breach=false; }
   return found;
 }
 /** Stamps every tile of nation a as wanted. */
-const ownLand = (a: number) => (stamp: number) => { const own=owner, mk=want, nt=NT; let k=0; for (let t=0;t<nt;t++) if (own[t]===a){ mk[t]=stamp; k++; } return k; };
+const ownLand = (a: number) => (stamp: number) => {
+  const own=owner, mk=want, A=W.nations[a]; let k=0;
+  for (let y=Math.max(0,A.y0);y<=Math.min(TH-1,A.y1);y++) for (let t=y*TW+Math.max(0,A.x0), e=y*TW+Math.min(TW-1,A.x1);t<=e;t++) if (own[t]===a){ mk[t]=stamp; k++; }   // (its land lies in its box)
+  return k;
+};
 /** Stamps the tiles under the banner and the soldiers. */
 function armyTiles(c: Campaign, banner: boolean){
   return (stamp: number) => {
@@ -217,26 +235,26 @@ function armyTiles(c: Campaign, banner: boolean){
   };
 }
 /** The centre of the next tile down the field from (x,y), or null with no way on. */
-function downhill(f: Int16Array, x: number, y: number): [number, number] | null {
-  const tx=(x/2)|0, ty=(y/2)|0, here=f[ty*TW+tx];
+function downhill(f: Field, x: number, y: number): [number, number] | null {
+  const tx=(x/2)|0, ty=(y/2)|0, here=f.at(ty*TW+tx);
   let best=-1, bv = here<0 ? 32767 : here;
   for (const [ox,oy] of DIRS8){
     const nx=tx+ox, ny=ty+oy; if (nx<0||ny<0||nx>=TW||ny>=TH) continue;
-    const k=ny*TW+nx, v=f[k]; if (v<0 || v>=bv) continue;
-    if (ox && oy && (f[ty*TW+nx]<0 || f[ny*TW+tx]<0)) continue;   // no squeezing between two corners
+    const k=ny*TW+nx, v=f.at(k); if (v<0 || v>=bv) continue;
+    if (ox && oy && (f.at(ty*TW+nx)<0 || f.at(ny*TW+tx)<0)) continue;   // no squeezing between two corners
     bv=v; best=k;
   }
   if (best<0) return here>=0 ? [tx*2+1, ty*2+1] : null;
   return [(best%TW)*2+1, ((best/TW)|0)*2+1];
 }
 /** True if the straight walk a→b only crosses tiles with a way in field f. */
-function clearWay(f: Int16Array, ax: number, ay: number, bx: number, by: number){
+function clearWay(f: Field, ax: number, ay: number, bx: number, by: number){
   const x0=ax/2, y0=ay/2, x1=bx/2, y1=by/2, dx=x1-x0, dy=y1-y0, sx=dx>0?1:-1, sy=dy>0?1:-1;
   let tx=Math.floor(x0), ty=Math.floor(y0); const ex=Math.floor(x1), ey=Math.floor(y1);
   const tdx=dx ? Math.abs(1/dx) : Infinity, tdy=dy ? Math.abs(1/dy) : Infinity;
   let tmx=dx ? (sx>0 ? tx+1-x0 : x0-tx)*tdx : Infinity, tmy=dy ? (sy>0 ? ty+1-y0 : y0-ty)*tdy : Infinity;
   for (let guard=0;guard<2000;guard++){
-    if (tx<0||ty<0||tx>=TW||ty>=TH || f[ty*TW+tx]<0) return false;
+    if (tx<0||ty<0||tx>=TW||ty>=TH || f.at(ty*TW+tx)<0) return false;
     if (tx===ex && ty===ey) return true;
     if (tmx<tmy){ tmx+=tdx; tx+=sx; } else { tmy+=tdy; ty+=sy; }
   }
@@ -428,14 +446,14 @@ export function callReserves(n: number, o: number, call: boolean){
 function newCampaign(a: number, d: number, raid: boolean, target: number, size: number, tiles: number, unit: number): Campaign {
   const front=!raid && target<0;   // an attack: its men go to the front (its way there is its offensive's)
   return { id:++W.campSeq, a, d, raid, target, hostile:true, front, militia:false, members:[], phase:0, bx:0, by:0, dx:1, dy:0, rx:0, ry:0, goal:-1,
-    field:front ? offensiveOf(a,d).walk : new Int16Array(NT), fieldAt:W.tickN, started:W.tickN, startSoldiers:size, startTiles:tiles, stall:0, why:'', unit, inspired:false, leader:-1, rank:0,
+    field:front ? offensiveOf(a,d).walk : new Field(), fieldAt:W.tickN, started:W.tickN, startSoldiers:size, startTiles:tiles, stall:0, why:'', unit, inspired:false, leader:-1, rank:0,
     mode:front ? W.offensive[a*W.M+d] : M_MARCH, go:false, hitAt:-1e9 };
 }
 /** The offensive of a against d, begun (gathering at the border) if there was none. */
 function offensiveOf(a: number, d: number){
   const key=a*W.M+d;
   let o=offensives.get(key);
-  if (!o){ o={ key, a, d, F:null, walk:new Int16Array(NT).fill(-1), k:0, progress:0, strips:0, depth:null, since:W.tickN, noFront:0, men:[], camps:[] }; offensives.set(key,o); W.offensive[key]=F_GATHER; }
+  if (!o){ o={ key, a, d, F:null, walk:new Field(), k:0, progress:0, strips:0, depth:null, since:W.tickN, noFront:0, men:[], camps:[] }; offensives.set(key,o); W.offensive[key]=F_GATHER; }
   return o;
 }
 /** Works out the way and calls the soldiers to form up in front of their barracks (or, if the way
@@ -506,7 +524,7 @@ function sendHome(c: Campaign, why: string, hostile=c.hostile){
   if (c.phase===2) return;
   c.phase=2; c.why=why;
   for (const id of c.members){ const h=byId.get(id); if (h){ h.foe=-1; h.aim=-1; h.fk=-1; h.line=-1; } }
-  if (c.front) c.field=new Int16Array(NT);   // (it shared its offensive's way to the front)
+  if (c.front) c.field=new Field();   // (it shared its offensive's way to the front)
   refield(c);
   on.armyHome(c.a,c.d,c.raid,why);
 }
@@ -521,8 +539,8 @@ function refield(c: Campaign){
   const src=goalsOf(c);
   if (!src.length){ if (c.phase<2) sendHome(c, c.raid || c.target>=0 ? 'done' : 'won', (c.raid || c.target>=0) && c.hostile); return; }
   const banner=tileOf(c.bx,c.by);
-  fillOrBreach(c.field,src,c.a,c.d,false,armyTiles(c,true),false,24,() => c.field[banner]>=0);
-  if (c.field[banner]>=0) return;
+  fillOrBreach(c.field,src,c.a,c.d,false,armyTiles(c,true),false,24,() => c.field.at(banner)>=0);
+  if (c.field.at(banner)>=0) return;
   sendHome(c,'cut');   // other kingdoms have closed every way on
 }
 
@@ -683,7 +701,7 @@ function slotPos(c: Campaign, i: number, n: number): [number, number] {
 }
 /** Moves the banner on along the way. Returns the tile of an enemy wall that stops it, or -1. */
 function advance(c: Campaign){
-  const f=c.field, here=f[tileOf(c.bx,c.by)];
+  const f=c.field, here=f.at(tileOf(c.bx,c.by));
   if (here<0) return -1;
   if (here<=(c.target>=0 ? 3 : 1)) return -1;   // there: burn, or close with the enemy
   const s=downhill(f,c.bx,c.by); if (!s) return -1;
@@ -863,7 +881,7 @@ function redeploy(o: Offensive){
     const u=mine[mine.length>>1].slot, [lx,ly]=placeAt(F,u,1,deep+1,ok);
     l.fk=key; l.slot=u; l.line=deep+1; l.fx=lx; l.fy=ly; srcs.push(tileOf(lx,ly));
   }
-  if (!srcs.length || srcs.every(t => o.walk[t]===0)) return;   // (the way there still leads to everyone's place)
+  if (!srcs.length || srcs.every(t => o.walk.at(t)===0)) return;   // (the way there still leads to everyone's place)
   const men=o.men.concat(o.camps.map(c => byId.get(c.leader)).filter((h): h is Human => !!h));
   const mark=(stamp: number) => { let k=0; for (const h of men){ const t=tileOf(h.x,h.y); if (want[t]!==stamp){ want[t]=stamp; k++; } } return k; };
   fillOrBreach(o.walk,srcs,o.a,o.d,false,mark,false,8,(b) => b>=0);
@@ -894,14 +912,14 @@ function push(o: Offensive){
   // than is due by now, a few tiles deep at most
   const D=o.depth!, due=++o.strips*STEP, taken: number[]=[];
   let layer: number[]=[];
-  for (let i=0;i<T.length;i++) if (take[i] && (D[T[i]]<0 || D[T[i]]<=due)) layer.push(T[i]);
+  for (let i=0;i<T.length;i++) if (take[i] && (D.at(T[i])<0 || D.at(T[i])<=due)) layer.push(T[i]);
   for (let deep=0; deep<STRIP_DEEP && layer.length; deep++){
     const next: number[]=[];
     for (const t of layer){
       if (!takeTile(t,a,d)) continue;
       taken.push(t);
       const x=t%tw;
-      for (const m of [x>0 ? t-1 : -1, x<tw-1 ? t+1 : -1, t>=tw ? t-tw : -1, t<NT-tw ? t+tw : -1]) if (m>=0 && D[m]>=0 && D[m]<=due && enemyOf(a,d,m)) next.push(m);
+      for (const m of [x>0 ? t-1 : -1, x<tw-1 ? t+1 : -1, t>=tw ? t-tw : -1, t<NT-tw ? t+tw : -1]) if (m>=0 && D.at(m)>=0 && D.at(m)<=due && enemyOf(a,d,m)) next.push(m);
     }
     layer=next;
   }
@@ -924,26 +942,30 @@ function push(o: Offensive){
     the end of the line counts as the line carried on, and the line moves on as straight as it stood.
     -1 for ground the line can't reach. The nearest stretch is found walking over d's free land (a
     diagonal step 1.4 tiles), the castle no part of the way. */
+let dDist=new Int32Array(0), dFrom=new Int32Array(0);   // depths' working room, kept between calls
 function depths(o: Offensive){
-  const a=o.a, d=o.d, D=new Int16Array(NT).fill(-1), F=o.F, tw=TW, th=TH;
+  const a=o.a, d=o.d, D=new Field(), F=o.F, tw=TW, th=TH;
+  fitBox(D, W.occCount[a*W.M+d]>0 ? [d,a] : [d], []);   // (d's ground lies in its box, and a's in a's)
   if (!F) return D;
-  const dist=new Int32Array(NT).fill(0x7fffffff), from=new Int32Array(NT), ring: number[][]=Array.from({ length: 8 }, () => []);
-  const open=(t: number) => enemyOf(a,d,t) && !underCastle(d,t);
+  const n=D.w*D.h; if (dDist.length<n){ dDist=new Int32Array(n); dFrom=new Int32Array(n); }
+  const dist=dDist, from=dFrom, ring: number[][]=Array.from({ length: 8 }, () => []), V=D.d;
+  dist.fill(0x7fffffff,0,n);
+  const open=(t: number) => enemyOf(a,d,t) && !underCastle(d,t) && D.idx(t)>=0;
   let waiting=0;
-  F.tiles.forEach((t,i) => { if (open(t)){ dist[t]=0; from[t]=i; ring[0].push(t); waiting++; } });
+  F.tiles.forEach((t,i) => { if (open(t)){ const l=D.idx(t); dist[l]=0; from[l]=i; ring[0].push(t); waiting++; } });
   for (let cur=0; waiting>0; cur++){
     const B=ring[cur&7];
     while (B.length){
-      const t=B.pop()!; waiting--;
-      if (dist[t]!==cur) continue;   // (a shorter way was found)
-      const i=from[t], f=F.tiles[i], x=t%tw, y=(t/tw)|0;
-      D[t]=Math.max(0,Math.min(32767,Math.round(-((x-f%tw)*F.bx[i]+(y-((f/tw)|0))*F.by[i])*STEP)));   // (the way back is out of their land: in is the other way)
+      const t=B.pop()!, l=D.idx(t); waiting--;
+      if (dist[l]!==cur) continue;   // (a shorter way was found)
+      const i=from[l], f=F.tiles[i], x=t%tw, y=(t/tw)|0;
+      V[l]=Math.max(0,Math.min(32767,Math.round(-((x-f%tw)*F.bx[i]+(y-((f/tw)|0))*F.by[i])*STEP)));   // (the way back is out of their land: in is the other way)
       for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){
         if ((!dx && !dy) || x+dx<0 || y+dy<0 || x+dx>=tw || y+dy>=th) continue;
         const m=t+dy*tw+dx; if (!open(m)) continue;
         if (dx && dy && (!open(t+dx) || !open(t+dy*tw))) continue;   // no slipping between two corners
-        const nd=cur+(dx && dy ? 7 : 5);
-        if (nd<dist[m]){ dist[m]=nd; from[m]=i; ring[nd&7].push(m); waiting++; }
+        const nd=cur+(dx && dy ? 7 : 5), lm=D.idx(m);
+        if (nd<dist[lm]){ dist[lm]=nd; from[lm]=i; ring[nd&7].push(m); waiting++; }
       }
     }
   }
@@ -1014,21 +1036,21 @@ function deployGuards(){
     });
     for (const h of rest){ h.fk=-1; h.line=-1; }
     const srcs: number[]=[]; for (const h of guard) if (h.fk>=0) srcs.push(tileOf(h.fx,h.fy));
-    if (srcs.length){ fillOwnFrom(homeField[d] ??= new Int16Array(NT), srcs, d); homeFieldFor[d]=-1; }
+    if (srcs.length){ fillOwnFrom(homeField[d] ??= new Field(), srcs, d); homeFieldFor[d]=-1; }
   }
 }
 /** Steps to the nearest of `srcs` over kingdom o's own land only. */
-function fillOwnFrom(f: Int16Array, srcs: number[], o: number){
-  const n=W.nations[o];   // (every tile it holds lies in its box: only that need be cleared)
-  for (let y=Math.max(0,n.y0);y<=Math.min(TH-1,n.y1);y++) f.fill(-1,y*TW+Math.max(0,n.x0),y*TW+Math.min(TW-1,n.x1)+1);
-  const Q=queue, own=owner, tw=TW, nt=NT; let head=0, tail=0;
-  for (const s of srcs) if (f[s]<0){ f[s]=0; Q[tail++]=s; }
+function fillOwnFrom(f: Field, srcs: number[], o: number){
+  const n=W.nations[o];
+  f.fit(n.x0,n.y0,n.x1,n.y1);   // (every tile it holds lies in its box)
+  const F=f.d, w=f.w, h=f.h, x0=f.x0, y0=f.y0, Q=queue, own=owner, tw=TW; let head=0, tail=0;
+  for (const s of srcs){ const l=f.idx(s); if (l>=0 && F[l]<0){ F[l]=0; Q[tail++]=l; } }
   while (head<tail){
-    const t=Q[head++], nv=f[t]+1, x=t%tw;
-    let n=t-1;  if (x>0 && f[n]<0 && own[n]===o){ f[n]=nv; Q[tail++]=n; }
-    n=t+1;      if (x<tw-1 && f[n]<0 && own[n]===o){ f[n]=nv; Q[tail++]=n; }
-    n=t-tw;     if (t>=tw && f[n]<0 && own[n]===o){ f[n]=nv; Q[tail++]=n; }
-    n=t+tw;     if (t<nt-tw && f[n]<0 && own[n]===o){ f[n]=nv; Q[tail++]=n; }
+    const l=Q[head++], nv=F[l]+1, lx=l%w, ly=(l/w)|0, t=(ly+y0)*tw+lx+x0;
+    if (lx>0 && F[l-1]<0 && own[t-1]===o){ F[l-1]=nv; Q[tail++]=l-1; }
+    if (lx<w-1 && F[l+1]<0 && own[t+1]===o){ F[l+1]=nv; Q[tail++]=l+1; }
+    if (ly>0 && F[l-w]<0 && own[t-tw]===o){ F[l-w]=nv; Q[tail++]=l-w; }
+    if (ly<h-1 && F[l+w]<0 && own[t+tw]===o){ F[l+w]=nv; Q[tail++]=l+w; }
   }
 }
 
@@ -1051,6 +1073,7 @@ export function updateWar(){
   for (const c of W.campaigns) if (c.hostile && (!c.front || W.wars[c.a*M+c.d])){ W.atWar[c.a*M+c.d]=1; W.atWar[c.d*M+c.a]=1; }   // (armies massed in a crisis aren't at war)
   if (warring.length!==M) warring=new Uint8Array(M); else warring.fill(0);
   for (let a=1;a<M;a++) for (let b=1;b<M;b++) if (W.atWar[a*M+b]){ warring[a]=1; break; }
+  for (let o=1;o<M;o++) if (!warring[o] && homeField[o]){ homeField[o]=undefined; homeFieldFor[o]=-1; }   // (at peace: no guard to lead)
   for (let i=0;i<W.offers.length;i++) if (W.offers[i] && (W.tickN-W.offers[i]>OFFER_TICKS || !W.atWar[i])) W.offers[i]=0;
   // who can be fought: soldiers out of doors, and villagers who took up arms
   armies=N.map(() => []);
@@ -1139,7 +1162,7 @@ function findRallies(){
     rallies[o]=best;
     if (best){
       const t=tileOf(best.x,best.y);
-      if (homeFieldFor[o]!==t){ homeFieldFor[o]=t; fillOwn(homeField[o] ??= new Int16Array(NT), t, o); }
+      if (homeFieldFor[o]!==t){ homeFieldFor[o]=t; fillOwn(homeField[o] ??= new Field(), t, o); }
     }
   }
 }
@@ -1157,21 +1180,11 @@ function reachOwn(src: number, o: number){
   return stamp;
 }
 /** Steps to tile `src` over kingdom o's own land only. */
-function fillOwn(f: Int16Array, src: number, o: number){
-  f.fill(-1); f[src]=0;
-  const Q=queue, own=owner, tw=TW, nt=NT; let head=0, tail=0; Q[tail++]=src;
-  while (head<tail){
-    const t=Q[head++], nv=f[t]+1, x=t%tw;
-    let n=t-1;  if (x>0 && f[n]<0 && own[n]===o){ f[n]=nv; Q[tail++]=n; }
-    n=t+1;      if (x<tw-1 && f[n]<0 && own[n]===o){ f[n]=nv; Q[tail++]=n; }
-    n=t-tw;     if (t>=tw && f[n]<0 && own[n]===o){ f[n]=nv; Q[tail++]=n; }
-    n=t+tw;     if (t<nt-tw && f[n]<0 && own[n]===o){ f[n]=nv; Q[tail++]=n; }
-  }
-}
+function fillOwn(f: Field, src: number, o: number){ fillOwnFrom(f,[src],o); }
 /** Walks a home-guard member toward his place: along his land's way to the rally while far, straight once close. */
 function walkToLine(h: Human, gx: number, gy: number){
   const f=homeField[h.o];
-  if (f && Math.hypot(gx-h.x,gy-h.y)>6 && f[tileOf(h.x,h.y)]>2){
+  if (f && Math.hypot(gx-h.x,gy-h.y)>6 && f.at(tileOf(h.x,h.y))>2){
     const s=downhill(f,h.x,h.y);
     if (s){ stepHome(h,s[0],s[1],0); return; }
   }
@@ -1300,7 +1313,7 @@ function moveTo(h: Human, c: Campaign, gx: number, gy: number, stop=0, toLine=fa
   let dx=gx-h.x, dy=gy-h.y, d=Math.hypot(dx,dy);
   if (d<=stop+0.05) return;
   if (d>2 && !clearWay(c.field,h.x,h.y,gx,gy)){
-    const here=c.field[tileOf(h.x,h.y)], flag=c.field[tileOf(c.bx,c.by)];
+    const here=c.field.at(tileOf(h.x,h.y)), flag=c.field.at(tileOf(c.bx,c.by));
     if (toLine && Math.hypot(c.bx-h.x,c.by-h.y)>2 && clearWay(c.field,h.x,h.y,c.bx,c.by)){ dx=c.bx-h.x; dy=c.by-h.y; d=Math.hypot(dx,dy); stop=0; }
     else if (toLine && here>=0 && flag>=0 && here<flag) return;
     else {

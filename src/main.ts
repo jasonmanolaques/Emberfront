@@ -5,8 +5,8 @@ import { findBlock, queueCommand } from './sim/sim';
 import { plotProblem } from './sim/buildings';
 import { client } from './client';
 import { view, resize, cam } from './render/camera';
-import { wbuf } from './render/terrain';
-import { octx, drawPlotAndNeighbours } from './render/sprites';
+import { ovBuf } from './render/terrain';
+import { drawPlotAndNeighbours } from './render/sprites';
 import { render } from './render/render';
 import { shots } from './render/effects';
 import { updateHUD } from './ui/hud';
@@ -34,8 +34,8 @@ requestAnimationFrame(frame);
 
 // test hook
 function toSpawn(){ if (client.state!=='spawn'){ $('intro').hidden=true; $('scrim').hidden=true; client.state='spawn'; } }
-(window as any).emberfront = { TW, TH, get state(){return client.state;}, get nations(){return W.nations;}, get simTime(){return W.simTime;}, get landCount(){return W.landCount;},
-  spawnAt:(tx: number,ty: number)=>{ toSpawn(); trySpawn(ty*TW+tx); },
+(window as any).emberfront = { get TW(){return TW;}, get TH(){return TH;}, get state(){return client.state;}, get nations(){return W.nations;}, get simTime(){return W.simTime;}, get landCount(){return W.landCount;},
+  spawnAt:(tx: number,ty: number)=>{ if (client.state==="play") return; toSpawn(); trySpawn(ty*TW+tx); },   // (once a match is under way, no second founding)
   randomSpawn:()=>{ toSpawn(); for (let i=0;i<500 && client.state==='spawn';i++){ const t=W.landTiles[(Math.random()*W.landTiles.length)|0]; const b=findBlock(t%TW,(t/TW)|0,0); if (b) trySpawn(t); } },
   run:(n: number)=>{ for (let i=0;i<n;i++) step(); }, attack:(t: number, r?: number)=>playerAttack(t,r), setInvest, setSoldierShare, command:(c: unknown)=>queueCommand(c as never), get humans(){return W.humans;}, get cam(){return cam;},
   get campaigns(){return W.campaigns;}, get W(){return W;},
@@ -43,4 +43,4 @@ function toSpawn(){ if (client.state!=='spawn'){ $('intro').hidden=true; $('scri
   setHp:(q: number, v: number)=>{ pHp[q]=v; }, redraw:(q: number)=>drawPlotAndNeighbours(q), openArmy,
   newWorld:(seed?: number)=>newGame(seed), loadMap:(i: number)=>{ client.mapIndex=i; newGame(); },
   freePlots:()=>{ const n=W.nations[1], out: number[]=[]; if (n) for (let q=0;q<NP;q++) if (!plotProblem(n,q)) out.push(q); return out; },
-  dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, wbuf, obj:octx.getImageData(0,0,RW,RH).data, attacks:W.attacks, campaigns:W.campaigns, tickN:W.tickN }) };
+  dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, overview:ovBuf, attacks:W.attacks, campaigns:W.campaigns, tickN:W.tickN }) };

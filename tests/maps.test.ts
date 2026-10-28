@@ -7,7 +7,15 @@ import { capitalsOn, REAL_MAPS } from '../src/sim/realmap';
 import { VIEWS, tileXY } from '../src/sim/mapview';
 import { COUNTRIES, countryByCode, flagPixels, flagSmall, colourGap } from '../src/core/countries';
 import { cultureOf, TRADITIONS } from '../src/render/capitals';
+import { EUROPE } from '../src/sim/maps';
 
+/** The land tiles of the landmass tile s is on, 4-connected. */
+function landmass(s: number){
+  const seen=new Uint8Array(NT), q=[s], out: number[]=[]; seen[s]=1;
+  while (q.length){ const c=q.pop()!, x=c%TW; out.push(c);
+    for (const k of [x>0?c-1:-1, x<TW-1?c+1:-1, c-TW, c+TW]) if (k>=0 && k<NT && isLand[k] && !seen[k]){ seen[k]=1; q.push(k); } }
+  return out;
+}
 /** Land tiles reachable from the first one, 4-connected. */
 function reach(){
   const seen=new Uint8Array(NT), q=[W.landTiles[0]]; seen[q[0]]=1; let n=0;
@@ -18,16 +26,40 @@ function reach(){
 const near = (a: number, b: number) => Math.hypot(a%TW-b%TW, ((a/TW)|0)-((b/TW)|0));
 
 describe('the real-world maps', () => {
-  it('are the Balkans and Anatolia, Europe and the world, each one landmass every kingdom can cross', () => {
+  it('are the Balkans and Anatolia, Europe and the world: the first and last one landmass every kingdom can cross', () => {
     expect(REAL_MAPS).toEqual(['balkans','europe','world']);
     for (const m of REAL_MAPS){
       newWorld(5,m);
       expect(W.map).toBe(m);
       expect(W.landCount).toBeGreaterThan(NT*0.15);
-      expect(reach()).toBe(W.landCount);   // straits are bridged, stray islets dropped
+      if (m!=='europe') expect(reach()).toBe(W.landCount);   // straits are bridged, stray islets dropped
       let mount=0; for (let t=0;t<NT;t++) if (terr[t]===T_MOUNT || terr[t]===T_SNOW) mount++;
       expect(mount).toBeGreaterThan(200);   // real ranges
     }
+  });
+
+  it('draw Europe at twice the scale, with the sea as it is: islands stand alone, and the mountains are where the ground is high', () => {
+    newWorld(5,'europe');
+    expect([TW,TH]).toEqual([2400,1488]);   // a tile is about 3 km
+    expect(EUROPE.includes('C')).toBe(false);   // no land bridges
+    const at=(lat: number, lon: number) => { const p=tileXY(VIEWS.europe,lat,lon,TW,TH)!; return p[1]*TW+p[0]; };
+    // the islands, apart from the mainland (and from each other)
+    const mainland=landmass(at(48.86,2.35)), main=new Set(mainland);
+    for (const [lat,lon] of [[52.5,-1.5],[53.4,-8.0],[64.9,-18.5],[37.5,14.2],[40.1,9.0],[42.1,9.1],[35.2,24.9],[35.0,33.2]]){
+      const t=at(lat,lon); expect(isLand[t]).toBe(1); expect(main.has(t)).toBe(false);   // Britain, Ireland, Iceland, Sicily, Sardinia, Corsica, Crete, Cyprus
+    }
+    expect(landmass(at(52.5,-1.5)).includes(at(53.4,-8.0))).toBe(false);   // (Britain and Ireland too)
+    // small islands with a capital on them are kept: Malta
+    const valletta=capitalsOn('europe').find(c => c.country.code==='MT');
+    expect(valletta).toBeDefined();
+    // snow and rock on the Alps, the Caucasus and Norway's fjells; none on the plains
+    const high=(lat: number, lon: number, r: number) => { let k=0; const c=at(lat,lon); for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){ const tr=terr[c+dy*TW+dx]; if (tr===T_MOUNT || tr===T_SNOW) k++; } return k; };
+    expect(high(45.9,7.6,6)).toBeGreaterThan(40);    // the Alps by Monte Rosa
+    expect(high(43.2,42.5,6)).toBeGreaterThan(40);   // the Caucasus
+    expect(high(61.6,8.3,6)).toBeGreaterThan(40);    // Jotunheimen
+    expect(high(47.0,19.8,8)).toBe(0);               // the Hungarian plain
+    expect(high(52.2,5.3,8)).toBe(0);                // the Netherlands
+    expect(high(55.5,37.5,8)).toBe(0);               // round Moscow
   });
 
   it('put places where they are: Ankara and Athens on land, the Black Sea at sea', () => {
@@ -75,7 +107,7 @@ describe('the real-world maps', () => {
 
   it('hold a full game on Europe: 64 kingdoms at their capitals, with more countries to choose from than that', () => {
     newWorld(2,'europe');
-    expect([TW,TH]).toEqual([1200,744]);   // 3 by 3 generated maps
+    expect([TW,TH]).toEqual([2400,1488]);   // 6 by 6 generated maps
     const caps=capitalsOn('europe'), codes=caps.map(c => c.country.code);
     expect(codes.length).toBeGreaterThan(MAX_KINGDOMS);
     for (const k of ['IS','PT','GB','FR','DE','IT','PL','RU','TR','EG','IR','KZ','AD','VA','LI']) expect(codes).toContain(k);
@@ -84,7 +116,7 @@ describe('the real-world maps', () => {
     expect(W.nations.slice(1).every(n => n.alive)).toBe(true);
     const at=new Map(caps.map(c => [c.country.code, c.tile]));
     for (const n of W.nations.slice(1)) expect(near(n.capTile,at.get(n.code)!)).toBeLessThan(30);
-    expect(W.landCount/MAX_KINGDOMS).toBeGreaterThan(6000);   // room to grow: as much land each as in a generated game of 10
+    expect(W.landCount/MAX_KINGDOMS).toBeGreaterThan(24000);   // room to grow: four times the land each of a generated game of 10
   });
 
   it('are bigger than a generated map, so close capitals have room', () => {

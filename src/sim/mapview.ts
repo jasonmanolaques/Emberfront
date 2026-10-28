@@ -7,6 +7,7 @@ export interface MapView {
   lat0: number; lat1: number;   // north and south edges
   proj: 'eq' | 'miller';        // plain latitude and longitude, or Miller's cylinder (the world)
   w: number; h: number;         // its size in tiles (bigger than a generated map's, so close capitals have room)
+  dem?: boolean;                // its mountains and hills were drawn from real elevation, tile by tile (else from named ranges)
 }
 const RAD = Math.PI/180;
 const millerY = (lat: number) => 1.25*Math.log(Math.tan(Math.PI/4+0.4*lat*RAD));
@@ -34,7 +35,8 @@ export function tileXY(v: MapView, lat: number, lon: number, w: number, h: numbe
 
 export const VIEWS: Record<string, MapView> = {
   balkans: { lon0:12, lon1:46, lat0:49, lat1:33, proj:'eq', w:560, h:348 },
-  // Europe and its neighbours, from Iceland to Kyrgyzstan and from the Nile to the Arctic: room for 64 kingdoms
-  europe: { lon0:-25, lon1:75, lat0:71.5, lat1:29, proj:'eq', w:1200, h:744 },
+  // Europe and its neighbours, from Iceland to Kyrgyzstan and from the Nile to the Arctic: room for 64
+  // kingdoms and then some, at twice the scale of the other maps (a tile is about 3 km)
+  europe: { lon0:-25, lon1:75, lat0:71.5, lat1:29, proj:'eq', w:2400, h:1488, dem:true },
   world: { lon0:-169, lon1:191, lat0:78, lat1:-56, proj:'miller', w:640, h:396 },   // cut through the Bering Strait
 };
