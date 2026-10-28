@@ -1,5 +1,5 @@
 /* ---------- population: humans leave the capital, work as villagers or serve as soldiers ----------
-   The capital releases a new human every 10 seconds, sooner with each farm.
+   The capital releases a new human every 20 seconds, sooner with each farm.
    Soldiers need a barracks: it trains them and is where they wait. Each kingdom keeps a requested
    share of its people under arms. The barracks' room is all the trained soldiers it can have: when it
    wants more, newcomers are born soldiers at a barracks with room and the nearest villagers walk there
@@ -56,7 +56,7 @@ export const TASK_ROAM = 0,      // between jobs: villagers think or stroll betw
              TASK_SMITH_BACK = 12,   // carrying it to the smithy
              TASK_FORGE = 13,        // forging armour
              TASK_SMITH_DELIVER = 14;// carrying the armour to a barracks
-export const HUMAN_EVERY = 100;  // progress per new human: 100 ticks (10 s), each farm adds 5% speed
+export const HUMAN_EVERY = 200;  // progress per new human: 200 ticks (20 s), each farm adds 5% speed
 export const FARM_BONUS = 0.05;
 const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 s)
 const STORE_TICKS = 10;          // ticks inside the capital to store a load (1 s)

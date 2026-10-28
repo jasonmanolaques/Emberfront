@@ -1,6 +1,6 @@
 // Research stations, house tiers and the builders guild.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NT, NP, B_HOUSE, B_RESEARCH, B_GUILD, B_TOWER, GOLD_PER_SEC, TAX_PER_VILLAGER } from '../src/core/constants';
+import { TW, TH, NT, NP, B_HOUSE, B_RESEARCH, B_GUILD, B_TOWER, TAX_PER_VILLAGER } from '../src/core/constants';
 import { W, owner, isLand, pType, pOwner, pTier, pCenter, pTimer } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { build, placeProblem } from '../src/sim/buildings';
@@ -87,7 +87,7 @@ describe('research', () => {
     start(12345); run(300);
     const n=me(); expect(n.taxpayers).toBeGreaterThan(0);
     n.tier[R_TAXES]=3; run(1);
-    expect(n.income).toBeCloseTo(GOLD_PER_SEC+TAX_PER_VILLAGER*3*n.taxpayers);
+    expect(n.income).toBeCloseTo(TAX_PER_VILLAGER*3*n.taxpayers);
   });
 });
 

@@ -212,12 +212,14 @@ const defence = (D: Nation) => 0.7*D.soldiers + 2*D.towers + 2;
 
 /** The share of its people a bot wants under arms: few in peace, so it grows; more with a much
     stronger army next door; many at war, and nearly everyone when an enemy far outnumbers it. */
-function armyShare(n: Nation){ return Math.min(wantedShare(n), affordable(n)); }
-/** The share of its people a bot can pay as soldiers: wages up to 85% of its income (more while its
-    treasury is full, none to spare while it is empty). */
-function affordable(n: Nation){
+function armyShare(n: Nation){ const want=wantedShare(n); return Math.min(want, affordable(n, want>=0.45)); }
+const WAR_CHEST = 90;   // seconds a bot at war spreads its treasury over, paying wages beyond its tax
+/** The share of its people a bot can pay as soldiers: wages up to 85% of its tax (more while its
+    treasury is full, none to spare while it is empty), and at war the treasury too, spent down
+    over a minute and a half (tax alone keeps only about a third of a kingdom under arms). */
+function affordable(n: Nation, war: boolean){
   const people=n.villagers+n.soldiers+n.beggars; if (!people) return 1;
-  const budget=grossIncome(n)*(n.gold<0 ? 0.6 : n.gold>400 ? 1.3 : 0.85);
+  const budget=grossIncome(n)*(n.gold<0 ? 0.6 : n.gold>400 ? 1.3 : 0.85) + (war && n.gold>0 ? n.gold/WAR_CHEST : 0);
   return budget/WAGE/people;
 }
 function wantedShare(n: Nation){

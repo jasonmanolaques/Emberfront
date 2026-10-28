@@ -1,12 +1,12 @@
 // Buildings a kingdom places, and the gold economy.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
+import { TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, GOLD_PER_TILE, TAX_PER_VILLAGER, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
 import { W, owner, isLand, pType, pCenter, pBuild, type Human } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { listen } from '../src/sim/events';
 import { setOwner, tileCost } from '../src/sim/territory';
 import { STRUCTURES, structureOf, build, plotProblem, placeProblem } from '../src/sim/buildings';
-import { H_SOLDIER, H_VILLAGER, SOLDIER_HP, frontOf, doorOf, switching, makeHuman } from '../src/sim/population';
+import { HUMAN_EVERY as E, H_SOLDIER, H_VILLAGER, SOLDIER_HP, frontOf, doorOf, switching, makeHuman } from '../src/sim/population';
 import { declare } from '../src/sim/war';
 
 const me = () => W.nations[1];
@@ -100,31 +100,34 @@ describe('building costs and placement', () => {
 
 describe('what the buildings do', () => {
   it('farms bring new humans 5% sooner each', () => {
-    start(12345, 0); run(1000);
-    expect(mine()).toHaveLength(10);
+    start(12345, 0); run(10*E);
+    expect(W.humanSeq).toBe(10);   // (born: the last may have no house yet, and some may end up beggars)
     start(12345, 0); expand(3);
     const plots=freePlots();
     for (let k=0;k<4;k++) place(B_FARM, plots[k]);
     const before=mine().length, t0=W.tickN, p0=me().humanProg;
-    run(1000);
-    expect(mine().length-before).toBe(Math.floor((p0+1000*1.2)/100) - Math.floor(p0/100));   // 4 farms: 20% faster
-    expect(W.tickN-t0).toBe(1000);
+    run(10*E);
+    expect(mine().length-before).toBe(Math.floor((p0+10*E*1.2)/E) - Math.floor(p0/E));   // 4 farms: 20% faster
+    expect(W.tickN-t0).toBe(10*E);
   });
 
-  it('coin minters add 10% to the 5 gold a second each', () => {
+  it('earns nothing but tax, and coin minters add 10% to it', () => {
     start(12345, 0);
-    me().humanProg=-1e9;   // nobody arrives, so there is no tax to count
+    me().humanProg=-1e9;   // nobody arrives, so there is nobody to pay tax
     const g0=me().gold; run(100);
-    expect(me().gold-g0).toBeCloseTo(50, 6);
-    place(B_MINTER, freePlots()[0]); place(B_MINTER, freePlots()[0]);
-    const g1=me().gold; run(100);
-    expect(me().gold-g1).toBeCloseTo(60, 6);
+    expect(me().gold).toBe(g0);   // no passive income
+    start(12345, 0); run(10*E);
+    const n=me(); n.humanProg=-1e9;
+    expect(n.taxpayers).toBeGreaterThan(0);
+    expect(n.income).toBeCloseTo(TAX_PER_VILLAGER*n.taxpayers, 9);
+    place(B_MINTER, freePlots()[0]); place(B_MINTER, freePlots()[0]); tick();
+    expect(n.income).toBeCloseTo(TAX_PER_VILLAGER*n.taxpayers*1.2, 9);
   });
 
   it('keeps its army of 5 waiting at the barracks; soldiers with no room patrol the city', () => {
     start(12345, 0); expand(4);
     const b=place(B_BARRACKS);
-    run(1000); queueCommand({ type: 'soldiers', nation: 1, share: 0.6 }); run(600);
+    run(10*E); queueCommand({ type: 'soldiers', nation: 1, share: 0.6 }); run(600);
     const [bx, by]=frontOf(b), soldiers=mine().filter(h => h.kind===H_SOLDIER && !switching(h));
     expect(soldiers.length).toBeGreaterThan(6);
     run(100);
@@ -209,15 +212,16 @@ describe('gold and strength', () => {
     expect(me().gold).toBe(GOLD_START);
   });
 
-  it('settles unclaimed land at 1 gold a tile, and gives back what it did not spend', () => {
+  it('settles unclaimed land at 0.5 gold a tile, and gives back what it did not spend', () => {
     start(12345, 0);
+    me().humanProg=-1e9;   // nobody arrives, so no tax comes in meanwhile
     const g0=me().gold, tiles0=me().tiles;
     queueCommand({ type: 'attack', nation: 1, tile: (() => { for (let i=0;i<NT;i++) if (!owner[i] && isLand[i] && [i-1,i+1,i-TW,i+TW].some(k => owner[k]===1)) return i; return -1; })(), ratio: 0.5 });
     let ticks=0; tick(); ticks++;
     while (W.attacks.some(A => !A.done)){ tick(); ticks++; }
-    const earned=ticks*0.5, gained=me().tiles-tiles0;
+    const gained=me().tiles-tiles0;
     expect(gained).toBeGreaterThan(100);
-    expect(g0 + earned - me().gold).toBeCloseTo(gained, 6);
+    expect(g0 - me().gold).toBeCloseTo(gained*GOLD_PER_TILE, 6);
   });
 
   it('charges more for enemy land the stronger the defender is for its size, and more near its watchtowers', () => {

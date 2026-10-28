@@ -1,6 +1,6 @@
 // Homes: villagers build a hovel when the kingdom is short of houses; spare houses stand empty.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NT, NP, PW, B_HOUSE, B_SITE, B_EMPTY, B_MINTER, GOLD_PER_SEC, TAX_PER_VILLAGER } from '../src/core/constants';
+import { TW, TH, NT, NP, PW, B_HOUSE, B_SITE, B_EMPTY, B_MINTER, TAX_PER_VILLAGER } from '../src/core/constants';
 import { W, owner, isLand, pType, pOwner, pAband, pCenter, pBuild } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { build, plotProblem } from '../src/sim/buildings';
@@ -64,7 +64,7 @@ describe('building homes', () => {
   });
 
   it('keeps one house per person as the kingdom grows', () => {
-    start(987654321, 0); expand(12); run(3000);
+    start(987654321, 0); expand(12); run(6000);
     const people=mine().length, b=building().length, n=me();
     expect(people).toBeGreaterThan(25);
     expect(n.houses + b).toBe(people);
@@ -140,11 +140,11 @@ describe('tax', () => {
     const n=me();
     expect(n.villagers).toBeGreaterThan(5);
     tick();
-    expect(n.income).toBeCloseTo((GOLD_PER_SEC + TAX_PER_VILLAGER*n.taxpayers)*(1+0.1*n.minters), 9);
+    expect(n.income).toBeCloseTo((TAX_PER_VILLAGER*n.taxpayers)*(1+0.1*n.minters), 9);
     // two minters on top
     for (let k=0;k<2;k++){ let q=-1; for (let p=0;p<NP && q<0;p++) if (!plotProblem(n,p)) q=p; n.stock=[5,5,5]; build(n,q,B_MINTER); }
     tick();
-    expect(n.income).toBeCloseTo((GOLD_PER_SEC + TAX_PER_VILLAGER*n.taxpayers)*1.2, 9);
+    expect(n.income).toBeCloseTo((TAX_PER_VILLAGER*n.taxpayers)*1.2, 9);
     void B_EMPTY;
   });
 });
@@ -159,6 +159,7 @@ describe('homeless people and beggars', () => {
     pBuild.fill(0);   // no room left anywhere to build another house
     const hs=houses(); for (const q of hs.slice(-2)){ pType[q]=B_EMPTY; pOwner[q]=0; }
     me().houses-=2; me().beds-=2;
+    for (const h of mine()) h.homeless=0;   // (the newest may have waited a while for a house already)
     tick();
   }
 
@@ -171,7 +172,7 @@ describe('homeless people and beggars', () => {
     const villagers=mine().filter(h => h.kind===H_VILLAGER && !h.beggar).length;
     expect(me().taxpayers).toBe(villagers-homeless.filter(h => h.kind===H_VILLAGER).length);
     tick();   // income is worked out at the start of a tick, from the last tick's head count
-    expect(me().income).toBeCloseTo((GOLD_PER_SEC + TAX_PER_VILLAGER*me().taxpayers)*(1+0.1*me().minters), 9);
+    expect(me().income).toBeCloseTo((TAX_PER_VILLAGER*me().taxpayers)*(1+0.1*me().minters), 9);
   });
 
   it('turns a villager homeless for a minute into a beggar who does no work', () => {

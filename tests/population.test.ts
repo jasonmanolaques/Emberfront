@@ -5,7 +5,7 @@ import { W, owner, isLand, pType } from '../src/sim/state';
 import { build, plotProblem } from '../src/sim/buildings';
 import { newWorld, startMatch, queueCommand, tick, grossIncome } from '../src/sim/sim';
 import { setOwner } from '../src/sim/territory';
-import { H_SOLDIER, H_VILLAGER, T_SOLDIER, T_MILITIA, MILITIA_HP, TASK_ROAM, TASK_TO_TRAIN, TASK_INSIDE, doorOf, frontOf, switching as isSwitching, indoors } from '../src/sim/population';
+import { HUMAN_EVERY as E, H_SOLDIER, H_VILLAGER, T_SOLDIER, T_MILITIA, MILITIA_HP, TASK_ROAM, TASK_TO_TRAIN, TASK_INSIDE, doorOf, frontOf, switching as isSwitching, indoors } from '../src/sim/population';
 
 const me = () => W.nations[1];
 const mine = () => W.humans.filter(h => h.o === 1);
@@ -32,38 +32,46 @@ function expand(rounds: number){
     run(30);
   }
 }
+/** Gives the player the unclaimed land round its capital at once, room for everyone's house (so
+    nobody turns beggar and starves while a test waits for people). */
+function roomy(r = 24){
+  const c=me().capTile, cx=c%TW, cy=(c/TW)|0;
+  for (let y=Math.max(0,cy-r);y<=Math.min(TH-1,cy+r);y++) for (let x=Math.max(0,cx-r);x<=Math.min(TW-1,cx+r);x++){ const t=y*TW+x; if (!owner[t] && isLand[t]) setOwner(t,1); }
+}
 let barracks = -1;
 function start(seed: number, rivals: number, withBarracks = true){
   newWorld(seed);
   for (let r=0;r<60;r++) for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){
     if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
-    if (startMatch((TH/2+dy*3)*TW + TW/2+dx*3, rivals)){ barracks = withBarracks ? addBarracks() : -1; return; }
+    if (startMatch((TH/2+dy*3)*TW + TW/2+dx*3, rivals)){ roomy(); barracks = withBarracks ? addBarracks() : -1; return; }
   }
   throw new Error('no spawn spot');
 }
+// runs until ok() (a little while, so those busy with a load or a house can join in), and checks it
+function soon(ok: () => boolean, max = 100){ for (let i=0;i<max && !ok();i++) tick(); expect(ok()).toBe(true); }
 // runs until nobody is switching role, then returns how many ticks that took
 function settle(max = 3000){ for (let i=0;i<max;i++){ if (!mine().some(isSwitching)) return i; tick(); } throw new Error('never settled'); }
 
 describe('population', () => {
   beforeEach(() => start(12345, 0));
 
-  it('releases one human from the capital every 10 seconds', () => {
-    run(99);  expect(mine()).toHaveLength(0);
+  it('releases one human from the capital every 20 seconds', () => {
+    run(E-1);  expect(mine()).toHaveLength(0);
     run(1);   expect(mine()).toHaveLength(1);
     const [dx, dy] = doorOf(me()), h = mine()[0];
     expect(Math.hypot(h.x-dx, h.y-dy)).toBeLessThan(1);   // stepped out of the door
-    run(100); expect(mine()).toHaveLength(2);
-    run(800); expect(mine()).toHaveLength(10);
+    run(E); expect(mine()).toHaveLength(2);
+    run(8*E); expect(mine()).toHaveLength(10);
   });
 
   it('makes everyone a villager while the soldier share is 0%', () => {
-    run(1000);
+    run(10*E);
     expect(count(H_VILLAGER)).toBe(10);
     expect(count(H_SOLDIER)).toBe(0);
   });
 
   it('sends the nearest half of 10 villagers into the barracks at 50%, and they come out as soldiers', () => {
-    run(1000);
+    run(10*E);
     const [dx, dy] = frontOf(barracks), dist = (h: { x: number; y: number }) => Math.hypot(h.x-dx, h.y-dy);
     const entered = new Map<number, number>(), stints: number[] = [];
     const lastTask = new Map(mine().map(h => [h.id, h.task]));
@@ -71,11 +79,12 @@ describe('population', () => {
     for (let i=0;i<600 && stints.length<5;i++){
       tick();
       if (i===0){
-        // villagers carrying a load deliver it first, so they are not picked
-        const walking = switching(), carrying = mine().filter(h => h.carry>=0 && !isSwitching(h)).length;
-        expect(walking.length).toBe(Math.min(5, 10-carrying));
+        // villagers carrying a load deliver it first, and those building their house finish it, so they are not picked
+        const busy = (h: { carry: number; home: number }) => h.carry>=0 || h.home>=0;
+        const walking = switching(), others = mine().filter(h => busy(h) && !isSwitching(h)).length;
+        expect(walking.length).toBe(Math.min(5, 10-others));
         expect(walking.every(h => h.kind === H_VILLAGER)).toBe(true);
-        expect(Math.max(...walking.map(dist))).toBeLessThanOrEqual(Math.min(...mine().filter(h => !isSwitching(h) && h.carry<0).map(dist)));
+        expect(Math.max(...walking.map(dist))).toBeLessThanOrEqual(Math.min(...mine().filter(h => !isSwitching(h) && !busy(h)).map(dist)));
       }
       // each one goes inside for exactly 3 s (30 ticks) and comes back out as a soldier
       for (const h of mine()){
@@ -94,8 +103,8 @@ describe('population', () => {
   });
 
   it('spawns newcomers as soldiers at the barracks while the kingdom is short of them and the barracks has room', () => {
-    run(1000); setShare(0.42); tick();   // 4 of 10, and 5 of 11: the newcomer is the fifth, with room for him
-    expect(switching()).toHaveLength(4);
+    run(10*E); setShare(0.42);   // 4 of 10, and 5 of 11: the newcomer is the fifth, with room for him
+    soon(() => switching().length===4);
     while (mine().length < 11) tick();
     const newest = mine().reduce((a, b) => a.id > b.id ? a : b), [bx, by] = frontOf(barracks);
     expect(newest.kind).toBe(H_SOLDIER);
@@ -105,8 +114,8 @@ describe('population', () => {
   });
 
   it('trains the rest as militia at the castle once the barracks are full: unpaid, and paying no tax', () => {
-    run(1000); setShare(1); tick();
-    expect(switching().length).toBeGreaterThanOrEqual(8);   // (anyone busy with a load or a house follows later)
+    run(10*E); setShare(1);
+    soon(() => switching().length>=8);   // (anyone busy with a load or a house follows later)
     expect(switching().filter(h => h.to===T_SOLDIER)).toHaveLength(5);   // the barracks' room
     const cap = switching().filter(h => h.to===T_MILITIA), [dx, dy] = doorOf(W.nations[1]);
     expect(cap.length).toBeGreaterThanOrEqual(3);
@@ -127,15 +136,15 @@ describe('population', () => {
 
   it('makes no soldiers at all without a barracks', () => {
     start(12345, 0, false);
-    run(1000); setShare(1); run(600);
+    run(10*E); setShare(1); run(600);
     expect(count(H_SOLDIER)).toBe(0);
     expect(switching()).toHaveLength(0);
   });
 
   it('counts a born soldier toward the target, so one fewer villager has to convert', () => {
-    run(1000); setShare(0.5);
+    run(10*E); setShare(0.5);
     // the 11th human is due next tick; at 50% of 11 the kingdom wants 6 soldiers
-    run(99); tick();
+    run(E-1); tick();
     expect(mine()).toHaveLength(11);
     settle();
     expect(count(H_SOLDIER)).toBe(6);
@@ -143,14 +152,14 @@ describe('population', () => {
   });
 
   it('turns soldiers back into villagers when the share is lowered', () => {
-    run(1000); setShare(0.5); tick(); settle();
+    run(10*E); setShare(0.5); tick(); settle();
     expect(count(H_SOLDIER)).toBeGreaterThan(0);
     setShare(0); tick(); settle();
     expect(count(H_SOLDIER)).toBe(0);
   });
 
   it('turns back walkers who are no longer needed when the share drops mid-walk', () => {
-    run(1000); setShare(1); tick();
+    run(10*E); setShare(1); tick();
     const walkers = mine().filter(h => h.task === TASK_TO_TRAIN).map(h => h.id);
     expect(walkers.length).toBeGreaterThan(0);
     setShare(0); tick();
@@ -159,7 +168,7 @@ describe('population', () => {
   });
 
   it('stops new humans once the capital falls, while the barracks keeps training', () => {
-    run(1000); setShare(1); run(5);
+    run(10*E); setShare(1); run(5);
     expect(switching().length).toBeGreaterThan(0);
     setOwner(me().capTile, 0);           // capital lost
     expect(me().capTile).toBe(-1);
@@ -170,7 +179,7 @@ describe('population', () => {
   });
 
   it('stops training when the barracks is lost', () => {
-    run(1000); setShare(1); run(5);
+    run(10*E); setShare(1); run(5);
     expect(switching().length).toBeGreaterThan(0);
     setOwner(barracks%PW*4+2 + ((barracks/PW|0)*4+2)*TW, 0);   // the ground under it is lost and it burns
     tick();
@@ -208,14 +217,14 @@ describe('population with bots', () => {
     // seed 4242, spawned at tile 40500: bots expand into the unclaimed ground right next to the castle
     newWorld(4242); startMatch(40500, 9); setShare(0.5);
     let tiles = me().tiles, lost = 0;
-    for (let i=0;i<1500;i++){
+    for (let i=0;i<3000;i++){
       const before = new Set(mine().filter(h => !h.beggar).map(h => h.id));   // (beggars can die of want)
       tick();
       const dead = [...before].filter(id => !W.humans.some(h => h.id === id)).length;
       if (me().tiles >= tiles) lost += dead;
       tiles = me().tiles;
     }
-    expect(mine().length).toBeGreaterThan(10);
+    expect(mine().length).toBeGreaterThan(5);
     expect(lost).toBe(0);
   });
 

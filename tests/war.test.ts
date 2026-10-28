@@ -116,7 +116,7 @@ describe('clicking another kingdom', () => {
     queueCommand({ type:'attack', nation:1, tile:t, ratio:1 }); run(30);
     expect(N(2).tiles).toBe(tiles);
     expect(W.attacks.filter(A => A.def===2)).toHaveLength(0);
-    expect(N(1).gold).toBeGreaterThan(gold);   // nothing spent
+    expect(N(1).gold).toBeGreaterThanOrEqual(gold);   // nothing spent
   });
 });
 
@@ -427,7 +427,7 @@ describe('bots at war', () => {
     outer: for (let r=0;r<60;r++) for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){ if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue; if (startMatch((TH/2+dy*3)*TW+TW/2+dx*3, 9)) break outer; }
     quiet();
     const began=collect('warBegan'), crises=collect('crisis'), wars=collect('escalated'), annexed=collect('annexed');
-    run(9500);   // armies big enough to break a castle take a while to raise
+    run(18000);   // armies big enough to break a castle take a while to raise (half an hour, living on tax)
     expect(began.some(b => b[2])).toBe(true);    // raids
     expect(crises.length).toBeGreaterThan(0);    // attacks: massed on a border...
     expect(wars.length).toBeGreaterThan(0);      // ...and then war

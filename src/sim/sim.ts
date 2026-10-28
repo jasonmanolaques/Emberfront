@@ -1,6 +1,6 @@
 /* ---------- simulation entry points: worlds, matches, commands, ticks ----------
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
-import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOLD_PER_SEC, TAX_PER_VILLAGER, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
+import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, TAX_PER_VILLAGER, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
 import { mulberry32 } from '../core/rng';
 import { W, resizeGrid, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
@@ -235,16 +235,16 @@ function applyCommand(c: Command){
 }
 
 /* ---------- simulation tick ---------- */
-/** Gold a second before wages: the passive income and the villagers' tax, with the minters' share. */
+/** Gold a second before wages: the villagers' tax (there is no other income), with the minters' share. */
 /** How many of n's soldiers draw wages: the trained soldiers, and militia called up to a front. */
 export const paid = (n: Nation) => n.soldiers-n.militia+n.called;
-export const grossIncome = (n: Nation) => (GOLD_PER_SEC+TAX_PER_VILLAGER*n.tier[R_TAXES]*n.taxpayers)*(1+0.1*n.minters);
+export const grossIncome = (n: Nation) => TAX_PER_VILLAGER*n.tier[R_TAXES]*n.taxpayers*(1+0.1*n.minters);
 export function tick(){
   if (W.commands.length){ for (const c of W.commands) applyCommand(c); W.commands.length=0; }
   W.simTime+=TICK; W.tickN++;
   turnLedger();
   const N=W.nations;
-  // passive income plus each villager's tax (more with taxation research), each coin minter adding
+  // each villager's tax, the only income (more with taxation research), each coin minter adding
   // 10% to that, less the soldiers' wages (militia are paid only while called up); the treasury can go below zero
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive) continue;

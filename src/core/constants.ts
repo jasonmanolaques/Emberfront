@@ -32,13 +32,12 @@ export const isStructure = (ty: number) => ty===B_HOUSE || ty===B_FARM || ty===B
 
 /* ---------- economy ---------- */
 export const GOLD_START = 250;            // gold each kingdom starts with
-export const GOLD_PER_SEC = 5;            // base income; each coin minter adds 10% to the total
 export const WAGE = 0.2;                  // gold a second each soldier is paid
 export const UNPAID_TICKS = 100;          // ticks below zero gold before unpaid soldiers start to desert (10 s)
 export const DESERT_TICKS = 30;           // then one deserts every 3 s, the least armoured first
 export const SCRAP_GOLD = 30;             // gold back per tier of a deserter's armour, scrapped
-export const TAX_PER_VILLAGER = 0.1;      // gold a second each villager pays per taxation tier (soldiers pay none)
-export const GOLD_PER_TILE = 1;           // cost of settling one unclaimed tile
+export const TAX_PER_VILLAGER = 0.1;      // gold a second each villager pays per taxation tier (soldiers pay none): the only income; each coin minter adds 10% to it
+export const GOLD_PER_TILE = 0.5;         // cost of settling one unclaimed tile
 // kingdom strength: what the leaderboard and labels show, and what makes land costly to take
 export const STR_TILE = 1, STR_VILLAGER = 50, STR_SOLDIER = 100, STR_GOLD = 3;
 

@@ -96,7 +96,7 @@ describe('filling the ranks', () => {
 
 describe('soldier tiers and the blacksmith', () => {
   function armoury(k: number){
-    start(12345); expand(8);
+    start(12345); expand(8); run(320);   // (three villagers by now: one to be the smith)
     const b=place(B_BARRACKS), men=soldiers(k); run(5);
     const s=place(B_SMITHY);
     for (let i=0;i<300 && !mine().some(h => h.work===s);i++) run(1);   // a villager takes the job
@@ -114,9 +114,9 @@ describe('soldier tiers and the blacksmith', () => {
 
   it('fetches a copper from the castle, forges 5 seconds, and brings the armour to the barracks, where a soldier puts it on', () => {
     const { b, smith, men }=armoury(5);
-    me().tier[R_INFANTRY]=2; me().stock=[0,0,20];
+    me().tier[R_INFANTRY]=2; me().stock=[0,0,25];   // copper for 5 suits
     until(() => smith.load===1, 2000);
-    expect(me().stock[2]).toBe(15);                 // 5 copper taken from the store
+    expect(me().stock[2]).toBe(20);                 // 5 copper taken from the store
     until(() => smith.load===2, 1000);              // forged
     until(() => men.some(h => h.tier===2), 1500);   // delivered, and worn
     const t2=men.find(h => h.tier===2)!;
@@ -134,7 +134,7 @@ describe('soldier tiers and the blacksmith', () => {
 
   it('with heavy armour researched, fills every rack with reinforced first, then replaces it with heavy', () => {
     const { men }=armoury(5);
-    me().tier[R_INFANTRY]=3; me().stock=[0,0,40];
+    me().tier[R_INFANTRY]=3; me().stock=[0,0,50];   // copper for 5 reinforced suits and 5 heavy
     until(() => men.some(h => h.tier>=2), 3000);
     expect(men.some(h => h.tier===3)).toBe(false);   // reinforced comes first
     until(() => men.every(h => h.tier===2) || men.some(h => h.tier===3), 9000);
