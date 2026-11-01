@@ -40,7 +40,7 @@ describe('the real-world maps', () => {
 
   it('draw Europe at twice the scale, with the sea as it is: islands stand alone, and the mountains are where the ground is high', () => {
     newWorld(5,'europe');
-    expect([TW,TH]).toEqual([2400,1488]);   // a tile is about 3 km
+    expect([TW,TH]).toEqual([1824,1488]);   // a tile is about 3 km, from Iceland to Azerbaijan
     expect(EUROPE.includes('C')).toBe(false);   // no land bridges
     const at=(lat: number, lon: number) => { const p=tileXY(VIEWS.europe,lat,lon,TW,TH)!; return p[1]*TW+p[0]; };
     // the islands, apart from the mainland (and from each other)
@@ -105,18 +105,18 @@ describe('the real-world maps', () => {
     for (let i=1;i<N.length;i++) for (let j=i+1;j<N.length;j++) expect(colourGap(N[i].hex,N[j].hex)).toBeGreaterThanOrEqual(0.05);
   });
 
-  it('hold a full game on Europe: 64 kingdoms at their capitals, with more countries to choose from than that', () => {
+  it('hold a full game on Europe: every country with a capital on it, 62 kingdoms', () => {
     newWorld(2,'europe');
-    expect([TW,TH]).toEqual([2400,1488]);   // 6 by 6 generated maps
+    expect([TW,TH]).toEqual([1824,1488]);
     const caps=capitalsOn('europe'), codes=caps.map(c => c.country.code);
-    expect(codes.length).toBeGreaterThan(MAX_KINGDOMS);
-    for (const k of ['IS','PT','GB','FR','DE','IT','PL','RU','TR','EG','IR','KZ','AD','VA','LI']) expect(codes).toContain(k);
+    expect(codes.length).toBeGreaterThanOrEqual(60);
+    for (const k of ['IS','PT','GB','FR','DE','IT','PL','RU','TR','EG','AZ','AD','VA','LI']) expect(codes).toContain(k);
     expect(startMatch(caps.find(c => c.country.code==='FR')!.tile,codes.filter(c => c!=='FR'),'FR')).toBe(true);
-    expect(W.nations.length-1).toBe(MAX_KINGDOMS);   // more were named: a game holds 64
+    expect(W.nations.length-1).toBe(codes.length);   // all of them (Iran's Tehran lies just past the eastern edge)
     expect(W.nations.slice(1).every(n => n.alive)).toBe(true);
     const at=new Map(caps.map(c => [c.country.code, c.tile]));
     for (const n of W.nations.slice(1)) expect(near(n.capTile,at.get(n.code)!)).toBeLessThan(30);
-    expect(W.landCount/MAX_KINGDOMS).toBeGreaterThan(24000);   // room to grow: four times the land each of a generated game of 10
+    expect(W.landCount/MAX_KINGDOMS).toBeGreaterThan(12000);   // room to grow: twice the land each of a generated game of 10 (with 64)
   });
 
   it('are bigger than a generated map, so close capitals have room', () => {
