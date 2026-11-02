@@ -130,6 +130,7 @@ export function placeAt(t: number){
 export function clickOwnBuilding(t: number){
   let q=((t/TW|0)>>2)*PW+((t%TW)>>2);
   if (pType[q]===B_PART) q=pMain[q];
+  if (pType[q]===B_NAVAL && pOwner[q]===PLAYER){ closeNaval(); openNaval(q); return true; }   // (any part of the base, the piers over the water too)
   if (owner[t]!==PLAYER || pOwner[q]!==PLAYER) return false;
   const me=W.nations[PLAYER]!;
   if (pType[q]===B_RESEARCH){ openResearch(); return true; }

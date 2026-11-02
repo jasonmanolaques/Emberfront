@@ -5,7 +5,7 @@
    out (a map tile under DETAIL_CSS screen pixels), from the overview, one pixel a map tile. */
 import { TW, TH, RW, RH, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY, B_NAVAL } from '../core/constants';
 import { clamp, fmt } from '../core/util';
-import { W, isLand, sea, pType, pPrio, pTimer, pBurn, type Human } from '../sim/state';
+import { W, owner, isLand, sea, pType, pPrio, pTimer, pBurn, type Human } from '../sim/state';
 import { findBlock } from '../sim/sim';
 import { placeProblem, structureOf, canAfford, navalSite, SIZE, PRODUCE_TICKS, dims } from '../sim/buildings';
 import { client, reduceMotion } from '../client';
@@ -18,7 +18,7 @@ import { styleOf } from './style';
 import { personSprite, corpseSprite, woundStage, BODY_X, FEET_Y } from './people';
 import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, psize, floats, glints, shots, hits, corpses, drips, addDrip, CORPSE_MS, DRIP_MS, updateEffects } from './effects';
 import { shipSprite, drawBoat, resetShips, SHIP_W, SHIP_H } from './ships';
-import { landingZone, offshore, dockTile, type Zone } from '../sim/naval';
+import { landingZone, offshore, dockTile, settlePlan, type Zone, type SettlePlan } from '../sim/naval';
 import { H_SOLDIER, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, TASK_FORGE, indoors, maxHp } from '../sim/population';
 import { units, unitLabel } from '../sim/army';
 import { chatter, drawSpeech } from './speech';
@@ -119,6 +119,17 @@ function drawLandingPreview(now: number){
     const face=(c%TW)*RS>x ? 1 : -1;
     ctx.globalAlpha=0.65*pulse; ctx.drawImage(shipSprite(PLAYER,face,SHIP_CREW,false,0),Math.round(x)-SHIP_W/2,Math.round(y)-SHIP_H+6); ctx.globalAlpha=1;
   } });
+}
+/** A naval settlement being chosen: where the ship would put its settlers ashore for the land at the pointer (green), or the land that cannot be (red). */
+let spKey=-2, sp: SettlePlan | string | null=null;
+function drawSettlePreview(){
+  const me=W.nations[PLAYER]; if (!me || hover.tile<0 || !isLand[hover.tile] || W.nations[PLAYER].gold<0) return;
+  if (hover.tile!==spKey){ spKey=hover.tile; sp=owner[hover.tile] ? null : settlePlan(me,hover.tile); }
+  const t=hover.tile;
+  if (sp===null) return;
+  if (typeof sp==='string'){ ctx.fillStyle='rgba(255,90,70,.45)'; ctx.fillRect((t%TW)*RS-RS,((t/TW)|0)*RS-RS,RS*3,RS*3); return; }
+  ctx.fillStyle='rgba(143,227,155,.55)'; const l=sp.lands; ctx.fillRect((l%TW)*RS-RS,((l/TW)|0)*RS-RS,RS*3,RS*3);
+  ctx.strokeStyle='rgba(143,227,155,.8)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo((t%TW)*RS+RS/2,((t/TW)|0)*RS+RS/2); ctx.lineTo((l%TW)*RS+RS/2,((l/TW)|0)*RS+RS/2); ctx.stroke();
 }
 const SHIP_CREW = 5;
 function drawZone(z: { zone: number[]; coast: number[] }, inland: string, coast: string){
@@ -411,6 +422,8 @@ export function render(now: number, dt: number){
       ctx.globalAlpha=0.7; ctx.drawImage(ghostOf(client.placing,turned ? 1 : 0),(hx>>2)*PS,(hy>>2)*PS); ctx.globalAlpha=1;
       ctx.strokeStyle=ok?'rgba(143,227,155,.95)':'rgba(255,90,70,.9)'; ctx.lineWidth=2*dpr/zoom;
       ctx.strokeRect((hx>>2)*PS,(hy>>2)*PS,fw*PS,fh*PS);
+    } else if (client.state==='play' && client.settling){
+      drawSettlePreview();
     } else if (client.state==='play' && client.landing){
       drawLandingPreview(now);
     } else if (client.state==='spawn'){

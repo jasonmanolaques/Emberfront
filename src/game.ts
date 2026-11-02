@@ -7,6 +7,7 @@ import { W, owner, isLand, pType } from './sim/state';
 import { listen } from './sim/events';
 import { newWorld, startMatch, bordersOn, queueCommand, tick } from './sim/sim';
 import { client } from './client';
+import { settlePlan } from './sim/naval';
 import { cam, fitCam, focusOn } from './render/camera';
 import { buildBase, paintAll, paintRoad, paintTile, repaint, sizeTerrain } from './render/terrain';
 import { drawPlotAndNeighbours } from './render/sprites';
@@ -61,8 +62,8 @@ listen({
     else log(`${nm(a)} sails an invasion fleet for ${nm(d)}`);
   },
   shipBuilt: (o,_q) => { if (o===PLAYER){ log('A ship is ready in your harbour','good'); toast('Ship ready'); } },
-  colonyBound: (o,_t) => { if (o===PLAYER) log('A ship sails to colonize the island','good'); },
-  colonyFounded: (o,_t) => { if (o===PLAYER){ log('Your colonists land: your border spreads over the island, and villagers can cross by boat','good'); toast('Colony founded'); } },
+  colonyBound: (o,_t) => { if (o===PLAYER) log('A ship sails with your settlers: the border begins where it lands','good'); },
+  colonyFounded: (o,_t) => { if (o===PLAYER){ log('Your settlers land: your border spreads from there, and villagers can cross by boat','good'); toast('Settlers landed'); } },
   warBegan: (a,d) => {
     if (a===PLAYER) log(`Your soldiers muster to attack ${nm(d)}`,'good');
     else if (d===PLAYER){ log(`${nm(a)} has declared war on you!`,'bad'); toast(`${nm(a)} attacks you`); }
@@ -222,12 +223,21 @@ export function playerAttack(t: number, ratio=0.4){
   floats.push({x:(t%TW)*2+1, y:((t/TW)|0)*2, text:'−'+fmt(send)+' gold', t0:performance.now(), c:'#ffe27a'});
 }
 
-/** Colonizing: a ship takes `ratio` of the treasury over the sea to the landmass of unclaimed tile t. */
-export function playerColonize(t: number, ratio=0.4){
-  const me=W.nations[PLAYER]; if (!me || !me.alive || t<0 || !isLand[t] || owner[t]) return;
-  const send=me.gold*ratio; if (send<2){ toast('Not enough gold yet'); return; }
+/** Naval settlement chosen in the settle menu: `ratio` of the treasury goes by ship to the land the player clicks next. */
+export function startNavalSettle(ratio: number){
+  client.settling=ratio;
+  ui.banner.textContent='Naval settlement: click the land to send a ship to (an island, or land within 10 tiles of the shore) · Esc to cancel'; ui.banner.hidden=false;
+}
+export function cancelNavalSettle(){ if (!client.settling) return; client.settling=0; ui.banner.hidden=true; }
+/** The land clicked for the naval settlement: a ship of the fleet takes the gold there, and the border begins where it lands. */
+export function navalSettleAt(t: number){
+  const me=W.nations[PLAYER], ratio=client.settling; if (!me || !ratio) return;
+  const plan=settlePlan(me,t);
+  if (typeof plan==='string'){ toast(plan); return; }
+  const send=me.gold*ratio; if (send<2){ toast('Not enough gold yet'); cancelNavalSettle(); return; }
   queueCommand({ type:'colonize', nation:PLAYER, tile:t, ratio });
   floats.push({x:(t%TW)*2+1, y:((t/TW)|0)*2, text:'−'+fmt(send)+' gold', t0:performance.now(), c:'#ffe27a'});
+  cancelNavalSettle();
 }
 
 /** Asks the kingdom to keep `v` (0..1) of its people as soldiers. */

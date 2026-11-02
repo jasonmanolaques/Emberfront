@@ -105,7 +105,7 @@ export interface Campaign {
   naval: number;                     // an army put ashore from ships: the invasion it belongs to (it is never reinforced), else -1
   hitAt: number;                     // tick one of its soldiers was last hit
 }
-export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; isle?: number; }   // gold still to spend on this front (isle: a colony's, spent on that island's land only)
+export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; isle?: number; seed?: number; }   // gold still to spend on this front (isle: a colony's, spent on that island's land only)
 /** A ship at sea (sim/naval.ts): sailing out, waiting off a coast, or sailing home to its naval base. */
 export interface Ship {
   id: number; o: number; base: number;   // its kingdom, and the main plot of the naval base it sails from and returns to

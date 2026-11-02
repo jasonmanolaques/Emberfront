@@ -325,7 +325,7 @@ button:disabled:active{transform:none;box-shadow:2px 2px 0 var(--ink)}
 #army{left:50%;top:50%;transform:translate(-50%,-60%);width:min(320px,calc(100% - 32px));padding:12px 14px 14px;display:grid;gap:8px;z-index:4}
 #army .dhead{display:flex;align-items:center;gap:8px}
 #army .dname{font-weight:700;font-size:18px;flex:1}
-#expand.off .exrow{opacity:.45}
+#expand .off{opacity:.45}
 #army .x{width:30px;height:30px;padding:0;font-size:18px;line-height:1}
 #naval{left:50%;top:50%;transform:translate(-50%,-60%);width:min(320px,calc(100% - 32px));padding:12px 14px 14px;display:grid;gap:8px;z-index:4}
 #naval .dhead{display:flex;align-items:center;gap:8px}

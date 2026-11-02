@@ -2,10 +2,11 @@
    A naval base (sim/buildings.ts) is a harbour: 8 plots, a third of them at least on the water. Click
    it to build ships: 5 wood each, 15 seconds each (SHIP_TICKS), ready ships belonging to the kingdom
    rather than to a base. Ships only sail on water.
-   - Colonies. Clicking unclaimed land on a landmass the kingdom has no land on, with a naval base
-     standing, offers to colonize it: a ship (not one of the fleet: colonists need none) sails from
-     the base to the nearest coast of that landmass, and there its border takes the beach and the
-     gold chosen spreads it over that island only (Attack.isle). A sea lane (W.ferry) from the base
+   - Naval settlement. The settle menu's naval option, then a click on unclaimed land: a ship of the
+     fleet sails from a base to the coast nearest the click (an island: any distance; land joined to
+     the mainland: within 10 tiles of the shore), puts one tile of border ashore there, and the gold
+     chosen spreads the border from that tile as it would anywhere (Attack.seed), then the ship
+     sails home. A sea lane (W.ferry) from the base
      to the island is then open to the kingdom's villagers, who cross it in small boats to build
      houses there. Once the kingdom has land on the island it is settled like the mainland.
    - Naval invasions (sim/war.ts declares them): ships of the fleet carry the armies, 5 men each, to a
@@ -238,54 +239,60 @@ function dock(s: Ship){
   const n=W.nations[s.o]; if (n?.alive) n.fleet++;
 }
 
-/* ---------- colonies ---------- */
-/** What a colony on the landmass of unclaimed tile t would take: the base to sail from, the water to
-    sail to, the island tile it lands on; or why not. */
-export interface ColonyPlan { base: number; water: number; lands: number; path: number[]; }
-export function colonyPlan(n: Nation, t: number): ColonyPlan | string {
-  if (t<0 || !isLand[t] || owner[t]) return 'Not unclaimed land';
-  const I=isle[t];
-  if (hasLandOn(n.id,t)) return 'You already have land there';
+/* ---------- naval settlement ---------- */
+export const COAST_REACH = 10;   // tiles from the shore that land on the mainland may be sent a ship to
+/** Where a ship sent to the unclaimed land at tile t would land: the base to sail from, the water it comes to, the tile it
+    puts ashore, and the way; or why not. On a landmass the kingdom has no land on (an island) the ship lands at the coast
+    nearest the click; on one it has, the click must be within COAST_REACH tiles of a coast. */
+export interface SettlePlan { base: number; water: number; lands: number; path: number[]; }
+export function settlePlan(n: Nation, t: number): SettlePlan | string {
+  if (t<0 || !isLand[t] || owner[t]) return 'Click unclaimed land';
   const bases=basesOf(n);
-  if (!bases.length) return 'Build a naval base to colonise islands';
-  let best: ColonyPlan | null=null;
-  for (const q of bases){
-    const dock=dockTile(q); if (dock<0) continue;
-    const r=seaNearest(dock,w => {
-      const x=w%TW;
-      return (x>0 && isle[w-1]===I && !owner[w-1]) || (x<TW-1 && isle[w+1]===I && !owner[w+1]) || (w>=TW && isle[w-TW]===I && !owner[w-TW]) || (w<NT-TW && isle[w+TW]===I && !owner[w+TW]);
-    });
-    if (!r) continue;
-    if (!best || r.path.length<best.path.length){
-      const w=r.tile, x=w%TW;
-      const lands=x>0 && isle[w-1]===I && !owner[w-1] ? w-1 : x<TW-1 && isle[w+1]===I && !owner[w+1] ? w+1 : w>=TW && isle[w-TW]===I && !owner[w-TW] ? w-TW : w+TW;
-      best={ base:q, water:w, lands, path:r.path };
+  if (!bases.length) return 'Build a naval base to settle by sea';
+  if (n.fleet<1) return 'You need a ship: build one at a naval base';
+  const seas=new Set<number>(); for (const q of bases){ const d=dockTile(q); if (d>=0) seas.add(sea[d]); }
+  if (!seas.size) return 'Your naval base has no water';
+  const present=hasLandOn(n.id,t), I=isle[t];
+  // the nearest coast to the click, over the free land of that landmass
+  fit(); if (queue.length!==NT) queue=new Int32Array(NT);
+  const stamp=++markSeq; let head=0, tail=0, lands=-1, water=-1; const depth=new Map<number, number>();
+  mark[t]=stamp; queue[tail++]=t; depth.set(t,0);
+  while (head<tail && lands<0){
+    const c=queue[head++], x=c%TW, d=depth.get(c)!;
+    for (const w of [x>0 ? c-1 : -1, x<TW-1 ? c+1 : -1, c>=TW ? c-TW : -1, c<NT-TW ? c+TW : -1]) if (w>=0 && !isLand[w] && seas.has(sea[w])){ lands=c; water=w; break; }
+    if (lands>=0) break;
+    if (present && d>=COAST_REACH) continue;
+    for (const k of [x>0 ? c-1 : -1, x<TW-1 ? c+1 : -1, c>=TW ? c-TW : -1, c<NT-TW ? c+TW : -1]){
+      if (k<0 || mark[k]===stamp || !isLand[k] || isle[k]!==I || owner[k]) continue;
+      mark[k]=stamp; depth.set(k,d+1); queue[tail++]=k;
     }
+  }
+  if (lands<0) return present ? 'Too far from the coast: click within 10 tiles of the shore' : 'No sea route to that land';
+  let best: SettlePlan | null=null;
+  for (const q of bases){
+    const dock=dockTile(q); if (dock<0 || sea[dock]!==sea[water]) continue;
+    const path=seaPaths(dock,[water]).get(water);
+    if (path && (!best || path.length<best.path.length)) best={ base:q, water, lands, path };
   }
   return best ?? 'No sea route to that land';
 }
-/** Kingdom n sends a ship with `gold` to colonize the landmass of unclaimed tile t. */
+/** Kingdom n sends one of its ships, with `gold`, to settle at the unclaimed land of tile t: where it lands the border begins, and the gold spreads it from there. */
 export function colonize(n: Nation, t: number, gold: number){
-  const plan=colonyPlan(n,t);
+  const plan=settlePlan(n,t);
   if (typeof plan==='string' || gold<2 || n.gold<gold) return false;
-  n.gold-=gold;
-  launchShip(n.id,plan.base,plan.path,{ colony:isle[t], gold, lands:plan.lands });
+  n.gold-=gold; n.fleet--;
+  launchShip(n.id,plan.base,plan.path,{ colony:isle[t], gold, lands:plan.lands, fleet:true });
   on.colonyBound(n.id,t);
   return true;
 }
-/** A colony's ship has come ashore: the border takes the beach, the sea lane opens, and the gold spreads it over the island. */
+/** A settlers' ship has come ashore: its one tile of beach becomes the kingdom's, the sea lane opens, and the gold spreads the border from there as it would anywhere. */
 function landColony(s: Ship){
   const n=W.nations[s.o]; if (!n?.alive){ return; }
   const I=s.colony, t0=s.lands;
   if (t0<0 || owner[t0] || isle[t0]!==I){ n.gold+=s.gold; s.gold=0; s.colony=-1; return; }   // (taken meanwhile: the gold comes home)
-  // the beach: the landing tile and the free land of the island round it
-  const x0=t0%TW, y0=(t0/TW)|0;
-  for (let y=y0-1;y<=y0+1;y++) for (let x=x0-1;x<=x0+1;x++){
-    if (x<0||y<0||x>=TW||y>=TH) continue; const t=y*TW+x;
-    if (isLand[t] && isle[t]===I && !owner[t]) setOwner(t,n.id);
-  }
+  setOwner(t0,n.id);
   openLane(s);
-  launchOn(n.id,s.gold,I);
+  launchOn(n.id,s.gold,I,t0);
   on.colonyFounded(n.id,t0);
   s.gold=0; s.colony=-1;
 }

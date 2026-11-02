@@ -24,7 +24,7 @@ export function openNaval(q: number){
   plot=q; panel.hidden=false; refreshNaval();
 }
 export function closeNaval(){ panel.hidden=true; plot=-1; }
-$('nClose').addEventListener('click', closeNaval);
+$('nvClose').addEventListener('click', closeNaval);
 $('nBuild').addEventListener('click', () => { if (plot>=0) queueCommand({ type:'ship', nation:PLAYER, plot }); });
 
 /** Brings the panel up to date (cheap; skipped while it is closed). */

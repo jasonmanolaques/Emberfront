@@ -123,7 +123,7 @@
     <p class="dnote" id="aNote"></p>
   </section>
   <section id="naval" class="plate" hidden aria-label="Naval base">
-    <div class="dhead"><canvas id="nIcon" width="64" height="32" aria-hidden="true"></canvas><span class="dname">Naval base</span><button id="nClose" class="x" aria-label="Close">×</button></div>
+    <div class="dhead"><canvas id="nIcon" width="64" height="32" aria-hidden="true"></canvas><span class="dname">Naval base</span><button id="nvClose" class="x" aria-label="Close">×</button></div>
     <dl class="stats dstats">
       <div><dt title="Ships ready in the harbour: the fleet belongs to the kingdom, and any base can send it">Ships ready</dt><dd id="nReady">0</dd></div>
       <div><dt>Building</dt><dd id="nBuilding">0</dd></div>
@@ -188,6 +188,8 @@
   <div id="expand" class="plate" hidden role="dialog" aria-label="Settle this land">
     <span class="tag" id="exTitle">Settle: spend of your gold</span>
     <div class="exrow"><button data-r="0.25">25%</button><button data-r="0.5">50%</button><button data-r="0.75">75%</button><button data-r="1">100%</button></div>
+    <span class="tag" id="exSea">⚓ Naval settlement: send a ship</span>
+    <div class="exrow" id="exNaval"><button data-r="0.25">25%</button><button data-r="0.5">50%</button><button data-r="0.75">75%</button><button data-r="1">100%</button></div>
   </div>
   <div id="log" aria-live="polite"></div>
   <div id="banner" class="plate" hidden>Tap open land to found your capital</div>
@@ -206,7 +208,7 @@
       <li>Nothing lies on the map to gather: wood, stone and copper come from <b>plantations, quarries and copper mines</b> (your first of each is free). Research lets them join into bigger ones. Your villagers build homes and rest in them.</li>
       <li>Open a building menu on the right (<b>urban development</b>, <b>military</b>, <b>resources</b>, <b>society</b>) to place farms, barracks, watchtowers and more. The same buildings side by side join up.</li>
       <li>The soldier slider raises <b>militia</b> at the castle: unpaid at home, they rest in your houses and come out when called, and can go to war with you. A <b>barracks</b> trains them into soldiers, who are paid wages. <b>Click a watchtower</b> to call 5 militia to guard it.</li>
-      <li><b>Click another kingdom</b> for diplomacy. <b>Allies</b> open their land to your soldiers. Go to <b>war</b> with as many soldiers as you choose: an <b>attack</b> masses your armies on their border in a <b>crisis</b>, and your word in the war bar makes it war, fought along the whole front. Break the castle and the whole kingdom is yours. A <b>naval base</b> lets you <b>colonize</b> islands and land armies from the sea (<b>⚓ Naval invasion</b>): ships, 5 men each, carry them to the coast you point at.</li>
+      <li><b>Click another kingdom</b> for diplomacy. <b>Allies</b> open their land to your soldiers. Go to <b>war</b> with as many soldiers as you choose: an <b>attack</b> masses your armies on their border in a <b>crisis</b>, and your word in the war bar makes it war, fought along the whole front. Break the castle and the whole kingdom is yours. A <b>naval base</b> lets you settle islands by ship (<b>⚓ Naval settlement</b> in the settle menu) and land armies from the sea (<b>⚓ Naval invasion</b>): ships, 5 men each, carry them to the coast you point at.</li>
       <li>Only at war do soldiers fight, and watchtowers and your castle shoot at enemies on your land. Land an attack takes is only <b>occupied</b> (hatched) until peace: drive the enemy out and take it back, then counter-attack. <b>Hold the border</b> pulls your army back to where the war began to mass new recruits for a second wave; invading is slow, and a defender must retake its land before it can strike back.</li>
       <li>Each war has a button at the top: offer peace, or, when an army masses on your border, <b>hold the border</b> against it. Villagers caught near a fight either run or take up arms.</li>
     </ul>
