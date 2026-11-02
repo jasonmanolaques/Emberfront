@@ -102,12 +102,9 @@ export function bindInput(){
   const soldiersEl=$('soldiers') as HTMLInputElement;
   soldiersEl.addEventListener('input',()=>setSoldierShare(+soldiersEl.value/100));
 
-  $('zoomIn').onclick=()=>zoomAt(1.5,view.width/2,view.height/2);
-  $('zoomOut').onclick=()=>zoomAt(1/1.5,view.width/2,view.height/2);
-  $('home').onclick=centerHome;
   $('speed').onclick=()=>{ client.speed=client.speed>=3?1:client.speed+1; $('speed').textContent=client.speed+'×'; };
   $('pause').onclick=()=>setPaused(!client.paused);
-  $('build').onclick=()=>toggleBuildPanel();
+  for (const b of document.querySelectorAll<HTMLButtonElement>('#tools .cat')) b.onclick=()=>toggleBuildPanel(undefined,b.dataset.cat);
   $('start').onclick=startGame;
   $('newMap').onclick=nextMap;
   $('again').onclick=()=>{ $('over').hidden=true; showHUD(false); client.state='intro'; nextMap(); $('intro').hidden=false; };   // back to the start card, to choose again

@@ -15,7 +15,15 @@ import { styleOf } from '../render/style';
 import { ui, toast } from './hud';
 import { $ } from './dom';
 
-const panel=$('buildPanel'), list=$('buildList'), tip=$('btip'), button=$('build');
+const panel=$('buildPanel'), list=$('buildList'), tip=$('btip'), title=$('buildTitle');
+/** The building menus on the right: what each holds. */
+export const CATEGORIES = [
+  { id:'urban',     name:'Urban development',   types:[B_FARM, B_GUILD, B_MINTER] },
+  { id:'military',  name:'Military',            types:[B_BARRACKS, B_TOWER, B_SMITHY] },
+  { id:'resources', name:'Resource buildings',  types:[B_PLANTATION, B_QUARRY, B_COPPERMINE] },
+  { id:'society',   name:'Society advancement', types:[B_RESEARCH] },
+];
+let category='urban';   // the menu showing, or the last one opened
 const ICO=['wood','stone','copper'];
 const owned = (n: Nation, type: number) => type===B_FARM ? n.farms : type===B_BARRACKS ? n.barracks : type===B_TOWER ? n.towers : type===B_MINTER ? n.minters
   : type===B_PLANTATION ? n.plantations : type===B_QUARRY ? n.quarries : type===B_COPPERMINE ? n.copperMines : type===B_RESEARCH ? n.labs : type===B_GUILD ? n.guilds : type===B_SMITHY ? n.smithies : 0;
@@ -26,6 +34,7 @@ export function setupBuildPanel(){
   list.textContent=''; rows.clear();
   for (const s of STRUCTURES){
     const b=document.createElement('button'); b.className='bld'; b.dataset.type=String(s.type);
+    b.dataset.cat=CATEGORIES.find(c => c.types.includes(s.type))?.id ?? 'urban';
     const [fw,fh]=SIZE[s.type] ?? [1,1], c=document.createElement('canvas'); c.width=fw*PS; c.height=fh*PS; drawIcon(c.getContext('2d')!,s.type,styleOf(PLAYER));
     if (fh<fw) c.style.height='16px';   // keep the pixels square for a 2x1 building
     const body=document.createElement('span'); body.style.display='grid'; body.style.gap='3px'; body.style.minWidth='0';
@@ -92,9 +101,17 @@ export function stopPlacing(){
   client.placing=0; ui.banner.hidden=true; refreshBuildPanel();
 }
 
-export function toggleBuildPanel(open=panel.hidden){
-  panel.hidden=!open; button.setAttribute('aria-expanded',String(open));
-  if (open) refreshBuildPanel(); else { tip.hidden=true; stopPlacing(); }
+/** Opens building menu `cat` (the last one, if none is named), closes the panel when `open` is false,
+    or, with no `open` given, when that menu is already showing. */
+export function toggleBuildPanel(open?: boolean, cat=category){
+  const show: boolean = open===undefined ? (panel.hidden===true || cat!==category) : open;
+  if (show) category=cat;
+  panel.hidden=!show;
+  const c=CATEGORIES.find(c => c.id===category)!;
+  title.textContent=c.name;
+  for (const [type,b] of rows) b.hidden=!c.types.includes(type);
+  for (const b of document.querySelectorAll<HTMLElement>('#tools .cat')) b.setAttribute('aria-expanded',String(show && b.dataset.cat===category));
+  if (show) refreshBuildPanel(); else { tip.hidden=true; stopPlacing(); }
 }
 
 /** A click on the map while placing: build there if the plot is good. */

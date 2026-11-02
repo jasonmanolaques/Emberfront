@@ -88,7 +88,7 @@ The people who have lived in the kingdom longest get the houses, so the newest a
 
 ## Buildings
 
-Houses are built by villagers (above). Everything else is placed by the kingdom from the buildings panel (the hammer button, or B) and paid for from its stockpile:
+Houses are built by villagers (above). Everything else is placed by the kingdom from the four building menus on the right-hand buttons (B reopens the last one) and paid for from its stockpile: **urban development** (farm, coin minter, builders guild), **military** (barracks, watchtower, blacksmith), **resource buildings** (plantation, stone quarry, copper mine) and **society advancement** (the research station, for now). There are no zoom buttons (the mouse wheel and pinch zoom) and no centre button (Space centres on your capital):
 
 | Building | Cost (wood / stone / copper) | Does |
 |---|---|---|
