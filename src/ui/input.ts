@@ -102,7 +102,6 @@ export function bindInput(){
   const soldiersEl=$('soldiers') as HTMLInputElement;
   soldiersEl.addEventListener('input',()=>setSoldierShare(+soldiersEl.value/100));
 
-  $('speed').onclick=()=>{ client.speed=client.speed>=3?1:client.speed+1; $('speed').textContent=client.speed+'×'; };
   $('pause').onclick=()=>setPaused(!client.paused);
   for (const b of document.querySelectorAll<HTMLButtonElement>('#tools .cat')) b.onclick=()=>toggleBuildPanel(undefined,b.dataset.cat);
   $('start').onclick=startGame;

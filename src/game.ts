@@ -171,7 +171,7 @@ export function newGame(seed?: number){
   ui.banner.textContent = W.map==='gen' ? 'Tap open land to found your capital' : 'Tap open land to found your capital: you play the country whose capital is nearest';
   resetStyles(); resetLabels(); resetEffects(); resetGhosts(); resetPeople(); resetSpeech();
   toggleBuildPanel(false); resetDiplomacy(); closeResearch(); closeArmy(); deselect();
-  client.overShown=false; client.lastVillageLog=-99; client.paused=false; client.speed=1; $('speed').textContent='1×';
+  client.overShown=false; client.lastVillageLog=-99; client.paused=false;
   setSoldierShare(0); setInvest(0.5);
   sizeTerrain();   // (the real-world maps are bigger: the picture's tiles are let go and made again as they come into view)
   buildBase(); paintAll();
