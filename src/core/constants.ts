@@ -37,7 +37,8 @@ export const WAGE = 0.3;                  // gold a second each soldier is paid
 export const UNPAID_TICKS = 100;          // ticks below zero gold before unpaid soldiers start to desert (10 s)
 export const DESERT_TICKS = 30;           // then one deserts every 3 s, the least armoured first
 export const SCRAP_GOLD = 30;             // gold back per tier of a deserter's armour, scrapped
-export const TAX_PER_VILLAGER = 0.1;      // gold a second each villager pays per taxation tier (soldiers pay none): the only income; each coin minter adds 10% to it
+export const TAX_PER_VILLAGER = 0.1;      // gold a second each villager pays per taxation tier (soldiers pay none); each coin minter adds 10% to the taxes
+export const LAND_TAX = 0.0004;           // gold a second a kingdom earns for each tile of land it holds (a flat boost for its size: 4 a second for 10,000 tiles)
 export const GOLD_PER_TILE = 0.5;         // cost of settling one unclaimed tile
 // kingdom strength: what the leaderboard and labels show, and what makes land costly to take
 export const STR_TILE = 1, STR_VILLAGER = 50, STR_SOLDIER = 100, STR_GOLD = 3;

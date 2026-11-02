@@ -1,10 +1,10 @@
 // Homes: villagers build a hovel when the kingdom is short of houses; spare houses stand empty.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NT, NP, PW, B_HOUSE, B_SITE, B_EMPTY, B_MINTER, TAX_PER_VILLAGER } from '../src/core/constants';
+import { TW, TH, NT, NP, PW, B_HOUSE, B_SITE, B_EMPTY, B_MINTER, TAX_PER_VILLAGER, LAND_TAX } from '../src/core/constants';
 import { W, owner, isLand, pType, pOwner, pAband, pCenter, pBuild } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { build, plotProblem } from '../src/sim/buildings';
-import { H_VILLAGER, H_SOLDIER, TASK_ROAM, TASK_HOME_GO, TASK_HOME_BUILD, TASK_GATHER, BUILD_TICKS, ABANDON_TICKS, BEG_TICKS, STARVE_TICKS } from '../src/sim/population';
+import { H_VILLAGER, H_SOLDIER, TASK_ROAM, TASK_HOME_GO, TASK_HOME_BUILD, BUILD_TICKS, ABANDON_TICKS, BEG_TICKS, STARVE_TICKS } from '../src/sim/population';
 import { listen } from '../src/sim/events';
 import { B_BARRACKS } from '../src/core/constants';
 
@@ -140,11 +140,11 @@ describe('tax', () => {
     const n=me();
     expect(n.villagers).toBeGreaterThan(5);
     tick();
-    expect(n.income).toBeCloseTo((TAX_PER_VILLAGER*n.taxpayers)*(1+0.1*n.minters), 9);
+    expect(n.income).toBeCloseTo((TAX_PER_VILLAGER*n.taxpayers+LAND_TAX*n.tiles)*(1+0.1*n.minters), 9);
     // two minters on top
     for (let k=0;k<2;k++){ let q=-1; for (let p=0;p<NP && q<0;p++) if (!plotProblem(n,p)) q=p; n.stock=[5,5,5]; build(n,q,B_MINTER); }
     tick();
-    expect(n.income).toBeCloseTo((TAX_PER_VILLAGER*n.taxpayers)*1.2, 9);
+    expect(n.income).toBeCloseTo((TAX_PER_VILLAGER*n.taxpayers+LAND_TAX*n.tiles)*1.2, 9);
     void B_EMPTY;
   });
 });
@@ -172,7 +172,7 @@ describe('homeless people and beggars', () => {
     const villagers=mine().filter(h => h.kind===H_VILLAGER && !h.beggar).length;
     expect(me().taxpayers).toBe(villagers-homeless.filter(h => h.kind===H_VILLAGER).length);
     tick();   // income is worked out at the start of a tick, from the last tick's head count
-    expect(me().income).toBeCloseTo((TAX_PER_VILLAGER*me().taxpayers)*(1+0.1*me().minters), 9);
+    expect(me().income).toBeCloseTo((TAX_PER_VILLAGER*me().taxpayers+LAND_TAX*me().tiles)*(1+0.1*me().minters), 9);
   });
 
   it('turns a villager homeless for a minute into a beggar who does no work', () => {
@@ -181,7 +181,7 @@ describe('homeless people and beggars', () => {
     run(BEG_TICKS-5); expect(h.beggar).toBe(false);
     run(10);          expect(h.beggar).toBe(true);
     expect(me().beggars).toBeGreaterThan(0);
-    for (let i=0;i<300;i++){ tick(); expect(h.task).toBe(TASK_ROAM); expect(h.carry).toBe(-1); expect(h.res).toBe(-1); expect(h.home).toBe(-1); }
+    for (let i=0;i<300;i++){ tick(); expect(h.task).toBe(TASK_ROAM); expect(h.home).toBe(-1); }
     expect(h.sp).toBeLessThanOrEqual(1);   // crawls
   });
 

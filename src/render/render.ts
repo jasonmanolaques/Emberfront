@@ -17,15 +17,13 @@ import { CH, MAKE_PER_FRAME, tileAt, makeTile, nextFrame, tileCols, tileRows, fr
 import { styleOf } from './style';
 import { personSprite, corpseSprite, woundStage, BODY_X, FEET_Y } from './people';
 import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, psize, floats, glints, shots, hits, corpses, drips, addDrip, CORPSE_MS, DRIP_MS, updateEffects } from './effects';
-import { H_SOLDIER, TASK_HARVEST, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, TASK_FORGE, indoors, maxHp } from '../sim/population';
+import { H_SOLDIER, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, TASK_FORGE, indoors, maxHp } from '../sim/population';
 import { units, unitLabel } from '../sim/army';
 import { chatter, drawSpeech } from './speech';
 import { paintSmallFlag, flagImage } from './flags';
-import { G_WOOD, G_STONE, G_COPPER } from '../sim/resources';
 import { allied, atWar, HIT_TICKS, RANKS } from '../sim/war';
 
-const CARGO: string[][] = [];   // light, mid and dark of each good's load
-CARGO[G_WOOD]=['#d09a58','#a8743c','#6e4a26']; CARGO[G_STONE]=['#dcd6cc','#b0aa9e','#7c766c']; CARGO[G_COPPER]=['#ffbe80','#e08a48','#9c5426'];
+const PLANK='#d09a58';
 const INK='rgba(30,20,14,0.9)';
 
 export const hover = { sx: -1, sy: -1, tile: -1, mouse: false };
@@ -183,15 +181,14 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
       if (p.task===TASK_FIX_GO){ box(bx,fy-11,4,2,'#bdb6aa'); ctx.fillStyle='#d6d1c5'; ctx.fillRect(bx,fy-11,4,1); continue; }   // a dressed stone for the job
     }
     // working: a tool swings beside them
-    if (p.task===TASK_HARVEST || p.task===TASK_HOME_BUILD){
+    if (p.task===TASK_HOME_BUILD){
       const up=reduceMotion ? 0 : ((now/220+p.id)|0)&1, tx=left ? bx-2 : bx+4;
       ctx.fillStyle=INK; ctx.fillRect(tx-1,fy-6+up,3,5);
       ctx.fillStyle='#7a5634'; ctx.fillRect(tx,fy-5+up,1,3);
       ctx.fillStyle='#c9cdd1'; ctx.fillRect(tx,fy-6+up,1,1); ctx.fillRect(left ? tx-1 : tx+1,fy-6+up,1,1);
     }
-    // hauling: the load held up above the head (builders on their way carry a plank)
-    if (p.carry>=0){ const c=CARGO[p.carry]; box(bx,fy-11,4,3,c[1]); ctx.fillStyle=c[0]; ctx.fillRect(bx,fy-11,4,1); ctx.fillStyle=c[2]; ctx.fillRect(bx,fy-9,4,1); }
-    else if (p.task===TASK_HOME_GO){ box(bx-1,fy-10,6,1,CARGO[G_WOOD][0]); }
+    // builders on their way to a house carry a plank
+    if (p.task===TASK_HOME_GO){ box(bx-1,fy-10,6,1,PLANK); }
   }
   lastX=nextX; lastY=nextY;
 }

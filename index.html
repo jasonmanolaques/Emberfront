@@ -29,8 +29,15 @@
     <dl class="stats people">
       <div><dt>Villagers</dt><dd id="meVillagers">0</dd></div>
       <div><dt>Soldiers</dt><dd id="meSoldiers">0</dd></div>
-      <div id="meMilitiaRow" title="Raised at the castle, beyond your barracks' room or with no barracks: they patrol and guard watchtowers, pay no tax and draw no wages until called up" hidden><dt>Militia</dt><dd id="meMilitia">0</dd></div>
+      <div id="meMilitiaRow" title="Raised at the castle, beyond your barracks room or with no barracks: they rest in your houses, guard watchtowers that call for them, pay no tax and draw no wages until called up" hidden><dt>Militia</dt><dd id="meMilitia">0</dd></div>
       <div><dt>Training</dt><dd id="meTraining">0</dd></div>
+    </dl>
+    <dl class="stats income" aria-label="Income">
+      <div title="Villager tax: each housed villager pays 0.1 gold a second (0.2 and 0.3 with taxation research)"><dt>Villagers</dt><dd id="meTax">+0</dd></div>
+      <div title="Land you hold pays 0.0004 gold a second a tile"><dt>Land tax</dt><dd id="meLandTax">+0</dd></div>
+      <div id="meBoostRow" title="Coin minters add 10% each to the taxes" hidden><dt>Minters</dt><dd id="meBoost">+0</dd></div>
+      <div title="Each soldier draws 0.3 gold a second"><dt>Soldiers</dt><dd id="meSoldCost">−0</dd></div>
+      <div id="meMilCostRow" title="Militia are paid 0.3 gold a second each only while called up to a front" hidden><dt>Militia</dt><dd id="meMilCost">−0</dd></div>
     </dl>
     <div class="tag" id="meNext">Next human in 10s</div>
     <div class="tag homeless" id="meHomeless" hidden></div>
@@ -176,12 +183,12 @@
     <h1>Emberfront</h1>
     <p class="sub">A fast territory war where every kingdom builds itself.</p>
     <ul class="how">
-      <li><b>Click</b> unclaimed land to push your border: settling costs <b>0.5 gold</b> a tile. A small menu asks how much of your gold the push spends: 25% to 100%.</li>
-      <li>Your only income is tax: <b>0.1 gold</b> a second from every housed villager (soldiers pay none). Every 20 seconds a <b>human</b> walks out of your capital.</li>
+      <li><b>Click</b> unclaimed land to push your border: settling costs <b>0.5 gold</b> a tile, and your land pays a small tax. A small menu asks how much of your gold the push spends: 25% to 100%.</li>
+      <li>Your income is tax: <b>0.1 gold</b> a second from every housed villager (soldiers pay none), plus a little for every tile of land. Every 20 seconds a <b>human</b> walks out of your capital.</li>
       <li>Everyone needs a home: while you are short of houses, a newcomer first builds himself a hovel near the rest of town. Houses nobody needs for a while stand empty.</li>
-      <li><b>Villagers</b> gather wood, stone and copper. Forests are rich in wood, mountains in stone, deserts in copper. Nothing grows back.</li>
+      <li>Nothing lies on the map to gather: wood, stone and copper come from <b>plantations, quarries and copper mines</b> (your first of each is free). Research lets them join into bigger ones. Your villagers build homes and rest in them.</li>
       <li>Open <b>Buildings</b> (the hammer) to place farms, barracks, watchtowers and coin minters. The same buildings side by side join up.</li>
-      <li>The soldier slider raises <b>militia</b> at the castle: unpaid at home, they patrol and guard watchtowers, and can go to war with you. A <b>barracks</b> trains them into soldiers, who are paid wages. <b>Click a watchtower</b> to call 5 militia to guard it.</li>
+      <li>The soldier slider raises <b>militia</b> at the castle: unpaid at home, they rest in your houses and come out when called, and can go to war with you. A <b>barracks</b> trains them into soldiers, who are paid wages. <b>Click a watchtower</b> to call 5 militia to guard it.</li>
       <li><b>Click another kingdom</b> for diplomacy. <b>Allies</b> open their land to your soldiers. Go to <b>war</b> with as many soldiers as you choose: a <b>raid</b> burns their buildings for loot; an <b>attack</b> masses your armies on their border in a <b>crisis</b>, and your word in the war bar makes it war, fought along the whole front. Break the castle and the whole kingdom is yours.</li>
       <li>Only at war do soldiers fight, and watchtowers and your castle shoot at enemies on your land. Land an attack takes is only <b>occupied</b> (hatched) until peace: drive the enemy out and take it back, then counter-attack.</li>
       <li>Each war has a button at the top: recall a raid, offer peace, or, when an army marches on you, <b>intercept</b> it. Villagers caught near a fight either run or take up arms.</li>

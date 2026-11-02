@@ -1,10 +1,9 @@
 /* ---------- census: contacts, counts, labels (once per second) ---------- */
 import { TW, TH, NP, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY } from '../core/constants';
-import { W, owner, occ, isLand, resType, resLeft, pType, pOwner, pBuild, pCenter, pBurn, pTimer, pTier } from './state';
+import { W, owner, occ, isLand, pType, pOwner, pBuild, pCenter, pBurn, pTimer, pTier } from './state';
 import { HOUSE_BEDS } from './research';
 import { on } from './events';
 import { isBld, joinGatherers } from './buildings';
-import { GOOD_OF } from './resources';
 
 /** Counts shared border edges between every pair of nations into W.contact[a*M+b], each kingdom's
     tile sums and what is left to gather on its land, from scratch (at the start of a match: from
@@ -20,11 +19,6 @@ export function scanContacts(withSums: boolean){
     if (y+1<th && land[t+tw]){ const o2=own[t+tw]; if (o2!==o){ contact[o*M+o2]++; contact[o2*M+o]++; } }
   } }
   if (withSums) for (let i=1;i<N.length;i++){ N[i].sumX=sx[i]; N[i].sumY=sy[i]; }
-  if (withSums){   // what is left to gather on each kingdom's land
-    for (const n of N) n.resHere=[0,0,0];
-    const rt=resType, rl=resLeft;
-    for (let t=0;t<tw*th;t++){ const o=own[t]; if (o && rl[t]>0) N[o].resHere[GOOD_OF[rt[t]]]++; }
-  }
 }
 export function census(){
   const N=W.nations;

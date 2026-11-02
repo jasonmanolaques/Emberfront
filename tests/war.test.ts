@@ -2,16 +2,16 @@
 // Most of these play on a flat all-grass map, so distances and borders are predictable.
 import { describe, it, expect } from 'vitest';
 import { TW, TH, NT, NP, PW, WAGE, T_GRASS, B_HOUSE, B_FARM, B_TOWER, B_BARRACKS, B_RUINS } from '../src/core/constants';
-import { W, owner, occ, isLand, terr, resType, resLeft, pBuild, pType, pOwner, pBurn, pCenter, pHp, pIn, type Human, type Nation } from '../src/sim/state';
+import { W, owner, occ, isLand, terr, pBuild, pType, pOwner, pBurn, pCenter, pHp, pIn, type Human, type Nation } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick, grossIncome } from '../src/sim/sim';
 import { listen, on } from '../src/sim/events';
 import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
-import { build, plotProblem, structureOf, togglePriority, finishHouse } from '../src/sim/buildings';
-import { H_SOLDIER, H_VILLAGER, TASK_REST, TASK_STORE, TASK_TO_TRAIN, TASK_INSIDE, MILITIA_HP, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, frontOf, switching, pace, maxHp } from '../src/sim/population';
+import { build, plotProblem, structureOf, costFor, togglePriority, finishHouse } from '../src/sim/buildings';
+import { H_SOLDIER, H_VILLAGER, TASK_REST, TASK_TO_TRAIN, TASK_INSIDE, MILITIA_HP, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, frontOf, switching, pace, maxHp } from '../src/sim/population';
 import { UNIT_SIZE, buildUnits, station, unitAt, SOLDIER_DMG } from '../src/sim/army';
 import { wallOf, walledFor } from '../src/sim/defense';
-import { partner, S_BALANCED, S_BORDER, S_RUSH, setStance, allied, atWar, available, ready, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
+import { callable, partner, S_BALANCED, S_BORDER, S_RUSH, setStance, allied, atWar, available, ready, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
   RANKS, rankFor, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, reservesOf, reservesProblem, menOn, M_MARCH, M_HOLD, M_ASSAULT, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
 import { MIN_GAP, RANK_GAP, A_OFF, holds, freeOf, underCastle } from '../src/sim/front';
 import { beggarProblem, stuck, warChest } from '../src/sim/bots';
@@ -26,7 +26,7 @@ function until(done: () => boolean, max: number){ for (let i=0;i<max;i++){ if (d
 /** A flat, all-grass, empty map with the player in the middle and `rivals` bots that never think. */
 function world(rivals: number, seed=7){
   newWorld(seed);
-  isLand.fill(1); terr.fill(T_GRASS); resType.fill(0); resLeft.fill(0); pBuild.fill(1);
+  isLand.fill(1); terr.fill(T_GRASS); pBuild.fill(1);
   W.landTiles=Int32Array.from({ length: NT }, (_, i) => i); W.landCount=NT;
   if (!startMatch((TH/2)*TW+TW/2, rivals)) throw new Error('no spawn');
   for (const n of W.nations.slice(2)){ n.nextThink=1e9; n.nextWar=1e9; }
@@ -82,7 +82,7 @@ function place(n: Nation, type: number, awayFrom=-1){
   const d=(q: number) => ((q%PW-px)**2+((q/PW|0)-py)**2)*(awayFrom>=0 ? -1 : 1);
   const q=Array.from({ length: NP }, (_, k) => k).filter(k => !plotProblem(n,k)).sort((a,b) => d(a)-d(b))[0];
   if (type===B_HOUSE){ finishHouse(q,n.id); return q; }
-  n.stock=[...structureOf(type)!.cost];
+  n.stock=[...costFor(n,structureOf(type)!)];
   if (!build(n,q,type)) throw new Error('could not build');
   return q;
 }
@@ -240,9 +240,9 @@ describe('at war', () => {
   it('an attack takes the ground before its front, and breaking the castle annexes the kingdom: land, buildings and people, but not its gold or goods', () => {
     world(1); quiet(); paintDisc(N(2),14); paintToward(1,2);
     const house=place(N(2),B_HOUSE,N(1).capTile);   // on the far side, away from the fighting
-    // four of its people are inside the castle when it falls
+    // four of its people stand by the house far from the fighting when the kingdom falls
     const people: Human[]=[];
-    for (let i=0;i<4;i++){ const [x,y]=doorOf(N(2)); const v=makeHuman(N(2),H_VILLAGER,x,y); v.task=TASK_STORE; v.wait=1e9; W.humans.push(v); people.push(v); }
+    for (let i=0;i<4;i++){ const [x,y]=frontOf(house); const v=makeHuman(N(2),H_VILLAGER,x+i,y); v.wait=1e9; v.hp=1e6; W.humans.push(v); people.push(v); }   // (the mob that rises at the gate would cut them down; here they are annexed alive)
     N(2).gold=500; N(2).stock=[9,9,9]; N(1).stock=[3,4,5]; N(2).soldierShare=0;   // (they stay villagers, with no barracks to make them militia)
     const theirLand=Array.from({ length: NT }, (_, i) => i).filter(i => owner[i]===2);
     soldiers(N(1),30);
@@ -1181,6 +1181,32 @@ describe('bots going to war', () => {
 
 describe('militia', () => {
   const M = () => W.M;
+  it('rest in their houses at peace, out of sight, and the call-up sends the number asked from the houses', () => {
+    world(1); quiet(); paintToward(1,2);
+    for (let i=0;i<30;i++) place(N(1),B_HOUSE);
+    const mil=soldiers(N(1),12,false); noDraft(); N(2).soldierShare=0; run(1200);   // (the spare houses are given up after 20 s, and everyone settles in the rest)
+    const home=mil.filter(h => h.task===TASK_REST);
+    expect(home.length).toBeGreaterThanOrEqual(11);                        // at home, indoors (a house whose door can't be reached is no home)
+    expect(home.every(h => h.housed)).toBe(true);
+    expect(callable(1)).toHaveLength(12);                                  // and still the kingdom's to call
+    expect(declare(1,2,false,0,7)).toBe(true); run(40);
+    expect(mil.filter(h => h.war>=0)).toHaveLength(7);                     // exactly the seven asked for
+    expect(mil.filter(h => h.war>=0).every(h => h.task!==TASK_REST)).toBe(true);   // out of their houses
+    expect(mil.filter(h => h.war<0 && h.task===TASK_REST).length).toBeGreaterThanOrEqual(home.length-7);   // the rest stay in
+    queueCommand({ type:'reserves', nation:1, target:2, call:true }); run(40);
+    expect(mil.every(h => h.war>=0)).toBe(true);                           // "call the rest" empties the houses
+  });
+  it('come out of their houses when their kingdom goes to war, and go back in at peace', () => {
+    world(1); quiet(); paintToward(1,2);
+    soldiers(N(1),5);
+    for (let i=0;i<30;i++) place(N(1),B_HOUSE);
+    const mil=soldiers(N(1),12,false); noDraft(); N(2).soldierShare=0; run(1200);
+    expect(mil.filter(h => h.task===TASK_REST).length).toBeGreaterThanOrEqual(11);
+    expect(declare(1,2,false,5)).toBe(true); escalate(1,2); run(60);       // war
+    expect(mil.some(h => h.task===TASK_REST)).toBe(false);                 // out, to defend
+    makePeace(1,2); run(1500);
+    expect(mil.filter(h => h.task===TASK_REST).length).toBeGreaterThanOrEqual(11);   // home again
+  });
   it('go home after a peace deal, every one of them, and no army or war is left', () => {
     world(1); quiet(); paintToward(1,2);
     soldiers(N(1),10); const mil=soldiers(N(1),12,false); const foes=soldiers(N(2),8); noDraft(); run(2); for (const h of [...mil,...foes]) h.hp=1e6;

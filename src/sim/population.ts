@@ -9,8 +9,9 @@
    walk over and train as soldiers. With too many under arms, the militia go back to work first.
    Every person needs a home. While the kingdom has fewer houses than people, a villager's next
    job is to pick a plot, walk there and build a hovel; once everyone is housed, villagers are the
-   kingdom's workers: each one picks a resource, walks to it, harvests it, carries the load to the
-   capital and stores it, then thinks about the next job. Houses nobody needs for a while stand
+   kingdom's people at home: no wild resources lie on the map (the stockpile comes from the gathering
+   buildings alone), so a villager with nothing to build rests in his house until something is wanted
+   of him. Houses nobody needs for a while stand
    empty, the outermost first, and fill again from the centre as the kingdom grows.
    A villager with a home and nothing to gather goes home to rest: into the nearest house with room (one a bed),
    out of sight, smoke rising from its chimney. Resting, he looks for work (things to gather, houses
@@ -32,12 +33,11 @@
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, until the kingdom sends them to war (sim/war.ts). */
 import { TW, TH, PW, PH, TICK, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY } from '../core/constants';
-import { W, owner, occ, resLeft, pType, pOwner, pBurn, pPrio, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, resType, type Human, type Nation } from './state';
+import { W, owner, occ, pType, pOwner, pBurn, pPrio, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, type Human, type Nation } from './state';
 import { homeScore, startSite, cancelSite, finishHouse } from './buildings';
 import { on } from './events';
-import { GOOD_OF, YIELD, WORK_TICKS, available, harvest, claim, unclaim, freeIn } from './resources';
 import { Field } from './field';
-import { updateWar, reinforce, marchStep, guardStep, alarmStep, mayStand, spread } from './war';
+import { updateWar, reinforce, marchStep, guardStep, alarmStep, mayStand, spread, warringNow } from './war';
 import { HOUSE_BEDS, R_HOUSING, R_TOWERS, MAX_TIER } from './research';
 import { gained, spent, mayInvest } from './ledger';
 import { TOWER_COST } from './defense';
@@ -51,10 +51,6 @@ const SPEED_UP = [0, 1, 0.5];    // walking speed added by each (villagers 3 to 
 export const TASK_ROAM = 0,      // between jobs: villagers think or stroll between buildings, soldiers patrol
              TASK_TO_TRAIN = 1,  // walking to a barracks to switch role
              TASK_INSIDE = 2,    // inside the barracks, switching role
-             TASK_GATHER = 3,    // walking to a claimed resource
-             TASK_HARVEST = 4,   // working at it
-             TASK_HAUL = 5,      // carrying the load home
-             TASK_STORE = 6,     // inside the capital, putting the load away
              TASK_HOME_GO = 7,   // walking to the plot of the house they will build
              TASK_HOME_BUILD = 8,// building it
              TASK_FIX_GO = 9,    // builders: walking to the house they will improve
@@ -68,7 +64,6 @@ export const TASK_ROAM = 0,      // between jobs: villagers think or stroll betw
 export const HUMAN_EVERY = 200;  // progress per new human: 200 ticks (20 s), each farm adds 5% speed
 export const FARM_BONUS = 0.05;
 const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 s)
-const STORE_TICKS = 10;          // ticks inside the capital to store a load (1 s)
 const PATROL_R = 36;             // pixels around the capital door soldiers patrol when there is no barracks
 export const HOME_PACE = 1.15;   // soldiers on their own kingdom's land move 15% faster
 export const REGEN = 0.01;        // hit points everyone heals a tick (0.1 a second)
@@ -76,7 +71,6 @@ export const GARRISON = 5;       // soldiers a watchtower calls for
 export const TOWER_RANGE = 32;   // pixels a watchtower can shoot
 const WALK_EVERY = 100;          // ticks between a kingdom's walking fields being worked out again (10 s)
 const LOOK_TICKS = 100;          // a villager with nothing to do looks for work again every 10 to 12 seconds
-const WAKE_PER_TICK = 8;         // villagers a kingdom wakes a tick for land newly gained
 const lookAgain = () => (LOOK_TICKS+W.prand()*20)|0;
 export const BUILD_TICKS = 40;   // ticks to put up a house (4 s)
 export const BEG_TICKS = 600;    // ticks homeless before a villager turns beggar (60 s)
@@ -92,7 +86,7 @@ const MANOR_SHARE = 0.4;         // with manors allowed, the innermost 40% of ho
 /** Switching role: walking to a barracks (or the castle) for it, or inside training. */
 export const switching = (h: Human) => h.task===TASK_TO_TRAIN || h.task===TASK_INSIDE;
 /** Out of sight inside the capital or a barracks. */
-export const indoors = (h: Human) => h.task===TASK_INSIDE || h.task===TASK_STORE || h.task===TASK_REST;
+export const indoors = (h: Human) => h.task===TASK_INSIDE || h.task===TASK_REST;
 
 /** Pixel position just outside the capital's door. */
 export function doorOf(n: Nation): [number, number] { const q=n.capPlot; return [(q%PW)*8+8, ((q/PW)|0)*8+15]; }
@@ -107,7 +101,8 @@ const standing = (q: number, type: number, id: number) => pType[q]===type && pOw
 /** Does the barracks (or castle) h is training at still stand? */
 const siteStands = (h: Human) => { const n=W.nations[h.o]; return h.site>=0 && (standing(h.site,B_BARRACKS,h.o) || (h.site===n.capPlot && n.capTile>=0)); };
 /** Is h a militiaman at home, free to be called up or to train as a soldier? */
-export const homeMilitia = (h: Human) => h.kind===H_SOLDIER && h.militia && h.war<0 && h.hp>0 && !switching(h) && !indoors(h);
+/** Militia at home (resting in their houses, or out and about): those a call-up would send. */
+export const homeMilitia = (h: Human) => h.kind===H_SOLDIER && h.militia && h.war<0 && h.hp>0 && !switching(h);
 /** The kingdom's barracks, by plot. */
 export const barracksOf = (n: Nation) => n.blds.filter(q => standing(q,B_BARRACKS,n.id));
 function nearestPlot(plots: number[], x: number, y: number){
@@ -185,6 +180,8 @@ function route(h: Human, picky=false){
 function roamTarget(h: Human){
   const n=W.nations[h.o], r=W.prand;
   if (h.kind===H_SOLDIER){
+    // militia with no post stay in their houses while there is peace, and come out to the call-up
+    if (h.militia && h.post<0 && h.housed && !warringNow(h.o) && goRest(h)) return;
     // on guard round a watchtower, waiting in front of his army's barracks, or (with neither) patrolling the city
     const b = h.post>=0 ? -1 : h.base>=0 && standing(h.base,B_BARRACKS,h.o) ? h.base : -1;
     const [cx,cy] = h.post>=0 ? frontOf(h.post) : b>=0 ? frontOf(b) : n.capTile>=0 ? doorOf(n) : [h.x,h.y];
@@ -211,69 +208,11 @@ function roamTarget(h: Human){
   h.wait=(0.5+r()*2.5)/TICK; route(h);
 }
 
-/* ---------- villager work ---------- */
-/** Picks which good to fetch: the one the kingdom is shortest of, weighed against how far away
-    the nearest one is. `have` counts goods stored plus those already on their way; `dist` is in
-    pixels, Infinity when there is none in reach. Returns the good, or -1. */
-export function chooseGood(have: number[], dist: number[]){
-  const total=have[0]+have[1]+have[2];
-  let best=-1, bc=Infinity;
-  for (let g=0;g<3;g++){
-    if (!(dist[g]<Infinity)) continue;
-    const share = total>0 ? have[g]/total : 1/3;
-    const need = 1.1-share;                        // 0.1 (we have nothing else) .. 1.1 (we have none of it)
-    const cost = (dist[g]+8)/(need*need);          // 8 px of fixed overhead per trip
-    if (cost<bc){ bc=cost; best=g; }
-  }
-  return best;
-}
-
-const pending: number[][]=[];   // per nation: goods already claimed or on their way home, updated each tick
-
-const CANDIDATES = 3;   // spots remembered per good, nearest first, in case the nearest can't be reached
-/** The nearest free resources of each good on the kingdom's own land that its people can walk to. */
-export function nearestResources(h: Human){
-  const found: [number, number][][]=[[],[],[]];   // per good: [distance, tile], nearest first
-  const here=W.nations[h.o].resHere;   // a good the kingdom has none of left needn't be looked for
-  const far=(g: number)=>!here[g] ? -1 : found[g].length<CANDIDATES ? Infinity : found[g][CANDIDATES-1][0];
-  // ring by ring of building plots round his own (4x4 tiles each), looking only inside plots with
-  // something free in them
-  const n=W.nations[h.o], f=walkOf(n).f;
-  const px=(h.x/8)|0, py=(h.y/8)|0, R=Math.min(80,(Math.max(n.x1-n.x0,n.y1-n.y0)>>2)+2);   // as far as the kingdom reaches
-  for (let r=0;r<=R;r++){
-    // a tile in plot ring r is at least 8(r-1) pixels away: stop once every good's list is closer than that
-    if (far(0)<8*(r-1) && far(1)<8*(r-1) && far(2)<8*(r-1)) break;
-    for (let dy=-r;dy<=r;dy++){
-      const qy=py+dy; if (qy<0||qy>=PH) continue;
-      const step = (dy===-r||dy===r) ? 1 : 2*r;
-      for (let dx=-r;dx<=r;dx+=step || 1){
-        const qx=px+dx; if (qx<0||qx>=PW || !freeIn[qy*PW+qx]) continue;
-        for (let k=0;k<16;k++){
-          const t=(qy*4+(k>>2))*TW+qx*4+(k&3); if (owner[t]!==h.o || occ[t] || !available(t) || f.at(t)<0) continue;   // (only what he can walk to)
-          const g=GOOD_OF[resType[t]], [sx,sy]=workSpot(t), d=Math.sqrt((sx-h.x)**2+(sy-h.y)**2), L=found[g];
-          if (L.length===CANDIDATES && (d>L[CANDIDATES-1][0] || (d===L[CANDIDATES-1][0] && t>L[CANDIDATES-1][1]))) continue;
-          let i=L.length; while (i>0 && (L[i-1][0]>d || (L[i-1][0]===d && L[i-1][1]>t))) i--;
-          L.splice(i,0,[d,t]); if (L.length>CANDIDATES) L.pop();
-        }
-      }
-    }
-  }
-  return found;
-}
-
 export function release(h: Human){
-  if (h.res>=0){ unclaim(h.res); h.res=-1; }
   unrest(h);
   if (h.home>=0){ cancelSite(h.home); h.home=-1; }   // an unfinished house is given up
   h.fix=-1;
 }
-function store(h: Human){
-  if (h.carry<0) return;
-  const n=W.nations[h.o];
-  n.stock[h.carry]+=h.amount; gained(n,h.carry,h.amount); on.stored(h.o,h.carry,h.amount);
-  h.carry=-1; h.amount=0;
-}
-
 const housing: { people: number; builders: number }[]=[];   // per nation, updated each tick
 
 /** Short of homes: more people than houses, counting the ones already being built. */
@@ -306,47 +245,30 @@ function think(h: Human){
   if (h.beggar){ roamTarget(h); return; }   // beggars just drift about town
   if (h.work>=0 && h.kind===H_VILLAGER){ if (!(pType[h.work]===B_SMITHY ? goForge(h) : goImprove(h))) roamTarget(h); return; }   // builders and smiths work, or wait at their workshop
   if (h.kind===H_VILLAGER && needsHome(n) && goBuildHome(h)) return;
-  if (h.kind!==H_VILLAGER || n.capTile<0){ roamTarget(h); return; }   // nowhere to store anything without a capital
-  const found=freeWork(n) ? nearestResources(h) : [[],[],[]], have=n.stock.map((s,g)=>s+(pending[h.o]?.[g] ?? 0));
-  for (let tries=0;tries<3*CANDIDATES;tries++){
-    const g=chooseGood(have,found.map(L=>L.length ? L[0][0] : Infinity)); if (g<0) break;
-    if (gatherAt(h,found[g].shift()![1])) return;
-    // can't get there and back without leaving our land or climbing the castle: try the next spot
-  }
-  h.task=TASK_ROAM;
-  if (h.housed && goRest(h,was)) return;   // nothing to gather in reach: home to rest (if he has one)
+  if (h.kind!==H_VILLAGER){ roamTarget(h); return; }
+  if (h.housed && goRest(h,was)) return;   // nothing to do: home to rest (if he has one)
   roamTarget(h);
   h.wait=Math.max(h.wait,lookAgain());   // (nowhere to rest: idle a while before looking again)
 }
-/** Sends villager h to gather at tile t, if he can get there and back home with the load. */
-function gatherAt(h: Human, t: number){
-  const [sx,sy]=workSpot(t), was=[h.task,h.tx,h.ty] as const;
-  if (walkOf(W.nations[h.o]).f.at(t)<0) return false;   // no way there over the kingdom's own land
-  h.tx=sx; h.ty=sy; h.task=TASK_GATHER;
-  if (route(h,true) || routeField(h,sx,sy)){ h.res=t; claim(t); h.wait=0; return true; }
-  [h.task,h.tx,h.ty]=was; h.path=[];
-  return false;
-}
-
 /* ---------- the way round the kingdom: a walking field from the gate ----------
    Straight lines and a detour round the castle's corners are all a villager's route knows, and in a
    big kingdom (bays, borders, occupied ground) the straight way is often shut. So each kingdom has a
    field of steps from its castle's gate over its own free land, worked out again every 10 seconds
-   for everyone at once: what can't be walked to isn't looked for, and what can is reached by
-   following the field to the gate and out again, pulled straight where it can be. */
-interface Walk { f: Field; at: number; reach: number; }
+   for everyone at once: a place it reaches is reached by following the field to the gate and out
+   again, pulled straight where it can be. */
+interface Walk { f: Field; at: number; }
 const walks=new Map<number, Walk>();
 export function resetWalks(){ walks.clear(); }
 let queue=new Int32Array(0);
 const NB: [number, number][]=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
 function walkOf(n: Nation){
   let w=walks.get(n.id);
-  if (!w){ w={ f:new Field(), at:-1e9, reach:0 }; walks.set(n.id,w); }
+  if (!w){ w={ f:new Field(), at:-1e9 }; walks.set(n.id,w); }
   if (W.tickN<w.at || W.tickN-w.at>=WALK_EVERY) fillWalk(n,w);
   return w;
 }
 function fillWalk(n: Nation, w: Walk){
-  const f=w.f; w.at=W.tickN; w.reach=0;
+  const f=w.f; w.at=W.tickN;
   if (n.capTile<0 || n.x1<n.x0){ f.fit(0,0,-1,-1); return; }
   f.fit(n.x0-1,n.y0-1,n.x1+1,n.y1+1);
   const open=(t: number) => owner[t]===n.id && !occ[t] && !onCastle(n,(t%TW)*2+1,((t/TW)|0)*2+1);
@@ -356,7 +278,6 @@ function fillWalk(n: Nation, w: Walk){
   let head=0, tail=0; f.d[f.idx(s)]=0; queue[tail++]=s;
   while (head<tail){
     const t=queue[head++], x=t%TW, y=(t/TW)|0, d=f.d[f.idx(t)];
-    if (resLeft[t]>0) w.reach++;
     for (const [ox,oy] of NB){
       const nx=x+ox, ny=y+oy; if (nx<0||ny<0||nx>=TW||ny>=TH) continue;
       const k=ny*TW+nx, i=f.idx(k); if (i<0 || f.d[i]>=0 || !open(k)) continue;
@@ -397,10 +318,6 @@ function routeField(h: Human, tx: number, ty: number){
   h.path=way; h.tx=tx; h.ty=ty;
   return true;
 }
-/** Is there anything on n's land nobody has claimed yet, that its people can walk to? */
-const freeWork = (n: Nation) => walkOf(n).reach>(claimed[n.id] ?? 0);
-const claimed: number[]=[];   // resources each kingdom's villagers have claimed, counted every tick
-
 /** Can people of kingdom o rest in plot q: a house of theirs, standing and lived in? */
 const restsIn = (q: number, o: number) => q>=0 && pType[q]===B_HOUSE && pOwner[q]===o && pBurn[q]<=0 && !pAband[q];
 const room = (q: number) => HOUSE_BEDS[pTier[q]]-pIn[q];
@@ -410,50 +327,29 @@ function unrest(h: Human){ if (h.rest>=0){ pIn[h.rest]--; h.rest=-1; } }
     else the nearest house with room. False if there is none (or no way there). */
 function goRest(h: Human, at=-1){
   const n=W.nations[h.o];
-  let best=-1;
-  if (restsIn(at,h.o) && room(at)>0){ const [x,y]=frontOf(at); if ((x-h.x)**2+(y-h.y)**2<1) best=at; }
-  if (best<0){
-    let bd=Infinity;
-    for (const q of n.blds){
-      if (!restsIn(q,h.o) || room(q)<=0) continue;
-      const [x,y]=frontOf(q), d=(x-h.x)**2+(y-h.y)**2;
-      if (d<bd){ bd=d; best=q; }
-    }
+  if (restsIn(at,h.o) && room(at)>0){ const [x,y]=frontOf(at); if ((x-h.x)**2+(y-h.y)**2<1){ h.rest=at; pIn[at]++; h.x=x; h.y=y; h.tx=x; h.ty=y; h.task=TASK_REST; h.wait=lookAgain(); return true; } }   // already at its door
+  // the nearest houses with room, nearest first: the first he can walk to
+  const near: [number, number][]=[], f=walkOf(n).f;
+  for (const q of n.blds){
+    if (!restsIn(q,h.o) || room(q)<=0) continue;
+    const [x,y]=frontOf(q); if (f.at(tileOf(x,y))<0) continue;   // (a door he can't get to is no home to go to)
+    near.push([(x-h.x)**2+(y-h.y)**2,q]);
   }
-  if (best<0) return false;
-  const [x,y]=frontOf(best);
-  h.rest=best; pIn[best]++; h.tx=x; h.ty=y; h.wait=0;
-  if ((x-h.x)**2+(y-h.y)**2<1){ h.x=x; h.y=y; h.task=TASK_REST; h.wait=lookAgain(); return true; }   // already there
-  h.task=TASK_REST_GO;
-  if (route(h,true) || routeField(h,x,y)) return true;
-  unrest(h); h.task=TASK_ROAM; h.path=[];
+  near.sort((a,b) => a[0]-b[0] || a[1]-b[1]);
+  for (const [d,q] of near.slice(0,4)){
+    const [x,y]=frontOf(q);
+    h.rest=q; pIn[q]++; h.tx=x; h.ty=y; h.wait=0;
+    if (d<1){ h.x=x; h.y=y; h.task=TASK_REST; h.wait=lookAgain(); return true; }   // already there
+    h.task=TASK_REST_GO;
+    if (route(h,true) || routeField(h,x,y)) return true;
+    unrest(h); h.task=TASK_ROAM; h.path=[];
+  }
   return false;
 }
-/** Land newly gained with something on it: for each thing, the villager resting nearest it (in
-    reach) gets up and goes for it, a few a tick. */
-function wake(n: Nation, mine: Human[]){
-  const resting=mine.filter(h => h.task===TASK_REST);
-  if (resting.length){ const w=walkOf(n); fillWalk(n,w); }   // (the new land is on the field)
-  let k=0, i=0;
-  for (; i<n.fresh.length && k<WAKE_PER_TICK && resting.length; i++){
-    const t=n.fresh[i]; if (owner[t]!==n.id || !available(t)) continue;
-    const [sx,sy]=workSpot(t);
-    let bi=-1, bd=Infinity;
-    for (let j=0;j<resting.length;j++){ const h=resting[j], d=(h.x-sx)**2+(h.y-sy)**2; if (d<bd){ bd=d; bi=j; } }
-    if (bi<0) continue;
-    const h=resting[bi], q=h.rest; k++;
-    unrest(h);
-    if (gatherAt(h,t)){ resting.splice(bi,1); continue; }
-    h.rest=q; pIn[q]++; h.task=TASK_REST;   // no way there: back to his rest
-  }
-  if (!resting.length) i=n.fresh.length;   // nobody left resting: those outside find the rest themselves
-  n.fresh.splice(0,i);
-}
-
 /** A new person of kingdom n standing at (x,y), with nothing to do yet. */
 export function makeHuman(n: Nation, kind: number, x: number, y: number): Human {
   return { id:++W.humanSeq, o:n.id, kind, militia:false, to:0, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+W.prand()*2,
-    res:-1, carry:-1, amount:0, hp:kind===H_SOLDIER?SOLDIER_HP[1]:VILLAGER_HP, post:-1, site:-1, home:-1, rest:-1, duel:-1, housed:false, homeless:0, beggar:false,
+    hp:kind===H_SOLDIER?SOLDIER_HP[1]:VILLAGER_HP, post:-1, site:-1, home:-1, rest:-1, duel:-1, housed:false, homeless:0, beggar:false,
     war:-1, loot:false, foe:-1, aim:-1, cool:0, slot:0, brave:-1, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
     tier:kind===H_SOLDIER?1:0, base:-1, load:0, make:0, dest:-1 };
 }
@@ -513,7 +409,6 @@ const reservesOut = (n: Nation) => W.campaigns.some(c => c.militia && c.all && c
 function balance(n: Nation, mine: Human[], barracks: number[]){
   if (n.capTile<0){
     // no capital: nowhere to store anything, so loads are dropped and gathering stops
-    for (const h of mine) if (h.kind===H_VILLAGER && h.task>=TASK_GATHER && h.task<=TASK_STORE){ h.carry=-1; h.amount=0; backToRoam(h); }
   }
   const room=roomIn(n,mine);
   // militia at home (not on guard at a watchtower) take the free places, one walking to each barracks at a time
@@ -541,7 +436,7 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
   // first turn back anyone still walking to switch the other way
   for (const h of mine){ if (!diff) return; if (h.task===TASK_TO_TRAIN && (diff>0 ? h.to===T_VILLAGER : h.kind===H_VILLAGER)){ backToRoam(h); diff+=diff>0 ? -1 : 1; } }
   const [gx,gy]=doorOf(n), away=(h: Human)=>{ const [x,y]=barracks.length ? frontOf(nearestPlot(barracks,h.x,h.y)) : [gx,gy]; return (h.x-x)**2+(h.y-y)**2; };
-  const free=(h: Human) => !switching(h) && !h.beggar && h.task!==TASK_STORE && h.carry<0 && h.home<0 && h.war<0 && h.work<0;
+  const free=(h: Human) => !switching(h) && !h.beggar && h.home<0 && h.war<0 && h.work<0;
   if (diff>0){
     // villagers nearest a barracks: into its free places while there are any, else to the castle as militia
     const cands=mine.filter(h => free(h) && h.kind===H_VILLAGER).sort((a,b) => away(a)-away(b) || a.id-b.id);
@@ -603,7 +498,7 @@ function house(n: Nation, mine: Human[]){
       ++h.homeless;
       if (!h.beggar && h.homeless>=BEG_TICKS){
         // a minute without a roof: he gives up work, drops what he carries, and begs
-        h.carry=-1; h.amount=0; release(h); h.beggar=true; h.sp=1; h.task=TASK_ROAM; h.path=[]; roamTarget(h);
+        release(h); h.beggar=true; h.sp=1; h.task=TASK_ROAM; h.path=[]; roamTarget(h);
       } else if (h.beggar && h.homeless>=STARVE_TICKS) h.hp=0;   // half a minute more, and he dies where he stands
     }
   }
@@ -700,7 +595,7 @@ function staffGuilds(n: Nation, mine: Human[]){
   for (const q of n.blds){
     if (staffed.has(q) || !workshop(q,n.id)) continue;
     if (pTimer[q]>1){ pTimer[q]--; continue; }   // his replacement is on the way
-    free ??= mine.filter(h => h.kind===H_VILLAGER && h.work<0 && !h.beggar && !switching(h) && h.brave<0 && h.carry<0 && h.home<0 && h.task!==TASK_STORE);
+    free ??= mine.filter(h => h.kind===H_VILLAGER && h.work<0 && !h.beggar && !switching(h) && h.brave<0 && h.home<0);
     const [x,y]=frontOf(q), h=nearest(free,x,y).shift(); if (!h) return;
     const replaced=pTimer[q]===1; pTimer[q]=0;
     release(h); h.work=q; think(h); h.wait=0;
@@ -784,27 +679,14 @@ function step(h: Human){
     }
     return;
   }
+  if ((h.task===TASK_REST || h.task===TASK_REST_GO) && h.kind===H_SOLDIER && (warringNow(h.o) || h.post>=0 || h.base>=0 || !h.housed || !restsIn(h.rest,h.o))){ backToRoam(h); return; }   // militia: out, to war or to a post
   if (h.task===TASK_REST){
     if (!restsIn(h.rest,h.o) || !h.housed){ think(h); return; }   // the house is gone or lost, or he has lost his home: out he comes
-    if (--h.wait<=0){ h.wait=lookAgain(); if (freeWork(n) || needsHome(n)) think(h); }   // anything to gather, or houses to build? (else he rests on)
+    if (--h.wait<=0){ h.wait=lookAgain(); if (needsHome(n)) think(h); }   // houses to build? (else he rests on)
     return;
   }
   if (h.task===TASK_REST_GO && !restsIn(h.rest,h.o)){ think(h); return; }
   if (h.kind===H_SOLDIER ? guardStep(h) : alarmStep(h)) return;   // at war: soldiers defend, villagers run or fight
-  if (h.task===TASK_STORE){ if (--h.wait<=0){ store(h); backToRoam(h); } return; }
-  if (h.task===TASK_HARVEST){
-    if (owner[h.res]!==h.o || !resType[h.res]){ think(h); return; }   // the ground was lost or built over
-    if (--h.wait<=0){
-      const t=h.res, good=GOOD_OF[resType[t]], got=harvest(t);
-      release(h);
-      if (!got){ think(h); return; }
-      h.carry=good; h.amount=got;
-      const [x,y]=doorOf(n); h.task=TASK_HAUL; h.tx=x; h.ty=y;
-      if (!route(h,true) && !routeField(h,x,y)) route(h);   // (the straight way, else round by the field, else just go)
-    }
-    return;
-  }
-  if (h.task===TASK_GATHER && (owner[h.res]!==h.o || !resType[h.res])){ think(h); return; }
   if ((h.task===TASK_HOME_GO || h.task===TASK_HOME_BUILD) && (pType[h.home]!==B_SITE || owner[pCenter[h.home]]!==h.o)){ think(h); return; }   // the site was lost
   if (h.task===TASK_HOME_BUILD){
     if (--h.wait<=0){ const q=h.home; h.home=-1; finishHouse(q,h.o); think(h); }
@@ -827,7 +709,6 @@ function step(h: Human){
   if (d<0.6){
     h.x=gx; h.y=gy;
     if (h.task===TASK_TO_TRAIN){ h.task=TASK_INSIDE; h.wait=TRAIN_TICKS; return; }
-    if (h.task===TASK_GATHER){ h.task=TASK_HARVEST; h.wait=WORK_TICKS[resType[h.res]]; return; }
     if (h.task===TASK_HOME_GO){ h.task=TASK_HOME_BUILD; h.wait=BUILD_TICKS; return; }
     if (h.task===TASK_FIX_GO){ h.task=TASK_FIX; h.wait=FIX_TICKS; return; }
     if (h.task===TASK_SMITH_FETCH){
@@ -839,11 +720,10 @@ function step(h: Human){
       if (standing(h.dest,B_BARRACKS,h.o)){ pArmor[h.load][h.dest]++; const u=unitAt(h.dest); if (u) u.stored[h.load]++; on.forged(h.dest,h.o,h.load); h.load=0; h.make=0; h.dest=-1; }   // on the racks at once, so the next job counts it
       think(h); return;
     }
-    if (h.task===TASK_HAUL){ h.task=TASK_STORE; h.x=h.tx; h.y=h.ty; h.wait=STORE_TICKS; return; }
     if (h.task===TASK_REST_GO){ h.task=TASK_REST; h.wait=lookAgain(); return; }   // home: in he goes
     think(h); return;
   }
-  const sp=h.carry>=0 ? h.sp*0.85 : pace(h);   // a little slower under a load
+  const sp=pace(h);
   const st=Math.min(d,sp*TICK); h.x+=dx/d*st; h.y+=dy/d*st;
 }
 
@@ -864,17 +744,7 @@ export function updatePopulation(){
   for (const h of H) groups[h.o].push(h);
   for (let i=1;i<N.length;i++){
     const n=N[i], mine=groups[i];
-    // goods already promised to this kingdom, so villagers spread over what it lacks
-    const p=pending[i] ??= [0,0,0]; p[0]=p[1]=p[2]=0;
-    let busy=0;
-    for (const h of mine){
-      if (h.res>=0) busy++;
-      if (h.carry>=0) p[h.carry]+=h.amount;
-      else if (h.res>=0 && resType[h.res]) p[GOOD_OF[resType[h.res]]]+=YIELD[resType[h.res]];
-    }
-    claimed[i]=busy;
     if (!n.alive) continue;
-    if (n.fresh.length) wake(n,mine);
     const k=housing[i] ??= { people:0, builders:0 };
     k.people=mine.length; k.builders=0; for (const h of mine) if (h.home>=0) k.builders++;
     if (W.tickN%10===3) upkeepHouses(n, mine.length);

@@ -3,9 +3,9 @@ import { B_EMPTY, B_RUINS, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, 
 import { W, pType, pOwner, pPrio, pAband, type Nation } from './state';
 import { launch } from './territory';
 import { grossIncome } from './sim';
-import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, TOPICS, setStudy, maxed } from './research';
+import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, TOPICS, MAX_TIER, setStudy, maxed } from './research';
 import { UNIT_SIZE, units } from './army';
-import { STRUCTURES, canAfford, placeProblem, build, togglePriority, anyWithin, isEnemyLand, type Over } from './buildings';
+import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, togglePriority, anyWithin, isEnemyLand, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, guardsOpening, standingTower, WALL_MAX } from './fort';
 import { allied, atWar, ready, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD, setStance, S_BORDER, S_RUSH, S_BALANCED } from './war';
 
@@ -26,9 +26,20 @@ const spareHomes = (n: Nation) => !beggarProblem(n) && (n.abandoned>0 || n.beds>
 /** How many of n's plots stand empty. */
 const emptyPlots = (n: Nation) => { let k=0; for (const q of n.plots) if (pType[q]===B_EMPTY || pType[q]===B_RUINS) k++; return k; };
 const TOWN = [B_BARRACKS, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY];   // workshops: inside the wall
+/** What a bot builds before anything else, while it has too few: the stockpile only comes from the
+    gathering buildings, so wood first (a plantation pays for itself in 2 and a half minutes), then
+    stone and copper, and a research station to join them into bigger ones. It saves up for these. */
+function groundwork(n: Nation){
+  const w: number[]=[];
+  if (n.plantations < 4+(n.tiles/700|0)) w.push(B_PLANTATION);
+  if (n.quarries < 3+(n.tiles/500|0)) w.push(B_QUARRY);
+  if (n.copperMines < 1+(n.tiles/1400|0)) w.push(B_COPPERMINE);
+  if (!n.labs && n.plantations+n.quarries+n.copperMines>=3 && n.tier[R_GATHER]<MAX_TIER) w.push(B_RESEARCH);
+  return w;
+}
 /** What a bot would build next, most wanted first. */
 function wishlist(n: Nation, exposed: boolean){
-  const w: number[]=[], hungry=beggarProblem(n);
+  const w: number[]=groundwork(n), hungry=beggarProblem(n);
   // beggars in the streets: better houses before anything else (a guild's builders raise them, once
   // housing research allows it; a research station to get there)
   if (hungry){
@@ -46,8 +57,9 @@ function wishlist(n: Nation, exposed: boolean){
   if (exposed && outposts < 1+(n.tiles/900|0)) w.push(B_TOWER);
   // farms bring people faster: none while beggars crowd the streets; with land lying empty, more,
   // grown together into one big farmland
-  if (!hungry && n.farms < 1+(n.tiles/600|0)) w.push(B_FARM);
-  else if (!n.homeless && n.beds>=n.villagers+n.soldiers && n.plots.length>=20 && n.farms<1+(n.tiles/300|0) && emptyPlots(n)>n.plots.length*0.4) w.push(B_FARM);   // (only while everyone has a home)
+  // (farms are the foundation: more people, more taxes. Each is 2% dearer than the last, so the want is a steady one)
+  if (!hungry && n.farms < 3+(n.tiles/250|0)) w.push(B_FARM);
+  else if (!n.homeless && n.beds>=n.villagers+n.soldiers && n.plots.length>=12 && n.farms<3+(n.tiles/120|0) && emptyPlots(n)>n.plots.length*0.3) w.push(B_FARM);   // (only while everyone has a home)
   if (wallDue(n,exposed)){
     // a wall is built of stone: quarries to feed it first
     if (n.quarries<3+(n.tiles/1000|0) && n.stock[1]<20) w.push(B_QUARRY);
@@ -126,6 +138,20 @@ function garrisonGates(n: Nation){
 }
 const sameNeighbour = (q: number, type: number, id: number) =>
   [q-1,q+1,q-PW,q+PW].some(k => k>=0 && pType[k]===type && pOwner[k]===id);
+/** The most of a 2×2 square's other three plots, round q, that already hold a building of `type`
+    of n's: three means q completes a square (four of a kind in a square join into one, with research). */
+function squareFill(q: number, type: number, id: number){
+  const x=q%PW, y=(q/PW)|0; let best=0;
+  for (const [sx,sy] of [[-1,-1],[0,-1],[-1,0],[0,0]]){
+    let k=0;
+    for (let dy=0;dy<2;dy++) for (let dx=0;dx<2;dx++){
+      const px=x+sx+dx, py=y+sy+dy; if ((px===x && py===y) || px<0 || py<0 || px>=PW || py>=PH) continue;
+      const m=py*PW+px; if (pType[m]===type && pOwner[m]===id) k++;
+    }
+    if (k>best) best=k;
+  }
+  return best;
+}
 
 /** Where a new barracks module goes: beside the biggest barracks, so its army grows (the free
     plot nearest the castle); if it has no room, or there is none yet, anywhere. */
@@ -153,8 +179,23 @@ function fieldNeighbours(q: number, id: number){
 }
 /** Picks a plot for `type`: towers go toward enemies; barracks join the biggest barracks; the rest
     gather next to their own kind, near the capital. */
+/** Where a new plantation, quarry or copper mine goes: next to the ones it has of its kind, the spot
+    that completes (or most fills) a 2×2 square; -1 if it has none or no room beside them. */
+function gathererPlot(n: Nation, type: number){
+  let best=-1, bs=0;
+  const mine=n.blds.filter(q => pType[q]===type && pOwner[q]===n.id).slice(0,40), cap=n.capPlot;
+  for (const p of mine){
+    for (const q of [p-PW,p+1,p+PW,p-1,p-PW-1,p-PW+1,p+PW-1,p+PW+1]){
+      if (q<0 || q>=NP || Math.abs(q%PW-p%PW)>1 || placeProblem(n,q,type,'none') || plannedWall(n,q)) continue;   // (the line of the wall is kept clear)
+      const s=squareFill(q,type,n.id)*10 + (sameNeighbour(q,type,n.id) ? 6 : 0) - Math.hypot(q%PW-cap%PW,((q/PW)|0)-((cap/PW)|0))*0.05;
+      if (s>bs){ bs=s; best=q; }
+    }
+  }
+  return best;
+}
 function pickPlot(n: Nation, type: number){
   if (type===B_BARRACKS){ const q=barracksPlot(n); if (q>=0) return q; }
+  if (GATHERERS.includes(type)){ const q=gathererPlot(n,type); if (q>=0) return q; }
   const srand=W.srand, cap=n.capPlot; let best=-1, bs=-Infinity;
   for (let k=0;k<24 && n.plots.length;k++){
     const q=n.plots[(srand()*n.plots.length)|0];
@@ -165,6 +206,7 @@ function pickPlot(n: Nation, type: number){
     let s = (pType[q]===B_EMPTY || pType[q]===B_RUINS ? 0 : pType[q]===B_HOUSE && pAband[q] ? -1 : -6)
       + (type===B_TOWER ? (anyWithin(q,n.id,2,isEnemyLand) ? 20 : 0) - d*0.2
         : type===B_FARM ? -d*0.4 + 4*fieldNeighbours(q,n.id)   // fields together, in one big farmland
+        : GATHERERS.includes(type) ? -d*0.3 + (sameNeighbour(q,type,n.id) ? 12 : 0) + 8*squareFill(q,type,n.id)   // side by side, then in squares: research joins them
         : -d + (sameNeighbour(q,type,n.id) ? 12 : 0));
     // with a wall planned, a proper town: fields outside it, workshops inside
     if (n.wallR && type!==B_TOWER){ const inside=ringOf(n,q)<n.wallR; s += type===B_FARM ? (inside ? -8 : 6) : TOWN.includes(type) ? (inside ? 8 : -4) : 0; }
@@ -178,6 +220,8 @@ function pickPlot(n: Nation, type: number){
     the castle and taxation; a kingdom with enemies on its border puts its towers before its houses. */
 function botStudy(n: Nation, exposed: boolean){
   if (beggarProblem(n) && !maxed(n,R_HOUSING)){ setStudy(n,R_HOUSING); return; }   // room for the beggars first
+  // with two or more gathering buildings, joining them is the next thing to learn (but for towers, on the border)
+  if (n.plantations+n.quarries+n.copperMines>=2 && n.tier[R_GATHER]<MAX_TIER && !(exposed && n.tier[R_TOWERS]<2)){ setStudy(n,R_GATHER); return; }
   const order=exposed ? [R_TOWERS, R_GATHER, R_HOUSING, R_INFANTRY, R_CASTLE, R_TAXES] : [R_GATHER, R_HOUSING, R_INFANTRY, R_TOWERS, R_CASTLE, R_TAXES];
   let best=order[0]; for (const t of order) if (n.tier[t]<n.tier[best]) best=t;
   setStudy(n,best);
@@ -188,10 +232,16 @@ function botBuild(n: Nation, exposed: boolean){
   garrisonGates(n);
   n.invest=beggarProblem(n) ? 1 : 0.4+n.expandAt*0.8;   // the builders may spend 58% to 78% of the goods coming in, by temper (all of it, with beggars to house)
   let saving=false;   // threatened and short of a wall tower: lesser works don't get its stone
+  const first=groundwork(n), hold=[false,false,false];   // (short of a gathering building: lesser works don't get the goods it needs)
   for (const type of wishlist(n,exposed)){
     const s=STRUCTURES.find(s=>s.type===(type===WALL ? B_TOWER : type))!;
     if (saving && s.cost[1]>0) continue;
-    if (!canAfford(n,s)){ if (type===WALL && danger(n,exposed)) saving=true; continue; }
+    if (!first.includes(type) && s.cost.some((c,g) => c>0 && hold[g])) continue;
+    if (!canAfford(n,s)){
+      if (type===WALL && danger(n,exposed)) saving=true;
+      if (first.includes(type)) costFor(n,s).forEach((c,g) => { if (c>0) hold[g]=true; });
+      continue;
+    }
     if (type===WALL){
       const q=wallPlot(n);
       if (q>=0 && build(n,q,B_TOWER,'houses')){ n.nextWall=W.simTime+(WALL_GAP[danger(n,exposed)]+W.srand()*5)*(n.stock[1]>40 ? 0.5 : 1); return; }   // faster with stone to spare

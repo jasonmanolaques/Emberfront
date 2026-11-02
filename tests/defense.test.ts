@@ -1,14 +1,14 @@
 // Watchtowers and the castle by tier, battle damage, and soldiers' wages.
 import { describe, it, expect } from 'vitest';
 import { TW, TH, NT, NP, PW, T_GRASS, B_FARM, B_TOWER, B_CASTLE, B_BARRACKS, WAGE, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD } from '../src/core/constants';
-import { W, owner, isLand, terr, resType, resLeft, pBuild, pType, pOwner, pHp, pTier, pPrio, type Human, type Nation } from '../src/sim/state';
+import { W, owner, isLand, terr, pBuild, pType, pOwner, pHp, pTier, pPrio, type Human, type Nation } from '../src/sim/state';
 import { botThink } from '../src/sim/bots';
 import { wallPlots, ringOf, isGate, plannedWall, wallNeighbours } from '../src/sim/fort';
 import { newWorld, startMatch, tick, grossIncome } from '../src/sim/sim';
 import { listen } from '../src/sim/events';
 import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
-import { build, plotProblem, structureOf, finishHouse, togglePriority } from '../src/sim/buildings';
+import { build, plotProblem, structureOf, costFor, finishHouse, togglePriority } from '../src/sim/buildings';
 import { H_SOLDIER, H_VILLAGER, makeHuman, doorOf } from '../src/sim/population';
 import { declare } from '../src/sim/war';
 import { bldHp, wear, TOWER_RELOADS, TOWER_DMGS, TOWER_HP, CASTLE_HP } from '../src/sim/defense';
@@ -20,7 +20,7 @@ function until(done: () => boolean, max: number){ for (let i=0;i<max;i++){ if (d
 /** A flat, all-grass map with the player in the middle and `rivals` bots that never think. */
 function world(rivals: number){
   newWorld(7);
-  isLand.fill(1); terr.fill(T_GRASS); resType.fill(0); resLeft.fill(0); pBuild.fill(1);
+  isLand.fill(1); terr.fill(T_GRASS); pBuild.fill(1);
   W.landTiles=Int32Array.from({ length: NT }, (_, i) => i); W.landCount=NT;
   if (!startMatch((TH/2)*TW+TW/2, rivals)) throw new Error('no spawn');
   for (const n of W.nations.slice(2)){ n.nextThink=1e9; n.nextWar=1e9; }
@@ -33,7 +33,7 @@ function paintDisc(n: Nation, r: number){
 function place(n: Nation, type: number, near=n.capPlot, far=false){
   const d=(q: number) => ((q%PW-near%PW)**2+((q/PW|0)-(near/PW|0))**2)*(far ? -1 : 1);
   const q=Array.from({ length: NP }, (_, k) => k).filter(k => !plotProblem(n,k)).sort((a,b) => d(a)-d(b))[0];
-  n.stock=[...structureOf(type)!.cost]; if (!build(n,q,type)) throw new Error('could not build');
+  n.stock=[...costFor(n,structureOf(type)!)]; if (!build(n,q,type)) throw new Error('could not build');
   return q;
 }
 /** A raider of kingdom 2's, rooted to (x,y) on kingdom 1's land and tough enough to count shots on. */
@@ -46,8 +46,8 @@ function dummy(x: number, y: number){
 }
 
 describe('watchtowers by tier', () => {
-  it('shoot every 4, 3.5 and 3 seconds for 2, 3 and 4 damage, and take 20, 30 and 40 blows', () => {
-    expect(TOWER_RELOADS.slice(1)).toEqual([40, 35, 30]);
+  it('shoot every 8, 7 and 6 seconds for 2, 3 and 4 damage, and take 20, 30 and 40 blows', () => {
+    expect(TOWER_RELOADS.slice(1)).toEqual([80, 70, 60]);
     expect(TOWER_DMGS.slice(1)).toEqual([2, 3, 4]);
     for (const tier of [1,2,3]){
       world(1); paintDisc(N(1),40);
@@ -58,7 +58,7 @@ describe('watchtowers by tier', () => {
       expect(bldHp(q)).toBe(TOWER_HP[tier]);
       const e=dummy(tx+16,ty);
       const shots: number[]=[]; listen({ towerShot: (x0) => { if (x0===(q%PW)*8+4) shots.push(W.tickN); } });
-      const hp=e.hp; run(200);
+      const hp=e.hp; run(400);
       expect(shots.length).toBeGreaterThanOrEqual(3);
       for (let k=1;k<shots.length;k++) expect(shots[k]-shots[k-1]).toBe(TOWER_RELOADS[tier]);
       expect(hp-e.hp).toBe(TOWER_DMGS[tier]*shots.length);
@@ -178,6 +178,8 @@ describe('bots fortifying', () => {
     for (let i=0;i<8;i++){ const q=Array.from({ length: NP }, (_, k) => k).filter(k => !plotProblem(n,k)).sort((a,b) => Math.abs(a-n.capPlot)-Math.abs(b-n.capPlot))[i*3]; finishHouse(q,2); }
     place(n,B_FARM); place(n,8);   // a farm, and a barracks for the garrisons
     census(); n.soldierShare=0;
+    // (first its groundwork: plantations, quarries and a mine before any wall is planned)
+    for (let i=0;i<12;i++){ n.stock=[500,500,500]; W.simTime+=60; n.nextThink=0; botThink(n); census(); }
     const before=new Set(Array.from({ length: NP }, (_, k) => k).filter(k => pType[k]));
     for (let i=0;i<80;i++){ n.stock=[500,500,500]; W.simTime+=60; n.nextThink=0; botThink(n); census(); }
     expect(n.wallR).toBeGreaterThanOrEqual(3);

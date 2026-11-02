@@ -15,7 +15,7 @@ import { W, pType, pOwner, pTier, pHp, pBurn } from './state';
 import { HOUSE_TOUGH, R_CASTLE } from './research';
 import { isGatherer, gatherTier } from './buildings';
 
-export const TOWER_RELOADS = [0, 40, 35, 30];   // ticks between a watchtower's shots, by tier
+export const TOWER_RELOADS = [0, 80, 70, 60];   // ticks between a watchtower's shots, by tier (8, 7 and 6 s)
 export const TOWER_DMGS = [0, 2, 3, 4];         // damage of a shot, by tier (the castle's too)
 export const TOWER_HP = [0, 20, 30, 40];        // blows a watchtower takes, by tier
 export const CASTLE_HP = [0, 200, 400, 600];    // blows the castle takes, by tier

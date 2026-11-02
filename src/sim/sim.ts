@@ -1,6 +1,6 @@
 /* ---------- simulation entry points: worlds, matches, commands, ticks ----------
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
-import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
+import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, LAND_TAX, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
 import { mulberry32 } from '../core/rng';
 import { W, resizeGrid, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pIn, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
@@ -13,7 +13,6 @@ import { toRuins, build, togglePriority, produce } from './buildings';
 import { scanContacts, census } from './census';
 import { botThink } from './bots';
 import { updatePopulation, resetWalks } from './population';
-import { genResources, clearPlot } from './resources';
 import { resetWar, declare, intercept, proposeAlliance, endWar, makePeace, setOffensive, setStance, deescalate, defend, callReserves } from './war';
 import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
@@ -26,7 +25,7 @@ function blankNation(id: number, name: string, hex: string, isPlayer: boolean, c
     gold:0, income:0, strength:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
     plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, beds:0,
     sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0, nextWave:0, hungry:0, x0:1e9, y0:1e9, x1:-1, y1:-1, wallR:0, nextWall:0, unpaid:0,
-    soldierShare:0, humanProg:0, villagers:0, soldiers:0, militia:0, called:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], resHere:[0,0,0], fresh:[], abandoned:0, surplusTicks:0,
+    soldierShare:0, humanProg:0, villagers:0, soldiers:0, militia:0, called:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0,
     study:R_HOUSING, tier:[1,1,1,1,1,1], xp:[0,0,0,0,0,0], invest:0.5, gain:new Array(180).fill(0), spend:new Array(180).fill(0) };
 }
 function makeNation(id: number, k: Country, isPlayer: boolean): Nation {
@@ -69,7 +68,7 @@ function spawnNation(n: Nation, bx: number, by: number){
     if (isLand[t] && !owner[t]) setOwner(t,n.id);
   }
   const q=by*PW+bx; n.capPlot=q;
-  for (const k of [q,q+1,q+PW,q+PW+1]){ pType[k]=B_CPART; pOwner[k]=n.id; pMain[k]=q; pBurn[k]=0; pHp[k]=0; clearPlot(k); }
+  for (const k of [q,q+1,q+PW,q+PW+1]){ pType[k]=B_CPART; pOwner[k]=n.id; pMain[k]=q; pBurn[k]=0; pHp[k]=0; }
   pType[q]=B_CASTLE; on.plotChanged(q);
 }
 
@@ -81,7 +80,6 @@ export function newWorld(seed: number, map='gen'){
   W.prand=mulberry32(seed^0x2f6b3a1d);
   if (W.map==='gen'){ resizeGrid(GEN_W,GEN_H); genMap(seed); }
   else { resizeGrid(VIEWS[W.map].w,VIEWS[W.map].h); genRealMap(W.map,7); }   // a real map's ground is the same every match
-  genResources();
   owner.fill(0); occ.fill(0); road.fill(0); frontMark.fill(0);
   pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0); pPrio.fill(0); pAband.fill(0); pIn.fill(0); pHp.fill(0); pTier.fill(0); pSpan.fill(0); pArmor[2].fill(0); pArmor[3].fill(0); W.prioSeq=0;
   W.burning=[]; W.attacks=[]; W.attackSeq=0; W.commands.length=0;
@@ -239,14 +237,20 @@ function applyCommand(c: Command){
 /** Gold a second before wages: the villagers' tax (there is no other income), with the minters' share. */
 /** How many of n's soldiers draw wages: the trained soldiers, and militia called up to a front. */
 export const paid = (n: Nation) => n.soldiers-n.militia+n.called;
-export const grossIncome = (n: Nation) => TAX_PER_VILLAGER*n.tier[R_TAXES]*n.taxpayers*(1+0.1*n.minters);
+/** What a kingdom's income is made of, in gold a second: its villagers' tax, its land tax, what its
+    coin minters add to both, and what it pays its soldiers and its militia called up (a wage each). */
+export function incomeParts(n: Nation){
+  const tax=TAX_PER_VILLAGER*n.tier[R_TAXES]*n.taxpayers, land=LAND_TAX*n.tiles, boost=(tax+land)*0.1*n.minters;
+  return { tax, land, boost, soldiers:(n.soldiers-n.militia)*WAGE, militia:n.called*WAGE };
+}
+export const grossIncome = (n: Nation) => { const p=incomeParts(n); return p.tax+p.land+p.boost; };
 export function tick(){
   if (W.commands.length){ for (const c of W.commands) applyCommand(c); W.commands.length=0; }
   W.simTime+=TICK; W.tickN++;
   turnLedger();
   const N=W.nations;
-  // each villager's tax, the only income (more with taxation research), each coin minter adding
-  // 10% to that, less the soldiers' wages (militia are paid only while called up); the treasury can go below zero
+  // each villager's tax (more with taxation research) and a small tax on the land, each coin minter adding
+  // 10% to them, less the soldiers' wages (militia are paid only while called up); the treasury can go below zero
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive) continue;
     n.income=grossIncome(n)-WAGE*paid(n); n.gold+=n.income*TICK;   // only housed, working villagers pay

@@ -10,7 +10,6 @@ import { client } from './client';
 import { cam, fitCam, focusOn } from './render/camera';
 import { buildBase, paintAll, paintRoad, paintTile, repaint, sizeTerrain } from './render/terrain';
 import { drawPlotAndNeighbours } from './render/sprites';
-import { redrawNature } from './render/nature';
 import { addFlash, fireBurst, gatePuff, addShot, addHit, dustPuff, addCorpse, floats, resetEffects } from './render/effects';
 import { GOOD_NAME } from './sim/resources';
 import { PW } from './core/constants';
@@ -23,6 +22,7 @@ import { RANKS } from './sim/war';
 import { setupBuildPanel, toggleBuildPanel } from './ui/build';
 import { ui, log, toast, showHUD, checkEnd, onEliminated, onCapitalFell, onBuildingPlaced } from './ui/hud';
 import { setupDiplomacy, resetDiplomacy, noteDeath } from './ui/diplomacy';
+import './render/nature';   // (paints the cacti)
 import { refreshResearch, closeResearch } from './ui/research';
 import { closeArmy } from './ui/army';
 import { deselect } from './ui/command';
@@ -41,7 +41,6 @@ listen({
   capitalFell: onCapitalFell,
   eliminated: onEliminated,
   roleChanged: gatePuff,
-  resChanged: redrawNature,
   towerShot: (x0,y0,x1,y1,kill,victim) => { addShot(x0,y0,x1,y1,kill); noteArrow(victim,x0,y0,x1,y1); },
   // "+5 wood" over your own plantations, quarries and mines when they deliver
   produced: (q,id,good,amount) => { if (id===PLAYER) floats.push({ x:(q%PW)*8+8, y:((q/PW)|0)*8-1, text:`+${amount} ${GOOD_NAME[good]}`, t0:performance.now(), c:GOOD_COL[good] }); },

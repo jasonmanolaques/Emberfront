@@ -79,8 +79,8 @@ describe('population', () => {
     for (let i=0;i<600 && stints.length<5;i++){
       tick();
       if (i===0){
-        // villagers carrying a load deliver it first, and those building their house finish it, so they are not picked
-        const busy = (h: { carry: number; home: number }) => h.carry>=0 || h.home>=0;
+        // those building their house finish it, so they are not picked
+        const busy = (h: { home: number }) => h.home>=0;
         const walking = switching(), others = mine().filter(h => busy(h) && !isSwitching(h)).length;
         expect(walking.length).toBe(Math.min(5, 10-others));
         expect(walking.every(h => h.kind === H_VILLAGER)).toBe(true);
@@ -188,7 +188,8 @@ describe('population', () => {
     expect(switching().length).toBeGreaterThan(0);
     setOwner(barracks%PW*4+2 + ((barracks/PW|0)*4+2)*TW, 0);   // the ground under it is lost and it burns
     tick();
-    expect(switching()).toHaveLength(0);
+    expect(switching().filter(h => h.to===T_SOLDIER)).toHaveLength(0);   // nobody trains for it any more (those who still want arms go to the castle, as militia)
+    expect(switching().every(h => h.to===T_MILITIA)).toBe(true);
     expect(pType[barracks]).toBe(B_BARRACKS);   // still burning for a moment
   });
 

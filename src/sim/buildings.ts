@@ -9,7 +9,6 @@ import { TW, PW, PH, NP, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, 
 import { W, owner, occ, terr, isLand, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, pMain, pHp, pTier, pSpan, pArmor, type Nation } from './state';
 import { R_GATHER } from './research';
 import { on } from './events';
-import { clearPlot } from './resources';
 import { gained } from './ledger';
 
 function igniteOne(q: number){ if (pBurn[q]>0) return; pBurn[q]=2.5+W.srand()*2.5; W.burning.push(q); on.plotIgnited(q); }
@@ -64,7 +63,6 @@ function connectRoad(q: number, id: number, far: boolean){
 function placeBuilding(q: number, id: number, type: number, isNew: boolean){
   if (type===B_EMPTY) return;
   pType[q]=type; pOwner[q]=id; pVar[q]=(W.srand()*3)|0; pTimer[q]=0; pPrio[q]=0; pAband[q]=0; pHp[q]=0; pTier[q]=type===B_HOUSE || type===B_TOWER ? 1 : 0; pSpan[q]=0; pArmor[2][q]=pArmor[3][q]=0;
-  clearPlot(q);
   on.plotChanged(q);
   const n=W.nations[id]; n.bCount++;
   if (type!==B_FARM) connectRoad(q,id,isNew);
@@ -86,7 +84,7 @@ export function homeScore(n: Nation, q: number){
   return w;
 }
 /** Marks plot q as a house site: the frame goes up while a villager works on it. */
-export function startSite(q: number, id: number){ pType[q]=B_SITE; pOwner[q]=id; pVar[q]=(W.srand()*3)|0; pAband[q]=0; clearPlot(q); on.plotChanged(q); }
+export function startSite(q: number, id: number){ pType[q]=B_SITE; pOwner[q]=id; pVar[q]=(W.srand()*3)|0; pAband[q]=0; on.plotChanged(q); }
 export function cancelSite(q: number){ if (pType[q]!==B_SITE) return; pType[q]=B_EMPTY; pOwner[q]=0; on.plotChanged(q); }
 export function finishHouse(q: number, id: number){
   const isNew=nbBuildings(q,id)===0;
@@ -121,7 +119,7 @@ export const gatherTier = (q: number) => pSpan[q]+1;
 export const PRODUCE_TICKS = 300;   // 30 s
 export const PRODUCES: Record<number, [number, number[]]> = { [B_PLANTATION]: [0,[0,2,5,15]], [B_QUARRY]: [1,[0,1,3,10]], [B_COPPERMINE]: [2,[0,1,3,10]] };
 export const STRUCTURES: Structure[] = [
-  { type: B_FARM,     name: 'Farm',        cost: [5,2,0], info: 'Each farm brings new villagers 5% sooner.' },
+  { type: B_FARM,     name: 'Farm',        cost: [5,2,0], info: 'Each farm brings new villagers 5% sooner, and makes the next farm 2% dearer.' },
   { type: B_BARRACKS, name: 'Barracks',    cost: [5,5,0], info: 'Trains soldiers and houses an army of 5, with 5 armour racks. Barracks side by side join into one bigger army: four together march as one army of 20. Soldiers without room patrol the city and only defend. Click a barracks to see its army.' },
   { type: B_TOWER,    name: 'Watchtower',  cost: [2,5,1], info: 'While you are at war, shoots enemy soldiers that come near, and their villagers. Click a placed tower to call up to 5 soldiers to guard it.' },
   { type: B_MINTER,   name: 'Coin minter', cost: [5,5,5], info: 'Raises your gold income by 10%.' },
@@ -133,7 +131,17 @@ export const STRUCTURES: Structure[] = [
   { type: B_SMITHY,     name: 'Blacksmith', cost: [10,15,5], info: 'One villager becomes its smith. With infantry research he fetches 5 copper from the castle, forges armour for 5 seconds and carries it to the barracks: reinforced armour for every rack, then heavy armour.' },
 ];
 export const structureOf = (type: number) => STRUCTURES.find(s => s.type===type);
-export const canAfford = (n: Nation, s: Structure) => s.cost.every((c,g) => n.stock[g]>=c);
+const countOf = (n: Nation, ty: number) => ty===B_PLANTATION ? n.plantations : ty===B_QUARRY ? n.quarries : n.copperMines;
+export const FARM_RISE = 0.02;   // each farm a kingdom has makes the next 2% dearer
+/** What a structure costs kingdom n: the first plantation, quarry and copper mine it builds are
+    free (the map has nothing to gather, so they start its stockpile), and each farm it owns makes
+    the next one 2% dearer. */
+export function costFor(n: Nation, s: Structure): number[] {
+  if (isGatherer(s.type) && countOf(n,s.type)===0) return [0,0,0];
+  if (s.type===B_FARM) return s.cost.map(c => c ? Math.ceil(c*(1+FARM_RISE*n.farms)-1e-9) : 0);
+  return s.cost;
+}
+export const canAfford = (n: Nation, s: Structure) => costFor(n,s).every((c,g) => n.stock[g]>=c);
 
 /** What a new building may replace: nothing ('none'), a house or the frame of one ('houses': what bots
     clear for a wall tower or a workshop), or any building of the kingdom's but its castle ('any': the player). */
@@ -191,9 +199,9 @@ export function demolish(q: number){
 export function build(n: Nation, q: number, type: number, over: Over='none'){
   const s=structureOf(type);
   if (!s || !n.alive || !canAfford(n,s) || placeProblem(n,q,type,over)) return false;
-  s.cost.forEach((c,g) => n.stock[g]-=c);
+  costFor(n,s).forEach((c,g) => n.stock[g]-=c);
   for (const m of underneath(q,type)) demolish(m);
-  for (const k of footprint(q,type).slice(1)){ pType[k]=B_PART; pOwner[k]=n.id; pMain[k]=q; pBurn[k]=0; pAband[k]=0; pPrio[k]=0; clearPlot(k); }
+  for (const k of footprint(q,type).slice(1)){ pType[k]=B_PART; pOwner[k]=n.id; pMain[k]=q; pBurn[k]=0; pAband[k]=0; pPrio[k]=0; }
   placeBuilding(q,n.id,type,false);
   // count it right away rather than at the next census, so its effect starts now
   countUp(n,type);

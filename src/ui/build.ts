@@ -7,7 +7,7 @@ import { TASK_FORGE } from '../sim/population';
 import { openResearch } from './research';
 import { openArmy } from './army';
 import { queueCommand } from '../sim/sim';
-import { STRUCTURES, canAfford, placeProblem, structureOf, SIZE, type Structure } from '../sim/buildings';
+import { STRUCTURES, canAfford, costFor, placeProblem, structureOf, SIZE, type Structure } from '../sim/buildings';
 import { GOOD_NAME } from '../sim/resources';
 import { client } from '../client';
 import { drawIcon } from '../render/sprites';
@@ -53,15 +53,23 @@ export function refreshBuildPanel(){
     b.classList.toggle('on', client.placing===type);
     const k=owned(me,type);
     (b.querySelector('.bn i') as HTMLElement).textContent = k ? '×'+k : '';
-    for (const sp of b.querySelectorAll<HTMLElement>('.costs span')) sp.classList.toggle('short', me.stock[+sp.dataset.good!]<s.cost[+sp.dataset.good!]);
+    // what it costs this kingdom now: the first gatherer is free, each farm makes the next dearer
+    const cost=costFor(me,s), free=cost.every(c => !c);
+    let first=true;
+    for (const sp of b.querySelectorAll<HTMLElement>('.costs span')){
+      const g=+sp.dataset.good!;
+      sp.hidden=free && !first; (sp.lastChild as Text).textContent=free ? ' free' : String(cost[g]); first=false;
+      sp.classList.toggle('short', me.stock[g]<cost[g]);
+    }
   }
   if (client.placing && !canAfford(me, structureOf(client.placing)!)) stopPlacing();
 }
 
 function showTip(s: Structure, b: HTMLElement){
   const me=W.nations[PLAYER];
-  const cost=s.cost.map((n,g)=>n ? `${n} ${GOOD_NAME[g]}` : '').filter(Boolean).join(', ');
-  const short=me ? s.cost.map((n,g)=>n>me.stock[g] ? `${Math.ceil(n-me.stock[g])} more ${GOOD_NAME[g]}` : '').filter(Boolean).join(', ') : '';
+  const price=me ? costFor(me,s) : s.cost;
+  const cost=price.some(c => c) ? price.map((n,g)=>n ? `${n} ${GOOD_NAME[g]}` : '').filter(Boolean).join(', ') : 'nothing: the first one is free';
+  const short=me ? price.map((n,g)=>n>me.stock[g] ? `${Math.ceil(n-me.stock[g])} more ${GOOD_NAME[g]}` : '').filter(Boolean).join(', ') : '';
   tip.innerHTML=`<span class="t1"></span><span></span><span class="t3"></span>${short?'<span class="short"></span>':''}`;
   const [t1,t2,t3,t4]=tip.children as unknown as HTMLElement[];
   t1.textContent=s.name; t2.textContent=s.info; t3.textContent='Costs '+cost;

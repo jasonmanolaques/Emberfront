@@ -1,11 +1,11 @@
 // Buildings a kingdom places, and the gold economy.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, GOLD_PER_TILE, TAX_PER_VILLAGER, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
+import { TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, WAGE, GOLD_PER_TILE, TAX_PER_VILLAGER, LAND_TAX, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
 import { W, owner, isLand, pType, pCenter, pBuild, type Human } from '../src/sim/state';
-import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
+import { newWorld, startMatch, queueCommand, tick, incomeParts } from '../src/sim/sim';
 import { listen } from '../src/sim/events';
 import { setOwner, tileCost } from '../src/sim/territory';
-import { STRUCTURES, structureOf, build, plotProblem, placeProblem } from '../src/sim/buildings';
+import { STRUCTURES, structureOf, costFor, build, plotProblem, placeProblem } from '../src/sim/buildings';
 import { HUMAN_EVERY as E, H_SOLDIER, H_VILLAGER, SOLDIER_HP, frontOf, doorOf, switching, makeHuman } from '../src/sim/population';
 import { declare } from '../src/sim/war';
 
@@ -35,7 +35,7 @@ function freePlots(){
   return out.sort((a,b)=>((a%PW-cap%PW)**2+((a/PW|0)-(cap/PW|0))**2)-((b%PW-cap%PW)**2+((b/PW|0)-(cap/PW|0))**2));
 }
 function place(type: number, q = freePlots()[0]){
-  me().stock=[...structureOf(type)!.cost];
+  me().stock=[...costFor(me(),structureOf(type)!)];
   if (!build(me(), q, type)) throw new Error('could not build');
   return q;
 }
@@ -111,17 +111,17 @@ describe('what the buildings do', () => {
     expect(W.tickN-t0).toBe(10*E);
   });
 
-  it('earns nothing but tax, and coin minters add 10% to it', () => {
+  it('earns only tax on its people and its land, and coin minters add 10% to it', () => {
     start(12345, 0);
     me().humanProg=-1e9;   // nobody arrives, so there is nobody to pay tax
     const g0=me().gold; run(100);
-    expect(me().gold).toBe(g0);   // no passive income
+    expect(me().gold-g0).toBeCloseTo(LAND_TAX*me().tiles*10, 6);   // no income but the land's: 10 seconds of it
     start(12345, 0); expand(3); run(10*E);   // (room for the minters beside the houses)
     const n=me(); n.humanProg=-1e9;
     expect(n.taxpayers).toBeGreaterThan(0);
-    expect(n.income).toBeCloseTo(TAX_PER_VILLAGER*n.taxpayers, 9);
+    expect(n.income).toBeCloseTo(TAX_PER_VILLAGER*n.taxpayers+LAND_TAX*n.tiles, 9);
     place(B_MINTER, freePlots()[0]); place(B_MINTER, freePlots()[0]); tick();
-    expect(n.income).toBeCloseTo(TAX_PER_VILLAGER*n.taxpayers*1.2, 9);
+    expect(n.income).toBeCloseTo((TAX_PER_VILLAGER*n.taxpayers+LAND_TAX*n.tiles)*1.2, 9);
   });
 
   it('keeps its army of 5 waiting at the barracks; soldiers with no room patrol the city', () => {
@@ -170,7 +170,7 @@ describe('what the buildings do', () => {
     expect(mine().filter(h => h.post>=0)).toHaveLength(0);
   });
 
-  it('holds its fire at peace; at war it shoots enemy soldiers on its own land, 2 damage every 4 seconds, and not those outside', () => {
+  it('holds its fire at peace; at war it shoots enemy soldiers on its own land, 2 damage every 8 seconds, and not those outside', () => {
     start(12345, 1); expand(3);
     W.nations[2].nextThink=1e9;   // the bot stays out of it
     const tower=place(B_TOWER), [tx, ty]=frontOf(tower), ox=(tower%PW)*8+4;
@@ -190,10 +190,10 @@ describe('what the buildings do', () => {
     // the enemy raids us with both; one comes onto our land, the other stays outside
     expect(declare(2, 1, true, 2)).toBe(true);
     raider.x=(inside%TW)*2+1; raider.y=((inside/TW)|0)*2+1.5; raider.hp=100;   // tough, so the castle's shots don't end the count
-    run(170);
+    run(340);
     const fromTower=shots.filter(s => s.from===ox);
     expect(fromTower.length).toBeGreaterThanOrEqual(3);
-    for (let k=1;k<fromTower.length;k++) expect(fromTower[k].tick-fromTower[k-1].tick).toBe(40);   // once every 4 seconds
+    for (let k=1;k<fromTower.length;k++) expect(fromTower[k].tick-fromTower[k-1].tick).toBe(80);   // once every 8 seconds
     expect(shots.every(s => s.x===raider.x)).toBe(true);           // nobody shoots past the border
     expect(soldier.hp).toBe(SOLDIER_HP[1]);
     expect(100-raider.hp).toBeGreaterThanOrEqual(2*shots.length-1e-6);   // 2 damage a shot (villagers with pitchforks may add some)
@@ -206,10 +206,26 @@ describe('gold and strength', () => {
     start(987654321, 9); run(1500);
     for (const n of W.nations.slice(1)){
       if (!n.alive) continue;
-      expect(n.strength).toBeCloseTo(n.tiles*STR_TILE + n.villagers*STR_VILLAGER + n.soldiers*STR_SOLDIER + n.gold*STR_GOLD, 6);
+      expect(n.strength).toBeCloseTo(n.tiles*STR_TILE + n.villagers*STR_VILLAGER + (n.soldiers-n.militia*0.5)*STR_SOLDIER + n.gold*STR_GOLD, 6);
     }
     start(12345, 0);
     expect(me().gold).toBe(GOLD_START);
+  });
+
+  it('shows its income as villager tax, land tax, minters, and the soldiers\' and militia\'s pay', () => {
+    start(12345, 0); expand(3); run(10*E);
+    const n=me(); n.humanProg=-1e9;
+    const [dx,dy]=doorOf(n);
+    for (let i=0;i<9;i++){ const h=makeHuman(n,H_SOLDIER,dx,dy+2); h.militia=i<4; W.humans.push(h); }   // 5 trained soldiers and 4 militia
+    place(B_MINTER, freePlots()[0]); run(3);   // (the counts catch up)
+    const p=incomeParts(n);
+    expect(p.tax).toBeCloseTo(TAX_PER_VILLAGER*n.taxpayers, 9);
+    expect(p.land).toBeCloseTo(LAND_TAX*n.tiles, 9);
+    expect(p.boost).toBeCloseTo((p.tax+p.land)*0.1*n.minters, 9);
+    expect(p.soldiers).toBeCloseTo((n.soldiers-n.militia)*WAGE, 9);
+    expect(n.soldiers-n.militia).toBe(5);
+    expect(p.militia).toBe(0);   // (militia are paid only while called up)
+    expect(n.income).toBeCloseTo(p.tax+p.land+p.boost-p.soldiers-p.militia, 9);
   });
 
   it('settles unclaimed land at 0.5 gold a tile, and gives back what it did not spend', () => {
@@ -221,7 +237,9 @@ describe('gold and strength', () => {
     while (W.attacks.some(A => !A.done)){ tick(); ticks++; }
     const gained=me().tiles-tiles0;
     expect(gained).toBeGreaterThan(100);
-    expect(g0 - me().gold).toBeCloseTo(gained*GOLD_PER_TILE, 6);
+    const land=ticks*0.1*LAND_TAX*me().tiles;   // (the land tax paid meanwhile, on the most land it held)
+    expect(g0 - me().gold).toBeGreaterThan(gained*GOLD_PER_TILE-land-1e-6);
+    expect(g0 - me().gold).toBeLessThanOrEqual(gained*GOLD_PER_TILE+1e-6);
   });
 
   it('charges more for enemy land the stronger the defender is for its size, and more near its watchtowers', () => {

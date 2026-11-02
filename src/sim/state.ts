@@ -31,8 +31,6 @@ export interface Nation {
   beggars: number; homeless: number; taxpayers: number;     // villagers turned beggar; people without a home; housed working villagers
   stock: number[];                   // goods stored in the capital: [wood, stone, copper]
   abandoned: number;                 // houses standing empty
-  resHere: number[];                 // trees, rocks and copper left on its land, by good (kept exact as land and resources change)
-  fresh: number[];                   // resource tiles newly gained: the nearest villagers resting at home are woken for them
   surplusTicks: number;              // how long the kingdom has had more houses than people
   study: number;                     // research topic being studied (R_* in research.ts)
   tier: number[];                    // tier reached in each topic, 1..3: [housing, taxation]
@@ -49,8 +47,6 @@ export interface Human {
   path: number[];                    // waypoints before (tx,ty), flat x,y pairs: the way around the castle
   wait: number;                      // ticks left to idle, harvest, or spend inside the capital
   sp: number;                        // walking speed, pixels per second
-  res: number;                       // tile of the resource this villager has claimed, or -1
-  carry: number; amount: number;     // good being hauled home (G_* in resources.ts, -1 = nothing) and how much
   hp: number;                        // soldiers: hit points, lost to enemy watchtowers
   post: number;                      // soldiers: plot of the watchtower they guard, or -1 (waiting at a barracks)
   site: number;                      // plot of the barracks (or, for militia, the castle) they are heading to or training in, or -1
@@ -132,7 +128,6 @@ export type Command =
 
 export let elev = new Float32Array(NT), moist = new Float32Array(NT);
 // resources: at most one per tile (R_* in resources.ts), harvests left, claimed by a villager
-export let resType = new Uint8Array(NT), resLeft = new Uint8Array(NT), resBusy = new Uint8Array(NT);
 export let terr = new Uint8Array(NT), isLand = new Uint8Array(NT), owner = new Uint8Array(NT), road = new Uint8Array(NT);
 export let frontMark = new Int32Array(NT);
 export let pType = new Uint8Array(NP), pOwner = new Uint8Array(NP), pVar = new Uint8Array(NP), pBuild = new Uint8Array(NP);
@@ -152,7 +147,7 @@ export function resizeGrid(w: number, h: number){
   if (w===TW && h===TH) return;
   setGrid(w,h);
   elev=new Float32Array(NT); moist=new Float32Array(NT);
-  resType=new Uint8Array(NT); resLeft=new Uint8Array(NT); resBusy=new Uint8Array(NT);
+
   terr=new Uint8Array(NT); isLand=new Uint8Array(NT); owner=new Uint8Array(NT); road=new Uint8Array(NT); frontMark=new Int32Array(NT); occ=new Uint8Array(NT);
   pType=new Uint8Array(NP); pOwner=new Uint8Array(NP); pVar=new Uint8Array(NP); pBuild=new Uint8Array(NP);
   pMain=new Int32Array(NP); pCenter=new Int32Array(NP); pBurn=new Float32Array(NP); pTimer=new Float32Array(NP);

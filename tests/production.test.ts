@@ -8,6 +8,7 @@ import { setOwner } from '../src/sim/territory';
 import { build, placeProblem, plotProblem, footprint, gatherTier, PRODUCES, PRODUCE_TICKS } from '../src/sim/buildings';
 import { R_GATHER } from '../src/sim/research';
 import { bldHp } from '../src/sim/defense';
+import { botThink } from '../src/sim/bots';
 
 const me = () => W.nations[1];
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
@@ -109,8 +110,11 @@ describe('production buildings', () => {
   it('cost what the design says', () => {
     emptyKingdom();
     for (const [type, cost] of [[B_PLANTATION,[10,0,0]],[B_QUARRY,[3,5,0]],[B_COPPERMINE,[10,10,0]]] as [number, number[]][]){
+      me().stock=[0,0,0];
+      expect(build(me(), spot(type), type)).toBe(true);   // the first of each is free
+      expect(me().stock).toEqual([0,0,0]);
       me().stock=cost.map(c => c ? c-1 : 0);
-      expect(build(me(), spot(type), type)).toBe(false);   // one short of each
+      expect(build(me(), spot(type), type)).toBe(false);   // the next, one short of each
       me().stock=[...cost];
       expect(build(me(), spot(type), type)).toBe(true);
       expect(me().stock).toEqual([0,0,0]);
@@ -126,5 +130,29 @@ describe('production buildings', () => {
     run(PRODUCE_TICKS*2);
     expect(me().stock[1]).toBe(s);
     expect(me().quarries).toBe(0);
+  });
+});
+
+describe('bots and their gathering buildings', () => {
+  it('study resource gathering once they have two gathering buildings, to join them', () => {
+    start(987654321, 1); const bot=W.nations[2]; bot.nextThink=0;
+    // two plantations side by side for the bot
+    const q=bot.plots.find(k => !placeProblem(bot,k+1,B_PLANTATION) && !placeProblem(bot,k,B_PLANTATION))!;
+    bot.stock=[50,50,50]; build(bot,q,B_PLANTATION); bot.stock=[50,50,50]; build(bot,q+1,B_PLANTATION);
+    expect(bot.plantations).toBe(2);
+    bot.study=0; botThink(bot);
+    expect(bot.study).toBe(R_GATHER);
+  });
+  it('build their gathering buildings in squares, so research can join four into one', () => {
+    start(987654321, 1); const bot=W.nations[2];
+    for (let i=0;i<30;i++){ bot.stock=[999,999,999]; bot.nextThink=0; bot.tiles>0 && botThink(bot); run(5); }
+    const kinds=[B_PLANTATION,B_QUARRY,B_COPPERMINE];
+    // for each kind with several buildings, they stand side by side rather than scattered
+    for (const ty of kinds){
+      const mine: number[]=[]; for (let q=0;q<NP;q++) if (pType[q]===ty && W.nations[2].blds.includes(q)) mine.push(q);
+      if (mine.length<3) continue;
+      const touching=mine.filter(q => mine.some(k => k!==q && (Math.abs(k%PW-q%PW)+Math.abs(((k/PW)|0)-((q/PW)|0)))===1)).length;
+      expect(touching).toBeGreaterThanOrEqual(mine.length-1);
+    }
   });
 });

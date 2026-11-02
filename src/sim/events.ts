@@ -10,8 +10,6 @@ export interface SimEvents {
   capitalFell(id: number, by: number): void;
   eliminated(id: number, by: number): void;
   roleChanged(x: number, y: number, kind: number): void;   // someone left the capital as a villager or soldier
-  resChanged(t: number): void;                  // the tree or rock on tile t appeared, was harvested or cleared
-  stored(id: number, good: number, amount: number): void;   // a villager delivered goods to the capital
   towerShot(x0: number, y0: number, x1: number, y1: number, killed: boolean, victim: number): void;   // a watchtower or castle hit someone
   produced(q: number, id: number, good: number, amount: number): void;   // a plantation, quarry or copper mine delivered
   warBegan(a: number, d: number, raid: boolean): void;         // a sent an army against d (a raid, or more armies to a war)
@@ -51,7 +49,7 @@ const noop = () => {};
 export const on: SimEvents = {
   tileChanged: noop, plotChanged: noop, roadBuilt: noop, plotIgnited: noop,
   buildingPlaced: noop, capitalFell: noop, eliminated: noop, roleChanged: noop,
-  resChanged: noop, stored: noop, towerShot: noop, produced: noop,
+  towerShot: noop, produced: noop,
   warBegan: noop, crisis: noop, escalated: noop, deescalated: noop, defending: noop, reserves: noop, armyHome: noop, armyGone: noop, peaceOffered: noop, peaceRefused: noop, peaceMade: noop,
   allied: noop, allyRefused: noop, allianceBroken: noop, annexed: noop, plunder: noop, hit: noop, bldHit: noop,
   died: noop, occupied: noop, counterReady: noop, intercepting: noop, swing: noop, story: noop, researched: noop, upgraded: noop, builderHired: noop, forged: noop, armored: noop, deserted: noop, order: noop,

@@ -1,6 +1,6 @@
 // Research stations, house tiers and the builders guild.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NT, NP, B_HOUSE, B_RESEARCH, B_GUILD, B_TOWER, TAX_PER_VILLAGER } from '../src/core/constants';
+import { TW, TH, NT, NP, B_HOUSE, B_RESEARCH, B_GUILD, B_TOWER, TAX_PER_VILLAGER, LAND_TAX } from '../src/core/constants';
 import { W, owner, isLand, pType, pOwner, pTier, pCenter, pTimer } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { build, placeProblem } from '../src/sim/buildings';
@@ -87,7 +87,7 @@ describe('research', () => {
     start(12345); run(300);
     const n=me(); expect(n.taxpayers).toBeGreaterThan(0);
     n.tier[R_TAXES]=3; run(1);
-    expect(n.income).toBeCloseTo(TAX_PER_VILLAGER*3*n.taxpayers);
+    expect(n.income).toBeCloseTo(TAX_PER_VILLAGER*3*n.taxpayers+LAND_TAX*n.tiles);
   });
 });
 
@@ -114,16 +114,15 @@ describe('house tiers and the builders guild', () => {
   it('turns hovels into stone houses from the castle outward, for 3 wood and 3 stone each', () => {
     start(12345); expand(6); until(() => houses().length>=10);
     const g=place(B_GUILD); me().tier[R_HOUSING]=2; run(2);
+    gained(me(),0,60); gained(me(),1,60);   // goods coming in (from buildings), so the builders may spend
     const b=mine().find(h => h.work===g)!, first=improvements(me())[0];
     const nearest=Math.min(...houses().map(fromCapital));
     expect(fromCapital(first)).toBeLessThanOrEqual(nearest*1.2+1e-9);   // the inner town first (a little ragged)
     until(() => b.task===TASK_FIX);
-    const q=b.fix, before=[...me().stock], got=[0,0,0];
-    listen({ stored: (o,g,k) => { if (o===1) got[g]+=k; } });   // goods villagers bring in meanwhile
+    const q=b.fix, before=[...me().stock];
     until(() => pTier[q]===2, FIX_TICKS+5);
-    listen({ stored: () => {} });
-    expect(me().stock[0]).toBe(before[0]+got[0]-3);
-    expect(me().stock[1]).toBe(before[1]+got[1]-3);
+    expect(me().stock[0]).toBe(before[0]-3);   // (nobody brings in goods meanwhile: only buildings make them)
+    expect(me().stock[1]).toBe(before[1]-3);
     expect(me().beds).toBe(houses().reduce((k,q) => k+HOUSE_BEDS[pTier[q]],0));   // room for one more right away
   });
 

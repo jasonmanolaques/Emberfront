@@ -170,6 +170,9 @@ export function mayStand(h: Human, o: number){
   return !!c && (c.phase===2 || o===c.d || allied(c.a,o));
 }
 
+/** Is kingdom o at war (or a party to one)? Its militia stand out of their houses while it is. */
+export const warringNow = (o: number) => warring[o]===1;
+
 /** Fills f with steps to the nearest of `src` over land a's army may cross on its way to d
     (with `any`, over all land), -1 where there is no way, within the box round a's and d's land (and
     the sources), FIELD_MARGIN tiles wider. It looks for the tiles `mark` stamps (each stamped tile
@@ -661,7 +664,7 @@ export function annex(loser: number, winner: number){
   L.capTile=-1;   // so taking the ground below doesn't count as an ordinary sack
   for (const h of W.humans){
     if (h.o!==loser) continue;
-    release(h); h.carry=-1; h.amount=0; h.o=winner; h.post=-1; h.site=-1; h.war=-1; h.foe=-1; h.aim=-1; h.loot=false; h.brave=-1; h.calm=0; h.work=-1;
+    release(h); h.o=winner; h.post=-1; h.site=-1; h.war=-1; h.foe=-1; h.aim=-1; h.loot=false; h.brave=-1; h.calm=0; h.work=-1;
     h.task=TASK_ROAM; h.path=[]; h.wait=0; h.tx=h.x; h.ty=h.y;
   }
   // buildings change hands before the ground does, so they don't burn
@@ -1770,7 +1773,7 @@ export function raiseMob(o: number, x: number, y: number, r: number, dry=false){
   for (const h of W.humans){
     if (h.o!==o || h.kind===H_SOLDIER || h.hp<=0 || indoors(h) || switching(h) || (h.x-x)**2+(h.y-y)**2>r*r) continue;
     if (dry){ k++; continue; }
-    if (h.brave<0 || h.brave===0){ release(h); h.carry=-1; h.amount=0; h.task=TASK_ROAM; h.path=[]; h.wait=0; }
+    if (h.brave<0 || h.brave===0){ release(h); h.task=TASK_ROAM; h.path=[]; h.wait=0; }
     h.brave=MOB; h.calm=0; h.foe=-1; k++;
   }
   return k;
@@ -1791,7 +1794,7 @@ export function alarmStep(h: Human): boolean {
       h.calm=0;
       if (h.brave<0){
         h.brave = h.beggar || W.prand()<0.5 ? 1 : 0;   // beggars always stand in the way
-        release(h); h.carry=-1; h.amount=0; h.task=TASK_ROAM; h.path=[]; h.wait=0;   // whatever he was doing, he drops it
+        release(h); h.task=TASK_ROAM; h.path=[]; h.wait=0;   // whatever he was doing, he drops it
       }
       if (h.brave===0) h.foe=e.id;   // the one he is running from
     } else if (h.brave>=0) h.calm+=4;
