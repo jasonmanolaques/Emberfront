@@ -97,7 +97,7 @@ describe('filling the ranks', () => {
 describe('soldier tiers and the blacksmith', () => {
   function armoury(k: number){
     start(12345); expand(8); run(320);   // (three villagers by now: one to be the smith)
-    const b=place(B_BARRACKS), men=soldiers(k); run(5);
+    const b=place(B_BARRACKS), men=soldiers(k); run(5); me().gold=1e6;   // (wages for a long wait)
     const s=place(B_SMITHY);
     for (let i=0;i<300 && !mine().some(h => h.work===s);i++) run(1);   // a villager takes the job
     const smith=mine().find(h => h.work===s)!;

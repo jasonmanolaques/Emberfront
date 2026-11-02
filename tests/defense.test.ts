@@ -120,7 +120,7 @@ describe('invaders and towers', () => {
 });
 
 describe('wages', () => {
-  it('cost 0.2 gold a second a soldier (militia at home nothing), and the treasury may go below zero', () => {
+  it('cost 0.3 gold a second a soldier (militia at home nothing), and the treasury may go below zero', () => {
     world(0); paintDisc(N(1),14);
     place(N(1),B_BARRACKS); place(N(1),B_BARRACKS);   // room for 10
     const [x,y]=doorOf(N(1));
@@ -128,7 +128,7 @@ describe('wages', () => {
     N(1).soldierShare=1; N(1).humanProg=-1e9; run(2);
     expect([N(1).soldiers, N(1).militia]).toEqual([14, 4]);   // the 4 without room in a barracks serve as militia
     expect(N(1).income).toBeCloseTo(grossIncome(N(1))-10*WAGE, 6);
-    expect(WAGE).toBe(0.2);
+    expect(WAGE).toBe(0.3);
     N(1).gold=-5; run(1);
     expect(N(1).gold).toBeLessThan(0);
   });

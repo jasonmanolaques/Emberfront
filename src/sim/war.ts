@@ -49,7 +49,8 @@ import { H_SOLDIER, TASK_ROAM, TOWER_RANGE, maxHp, REGEN, pace, onCastle, releas
 
 export const LOOT_GOLD = 50;          // a raider's loot bag, paid when he gets it home
 export const MELEE_R = 2.6;           // pixels: close enough to strike
-export const HIT_TICKS = 8;           // ticks between blows
+export const HIT_TICKS = 10;          // ticks between blows (one a second)
+const DUEL_R = 8;                     // pixels apart a duel holds: further, one has run and it is over
 export const HIT_CHANCE = 0.7;
 export const HIT_DMG = SOLDIER_DMG;   // a soldier's blow, by tier (soldiers have SOLDIER_HP by tier)
 export const MILITIA_DMG = 0.5;       // a villager with a pitchfork does half that
@@ -985,7 +986,7 @@ function push(o: Offensive){
   const takeIt=(t: number, a: number, d: number) => (!allowed || allowed(t)) && takeTile(t,a,d);
   const T=F.tiles, take=new Uint8Array(T.length), a=o.a, d=o.d, tw=TW, R2=(PRESENT*2+gap)**2;   // (pixels: a little more room for a thin line, whose men have further to go when it closes up)
   for (const h of o.men){
-    if (h.fk!==o.key || h.line!==0 || (h.x-h.fx)**2+(h.y-h.fy)**2>R2) continue;
+    if (h.fk!==o.key || h.line!==0 || (h.x-h.fx)**2+(h.y-h.fy)**2>R2 || partner(h)) continue;   // (a man in a duel holds his ground: the line takes none before him)
     const lo=h.slot-gap/2-DENSE, hi=h.slot+gap/2+DENSE;
     let i=indexAt(F,lo); if (F.s[i]<lo) i++;
     let e=indexAt(F,hi); if (F.s[e]>=hi) e--;
@@ -1372,8 +1373,23 @@ function towersFire(){
 /* ---------- soldiers ---------- */
 /** Notes that soldier h's army has come under attack. */
 function underFire(h: Human){ if (h.war>=0){ const c=camps.get(h.war); if (c) c.hitAt=W.tickN; } }
+/** The man h is in a duel with, while it lasts: both alive, still close, each the other's. */
+export function partner(h: Human): Human | undefined {
+  if (h.duel<0) return undefined;
+  const p=byId.get(h.duel);
+  if (!p || p.hp<=0 || p.duel!==h.id || (p.x-h.x)**2+(p.y-h.y)**2>DUEL_R*DUEL_R || indoors(p)){ if (p && p.duel===h.id) p.duel=-1; h.duel=-1; return undefined; }
+  return p;
+}
+/** Is the fight between h and e not for them: one of them is in a duel with somebody else? A duel is
+    one against one, nobody joins in, and another only takes a place when its man has fallen. */
+function locked(h: Human, e: Human){
+  const pe=partner(e); if (pe && pe!==h) return true;
+  const ph=partner(h); return !!ph && ph!==e;
+}
 function strike(h: Human, e: Human){
   if (h.cool>0 || h.beggar) return;   // a beggar strikes no blow: he only stands in the way
+  if (locked(h,e)) return;            // (a duel is one on one)
+  h.duel=e.id; e.duel=h.id;
   h.cool=HIT_TICKS;
   on.swing(h.id,e.id);
   if (W.prand()<HIT_CHANCE){
@@ -1475,7 +1491,7 @@ function choose(h: Human, c: Campaign){
   for (let o=1;o<W.M;o++){
     if (!W.atWar[c.a*W.M+o]) continue;
     for (const e of armies[o] ?? []){
-      if (e.hp<=0) continue;
+      if (e.hp<=0 || locked(h,e)) continue;
       const d=Math.hypot(e.x-h.x,e.y-h.y), onMe=e.foe===h.id, onLeader=c.leader>=0 && e.foe===c.leader;
       if (leader){ if (!onMe && d>=MELEE_R*2) continue; }   // the leader fights only whoever is on him
       else if (!onMe && !onLeader && (Math.hypot(e.x-sx,e.y-sy)>ENGAGE_R || (e.x-c.bx)**2+(e.y-c.by)**2>LEASH*LEASH)) continue;
@@ -1530,7 +1546,7 @@ export function marchStep(h: Human){
   if (c.front){ frontStep(h,c); return; }
   if ((h.id+W.tickN)%4===0) choose(h,c);
   let foe=h.foe>=0 ? byId.get(h.foe) : undefined;
-  if (foe && (foe.hp<=0 || !atWar(h.o,foe.o) || indoors(foe) || (foe.x-c.bx)**2+(foe.y-c.by)**2>(LEASH*1.4)**2)){ foe=undefined; h.foe=-1; }
+  if (foe && (foe.hp<=0 || !atWar(h.o,foe.o) || indoors(foe) || locked(h,foe) || (foe.x-c.bx)**2+(foe.y-c.by)**2>(LEASH*1.4)**2)){ foe=undefined; h.foe=-1; }
   if (foe){
     if ((foe.x-h.x)**2+(foe.y-h.y)**2<=MELEE_R*MELEE_R) strike(h,foe); else moveTo(h,c,foe.x,foe.y,1.6);
     return;
@@ -1554,7 +1570,7 @@ function frontStep(h: Human, c: Campaign){
   if ((h.id+W.tickN)%4===0) chooseOnFront(h,c,pushing,leader);
   let foe=h.foe>=0 ? byId.get(h.foe) : undefined;
   const R=(pushing ? REACH_PUSH : REACH_HOLD)*1.6;
-  if (foe && (foe.hp<=0 || !atWar(h.o,foe.o) || indoors(foe) || (foe.foe!==h.id && (foe.x-h.fx)**2+(foe.y-h.fy)**2>R*R))){ foe=undefined; h.foe=-1; }
+  if (foe && (foe.hp<=0 || !atWar(h.o,foe.o) || indoors(foe) || locked(h,foe) || (foe.foe!==h.id && (foe.x-h.fx)**2+(foe.y-h.fy)**2>R*R))){ foe=undefined; h.foe=-1; }
   if (foe){
     if ((foe.x-h.x)**2+(foe.y-h.y)**2<=MELEE_R*MELEE_R) strike(h,foe); else moveTo(h,c,foe.x,foe.y,1.6);
     return;
@@ -1580,7 +1596,7 @@ function chooseOnFront(h: Human, c: Campaign, pushing: boolean, leader: boolean)
   for (let o=1;o<M;o++){
     if (!W.atWar[c.a*M+o]) continue;
     for (const e of armies[o] ?? []){
-      if (e.hp<=0) continue;
+      if (e.hp<=0 || locked(h,e)) continue;
       const d=Math.hypot(e.x-h.x,e.y-h.y), onMe=e.foe===h.id, onLeader=c.leader>=0 && e.foe===c.leader;
       if (leader){ if (!onMe && d>=MELEE_R*2) continue; }
       else if (!onMe){
@@ -1627,7 +1643,7 @@ function threat(h: Human, ax: number, ay: number, R: number, reach=Infinity){
   for (let o=1;o<W.M;o++){
     if (!W.atWar[h.o*W.M+o]) continue;
     for (const e of armies[o] ?? []){
-      if (e.hp<=0 || (e.x-ax)**2+(e.y-ay)**2>R*R) continue;
+      if (e.hp<=0 || locked(h,e) || (e.x-ax)**2+(e.y-ay)**2>R*R) continue;
       const d=Math.hypot(e.x-h.x,e.y-h.y); if (d>reach && e.foe!==h.id) continue;
       const s=d-(e.aim>=0 && pOwner[e.aim]===h.o ? 8 : 0)-(e.foe>=0 && byId.get(e.foe)?.o===h.o ? 4 : 0)+CROWD*crowdOn(e,h);
       if (s<bs || (s===bs && best && e.id<best.id)){ bs=s; best=e; }
@@ -1641,7 +1657,7 @@ function engage(h: Human, foe: Human){
   const d=Math.hypot(foe.x-h.x,foe.y-h.y);
   if (d<=MELEE_R) strike(h,foe); else stepHome(h,foe.x,foe.y,1.6);
 }
-const valid = (h: Human, e: Human | undefined): e is Human => !!e && e.hp>0 && !indoors(e) && atWar(h.o,e.o);
+const valid = (h: Human, e: Human | undefined): e is Human => !!e && e.hp>0 && !indoors(e) && atWar(h.o,e.o) && !locked(h,e);
 /** A place in the home guard's line: hold it, and fight enemies who come within reach of the line.
     Armed villagers only fight whoever is on them; soldiers go out to meet the enemy near the line. */
 function holdLine(h: Human, r: Rally){
@@ -1665,7 +1681,7 @@ function holdFront(h: Human){
     for (let o=1;o<W.M;o++){
       if (!W.atWar[h.o*W.M+o]) continue;
       for (const e of armies[o] ?? []){
-        if (e.hp<=0) continue;
+        if (e.hp<=0 || locked(h,e)) continue;
         const onMe=e.foe===h.id;
         if (!onMe && ((e.x-h.fx)**2+(e.y-h.fy)**2>DEF_REACH*DEF_REACH || owner[tileOf(e.x,e.y)]!==h.o)) continue;
         const s=Math.hypot(e.x-h.x,e.y-h.y)+CROWD*crowdOn(e,h)-(onMe ? 4 : 0);
@@ -1736,11 +1752,11 @@ export function guardStep(h: Human): boolean {
 
 /* ---------- villagers in danger ---------- */
 /** The nearest enemy within r pixels of h. */
-function nearestEnemy(h: Human, r: number){
+function nearestEnemy(h: Human, r: number, anyone=false){
   let best: Human | undefined, bd=r*r;
   for (let o=1;o<W.M;o++){
     if (!W.atWar[h.o*W.M+o]) continue;
-    for (const e of armies[o] ?? []){ if (e.hp<=0) continue; const d=(e.x-h.x)**2+(e.y-h.y)**2; if (d<bd || (d===bd && best && e.id<best.id)){ bd=d; best=e; } }
+    for (const e of armies[o] ?? []){ if (e.hp<=0 || (!anyone && locked(h,e))) continue; const d=(e.x-h.x)**2+(e.y-h.y)**2; if (d<bd || (d===bd && best && e.id<best.id)){ bd=d; best=e; } }
   }
   return best;
 }
@@ -1770,7 +1786,7 @@ export function alarmStep(h: Human): boolean {
   if (!warring[h.o]){ if (h.brave>=0) calmDown(h); return false; }
   if (h.cool>0) h.cool--;
   if ((h.id+W.tickN)%4===0){
-    const e=nearestEnemy(h,h.brave===MOB ? MOB_R : DANGER_R);
+    const e=nearestEnemy(h,h.brave===MOB ? MOB_R : DANGER_R,true);   // (danger is danger, duel or not)
     if (e){
       h.calm=0;
       if (h.brave<0){

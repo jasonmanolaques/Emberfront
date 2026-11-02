@@ -56,6 +56,7 @@ export interface Human {
   site: number;                      // plot of the barracks (or, for militia, the castle) they are heading to or training in, or -1
   home: number;                      // villagers: plot of the house they are building, or -1
   rest: number;                      // villagers: plot of the house they rest in (or are walking into), or -1
+  duel: number;                      // the man he is fighting one to one (and who fights him), or -1
   housed: boolean;                   // has a home this tick (the longest-standing people get the houses)
   homeless: number;                  // ticks spent without a home
   beggar: boolean;                   // a villager homeless too long: idle, unrecruitable, pays no tax

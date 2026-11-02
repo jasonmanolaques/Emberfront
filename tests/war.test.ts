@@ -11,7 +11,7 @@ import { build, plotProblem, structureOf, togglePriority, finishHouse } from '..
 import { H_SOLDIER, H_VILLAGER, TASK_REST, TASK_STORE, TASK_TO_TRAIN, TASK_INSIDE, MILITIA_HP, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, frontOf, switching, pace, maxHp } from '../src/sim/population';
 import { UNIT_SIZE, buildUnits, station, unitAt, SOLDIER_DMG } from '../src/sim/army';
 import { wallOf, walledFor } from '../src/sim/defense';
-import { S_BALANCED, S_BORDER, S_RUSH, setStance, allied, atWar, available, ready, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
+import { partner, S_BALANCED, S_BORDER, S_RUSH, setStance, allied, atWar, available, ready, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
   RANKS, rankFor, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, reservesOf, reservesProblem, menOn, M_MARCH, M_HOLD, M_ASSAULT, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
 import { MIN_GAP, RANK_GAP, A_OFF, holds, freeOf, underCastle } from '../src/sim/front';
 import { beggarProblem, stuck, warChest } from '../src/sim/bots';
@@ -268,7 +268,7 @@ describe('at war', () => {
     world(1); quiet(); paintDisc(N(2),26);
     // the farmsteads out on the edge, beyond the castle's arrows
     for (const t of [B_FARM, B_FARM, B_HOUSE, B_HOUSE, B_FARM]) place(N(2),t,N(1).capTile);
-    const men=soldiers(N(1),10);
+    const men=soldiers(N(1),10); N(1).gold=1e6;   // (wages for a long raid)
     const plunder=collect('plunder');
     queueCommand({ type:'war', nation:1, target:2, raid:true, soldiers:10 }); tick();
     const c=sendRaid(1,2);
@@ -286,7 +286,7 @@ describe('at war', () => {
     until(() => !W.campaigns.includes(c), 4000);
     expect(plunder.length).toBeGreaterThan(0);
     expect(plunder.every(p => p[0]===1 && p[3]===LOOT_GOLD)).toBe(true);
-    expect(N(1).gold-gold0).toBeGreaterThanOrEqual(plunder.length*LOOT_GOLD-(W.tickN-t0)*0.1*WAGE*men.length);   // (less the wages paid meanwhile)
+    expect(N(1).gold-gold0).toBeGreaterThanOrEqual(plunder.length*LOOT_GOLD-(W.tickN-t0)*0.1*WAGE*men.length-0.01);   // (less the wages paid meanwhile)
     expect(men.filter(h => W.humans.includes(h)).every(h => !h.loot && h.war===-1)).toBe(true);
     expect(atWar(1,2)).toBe(false);   // home again, the raid is over
   });
@@ -832,7 +832,7 @@ describe('the front', () => {
         worst=Math.max(worst, L[row]-h.x/2);
       }
     }
-    expect(worst).toBeLessThanOrEqual(1.2);   // tiles from a man in his place to the edge of what his side holds before him
+    expect(worst).toBeLessThanOrEqual(3.6);   // tiles from a man in his place to the edge of what his side holds before him (at most a strip's depth ahead, where a duel has just ended and the line closes over the gap)
   });
 
   it('can\'t take what a defender on the line holds; once he falls, the gap fills and the line comes even again', () => {
@@ -1054,8 +1054,53 @@ describe('crisis', () => {
     expect(Array.from({ length: NT }, (_, t) => t).some(t => inBand(t) && occ[t]===1)).toBe(false);
     until(() => W.occCount[1*M()+2]>back+500, 3000);   // ...and then on into 1's, all along
     const now=lineAt(b), mid=now.slice().sort((p,q) => p-q)[now.length>>1];
-    expect(now.filter(x => Math.abs(x-mid)<=1).length).toBeGreaterThan(now.length*0.85);   // a straight line (bar where 1's men still stand their ground)
+    expect(now.filter(x => Math.abs(x-mid)<=1).length).toBeGreaterThan(now.length*0.6);   // a fairly straight line (bar where 1's men still stand their ground, each in a duel)
     expect(mid).toBeLessThan(Math.min(...line));   // and back past where the border was
+  });
+});
+
+describe('duels', () => {
+  /** One unbeatable defender in the middle of 40 attackers: the hit points it lost in 300 ticks, and how many were swinging at it. */
+  function lone(){
+    const b=split(0);
+    soldiers(N(1),40); noDraft(); noDraft(2);
+    const mid=(b.y0+b.y1)>>1, edge=lineAt(b)[mid-b.y0-3]+1, [d]=soldiers(N(2),1,false);
+    d.x=(edge+ZOC+1)*2+1; d.y=mid*2+1; d.sp=0; d.militia=true; d.hp=1e6;
+    expect(declare(1,2,false,40)).toBe(true); giveWord(1,2);
+    const swinging=new Set<number>(); let most=0;
+    listen({ swing: (a: number, e: number) => { if (e===d.id) swinging.add(a); } });
+    const hp0=d.hp;
+    for (let i=0;i<300;i++){ d.hp=hp0-(hp0-d.hp); tick(); }
+    return { lost: hp0-d.hp, swinging: swinging.size, d };
+  }
+  it('are one on one: a lone defender among 40 attackers is struck by one man at a time, not swarmed', () => {
+    const { lost, swinging } = lone();
+    expect(lost).toBeGreaterThan(0);
+    // one man swings once a second (10 ticks), 7 times in 10 land, a tier 1 soldier for 1: at most about 30 in 300 ticks, a swarm of even four would be four times that
+    expect(lost).toBeLessThanOrEqual(31);
+    expect(swinging).toBeGreaterThanOrEqual(1);
+  });
+  it('end with a death, and the next man takes his place', () => {
+    const b=split(0);
+    soldiers(N(1),40); noDraft(); noDraft(2);
+    const mid=(b.y0+b.y1)>>1, edge=lineAt(b)[mid-b.y0-3]+1, men=soldiers(N(2),3,false);
+    men.forEach((d,i) => { d.x=(edge+ZOC+1)*2+1; d.y=(mid+i*3)*2+1; d.sp=0; d.militia=true; d.hp=3; });
+    expect(declare(1,2,false,40)).toBe(true); giveWord(1,2);
+    run(900);
+    expect(men.every(d => d.hp<=0)).toBe(true);   // all three fell, each to the one man who took him on
+    // no attacker was ever in two duels, and none is left with a dead man as his partner
+    for (const h of W.humans) if (h.duel>=0){ const p=W.humans.find(x => x.id===h.duel); expect(p && p.duel===h.id).toBe(true); }
+  });
+  it('are with whoever is alive and close: a man who runs from his duel is free of it', () => {
+    world(1); quiet();
+    const [a]=soldiers(N(1),1,false), [e]=soldiers(N(2),1,false);
+    a.duel=e.id; e.duel=a.id; a.x=100; a.y=100; e.x=200; e.y=200;   // far apart
+    // (a duel holds only while they are close)
+    run(1);
+    expect(partner(a)).toBeUndefined(); expect([a.duel,e.duel]).toEqual([-1,-1]);
+    a.x=100; a.y=100; e.x=102; e.y=100; a.duel=e.id; e.duel=a.id;   // close, both alive: it holds
+    expect(partner(a)).toBe(e);
+    e.hp=0; expect(partner(a)).toBeUndefined();   // he fell: it is over
   });
 });
 
@@ -1266,8 +1311,8 @@ describe('beggars, militia and stalemates', () => {
     }
   });
 
-  it('militia have 5 hit points and strike for 1', () => {
-    expect([MILITIA_HP, MILITIA_HIT]).toEqual([5, 1]);
+  it('militia have 5 hit points and strike for 0.75', () => {
+    expect([MILITIA_HP, MILITIA_HIT]).toEqual([5, 0.75]);
     world(1); const [m]=soldiers(N(1),1,false); N(1).soldierShare=1; run(1);
     expect([m.militia, maxHp(m)]).toEqual([true, 5]);
   });
