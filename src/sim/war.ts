@@ -882,7 +882,7 @@ function runOffensives(){
     if (st===F_PUSH){
       if (!o.depth) o.depth=depths(o);
       if ((now+key)%(W.stance[key]===S_RUSH ? ADVANCE_TICKS/RUSH_PACE : ADVANCE_TICKS)===0) push(o);   // (a rush's strips come twice as often)
-      if ((now+key)%20===10) encircle(o);
+      if ((now+key)%20===10 && !o.liberating) encircle(o);   // (a kingdom retaking its land takes none of the enemy's)
     }
   }
 }
@@ -1481,7 +1481,7 @@ function moveTo(h: Human, c: Campaign, gx: number, gy: number, stop=0, toLine=fa
   }
   const st=Math.min(d-stop,marchPace(h,c)*TICK), w=wallStep(h,h.x+dx/d*st,h.y+dy/d*st);
   // stopped by a wall: break it down (a tower holding it up), unless he leads or his front is holding
-  if (w>=0 && h.foe<0 && h.aim<0 && h.id!==c.leader && targetable(wallTower[w],c) && (!c.front || W.offensive[c.a*W.M+c.d]===F_PUSH)) h.aim=wallTower[w];
+  if (w>=0 && h.foe<0 && h.aim<0 && h.id!==c.leader && targetable(wallTower[w],c) && (!c.front || (W.offensive[c.a*W.M+c.d]===F_PUSH && !offensives.get(c.a*W.M+c.d)?.liberating))) h.aim=wallTower[w];
 }
 /** Steps h to (nx,ny) unless an enemy wall is in the way, sliding along it if he can. Returns the
     wall's tile if one stopped him (in either direction), or -1. Someone already on a wall walks off it freely. */
@@ -1625,16 +1625,17 @@ export function marchStep(h: Human){
     by his place while attacking, and otherwise go to his place and stand there. Its leader fights
     only whoever is on him. */
 function frontStep(h: Human, c: Campaign){
-  const pushing=W.offensive[c.a*W.M+c.d]===F_PUSH, leader=h.id===c.leader;
-  if ((h.id+W.tickN)%4===0) chooseOnFront(h,c,pushing,leader);
+  const key=c.a*W.M+c.d, pushing=W.offensive[key]===F_PUSH, retaking=pushing && !!offensives.get(key)?.liberating, invading=pushing && !retaking, leader=h.id===c.leader;
+  if ((h.id+W.tickN)%4===0) chooseOnFront(h,c,invading,retaking,leader);
   let foe=h.foe>=0 ? byId.get(h.foe) : undefined;
   const R=(pushing ? REACH_PUSH : REACH_HOLD)*1.6;
-  if (foe && (foe.hp<=0 || !atWar(h.o,foe.o) || indoors(foe) || locked(h,foe) || (foe.foe!==h.id && (foe.x-h.fx)**2+(foe.y-h.fy)**2>R*R))){ foe=undefined; h.foe=-1; }
+  // (an army that is not invading never goes out after a man onto the enemy's own ground: only one within his blow's reach)
+  if (foe && (foe.hp<=0 || !atWar(h.o,foe.o) || indoors(foe) || locked(h,foe) || (foe.foe!==h.id && (foe.x-h.fx)**2+(foe.y-h.fy)**2>R*R) || (!invading && !stayOut(h,foe,c)))){ foe=undefined; h.foe=-1; }
   if (foe){
     if ((foe.x-h.x)**2+(foe.y-h.y)**2<=MELEE_R*MELEE_R) strike(h,foe); else moveTo(h,c,foe.x,foe.y,1.6);
     return;
   }
-  if (h.aim>=0 && (!pushing || !targetable(h.aim,c) || !byPlace(h,h.aim,1.5))) h.aim=-1;   // (the front has moved on from it)
+  if (h.aim>=0 && (!invading || !targetable(h.aim,c) || !byPlace(h,h.aim,1.5))) h.aim=-1;   // (the front has moved on from it)
   if (h.aim>=0){
     const [x0,y0,x1,y1]=rectOf(h.aim);
     if (h.x>=x0-1.5 && h.x<=x1+1.5 && h.y>=y0-1.5 && h.y<=y1+1.5) hitBuilding(h,c);
@@ -1644,14 +1645,19 @@ function frontStep(h: Human, c: Campaign){
   if (h.fk<0){ const s=downhill(c.field,h.x,h.y); if (s) moveTo(h,c,s[0],s[1]); return; }   // no place yet: on toward the front
   moveTo(h,c,h.fx,h.fy,0.2);
 }
+/** May h, whose army is not invading, deal with e: not while e stands on the enemy's own ground, further than a blow's reach (he would have to go out there after him)? */
+function stayOut(h: Human, e: Human, c: Campaign){
+  const t=tileOf(e.x,e.y);
+  return !(owner[t]===c.d && !occ[t]) || (e.x-h.x)**2+(e.y-h.y)**2<=MELEE_R*MELEE_R;
+}
 /** A man of the front picks his enemy: one on him or on his leader, or one near his place (while
     holding, only one who has come onto his side's ground), the nearest first, but one his comrades are
     already fighting counts as further off, so the line meets the enemy all along. With nobody to fight
     while attacking, he goes for a building by his place: a watchtower, the castle, or what stands on
     ground his side has taken. */
-function chooseOnFront(h: Human, c: Campaign, pushing: boolean, leader: boolean){
+function chooseOnFront(h: Human, c: Campaign, invading: boolean, retaking: boolean, leader: boolean){
   let best: Human | undefined, bs=Infinity;
-  const R=pushing ? REACH_PUSH : REACH_HOLD, M=W.M;
+  const R=invading || retaking ? REACH_PUSH : REACH_HOLD, M=W.M;
   for (let o=1;o<M;o++){
     if (!W.atWar[c.a*M+o]) continue;
     for (const e of armies[o] ?? []){
@@ -1660,15 +1666,16 @@ function chooseOnFront(h: Human, c: Campaign, pushing: boolean, leader: boolean)
       if (leader){ if (!onMe && d>=MELEE_R*2) continue; }
       else if (!onMe){
         if (!(onLeader && d<R*1.5) && (e.x-h.fx)**2+(e.y-h.fy)**2>R*R) continue;
-        if (!pushing && !onLeader && !holds(c.a,c.d,tileOf(e.x,e.y))) continue;
+        if (!invading && !onLeader && !(retaking ? owner[tileOf(e.x,e.y)]===c.a : holds(c.a,c.d,tileOf(e.x,e.y)))) continue;   // (not invading: only those on his own side's ground, occupied or not)
       }
+      if (!invading && !stayOut(h,e,c)) continue;
       const s=d+CROWD*crowdOn(e,h)-(onMe ? 4 : 0)-(onLeader ? 20 : 0);
       if (s<bs || (s===bs && best && e.id<best.id)){ bs=s; best=e; }
     }
   }
   if (best){ h.foe=best.id; h.aim=-1; return; }
   h.foe=-1;
-  if (leader || !pushing || h.fk<0){ h.aim=-1; return; }
+  if (leader || !invading || h.fk<0){ h.aim=-1; return; }
   if (h.aim>=0 && targetable(h.aim,c) && byPlace(h,h.aim,1.5)) return;   // busy with one
   const S=12, x=h.fx, y=h.fy;
   const qx0=Math.max(0,Math.floor((x-S)/8)), qx1=Math.min(PW-1,Math.floor((x+S)/8)), qy0=Math.max(0,Math.floor((y-S)/8)), qy1=Math.min(PH-1,Math.floor((y+S)/8));

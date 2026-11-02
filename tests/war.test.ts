@@ -1050,12 +1050,22 @@ describe('crisis', () => {
     expect(offensiveProblem(2,1,true)).toMatch(/occupied/);
     expect(offensiveProblem(2,1,false)).toMatch(/occupied/);
     expect(setOffensive(2,1,true)).toBe(false);
+    // all the while it takes its land back, and after it, its men keep to their own side: none out on the enemy's own ground
+    let strays=0;
+    for (let i=0;i<4000 && W.occCount[2*M()+1]>0;i++){ tick();
+      for (const h of W.humans) if (h.o===2 && h.war>=0 && h.kind===H_SOLDIER){ const t=((h.y/2)|0)*TW+((h.x/2)|0); if (owner[t]===1 && !occ[t]) strays++; }
+    }
+    expect(strays).toBe(0);
     until(() => W.occCount[2*M()+1]===0, 4000);
     const inBand=(t: number) => { const y=(t/TW)|0, x=t%TW; return y>=b.y0+3 && y<b.y1-3 && x>line[y-b.y0-3] && x<=line[y-b.y0-3]+4; };
     expect(Array.from({ length: NT }, (_, t) => t).some(t => inBand(t) && occ[t]===1)).toBe(false);
     expect(W.occCount[1*M()+2]).toBe(0);                       // (it took none of theirs while it did: only its own)
     run(40);
     expect(W.offensive[2*M()+1]).toBe(F_HOLD);                 // its land is back: it holds, and may strike back
+    for (let i=0;i<300;i++){ tick();   // ...and goes on holding on its own side of the border, out of reach of their watchtowers, until it is told to attack
+      for (const h of W.humans) if (h.o===2 && h.war>=0 && h.kind===H_SOLDIER){ const t=((h.y/2)|0)*TW+((h.x/2)|0); expect(owner[t]===1 && !occ[t]).toBe(false); }
+    }
+    expect(W.offensive[2*M()+1]).toBe(F_HOLD);
     queueCommand({ type:'offensive', nation:2, target:1, go:true }); tick();
     expect(W.offensive[2*M()+1]).toBe(F_PUSH);                 // and is then the attacker
     until(() => W.occCount[1*M()+2]>500, 4000);                // on into 1's, all along
