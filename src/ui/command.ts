@@ -1,15 +1,14 @@
 /* ---------- army command: right-click an army's leader to see it, and give its war the word ----------
    While an army is selected its soldiers are ringed in gold, and a small panel says what it is
    doing: gathering on the front, ready, attacking or holding (in a crisis, massed on the border, or
-   holding our own); a raid marching to the border, waiting there or raiding. Its button gives the
+   holding our own). Its button gives the
    word for its war (sim/war.ts setOffensive), the same as the button under the war chip: attack all
-   along the front (in a crisis we started, declaring war), or hold where it stands; a raid waiting at
-   the border, go in. Esc, the × or right-clicking elsewhere lets go. A leaderless
+   along the front (in a crisis we started, declaring war), or hold where it stands. Esc, the × or right-clicking elsewhere lets go. A leaderless
    army can't be selected, and losing the leader ends the selection. */
 import { K, PLAYER } from '../core/constants';
 import { W, type Campaign } from '../sim/state';
 import { queueCommand } from '../sim/sim';
-import { RANKS, F_GATHER, F_READY, F_PUSH, F_HOLD, M_MARCH, M_HOLD } from '../sim/war';
+import { RANKS, F_GATHER, F_READY, F_PUSH, F_HOLD } from '../sim/war';
 import { unitAt } from '../sim/army';
 import { client } from '../client';
 import { cam } from '../render/camera';
@@ -36,11 +35,6 @@ function nameOf(c: Campaign){
 /** What the army's button does now: [label, go, enabled, hint]. */
 function word(c: Campaign): [string, boolean, boolean, string] {
   const foe=W.nations[c.d]?.name ?? 'the enemy';
-  if (c.raid){
-    if (c.go) return ['Raiding', true, false, c.mode===M_MARCH ? `Marching to the border of ${foe}: it goes straight in.` : `Burning ${foe}'s buildings for loot. Recall it from the war bar.`];
-    return c.mode===M_HOLD ? ['Start the raid', true, true, `Waiting at the border of ${foe} for your word.`]
-      : ['Raid on arrival', true, true, `Marching to the border of ${foe}, where it waits for your word (or give it now).`];
-  }
   const key=c.a*W.M+c.d, st=W.offensive[key];
   if (!W.wars[key] && !W.aggr[key]) return ['Holding the border', false, false, `Holding your side of the border against ${foe}. It is not war: they fight only if ${foe} attacks.`];
   if (!W.wars[key]) return ['Attack · declare war', true, true, st===F_GATHER ? `Massing on the border of ${foe}: a crisis, not yet war. The word starts the war.` : `In place on the border of ${foe}. The word starts the war; or call the crisis off from the war bar.`];
@@ -61,7 +55,7 @@ export function refreshCommand(){
   $('cmName').textContent=nameOf(c);
   const [label,go,enabled,hint]=word(c);
   modeBtn.textContent=label; modeBtn.disabled=!enabled; modeBtn.dataset.go=go ? '1' : '';
-  modeBtn.setAttribute('aria-pressed',String(!c.raid && W.offensive[c.a*W.M+c.d]===F_PUSH));
+  modeBtn.setAttribute('aria-pressed',String(W.offensive[c.a*W.M+c.d]===F_PUSH));
   modeBtn.title=hint;
   $('cmHint').textContent=hint;
 }

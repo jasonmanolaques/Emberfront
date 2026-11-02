@@ -350,7 +350,7 @@ function goRest(h: Human, at=-1){
 export function makeHuman(n: Nation, kind: number, x: number, y: number): Human {
   return { id:++W.humanSeq, o:n.id, kind, militia:false, to:0, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+W.prand()*2,
     hp:kind===H_SOLDIER?SOLDIER_HP[1]:VILLAGER_HP, post:-1, site:-1, home:-1, rest:-1, duel:-1, housed:false, homeless:0, beggar:false,
-    war:-1, loot:false, foe:-1, aim:-1, cool:0, slot:0, brave:-1, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
+    war:-1, foe:-1, aim:-1, cool:0, slot:0, brave:-1, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
     tier:kind===H_SOLDIER?1:0, base:-1, load:0, make:0, dest:-1 };
 }
 /** A new villager or militiaman walks out of the capital; a new soldier out of the barracks nearest the capital. */
@@ -615,7 +615,7 @@ function payroll(n: Nation, mine: Human[]){
   if (!h) return;
   const tier=h.tier, gold=tier>=2 ? SCRAP_GOLD*tier : 0, f=h.hp/maxHp(h);
   n.gold+=gold;
-  release(h); h.sp-=SPEED_UP[h.militia ? T_MILITIA : T_SOLDIER]; h.kind=H_VILLAGER; h.militia=false; h.tier=0; h.base=-1; h.post=-1; h.site=-1; h.war=-1; h.foe=-1; h.aim=-1; h.loot=false; h.slot=0; h.brave=-1; h.calm=0;
+  release(h); h.sp-=SPEED_UP[h.militia ? T_MILITIA : T_SOLDIER]; h.kind=H_VILLAGER; h.militia=false; h.tier=0; h.base=-1; h.post=-1; h.site=-1; h.war=-1; h.foe=-1; h.aim=-1; h.slot=0; h.brave=-1; h.calm=0;
   h.hp=Math.max(0.5,VILLAGER_HP*f);
   backToRoam(h);
   on.deserted(n.id,h.x,h.y,tier,gold);

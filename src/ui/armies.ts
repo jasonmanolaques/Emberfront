@@ -1,5 +1,5 @@
 /* ---------- armies in the UI: names, a one-line summary, and a picker of which to send ----------
-   Each barracks keeps its own army (sim/army.ts). The war screen and the intercept menu list the
+   Each barracks keeps its own army (sim/army.ts). The war screen and the respond menu list the
    player's armies as toggles; each one chosen marches out on its own. */
 import { PLAYER, PW } from '../core/constants';
 import { W, type Nation } from '../sim/state';

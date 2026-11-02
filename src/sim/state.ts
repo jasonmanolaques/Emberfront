@@ -59,7 +59,6 @@ export interface Human {
   homeless: number;                  // ticks spent without a home
   beggar: boolean;                   // a villager homeless too long: idle, unrecruitable, pays no tax
   war: number;                       // soldiers: id of the campaign they march with, or -1
-  loot: boolean;                     // raiders: carrying plunder home (worth LOOT_GOLD)
   foe: number;                       // soldiers: id of the enemy they are fighting, or -1
   aim: number;                       // soldiers: plot of the enemy building they are attacking, or -1
   cool: number;                      // ticks until they can strike again
@@ -79,21 +78,19 @@ export interface Human {
   fx: number; fy: number;            // ...and where they stand, in pixels (slot: how far along the line)
 }
 /** An army in the field: an attack (holding its part of a front, and pushing it on when the offensive
-    is on), a raid (burning buildings) or an intercept (going after an enemy army). */
+    is on), or an army defending a border. */
 export interface Campaign {
   id: number; a: number; d: number;  // attacker, defender
-  raid: boolean;
-  target: number;                    // intercepts: id of the enemy campaign they go after (-1 for raids and attacks)
   hostile: boolean;                  // still fighting: false once peace is made and the army walks home
   members: number[];                 // ids of the soldiers still in it, rebuilt each tick
   front: boolean;                    // an attack, or an army defending a border: its men stand on the front of its kingdom's offensive (sim/front.ts)
-  militia: boolean;                  // militia (no barracks of their own): sent with an attack or a raid, or called up as reserves to a front
+  militia: boolean;                  // militia (no barracks of their own): sent with an attack, or called up as reserves to a front
   all: boolean;                      // militia on a front: every one at home was called up, and those raised meanwhile follow
   phase: number;                     // 0 mustering, 1 out (marching, or on the front), 2 going home
   bx: number; by: number;            // the banner, in pixels
   dx: number; dy: number;            // marching direction (unit)
   rx: number; ry: number;            // rally point while mustering
-  goal: number;                      // attacks: the tile the banner heads for (raids head for the nearest building)
+  goal: number;                      // the tile the banner heads for
   field: Field; fieldAt: number;     // steps to the goal (or home) over land the army may cross, -1 = no way (sim/field.ts); tick it was worked out
   started: number; startSoldiers: number; startTiles: number;   // tick it began, with how many soldiers, and the defender's land then
   stall: number;                     // ticks the banner has waited for stragglers
@@ -102,8 +99,7 @@ export interface Campaign {
   inspired: boolean;                 // a counter-attack: thirsty for revenge, it hits harder and marches faster
   leader: number;                    // id of the soldier leading it, or -1 (none for 5 or fewer, or he fell)
   rank: number;                      // the leader's rank by the army's size when it set out (RANKS in war.ts; 0 none)
-  mode: number;                      // raids: marching to the border, waiting there for the word, or raiding (M_* in war.ts); attacks: its offensive's state (F_*)
-  go: boolean;                       // raids: given the word to cross the border and raid
+  mode: number;                      // its offensive's state (F_* in war.ts)
   hitAt: number;                     // tick one of its soldiers was last hit
 }
 export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; }   // gold still to spend on this front
@@ -116,14 +112,13 @@ export type Command =
   | { type: 'build'; nation: number; plot: number; kind: number }     // kind: B_FARM, B_BARRACKS, B_TOWER or B_MINTER
   | { type: 'priority'; nation: number; plot: number }                // toggle a watchtower's call for a garrison
   | { type: 'ally'; nation: number; target: number }                  // propose an alliance
-  | { type: 'war'; nation: number; target: number; raid: boolean; soldiers?: number; units?: number[]; militia?: number }   // units: barracks plots, each army marches on its own; militia: how many of the militia at home go too
-  | { type: 'endWar'; nation: number; target: number }                // recall a raid, or offer peace
-  | { type: 'intercept'; nation: number; campaign: number; soldiers?: number; units?: number[] }   // send armies after an enemy army
+  | { type: 'war'; nation: number; target: number; naval?: { base: number; coast: number }; soldiers?: number; units?: number[]; militia?: number }   // units: barracks plots, each army marches on its own; militia: how many of the militia at home go too
+  | { type: 'endWar'; nation: number; target: number }                // offer peace
   | { type: 'peace'; nation: number; target: number }                 // accept the target's peace offer
   | { type: 'research'; nation: number; topic: number }               // study this topic next (R_* in research.ts)
   | { type: 'invest'; nation: number; share: number }                // city investment (0..1)
   | { type: 'stance'; nation: number; target: number; stance: number }   // how the armies on the front against target fight: balanced, border capture, capital rush
-  | { type: 'offensive'; nation: number; target: number; go: boolean }   // attack along the front (in a crisis: go to war), send raiders waiting at the border in, or hold the front
+  | { type: 'offensive'; nation: number; target: number; go: boolean }   // attack along the front (in a crisis: go to war), or hold the front
   | { type: 'deescalate'; nation: number; target: number }            // call off the crisis our massed armies started: everyone goes home
   | { type: 'defend'; nation: number; target: number; units: number[] }   // send armies to stand on our side of the border with target
   | { type: 'reserves'; nation: number; target: number; call: boolean };  // call the militia up to the front against target, or send them home

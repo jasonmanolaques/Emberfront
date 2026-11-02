@@ -13,7 +13,7 @@ import { toRuins, build, togglePriority, produce } from './buildings';
 import { scanContacts, census } from './census';
 import { botThink } from './bots';
 import { updatePopulation, resetWalks } from './population';
-import { resetWar, declare, intercept, proposeAlliance, endWar, makePeace, setOffensive, setStance, deescalate, defend, callReserves } from './war';
+import { resetWar, declare, proposeAlliance, endWar, makePeace, setOffensive, setStance, deescalate, defend, callReserves } from './war';
 import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
 import { turnLedger, resetLedger } from './ledger';
@@ -209,9 +209,7 @@ function applyCommand(c: Command){
   } else if (c.type==='ally'){
     proposeAlliance(c.nation,c.target);
   } else if (c.type==='war'){
-    declare(c.nation,c.target,c.raid,c.units ?? c.soldiers ?? 0,c.militia ?? 0);
-  } else if (c.type==='intercept'){
-    intercept(c.nation,c.campaign,c.units ?? c.soldiers ?? 0);
+    declare(c.nation,c.target,c.units ?? c.soldiers ?? 0,c.militia ?? 0);
   } else if (c.type==='stance'){
     setStance(c.nation,c.target,c.stance);
   } else if (c.type==='offensive'){

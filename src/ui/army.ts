@@ -5,7 +5,7 @@ import { PLAYER, PS, B_BARRACKS } from '../core/constants';
 import { W, pType, pOwner } from '../sim/state';
 import { unitAt, units, armorWanted, TIER_NAME, UNIT_SIZE } from '../sim/army';
 import { R_INFANTRY } from '../sim/research';
-import { RANKS, M_MARCH, M_HOLD, F_GATHER, F_READY, F_PUSH } from '../sim/war';
+import { RANKS, F_GATHER, F_READY, F_PUSH } from '../sim/war';
 import { drawIcon } from '../render/sprites';
 import { styleOf } from '../render/style';
 import { armyName } from './armies';
@@ -32,9 +32,7 @@ function fieldReport(key: number){
   const c=W.campaigns.find(c => c.a===PLAYER && c.unit===key && c.phase<2);
   if (!c) return 'At home';
   const st=W.offensive[c.a*W.M+c.d];
-  const what=c.raid ? (c.go ? (c.mode===M_MARCH ? `marching on ${nm(c.d)} to raid it` : `raiding ${nm(c.d)}`) : c.mode===M_HOLD ? `waiting at ${nm(c.d)}'s border for your word to raid` : `marching to ${nm(c.d)}'s border to raid`)
-    : c.target>=0 ? `intercepting ${nm(c.d)}'s raiders`
-    : st===F_GATHER ? `gathering on the front with ${nm(c.d)}`
+  const what=st===F_GATHER ? `gathering on the front with ${nm(c.d)}`
     : st===F_READY ? `ready on the front with ${nm(c.d)}, waiting for your word`
     : st===F_PUSH ? `attacking ${nm(c.d)} along the front`
     : `holding the front against ${nm(c.d)}`;

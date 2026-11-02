@@ -54,11 +54,10 @@ listen({
   },
   occupied: paintTile,
   bldHit: dustPuff,
-  plunder: (id,x,y,gold) => { if (id===PLAYER) floats.push({ x, y:y-4, text:`+${gold} gold`, t0:performance.now(), c:'#ffe27a' }); },
-  warBegan: (a,d,raid) => {
-    if (a===PLAYER) log(`Your soldiers muster to ${raid?'raid':'attack'} ${nm(d)}`,'good');
-    else if (d===PLAYER){ log(`${nm(a)} ${raid?'is raiding you':'has declared war on you'}!`,'bad'); toast(`${nm(a)} ${raid?'raids':'attacks'} you`); }
-    else log(`${nm(a)} ${raid?'raids':'goes to war with'} ${nm(d)}`);
+  warBegan: (a,d) => {
+    if (a===PLAYER) log(`Your soldiers muster to attack ${nm(d)}`,'good');
+    else if (d===PLAYER){ log(`${nm(a)} has declared war on you!`,'bad'); toast(`${nm(a)} attacks you`); }
+    else log(`${nm(a)} goes to war with ${nm(d)}`);
   },
   crisis: (a,d) => {
     if (a===PLAYER) log(`Your armies mass on the border of ${nm(d)}: a crisis. Give the word to go to war, or call it off`,'good');
@@ -83,14 +82,11 @@ listen({
     if (o===PLAYER){ if (call){ log(`You call up ${k} militia: they march to the front with ${nm(e)}, paid as soldiers`,'good'); toast(`${k} militia called up`); } else log('Your reserves head home to patrol again'); }
     else if (e===PLAYER && call) log(`${nm(o)} calls up ${k} militia against you`,'bad');
   },
-  armyHome: (a,d,raid,why) => {
-    if (d===PLAYER && raid && why==='recall'){ log(`${nm(a)} calls its raiders home: catch them before they get there`); return; }
+  armyHome: (a,d,why) => {
     if (a!==PLAYER) return;
-    if (why==='cut'){ log(`The way to ${nm(d)} is blocked: your ${raid?'raiders':'army'} turn back`,'bad'); toast(`Your ${raid?'raid':'attack'} on ${nm(d)} was cut off`); }
-    else if (why==='done') log(`Nothing left to burn in ${nm(d)}: your raiders head home`,'good');
-    else if (why==='recall') log(`Your raiders head home from ${nm(d)}: they can still be caught on the way`);
+    if (why==='cut'){ log(`The way to ${nm(d)} is blocked: your army turns back`,'bad'); toast(`Your attack on ${nm(d)} was cut off`); }
   },
-  armyGone: (a,d,_raid,why) => { if (a===PLAYER && why==='lost') log(`Your army in ${nm(d)} has been wiped out`,'bad'); },
+  armyGone: (a,d,why) => { if (a===PLAYER && why==='lost') log(`Your army in ${nm(d)} has been wiped out`,'bad'); },
   peaceOffered: (from,to) => { if (to===PLAYER){ log(`${nm(from)} offers peace: click the war at the top to accept`,'good'); toast(`${nm(from)} offers peace`); } },
   peaceRefused: (from,to) => { if (from===PLAYER) toast(`${nm(to)} refuses peace: they think they can win`); },
   peaceMade: (a,b) => { if (a===PLAYER || b===PLAYER) log(`Peace with ${nm(a===PLAYER?b:a)}`,'good'); else log(`${nm(a)} and ${nm(b)} make peace`); },
@@ -98,10 +94,6 @@ listen({
   allyRefused: (a,_b,why) => { if (a===PLAYER) toast(why); },
   allianceBroken: (a,b) => { if (b===PLAYER) log(`${nm(a)} broke your alliance`,'bad'); },
   counterReady: (o,e) => { if (o===PLAYER){ log(`Your land is free of ${nm(e)}: your army is ready to counter-attack`,'good'); toast('Ready to counter-attack'); } },
-  intercepting: (o,e,k) => {
-    if (o===PLAYER) log(`${k} of your soldiers march out to meet ${nm(e)}'s army`,'good');
-    else if (e===PLAYER) log(`${nm(o)} sends ${men(k)} to meet your army`,'bad');
-  },
   // research and the builders guild
   researched: (o,topic,tier) => {
     if (topic===R_CASTLE){ const n=W.nations[o]; if (n.capTile>=0) drawPlotAndNeighbours(n.capPlot); }   // the castle is rebuilt at once

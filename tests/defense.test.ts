@@ -10,9 +10,9 @@ import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
 import { build, plotProblem, structureOf, costFor, finishHouse, togglePriority } from '../src/sim/buildings';
 import { H_SOLDIER, H_VILLAGER, makeHuman, doorOf } from '../src/sim/population';
-import { declare } from '../src/sim/war';
 import { bldHp, wear, TOWER_RELOADS, TOWER_DMGS, TOWER_HP, CASTLE_HP } from '../src/sim/defense';
 import { R_TOWERS, R_CASTLE } from '../src/sim/research';
+import { declare, escalate } from '../src/sim/war';
 
 const N = (i: number) => W.nations[i];
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
@@ -36,11 +36,12 @@ function place(n: Nation, type: number, near=n.capPlot, far=false){
   n.stock=[...costFor(n,structureOf(type)!)]; if (!build(n,q,type)) throw new Error('could not build');
   return q;
 }
-/** A raider of kingdom 2's, rooted to (x,y) on kingdom 1's land and tough enough to count shots on. */
+/** A soldier of kingdom 2's, at war with 1, rooted to (x,y) on kingdom 1's land and tough enough to count shots on. */
 function dummy(x: number, y: number){
   const e=N(2); paintDisc(e,10); place(e,8);
   const [dx,dy]=doorOf(e), h=makeHuman(e,H_SOLDIER,dx,dy+2); W.humans.push(h); e.soldierShare=1; run(2);
-  if (!declare(2,1,true,1)) throw new Error('no raid');
+  W.contact[2*W.M+1]=W.contact[1*W.M+2]=1;   // (they are neighbours, for the purpose)
+  if (!declare(2,1,1)) throw new Error('no attack'); escalate(2,1);   // (at war, with this man on its front)
   h.x=x; h.y=y; h.sp=0; h.hp=1000; h.tier=3;
   return h;
 }
@@ -91,7 +92,7 @@ describe('the castle by tier', () => {
 
   it('shoots like two watchtowers of its tier: twice as often, as hard', () => {
     for (const tier of [1,3]){
-      world(1); paintDisc(N(1),14); place(N(1),B_FARM); N(1).tier[R_CASTLE]=tier;   // something for them to raid
+      world(1); paintDisc(N(1),14); place(N(1),B_FARM); N(1).tier[R_CASTLE]=tier;   // something for them to shoot at
       const [x,y]=doorOf(N(1)), e=dummy(x,y+4);
       const shots: number[]=[]; listen({ towerShot: (_x0,_y0,_x1,_y1,_k,v) => { if (v===e.id) shots.push(W.tickN); } });
       const hp=e.hp; run(TOWER_RELOADS[tier]*5);
@@ -104,20 +105,6 @@ describe('the castle by tier', () => {
   });
 });
 
-describe('invaders and towers', () => {
-  it('break off from a farm to go for a watchtower that can shoot them', () => {
-    world(1); paintDisc(N(2),20);
-    const farm=place(N(2),B_FARM,N(1).capPlot), tower=place(N(2),B_TOWER,N(1).capPlot);
-    const men: Human[]=[]; const [x,y]=doorOf(N(1));
-    for (let i=0;i<5;i++){ const h=makeHuman(N(1),H_SOLDIER,x+i,y); W.humans.push(h); men.push(h); }
-    N(1).stock=[50,50,50]; place(N(1),8);   // a barracks for them
-    N(1).soldierShare=1; run(2);
-    expect(declare(1,2,true,5)).toBe(true);
-    until(() => men.some(h => h.aim>=0), 4000);
-    run(20);
-    expect(men.filter(h => h.aim===tower).length).toBeGreaterThan(men.filter(h => h.aim===farm).length);
-  });
-});
 
 describe('wages', () => {
   it('cost 0.3 gold a second a soldier (militia at home nothing), and the treasury may go below zero', () => {

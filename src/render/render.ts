@@ -146,7 +146,7 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
     const sx = left ? bx-(spr.width-BODY_X-4) : bx-BODY_X;
     ctx.drawImage(spr, sx, fy-FEET_Y);
     if (flash>0){ ctx.globalAlpha=flash*0.9; ctx.drawImage(flashOf(spr), sx, fy-FEET_Y); ctx.globalAlpha=1; }
-    if (kind!==0) { if (p.loot) drawLoot(bx,fy); const r=lead.get(p.id); if (r) drawStandard(p.o,r,bx,fy,left,now); continue; }
+    if (kind!==0) { const r=lead.get(p.id); if (r) drawStandard(p.o,r,bx,fy,left,now); continue; }
     if (p.brave>=1){   // up in arms: a pitchfork
       const tx=left ? bx-1 : bx+4; ctx.fillStyle=INK; ctx.fillRect(tx-1,fy-9,3,9);
       ctx.fillStyle='#8a6a40'; ctx.fillRect(tx,fy-7,1,7); ctx.fillStyle='#c9cdd1'; ctx.fillRect(tx,fy-8,1,1); ctx.fillRect(tx-1,fy-9,1,1); ctx.fillRect(tx+1,fy-9,1,1);
@@ -216,13 +216,6 @@ function drawFallen(now: number, vx0: number, vy0: number, vx1: number, vy1: num
   }
   ctx.globalAlpha=1;
 }
-/** A raider's plunder: a sack over his shoulder, tied with a gold cord. */
-function drawLoot(bx: number, fy: number){
-  const x=bx+1, y=fy-12;
-  ctx.fillStyle=INK; ctx.fillRect(x-1,y,6,5); ctx.fillRect(x,y-1,4,1);
-  ctx.fillStyle='#8a5a2e'; ctx.fillRect(x,y+1,4,3); ctx.fillStyle='#a8743c'; ctx.fillRect(x,y+1,2,1);
-  ctx.fillStyle='#ffd23f'; ctx.fillRect(x+1,y,2,1);
-}
 
 /** The general front of each war, so both sides can see where the line stands: the tiles of the line,
     in the colour of the kingdom that holds it, brighter and pulsing while it attacks, steady while
@@ -242,23 +235,6 @@ function drawFronts(now: number, vx0: number, vy0: number, vx1: number, vy1: num
   }
 }
 
-/** Each raid's and intercept's banner on a pole, in its kingdom's colours; a raid flies a black mark.
-    (An army on a front has none: its leader carries its standard.) */
-function drawBanners(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
-  const wave=reduceMotion ? 0 : ((now/260)|0)%3;
-  for (const c of W.campaigns){
-    const x=Math.round(c.bx*K), y=Math.round(c.by*K);
-    if (c.phase===2 || c.front || x<vx0-10||y<vy0||x>vx1+10||y>vy1+20) continue;
-    ctx.fillStyle='rgba(12,22,6,.35)'; ctx.fillRect(x-2,y+1,5,1);
-    ctx.fillStyle=INK; ctx.fillRect(x-1,y-16,3,18); ctx.fillRect(x+1,y-16,8,6);
-    ctx.fillStyle='#5a4030'; ctx.fillRect(x,y-15,1,16);
-    ctx.fillStyle='#d8c890'; ctx.fillRect(x,y-16,1,1);
-    // the country's flag; its fly ripples as it waves
-    paintSmallFlag(ctx,W.nations[c.a].code,x+1,y-15);
-    ctx.fillStyle=INK; ctx.fillRect(x+7,y-15+wave,1,1); ctx.fillRect(x+7,y-13+(wave>>1),1,1);
-    if (c.raid){ ctx.fillStyle='#16110d'; ctx.fillRect(x+3,y-14,2,2); ctx.fillRect(x+3,y-12,1,1); ctx.fillRect(x+4,y-12,1,1); }
-  }
-}
 
 const DETAIL_CSS = 2.5;   // screen (CSS) pixels a map tile must cover for the picture's tiles to be drawn
 /** The tiles of the picture on screen, made if need be (MAKE_PER_FRAME at most, nearest the middle
@@ -327,7 +303,7 @@ export function render(now: number, dt: number){
   drawFronts(now,vx0,vy0,vx1,vy1);
 
   // people and armies, once close enough to tell them apart
-  if (zs>=1.5){ drawFallen(now,vx0,vy0,vx1,vy1); drawSelection(now); drawPeople(now,vx0,vy0,vx1,vy1); drawBanners(now,vx0,vy0,vx1,vy1); }
+  if (zs>=1.5){ drawFallen(now,vx0,vy0,vx1,vy1); drawSelection(now); drawPeople(now,vx0,vy0,vx1,vy1); }
   else if (client.selected>=0) drawSelection(now);
 
   // particles

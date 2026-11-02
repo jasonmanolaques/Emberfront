@@ -1,13 +1,13 @@
 /* ---------- diplomacy: click another kingdom to propose an alliance or go to war; the war chips
    (a crisis while armies mass on a border, then the war), the word under a chip (in a crisis, go to
-   war; at war, attack along the front or hold it; send the raiders in), the call-up of the militia
-   reserves, and the menu under a chip for meeting an army coming at you (ask for peace, hold your
-   border against it, or intercept raiders) ---------- */
+   war; at war, attack along the front or hold it), the call-up of the militia
+   reserves, and the menu under a chip for meeting an army coming at you (ask for peace, or hold your
+   border against it) ---------- */
 import { PLAYER } from '../core/constants';
 import { fmt } from '../core/util';
 import { W } from '../sim/state';
 import { queueCommand } from '../sim/sim';
-import { S_BALANCED, S_BORDER, S_RUSH, allied, atWar, available, callable, allyProblem, warProblem, interceptProblem, defendProblem, reservesOf, reservesProblem, inCrisis, OFFER_TICKS, LOOT_GOLD, PRESENT, F_GATHER, F_READY, F_PUSH, M_HOLD } from '../sim/war';
+import { S_BALANCED, S_BORDER, S_RUSH, allied, atWar, available, callable, allyProblem, warProblem, defendProblem, reservesOf, reservesProblem, inCrisis, OFFER_TICKS, PRESENT, F_GATHER, F_READY, F_PUSH } from '../sim/war';
 import type { Campaign, Human } from '../sim/state';
 import { toast } from './hud';
 import { ArmyPicker, armyName } from './armies';
@@ -22,8 +22,6 @@ let target=0;
 let milOn=false, milPick=-1;   // the war screen: send militia too, and how many (-1: all of them, until moved)
 let popFor=0, popCamp=-1;   // the enemy whose army the menu is about, and that army (-2: our border with them, to hold)
 let popCounter=false;       // the menu is for our land being free again: counter-attack or peace
-// raid routes take a search of the map: worked out at most once a second while the war screen is open
-let raidWhy: string | null = null, raidAt = -1e9;
 
 const nameOf = (id: number) => id===PLAYER ? 'You' : W.nations[id].name;
 
@@ -41,7 +39,7 @@ export const diplomacyOpen = () => !panel.hidden;
 function showWarView(){
   const me=W.nations[PLAYER]; if (!me) return;
   talk.hidden=true; warView.hidden=false;
-  picker.reset(); raidAt=-1e9;
+  picker.reset();
   milOn=!available(me).length && callable(PLAYER).length>0; milPick=-1;   // with no armies, the militia are all there is
   refreshDiplomacy(true);
 }
@@ -85,32 +83,30 @@ function refreshWar(force: boolean){
   $('dMilVal').textContent=String(m);
   const k=soldiers+m;
   $('dSplit').textContent = (picked || m ? `${picked ? `${picked} arm${picked===1?'y':'ies'}` : ''}${picked && m ? ' and ' : ''}${m ? `${m} militia` : ''} chosen. ` : '')
-    + 'An attack masses them along the border: a crisis, not yet a war, until you give the word. A raid marches to the border and waits there for your word.'
+    + 'An attack masses them along the border: a crisis, not yet a war, until you give the word.'
     + (mil && !milOn ? ` You have ${mil} militia at home: use them too, or call them up from the war bar later.` : '');
-  if (force || performance.now()-raidAt>1000){ raidAt=performance.now(); raidWhy=warProblem(PLAYER,target,true); }
-  const attackWhy=warProblem(PLAYER,target,false);
-  const raid=$('dRaid') as HTMLButtonElement, attack=$('dAttack') as HTMLButtonElement;
-  raid.disabled=!!raidWhy || k<1; attack.disabled=!!attackWhy || k<1;
+  const attackWhy=warProblem(PLAYER,target);
+  const attack=$('dAttack') as HTMLButtonElement;
+  attack.disabled=!!attackWhy || k<1;
   const why: string[]=[];
   if (k<1) why.push(armies.length || mil ? 'Choose who to send' : 'No armies and no militia: raise some with the soldier slider');
-  if (raidWhy) why.push('Raid: '+raidWhy.toLowerCase());
   if (attackWhy) why.push('Attack: '+attackWhy.toLowerCase());
   $('dWhy').textContent=why.join(' · ');
 }
 
-function send(raid: boolean){
+function send(){
   const units=picker.chosen(), militia=milSent(); if (!target || (!units.length && !militia)) return;
   if (allied(PLAYER,target)) toast(`Your alliance with ${W.nations[target].name} is over`);
-  queueCommand({ type:'war', nation:PLAYER, target, raid, units, militia });
+  queueCommand({ type:'war', nation:PLAYER, target, units, militia });
   closeDiplomacy();
 }
 
 /* ---------- war chips: one per enemy ---------- */
-interface Front { o: number; a: number; d: number; war: boolean; crisis: number; myRaids: number; men: number; theyOffer: boolean; iOffer: boolean;
-  incoming: Campaign[]; fleeing: number; intercepting: number; ready: boolean; }
+interface Front { o: number; a: number; d: number; war: boolean; crisis: number; men: number; theyOffer: boolean; iOffer: boolean;
+  incoming: Campaign[]; ready: boolean; }
 function fronts(){
   const M=W.M, map=new Map<number, Front>();
-  const front=(o: number, a: number, d: number) => { let f=map.get(o); if (!f){ f={ o, a, d, war:!!W.wars[PLAYER*M+o], crisis:0, myRaids:0, men:0, theyOffer:false, iOffer:false, incoming:[], fleeing:0, intercepting:0, ready:false }; map.set(o,f); } return f; };
+  const front=(o: number, a: number, d: number) => { let f=map.get(o); if (!f){ f={ o, a, d, war:!!W.wars[PLAYER*M+o], crisis:0, men:0, theyOffer:false, iOffer:false, incoming:[], ready:false }; map.set(o,f); } return f; };
   for (let o=1;o<M;o++){
     if (o===PLAYER || !W.nations[o].alive) continue;
     if (W.wars[PLAYER*M+o]){ const f=front(o,PLAYER,o); if (W.aggr[o*M+PLAYER] && !W.aggr[PLAYER*M+o]){ f.a=o; f.d=PLAYER; } }   // (named by who started it)
@@ -121,11 +117,8 @@ function fronts(){
   for (const c of W.campaigns){
     if (!c.hostile || (c.a!==PLAYER && c.d!==PLAYER)) continue;
     const o=c.a===PLAYER ? c.d : c.a, f=front(o,c.a,c.d);
-    if (c.a===PLAYER){ f.men+=c.members.length; if (c.raid && c.phase<2) f.myRaids++; if (c.target>=0 && c.phase<2) f.intercepting+=c.members.length; }
-    else if (c.target<0){
-      if (c.phase<2){ f.incoming.push(c); if (!f.crisis && !f.war){ f.a=c.a; f.d=c.d; } }   // their raid on the march names the front
-      else if (c.raid){ f.fleeing+=c.members.length; if (!f.incoming.length){ f.a=c.a; f.d=c.d; } }   // recalled raiders, still the enemy
-    }
+    if (c.a===PLAYER) f.men+=c.members.length;
+    else if (c.phase<2){ f.incoming.push(c); if (!f.crisis && !f.war){ f.a=c.a; f.d=c.d; } }
   }
   for (const f of map.values()){
     const at=W.offers[f.o*M+PLAYER]; f.theyOffer=!!at && W.tickN-at<=OFFER_TICKS;
@@ -133,14 +126,6 @@ function fronts(){
     f.ready=!!W.ready[PLAYER*M+f.o];
   }
   return [...map.values()];
-}
-/** The enemy army from o that most needs meeting: the biggest one marching on us that nobody is
-    after yet, or else raiders on their way home with our loot. */
-function incomingFrom(o: number){
-  let best: Campaign | undefined;
-  const rank=(c: Campaign) => (c.phase<2 ? 1e6 : 0)+c.members.length;
-  for (const c of W.campaigns) if (c.a===o && c.d===PLAYER && c.hostile && c.target<0 && !interceptProblem(PLAYER,c.id) && (!best || rank(c)>rank(best))) best=c;
-  return best;
 }
 /* ---------- the balance of power: everyone who has fought in the current battle with o, and the fallen ----------
    A battle starts when an army sets out between us after a lull, and counts everyone who joins
@@ -190,16 +175,11 @@ function groupsOf(o: number, side: number, byId: Map<number, Human>){
   }
   return out.length ? '<br>'+out.join(' · ') : '';
 }
-function lootOf(o: number){
-  const ids=new Set(W.campaigns.filter(c => between(c,o)).map(c => c.id)), g=[0,0];
-  for (const h of W.humans) if (h.loot && ids.has(h.war)) g[h.o===PLAYER ? 0 : 1]+=LOOT_GOLD;
-  return g;
-}
 /** Two colours pushing against each other, as wide as each side's share of everyone in the fight;
     the fallen darken each side from its outer end, under a field of skulls. Then the numbers. */
 function powerBar(f: Front, b: Battle, byId: Map<number, Human>){
   const all=b.total[0]+b.total[1]; if (!all) return '';
-  const loot=lootOf(f.o), L=f.a===PLAYER ? 0 : 1, R=1-L, ids=[PLAYER,f.o];
+  const L=f.a===PLAYER ? 0 : 1, R=1-L, ids=[PLAYER,f.o];
   const seg=(s: number, cls: string) => {
     const dead=b.soldiers[s]+b.villagers[s];
     return `<i class="${cls}" style="width:${(b.total[s]/all*100).toFixed(1)}%;background:${W.nations[ids[s]].hex}"><s style="width:${b.total[s] ? (dead/b.total[s]*100).toFixed(1) : 0}%"></s></i>`;
@@ -208,7 +188,7 @@ function powerBar(f: Front, b: Battle, byId: Map<number, Human>){
     const dead=b.soldiers[s]+b.villagers[s];
     return `<span><b style="color:${W.nations[ids[s]].hex}">${esc(nameOf(ids[s]))}</b> ${b.total[s]-dead} fighting`+
       `<br>Dead: ${b.soldiers[s]} soldier${b.soldiers[s]===1?'':'s'}, ${b.villagers[s]} villager${b.villagers[s]===1?'':'s'}`+
-      (loot[s] ? `<br>Loot carried: ${loot[s]} gold` : '')+groupsOf(f.o,s,byId)+`</span>`;
+      groupsOf(f.o,s,byId)+`</span>`;
   };
   return `<div class="pbar" title="Balance of power: everyone in the fight, the fallen under skulls">${seg(L,'l')}${seg(R,'r')}</div><div class="pinfo">${info(L)}${info(R)}</div>`;
 }
@@ -220,33 +200,29 @@ export function updateWarChips(){
   const list=fronts(), byId=new Map<number, Human>();
   for (const h of W.humans) byId.set(h.id,h);
   const html=list.map(f => {
-    const kind=f.war ? 'War' : f.crisis ? 'Crisis' : 'Raid', open=incomingFrom(f.o) || ((f.crisis===2 || f.war) && canDefend(f.o) && W.campaigns.some(c => c.front && c.a===f.o && c.d===PLAYER && c.phase<2));
+    const kind=f.war ? 'War' : 'Crisis', open=(f.crisis===2 || f.war) && canDefend(f.o) && W.campaigns.some(c => c.front && c.a===f.o && c.d===PLAYER && c.phase<2);
     const [label, act, off] =
       f.theyOffer ? ['Accept peace', 'peace', false] :
       f.ready ? ['Counter-attack or peace ▾', 'counter', false] :
       f.crisis===1 ? ['De-escalate', 'calm', false] :
       open ? ['Respond ▾', 'respond', false] :
       f.crisis===2 ? ['Crisis', '', true] :
-      f.myRaids && !f.war ? ['Recall raid', 'end', false] :
-      f.myRaids ? ['Recall raid · offer peace', 'end', f.iOffer] :
       f.iOffer ? ['Peace offered…', '', true] :
-      // a raid has no peace: it is over when the raiders are dead or home
-      !f.war ? [f.a===PLAYER ? 'Raiders heading home' : f.fleeing ? 'Raiders fleeing' : 'Under attack', '', true] :
       ['Offer peace', 'end', false];
-    const inc=f.incoming.reduce((k,c)=>k+(c.front ? 0 : c.members.length),0), massed=f.incoming.reduce((k,c)=>k+(c.front ? c.members.length : 0),0);
-    const men=(inc ? ` · ${inc} coming` : '')+(massed ? ` · ${massed} ${f.a===PLAYER ? 'holding their border' : 'on your border'}` : '')+(f.fleeing ? ` · ${f.fleeing} fleeing` : '')+(f.intercepting ? ` · ${f.intercepting} intercepting` : '')+(f.men-f.intercepting>0 ? ` · ${f.men-f.intercepting} out` : '');
+    const massed=f.incoming.reduce((k,c)=>k+c.members.length,0);
+    const men=(massed ? ` · ${massed} ${f.a===PLAYER ? 'holding their border' : 'on your border'}` : '')+(f.men>0 ? ` · ${f.men} out` : '');
     const chip=`<button class="chip war${f.theyOffer||f.ready?' offer':''}${open?' threat':''}" data-o="${f.o}" data-act="${act}" ${off||!act?'disabled':''}><i class="flag" style="${flagCSS(W.nations[f.a].code)}"></i>${esc(nameOf(f.a))} – ${esc(nameOf(f.d))} · ${kind}${men}<b>${label}</b></button>`;
     return `<div class="front" data-o="${f.o}">${chip}${word(f.o,byId)}${stances(f.o)}${powerBar(f,track(f.o,byId),byId)}${reserves(f.o)}</div>`;
   }).join('');
   if (html!==lastChips){ lastChips=html; wars.innerHTML=html; placePop(); }
   if (!pop.hidden){
     if (popCounter){ if (!W.ready[PLAYER*W.M+popFor]) closePop(); }
-    else if (popCamp===-2 ? !canDefend(popFor) : !incomingFrom(popFor) && popCamp<0 && !canDefend(popFor)) closePop(); else if (!popSend.hidden) refreshPop();
+    else if (!canDefend(popFor)) closePop(); else if (!popSend.hidden) refreshPop();
   }
 }
 /** Under the chip, the word for our armies against o: gathering on the border (and how many are in
-    place), then a button to attack all along the front, to hold it, and to attack again; for raiders
-    waiting at o's border, to send them in. For o's offensive against us, how it stands. */
+    place), then a button to attack all along the front, to hold it, and to attack again. For o's
+    offensive against us, how it stands. */
 function word(o: number, byId: Map<number, Human>){
   const M=W.M, key=PLAYER*M+o, st=W.offensive[key];
   const mine=W.campaigns.filter(c => c.a===PLAYER && c.d===o && c.phase<2 && c.hostile);
@@ -266,10 +242,6 @@ function word(o: number, byId: Map<number, Human>){
     const label=!W.aggr[key] ? 'Counter-attack' : st===F_READY ? 'Attack!' : taken ? 'Attack again · second wave' : 'Attack again';   // (defending, we strike back: our own land first)
     return `<button class="fword go" data-o="${o}" data-go="1" title="Your armies push into ${nm} all along the front${W.aggr[key] ? '' : ', taking back your own land first'}">⚔ ${label}</button>`;
   }
-  const raid=mine.find(c => c.raid && !c.go);
-  if (raid) return raid.mode===M_HOLD
-    ? `<button class="fword go" data-o="${o}" data-go="1" title="Your raiders cross the border and burn what they find">⚔ Start the raid</button>`
-    : `<button class="fword" disabled title="They wait at the border for your word">Raiders marching to the border</button>`;
   const theirs=o*M+PLAYER;
   if (W.campaigns.some(c => c.front && c.a===o && c.d===PLAYER && c.phase<2)){
     const s=W.offensive[theirs];
@@ -302,7 +274,7 @@ function reserves(o: number){
 }
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]!);
 
-/* ---------- the menu under a chip: ask for peace, or intercept the army ---------- */
+/* ---------- the menu under a chip: ask for peace, or hold the border ---------- */
 function placePop(){
   if (pop.hidden) return;
   const chip=wars.querySelector(`.front[data-o="${popFor}"]`) as HTMLElement | null;
@@ -313,28 +285,18 @@ function placePop(){
 }
 function openPop(o: number, counter=false){
   popFor=o; popCamp=-1; popCounter=counter; pop.hidden=false; popMenu.hidden=false; popSend.hidden=true;
-  const E=incomingFrom(o), war=!!W.wars[PLAYER*W.M+o], crisis=inCrisis(o,PLAYER) && !war, hold=!counter && canDefend(o);
+  const war=!!W.wars[PLAYER*W.M+o], crisis=inCrisis(o,PLAYER) && !war, hold=!counter && canDefend(o);
   ($('wpTitle')).textContent = counter ? `Your land is free of ${W.nations[o].name}`
-    : crisis ? `${W.nations[o].name} masses on your border`
-    : E && E.phase===2 ? `${W.nations[o].name}'s raiders are fleeing` : `${W.nations[o].name}'s ${E?.raid ? 'raiders are' : 'army is'} coming`;
+    : crisis ? `${W.nations[o].name} masses on your border` : `${W.nations[o].name}'s army is coming`;
   $('wpPeace').textContent = counter ? 'Offer peace' : 'Request peace';
-  $('wpIntercept').textContent = counter ? 'Counter-attack…' : 'Intercept…';
-  $('wpIntercept').title = counter ? 'Strike back with your armies: your troops are thirsty for revenge, and hit harder' : 'Send armies out to meet their raiders in the field';
-  $('wpPeace').hidden=!war;   // raiders can't be bargained with, only fought (and a crisis isn't a war yet)
-  $('wpIntercept').hidden=!counter && !E;
+  $('wpCounter').hidden=!counter;
+  $('wpPeace').hidden=!war;   // (a crisis isn't a war yet)
   $('wpDefend').hidden=!hold;
   $('wpDefend').textContent = crisis ? 'Hold the border…' : 'Send armies to the front…';
-  popMenu.classList.toggle('one',[$('wpPeace'),$('wpIntercept'),$('wpDefend')].filter(b => !b.hidden).length<2);
+  popMenu.classList.toggle('one',[$('wpPeace'),$('wpCounter'),$('wpDefend')].filter(b => !b.hidden).length<2);
   placePop();
 }
 export function closePop(){ pop.hidden=true; popFor=0; popCamp=-1; popCounter=false; }
-function showIntercept(){
-  const E=incomingFrom(popFor), me=W.nations[PLAYER]; if (!E || !me){ closePop(); return; }
-  popCamp=E.id; popMenu.hidden=true; popSend.hidden=false;
-  popPicker.reset(E.members.length);   // the biggest armies, until they match what they send
-  $('wpGo').textContent='Intercept';
-  refreshPop(); placePop();
-}
 /** The armies to send to our side of the border with popFor: all of them, to start with. */
 function showDefend(){
   if (!canDefend(popFor)){ closePop(); return; }
@@ -348,14 +310,13 @@ const massed = (o: number) => W.campaigns.reduce((k,c) => k+(c.front && c.a===o 
 function refreshPop(){
   const me=W.nations[PLAYER]; if (!me){ closePop(); return; }
   const ready=available(me).reduce((s,a) => s+a.men.length,0), mil=callable(PLAYER).length;
-  let theirs: number;
-  if (popCamp===-2){ if (!canDefend(popFor)){ closePop(); return; } theirs=massed(popFor); }
-  else { const E=W.campaigns.find(c => c.id===popCamp); if (!E || interceptProblem(PLAYER,E.id)){ closePop(); return; } theirs=E.members.length; }
+  if (!canDefend(popFor)){ closePop(); return; }
+  const theirs=massed(popFor);
   popPicker.refresh();
   const k=popPicker.count();
   $('wpVal').textContent=`${k} soldier${k===1?'':'s'}`;
   $('wpSplit').textContent=`They have ${theirs} · you have ${ready} ready in your barracks`+(mil ? `, and ${mil} militia in reserve` : '')
-    +(popCamp===-2 && !W.wars[PLAYER*W.M+popFor] ? '. In a crisis they hold your side of the border and fight only if it comes to war.' : '');
+    +(!W.wars[PLAYER*W.M+popFor] ? '. In a crisis they hold your side of the border and fight only if it comes to war.' : '');
   ($('wpGo') as HTMLButtonElement).disabled=k<1;
 }
 
@@ -364,10 +325,9 @@ export function setupDiplomacy(){
   $('dAlly').onclick=()=>{ if (target){ queueCommand({ type:'ally', nation:PLAYER, target }); } };
   $('dWar').onclick=showWarView;
   $('dBack').onclick=()=>{ talk.hidden=false; warView.hidden=true; refreshDiplomacy(true); };
-  $('dRaid').onclick=()=>send(true);
   $('dMilOn').onclick=()=>{ milOn=!milOn; refreshWar(false); };
   $('dMil').oninput=e=>{ milPick=+(e.target as HTMLInputElement).value; refreshWar(false); };
-  $('dAttack').onclick=()=>send(false);
+  $('dAttack').onclick=()=>send();
   wars.addEventListener('click',e=>{
     const w=(e.target as HTMLElement).closest('button.fword') as HTMLButtonElement | null;
     if (w){ if (!w.disabled){ queueCommand({ type:'offensive', nation:PLAYER, target:+w.dataset.o!, go:!!w.dataset.go }); lastChips=''; w.disabled=true; } return; }
@@ -385,14 +345,13 @@ export function setupDiplomacy(){
     lastChips=''; b.disabled=true;
   });
   $('wpPeace').onclick=()=>{ if (popFor){ queueCommand({ type:'endWar', nation:PLAYER, target:popFor }); toast(`You ask ${W.nations[popFor].name} for peace`); } closePop(); };
-  $('wpIntercept').onclick=()=>{ if (popCounter){ const o=popFor; closePop(); openCounter(o); } else showIntercept(); };
+  $('wpCounter').onclick=()=>{ const o=popFor; closePop(); openCounter(o); };
   $('wpDefend').onclick=showDefend;
   $('wpBack').onclick=()=>{ popCamp=-1; popMenu.hidden=false; popSend.hidden=true; placePop(); };
   $('wpClose').onclick=closePop;
   $('wpGo').onclick=()=>{
     const units=popPicker.chosen(); if (popCamp===-1 || !units.length) return;
-    if (popCamp===-2) queueCommand({ type:'defend', nation:PLAYER, target:popFor, units });
-    else queueCommand({ type:'intercept', nation:PLAYER, campaign:popCamp, units });
+    queueCommand({ type:'defend', nation:PLAYER, target:popFor, units });
     closePop();
   };
 }

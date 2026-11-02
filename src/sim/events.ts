@@ -12,14 +12,14 @@ export interface SimEvents {
   roleChanged(x: number, y: number, kind: number): void;   // someone left the capital as a villager or soldier
   towerShot(x0: number, y0: number, x1: number, y1: number, killed: boolean, victim: number): void;   // a watchtower or castle hit someone
   produced(q: number, id: number, good: number, amount: number): void;   // a plantation, quarry or copper mine delivered
-  warBegan(a: number, d: number, raid: boolean): void;         // a sent an army against d (a raid, or more armies to a war)
+  warBegan(a: number, d: number): void;                        // a sent an army against d (more armies to a war)
   crisis(a: number, d: number): void;                          // a massed its armies on d's border: a crisis, not yet a war
   escalated(a: number, d: number): void;                       // a gave the word on its crisis with d: it is war
   deescalated(a: number, d: number): void;                     // a called its crisis with d off: everyone goes home
   defending(o: number, enemy: number, soldiers: number): void; // o sent soldiers to hold its border with enemy
   reserves(o: number, enemy: number, militia: number, call: boolean): void;   // o called its militia up to its front with enemy (call), or sent them home
-  armyHome(a: number, d: number, raid: boolean, why: string): void;   // a's army turned for home: 'recall', 'cut', 'done', 'peace', 'calm' (a crisis called off) or 'won'
-  armyGone(a: number, d: number, raid: boolean, why: string): void;   // the last of it is home or dead ('lost': all fell)
+  armyHome(a: number, d: number, why: string): void;           // a's army turned for home: 'cut', 'peace', 'calm' (a crisis called off) or 'won'
+  armyGone(a: number, d: number, why: string): void;           // the last of it is home or dead ('lost': all fell)
   peaceOffered(from: number, to: number): void;
   peaceRefused(from: number, to: number): void;
   peaceMade(a: number, b: number): void;
@@ -27,14 +27,12 @@ export interface SimEvents {
   allyRefused(a: number, b: number, why: string): void;
   allianceBroken(a: number, b: number): void;                  // a declared war on its ally b
   annexed(loser: number, winner: number): void;                // the loser's castle was broken
-  plunder(id: number, x: number, y: number, gold: number): void;   // a raider got his loot home
   hit(x: number, y: number, killed: boolean, victim: number, attacker: number): void;   // a blow landed in a fight (ids)
   swing(attacker: number, victim: number): void;               // someone struck at someone, hit or miss
   bldHit(q: number): void;                                     // a soldier struck the building on plot q
   died(x: number, y: number, o: number, id: number, kind: number, tier: number, starved: boolean): void;   // someone fell (kind 0 villager, 1 soldier, 2 beggar; soldiers' tier, 0 militia), or a beggar died of want (starved)
   occupied(t: number): void;                                   // tile t was occupied or freed
   counterReady(o: number, enemy: number): void;                // o's army has won its land back and is ready to counter-attack
-  intercepting(o: number, enemy: number, soldiers: number): void;   // o sent soldiers after an army of enemy's
   story(id: string, o: number, x: number, y: number, other: number): void;   // a story event in kingdom o at (x,y), sim/story.ts
   researched(o: number, topic: number, tier: number): void;    // kingdom o reached `tier` in a research topic
   upgraded(q: number, o: number, tier: number): void;          // a builder raised the house on plot q to `tier`
@@ -51,7 +49,7 @@ export const on: SimEvents = {
   buildingPlaced: noop, capitalFell: noop, eliminated: noop, roleChanged: noop,
   towerShot: noop, produced: noop,
   warBegan: noop, crisis: noop, escalated: noop, deescalated: noop, defending: noop, reserves: noop, armyHome: noop, armyGone: noop, peaceOffered: noop, peaceRefused: noop, peaceMade: noop,
-  allied: noop, allyRefused: noop, allianceBroken: noop, annexed: noop, plunder: noop, hit: noop, bldHit: noop,
-  died: noop, occupied: noop, counterReady: noop, intercepting: noop, swing: noop, story: noop, researched: noop, upgraded: noop, builderHired: noop, forged: noop, armored: noop, deserted: noop, order: noop,
+  allied: noop, allyRefused: noop, allianceBroken: noop, annexed: noop, hit: noop, bldHit: noop,
+  died: noop, occupied: noop, counterReady: noop, swing: noop, story: noop, researched: noop, upgraded: noop, builderHired: noop, forged: noop, armored: noop, deserted: noop, order: noop,
 };
 export function listen(l: Partial<SimEvents>){ Object.assign(on, l); }

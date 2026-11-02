@@ -96,7 +96,7 @@
       <button id="dMilOn" class="army" aria-pressed="false" title="Send militia from home too: they fight beside your armies, paid a soldier's wage while out, and die easily"><span class="an">Use militia</span><span class="at" id="dMilAt">none at home</span></button>
       <div id="dMilBox" class="dmil" hidden><label><span>Militia to send</span><b id="dMilVal">0</b></label><input type="range" id="dMil" min="0" max="0" step="1" value="0" aria-label="Militia to send"></div>
       <div class="dsplit" id="dSplit"></div>
-      <div class="drow"><button id="dRaid" title="Burn their buildings and bring the loot home: 50 gold a bag. Needs a way through unclaimed or allied land.">Raid</button><button id="dAttack" class="danger" title="Take their land and march on their capital. Needs a shared border.">Attack</button></div>
+      <div class="drow"><button id="dAttack" class="danger" title="Take their land and march on their capital. Needs a shared border.">Attack</button><button id="dNaval" class="danger" title="Land an army from the sea. Needs a naval base with enough ships.">⚓ Naval invasion</button></div>
       <p class="dnote" id="dWhy"></p>
       <button id="dBack" class="ghost">← Back</button>
     </div>
@@ -158,12 +158,12 @@
   </section>
   <section id="warPop" class="plate" hidden aria-label="Meet the army">
     <div class="dhead"><span class="tag" id="wpTitle">An army is coming</span><button id="wpClose" class="x" aria-label="Close">×</button></div>
-    <div id="wpMenu" class="drow"><button id="wpPeace" title="Offer them peace. They answer depending on how they think the war is going.">Request peace</button><button id="wpIntercept" class="danger" title="Send soldiers out to meet their army in the field">Intercept…</button><button id="wpDefend" class="danger" title="Send armies to stand on your side of the border with them">Hold the border…</button></div>
+    <div id="wpMenu" class="drow"><button id="wpPeace" title="Offer them peace. They answer depending on how they think the war is going.">Request peace</button><button id="wpCounter" class="danger" title="Strike back with your armies: your troops are thirsty for revenge, and hit harder">Counter-attack…</button><button id="wpDefend" class="danger" title="Send armies to stand on your side of the border with them">Hold the border…</button></div>
     <div id="wpSend" hidden>
       <label><span>Armies to send</span><b id="wpVal">0</b></label>
       <div id="wpArmies" class="armies"></div>
       <div class="dsplit" id="wpSplit"></div>
-      <div class="drow"><button id="wpBack" class="ghost">← Back</button><button id="wpGo" class="danger">Intercept</button></div>
+      <div class="drow"><button id="wpBack" class="ghost">← Back</button><button id="wpGo" class="danger">To the front</button></div>
     </div>
   </section>
 
@@ -188,9 +188,9 @@
       <li>Nothing lies on the map to gather: wood, stone and copper come from <b>plantations, quarries and copper mines</b> (your first of each is free). Research lets them join into bigger ones. Your villagers build homes and rest in them.</li>
       <li>Open a building menu on the right (<b>urban development</b>, <b>military</b>, <b>resources</b>, <b>society</b>) to place farms, barracks, watchtowers and more. The same buildings side by side join up.</li>
       <li>The soldier slider raises <b>militia</b> at the castle: unpaid at home, they rest in your houses and come out when called, and can go to war with you. A <b>barracks</b> trains them into soldiers, who are paid wages. <b>Click a watchtower</b> to call 5 militia to guard it.</li>
-      <li><b>Click another kingdom</b> for diplomacy. <b>Allies</b> open their land to your soldiers. Go to <b>war</b> with as many soldiers as you choose: a <b>raid</b> burns their buildings for loot; an <b>attack</b> masses your armies on their border in a <b>crisis</b>, and your word in the war bar makes it war, fought along the whole front. Break the castle and the whole kingdom is yours.</li>
+      <li><b>Click another kingdom</b> for diplomacy. <b>Allies</b> open their land to your soldiers. Go to <b>war</b> with as many soldiers as you choose: an <b>attack</b> masses your armies on their border in a <b>crisis</b>, and your word in the war bar makes it war, fought along the whole front. Break the castle and the whole kingdom is yours.</li>
       <li>Only at war do soldiers fight, and watchtowers and your castle shoot at enemies on your land. Land an attack takes is only <b>occupied</b> (hatched) until peace: drive the enemy out and take it back, then counter-attack. <b>Hold the border</b> pulls your army back to where the war began to mass new recruits for a second wave; invading is slow, and a defender must retake its land before it can strike back.</li>
-      <li>Each war has a button at the top: recall a raid, offer peace, or, when an army marches on you, <b>intercept</b> it. Villagers caught near a fight either run or take up arms.</li>
+      <li>Each war has a button at the top: offer peace, or, when an army masses on your border, <b>hold the border</b> against it. Villagers caught near a fight either run or take up arms.</li>
     </ul>
     <div class="row">
       <button id="pickCountry" class="pick" title="Choose your country and your rivals"><i class="flag" id="pcFlag"></i><span id="pcName">Choose your country</span><span class="tag" id="pcRivals"></span></button>

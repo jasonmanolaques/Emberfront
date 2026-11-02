@@ -3,11 +3,11 @@ import { describe, it, expect } from 'vitest';
 import { TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, WAGE, GOLD_PER_TILE, TAX_PER_VILLAGER, LAND_TAX, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
 import { W, owner, isLand, pType, pCenter, pBuild, type Human } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick, incomeParts } from '../src/sim/sim';
+import { declare, escalate } from '../src/sim/war';
 import { listen } from '../src/sim/events';
 import { setOwner, tileCost } from '../src/sim/territory';
 import { STRUCTURES, structureOf, costFor, build, plotProblem, placeProblem } from '../src/sim/buildings';
 import { HUMAN_EVERY as E, H_SOLDIER, H_VILLAGER, SOLDIER_HP, frontOf, doorOf, switching, makeHuman } from '../src/sim/population';
-import { declare } from '../src/sim/war';
 
 const me = () => W.nations[1];
 const mine = () => W.humans.filter(h => h.o === 1);
@@ -187,8 +187,9 @@ describe('what the buildings do', () => {
     listen({ towerShot: (x0,_y0,x1) => { shots.push({ from:x0, tick:W.tickN, x:x1 }); } });
     run(100);
     expect(shots).toHaveLength(0);
-    // the enemy raids us with both; one comes onto our land, the other stays outside
-    expect(declare(2, 1, true, 2)).toBe(true);
+    // the enemy is at war with us, with both in the field; one comes onto our land, the other stays outside
+    W.contact[2*W.M+1]=W.contact[1*W.M+2]=1;   // (neighbours, for the purpose)
+    expect(declare(2,1,2)).toBe(true); escalate(2,1);
     raider.x=(inside%TW)*2+1; raider.y=((inside/TW)|0)*2+1.5; raider.hp=100;   // tough, so the castle's shots don't end the count
     run(340);
     const fromTower=shots.filter(s => s.from===ox);
