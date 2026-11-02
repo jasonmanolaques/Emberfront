@@ -1,10 +1,11 @@
+import { GAME_SPEED } from './core/constants';
 /* ---------- client state: this browser's view of the match, not part of the simulation ---------- */
 export type Phase = 'intro' | 'spawn' | 'play';
 
 export const client = {
   state: 'intro' as Phase,
   paused: false,
-  speed: 2,   // the game's one speed: two sim seconds a real second (what was the button's 2×); nothing in the sim depends on it
+  speed: GAME_SPEED,
   overShown: false,
   lastVillageLog: -99,
   placing: 0,            // building type being placed from the buildings panel, 0 when not placing

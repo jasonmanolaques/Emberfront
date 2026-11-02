@@ -15,6 +15,7 @@ export let NT = TW * TH, NP = PW * PH;
 export function setGrid(w: number, h: number){
   TW=w; TH=h; DW=TW*S; DH=TH*S; RW=TW*RS; RH=TH*RS; PW=TW>>2; PH=TH>>2; NT=TW*TH; NP=PW*PH;
 }
+export const GAME_SPEED = 2;               // sim seconds that pass in a real second: the game's one speed. Everything the player is shown in time (the clock, countdowns, rates) is in real seconds, i.e. divided by this; the simulation itself knows nothing of it
 export const TICK = 0.1;                  // simulation step in seconds
 
 export const T_DEEP=0,T_WATER=1,T_SHALLOW=2,T_BEACH=3,T_GRASS=4,T_DRY=5,T_FOREST=6,T_DESERT=7,T_HILLS=8,T_MOUNT=9,T_SNOW=10;

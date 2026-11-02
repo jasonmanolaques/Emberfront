@@ -1,5 +1,5 @@
 /* ---------- HUD: kingdom card, leaderboard, attack chips, log, toasts, end card ---------- */
-import { PLAYER, TICK, UNPAID_TICKS } from '../core/constants';
+import { PLAYER, TICK, UNPAID_TICKS, GAME_SPEED } from '../core/constants';
 import { fmt, fmtTime } from '../core/util';
 import { HUMAN_EVERY, FARM_BONUS } from '../sim/population';
 import { W } from '../sim/state';
@@ -25,12 +25,12 @@ export function updateHUD(now: number){
   const me=W.nations[PLAYER]; if (!me) return;
   const landCount=W.landCount;
   ui.meGold.textContent=fmt(me.gold); const inc=me.alive?me.income:0;
-  ui.meRate.textContent=(inc<0?'':'+')+inc.toFixed(1)+'/s'; ui.meRate.classList.toggle('neg',inc<0); ui.meGold.classList.toggle('neg',me.gold<0);
+  ui.meRate.textContent=(inc<0?'':'+')+(inc*GAME_SPEED).toFixed(1)+'/s'; ui.meRate.classList.toggle('neg',inc<0); ui.meGold.classList.toggle('neg',me.gold<0);
   // soldiers' wages, and what happens when they go unpaid
   ui.meWages.hidden=!paid(me) || me.gold>=0;
-  ui.meWages.textContent = me.unpaid<UNPAID_TICKS ? `No gold for wages: soldiers desert in ${Math.ceil((UNPAID_TICKS-me.unpaid)*TICK)}s` : 'Unpaid soldiers are deserting, one every 3 s';
+  ui.meWages.textContent = me.unpaid<UNPAID_TICKS ? `No gold for wages: soldiers desert in ${Math.ceil((UNPAID_TICKS-me.unpaid)*TICK/GAME_SPEED)}s` : `Unpaid soldiers are deserting, one every ${+(3/GAME_SPEED).toFixed(1)} s`;
   // what the income is made of
-  const parts=incomeParts(me), signed=(v: number) => (v<0 ? '−' : '+')+Math.abs(v).toFixed(1);
+  const parts=incomeParts(me), signed=(v: number) => (v<0 ? '−' : '+')+Math.abs(v*GAME_SPEED).toFixed(1);   // (per real second)
   ui.meTax.textContent=signed(parts.tax); ui.meLandTax.textContent=signed(parts.land);
   ui.meBoostRow.hidden=!me.minters; ui.meBoost.textContent=signed(parts.boost);
   ui.meSoldCost.textContent=signed(-parts.soldiers); ui.meSoldCost.classList.toggle('neg',parts.soldiers>0);
@@ -45,16 +45,16 @@ export function updateHUD(now: number){
   ui.meVillagers.textContent=String(me.villagers); ui.meSoldiers.textContent=String(me.soldiers-me.militia);
   ui.meMilitia.textContent=me.called ? `${me.militia} (${me.called} called up)` : String(me.militia); ui.meMilitiaRow.hidden=!me.militia; ui.meTraining.textContent=String(me.training);
   const perTick=1+FARM_BONUS*me.farms;
-  ui.meNext.textContent = me.alive && me.capTile>=0 ? `Next human in ${Math.max(0,Math.ceil((HUMAN_EVERY-me.humanProg)/perTick*TICK))}s${me.farms?` · farms +${Math.round(FARM_BONUS*me.farms*100)}%`:''}` : 'No capital: no new humans';
+  ui.meNext.textContent = me.alive && me.capTile>=0 ? `Next human in ${Math.max(0,Math.ceil((HUMAN_EVERY-me.humanProg)/perTick*TICK/GAME_SPEED))}s${me.farms?` · farms +${Math.round(FARM_BONUS*me.farms*100)}%`:''}` : 'No capital: no new humans';
   // without a barracks, everyone under arms trains at the castle as militia
   ui.soldiers.disabled=!me.alive; ui.soldiersHint.hidden=!me.alive || me.barracks>0;
   // city investment opens up with the first builders guild; beside it, the goods of the last minute
   const canInvest=me.alive && me.guilds>0;
   ui.invest.disabled=!canInvest; ui.investHint.hidden=canInvest;
   const { gain, spend }=perMinute(me);
-  ['inW','inS','inC'].forEach((id,g) => { $(id).textContent='+'+Math.round(gain[g]); });
-  ['outW','outS','outC'].forEach((id,g) => { $(id).textContent='−'+Math.round(spend[g]); });
-  ui.clock.textContent=fmtTime(W.simTime);
+  ['inW','inS','inC'].forEach((id,g) => { $(id).textContent='+'+Math.round(gain[g]*GAME_SPEED); });
+  ['outW','outS','outC'].forEach((id,g) => { $(id).textContent='−'+Math.round(spend[g]*GAME_SPEED); });
+  ui.clock.textContent=fmtTime(W.simTime/GAME_SPEED);
   if (now-lastBoard>450){
     lastBoard=now;
     const list=W.nations.slice(1).sort((a,b)=>(+b.alive - +a.alive)||(b.tiles-a.tiles));
@@ -93,8 +93,8 @@ function showOver(win: boolean){
   let leader=null; for (let i=1;i<W.nations.length;i++){ const n=W.nations[i]; if (n.alive && (!leader || n.tiles>leader.tiles)) leader=n; }
   $('overTitle').textContent = win ? 'Victory' : 'Your kingdom has fallen';
   $('overText').textContent = win
-    ? `${me.name} holds ${(me.tiles/landCount*100).toFixed(0)}% of the land after ${fmtTime(simTime)}.`
-    : `You lasted ${fmtTime(simTime)} and peaked at ${(me.peak*100).toFixed(0)}% of the land.${leader?` ${leader.name} now holds ${(leader.tiles/landCount*100).toFixed(0)}%.`:''}`;
+    ? `${me.name} holds ${(me.tiles/landCount*100).toFixed(0)}% of the land after ${fmtTime(simTime/GAME_SPEED)}.`
+    : `You lasted ${fmtTime(simTime/GAME_SPEED)} and peaked at ${(me.peak*100).toFixed(0)}% of the land.${leader?` ${leader.name} now holds ${(leader.tiles/landCount*100).toFixed(0)}%.`:''}`;
   $('watch').textContent = win ? 'Keep playing' : 'Keep watching';
   $('over').hidden=false; $('scrim').hidden=false;
 }

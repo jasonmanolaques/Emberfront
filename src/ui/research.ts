@@ -1,7 +1,7 @@
 /* ---------- research panel: opened by clicking a research station ----------
    One button per topic with its tier and a progress bar below; the topic being studied is lit.
    Clicking the other topic switches to it (progress made on each is kept). */
-import { PLAYER, PS, B_RESEARCH } from '../core/constants';
+import { PLAYER, PS, B_RESEARCH, GAME_SPEED } from '../core/constants';
 import { W } from '../sim/state';
 import { queueCommand } from '../sim/sim';
 import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, TOPIC_NAME, MAX_TIER, XP_PER_STATION, xpNeeded, maxed } from '../sim/research';
@@ -42,7 +42,7 @@ $('rClose').addEventListener('click', closeResearch);
 /** Brings the panel up to date with the player's research (cheap; skipped while it is closed). */
 export function refreshResearch(){
   const me=W.nations[PLAYER]; if (panel.hidden || !me) return;
-  const pts=me.labs*XP_PER_STATION;
+  const pts=me.labs*XP_PER_STATION*GAME_SPEED;   // (per real second)
   rate.textContent = me.labs ? `${me.labs} station${me.labs>1?'s':''} · ${pts} point${pts>1?'s':''} a second` : 'No research station standing: research has stopped';
   for (const o of topics){
     const done=maxed(me,o.t), need=xpNeeded(me,o.t), have=me.xp[o.t]/10, on=me.study===o.t && !done;
