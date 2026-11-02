@@ -5,7 +5,7 @@ import { PLAYER, PS, B_BARRACKS } from '../core/constants';
 import { W, pType, pOwner } from '../sim/state';
 import { unitAt, units, armorWanted, TIER_NAME, UNIT_SIZE } from '../sim/army';
 import { R_INFANTRY } from '../sim/research';
-import { RANKS, navalOf, F_GATHER, F_READY, F_PUSH } from '../sim/war';
+import { RANKS, navalOf, F_GATHER, attacks, occOn, inCrisis } from '../sim/war';
 import { drawIcon } from '../render/sprites';
 import { styleOf } from '../render/style';
 import { armyName } from './armies';
@@ -31,11 +31,13 @@ const nm = (id: number) => W.nations[id]?.name ?? 'the enemy';
 function fieldReport(key: number){
   const c=W.campaigns.find(c => c.a===PLAYER && c.unit===key && c.phase<2);
   if (!c) return 'At home';
-  const st=W.offensive[c.a*W.M+c.d];
-  const what=c.naval>=0 && navalOf(c.a,c.d) ? `sailing to the coast of ${nm(c.d)}, aboard ship` : st===F_GATHER ? `gathering on the front with ${nm(c.d)}`
-    : st===F_READY ? `ready on the front with ${nm(c.d)}, waiting for your word`
-    : st===F_PUSH ? `attacking ${nm(c.d)} along the front`
-    : `holding the front against ${nm(c.d)}`;
+  const war=!!W.wars[c.a*W.M+c.d];
+  const what=c.naval>=0 && navalOf(c.a,c.d) ? `sailing to the coast of ${nm(c.d)}, aboard ship`
+    : war ? (attacks(c) ? (occOn(c.a,c.d,c.isle)>0 ? `retaking your land from ${nm(c.d)}` : `attacking ${nm(c.d)} along the front`) : `defending against ${nm(c.d)}, on the ground no tower reaches`)
+    : inCrisis(c.a,c.d) ? `massed on the border of ${nm(c.d)}: a crisis`
+    : c.deployed ? `deployed on the border of ${nm(c.d)}`
+    : c.mode===F_GATHER ? `gathering on the front with ${nm(c.d)}`
+    : `holding the border with ${nm(c.d)}`;
   const who=c.leader>=0 ? `${RANKS[c.rank]}, ` : c.rank ? 'Leaderless, ' : '';
   return `${who}${c.members.length} men ${what}`;
 }

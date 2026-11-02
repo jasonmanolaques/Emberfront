@@ -190,7 +190,7 @@ describe('what the buildings do', () => {
     expect(shots).toHaveLength(0);
     // the enemy is at war with us, with both in the field; one comes onto our land, the other stays outside
     W.contact[2*W.M+1]=W.contact[1*W.M+2]=1;   // (neighbours, for the purpose)
-    expect(declare(2,1,2)).toBe(true); escalate(2,1);
+    expect(declare(2,1,2)).toBe(true); escalate(2,1,true);
     raider.x=(inside%TW)*2+1; raider.y=((inside/TW)|0)*2+1.5; raider.hp=100;   // tough, so the castle's shots don't end the count
     run(340);
     const fromTower=shots.filter(s => s.from===ox);

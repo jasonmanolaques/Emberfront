@@ -35,9 +35,14 @@ function recountEdges(t: number, prev: number, o: number){
   if (!isLand[t]) return;
   if (x>0) edge(t-1); if (x<TW-1) edge(t+1); if (t>=TW) edge(t-TW); if (t<NT-TW) edge(t+TW);
 }
+/** Counts tile t (of o's, occupied by b) on its landmass: W.occIsle, by ((isle*M+o)*M+b). */
+export function occIsleAdd(t: number, o: number, b: number, n: number){
+  const k=(isle[t]*W.M+o)*W.M+b, v=(W.occIsle.get(k) ?? 0)+n;
+  if (v>0) W.occIsle.set(k,v); else W.occIsle.delete(k);
+}
 export function setOwner(t: number, o: number){
   const prev=owner[t]; if (prev===o) return;
-  if (occ[t]){ W.occCount[prev*W.M+occ[t]]--; occ[t]=0; }   // changing hands ends any occupation
+  if (occ[t]){ W.occCount[prev*W.M+occ[t]]--; occIsleAdd(t,prev,occ[t],-1); occ[t]=0; }   // changing hands ends any occupation
   recountEdges(t,prev,o);
   owner[t]=o;
   if (W.isleOwn.length && isLand[t]){ const i=isle[t]*W.M; W.isleOwn[i+prev]--; W.isleOwn[i+o]++; }   // (the tiles each kingdom has on each landmass)

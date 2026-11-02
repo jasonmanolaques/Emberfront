@@ -70,7 +70,7 @@ listen({
     else log(`${nm(a)} goes to war with ${nm(d)}`);
   },
   crisis: (a,d) => {
-    if (a===PLAYER) log(`Your armies mass on the border of ${nm(d)}: a crisis. Give the word to go to war, or call it off`,'good');
+    if (a===PLAYER) log(`Your armies mass on the border of ${nm(d)}: a crisis. In 30 seconds you can begin the offensive, or call it off before`,'good');
     else if (d===PLAYER){ log(`${nm(a)} masses its armies on your border! Hold the border from the war bar: it is not war yet`,'bad'); toast(`Crisis: ${nm(a)} masses on your border`); }
     else log(`Crisis: ${nm(a)} masses on the border of ${nm(d)}`);
   },
@@ -95,6 +95,7 @@ listen({
   armyHome: (a,d,why) => {
     if (a!==PLAYER) return;
     if (why==='cut'){ log(`The way to ${nm(d)} is blocked: your army turns back`,'bad'); toast(`Your attack on ${nm(d)} was cut off`); }
+    else if (why==='done'){ log(`Nothing is left to take of ${nm(d)} on that front: your army is unassigned, waiting for orders`,'good'); toast('An army finished its front'); }
   },
   armyGone: (a,d,why) => { if (a===PLAYER && why==='lost') log(`Your army in ${nm(d)} has been wiped out`,'bad'); },
   peaceOffered: (from,to) => { if (to===PLAYER){ log(`${nm(from)} offers peace: click the war at the top to accept`,'good'); toast(`${nm(from)} offers peace`); } },

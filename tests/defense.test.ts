@@ -41,7 +41,7 @@ function dummy(x: number, y: number){
   const e=N(2); paintDisc(e,10); place(e,8);
   const [dx,dy]=doorOf(e), h=makeHuman(e,H_SOLDIER,dx,dy+2); W.humans.push(h); e.soldierShare=1; run(2);
   W.contact[2*W.M+1]=W.contact[1*W.M+2]=1;   // (they are neighbours, for the purpose)
-  if (!declare(2,1,1)) throw new Error('no attack'); escalate(2,1);   // (at war, with this man on its front)
+  if (!declare(2,1,1)) throw new Error('no attack'); escalate(2,1,true);   // (at war, with this man on its front)
   h.x=x; h.y=y; h.sp=0; h.hp=1000; h.tier=3;
   return h;
 }

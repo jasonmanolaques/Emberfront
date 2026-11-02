@@ -102,7 +102,13 @@ export interface Campaign {
   leader: number;                    // id of the soldier leading it, or -1 (none for 5 or fewer, or he fell)
   rank: number;                      // the leader's rank by the army's size when it set out (RANKS in war.ts; 0 none)
   mode: number;                      // its offensive's state (F_* in war.ts)
-  naval: number;                     // an army put ashore from ships: the invasion it belongs to (it is never reinforced), else -1
+  naval: number;                     // an army put ashore from ships: the invasion it belongs to, else -1
+  isle: number;                      // the landmass of the enemy's land it is on the front of (a landmass id: sim/naval.ts), or 0: the whole border
+  attack: boolean;                   // its order at war: attack (true) or defend (false: fall back out of reach of the enemy's towers and hold the line there)
+  ordered: boolean;                  // the order was given by someone (not the default for the side it fights on)
+  placed: number;                    // the line its men were last placed on: 0 none yet, 1 the attack line, 2 the line of the defence
+  deployed: boolean;                 // put on the border in peacetime, as a precaution (a crisis called off leaves it there)
+  waiting: number[];                 // an army whose front is across the sea: its new soldiers at the naval base, waiting for a ship with a full load
   hitAt: number;                     // tick one of its soldiers was last hit
 }
 export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; isle?: number; seed?: number; }   // gold still to spend on this front (isle: a colony's, spent on that island's land only)
@@ -120,6 +126,7 @@ export interface Ship {
   lands: number;                         // a colony's ship: the tile it lands on
   back: number[];                        // the way home
   crew: number;                          // soldiers aboard (an invasion's ship)
+  convoy: number;                        // a transport carrying an army's men across the sea: that army (campaign id), else -1
   fleet: boolean;                        // one of the kingdom's fleet (counted again when it docks), not a colony's
 }
 /** A naval base's yard: ships being built. */
@@ -146,7 +153,7 @@ export type Command =
   | { type: 'colonize'; nation: number; tile: number; ratio: number }   // send a ship to colonize the landmass of this unclaimed tile, with this share of the treasury
   | { type: 'ship'; nation: number; plot: number }                   // build a ship at this naval base
   | { type: 'ally'; nation: number; target: number }                  // propose an alliance
-  | { type: 'war'; nation: number; target: number; naval?: { base: number; coast: number }; soldiers?: number; units?: number[]; militia?: number }   // units: barracks plots, each army marches on its own; militia: how many of the militia at home go too
+  | { type: 'war'; nation: number; target: number; naval?: { base: number; coast: number }; soldiers?: number; units?: number[]; militia?: number; isle?: number }   // units: barracks plots, each army marches on its own; militia: how many of the militia at home go too
   | { type: 'endWar'; nation: number; target: number }                // offer peace
   | { type: 'peace'; nation: number; target: number }                 // accept the target's peace offer
   | { type: 'research'; nation: number; topic: number }               // study this topic next (R_* in research.ts)
@@ -154,7 +161,11 @@ export type Command =
   | { type: 'stance'; nation: number; target: number; stance: number }   // how the armies on the front against target fight: balanced, border capture, capital rush
   | { type: 'offensive'; nation: number; target: number; go: boolean }   // attack along the front (in a crisis: go to war), or hold the front
   | { type: 'deescalate'; nation: number; target: number }            // call off the crisis our massed armies started: everyone goes home
-  | { type: 'defend'; nation: number; target: number; units: number[] }   // send armies to stand on our side of the border with target
+  | { type: 'deploy'; nation: number; target: number; units?: number[]; militia?: number; isle?: number }   // put armies on the border in peace, ready for a crisis
+  | { type: 'order'; nation: number; camp: number; go: boolean }   // an army at war attacks (go) or defends
+  | { type: 'front'; nation: number; camp: number; isle: number }   // an army goes to the border on that landmass
+  | { type: 'recall'; nation: number; camp: number }   // an army at the border in peace or crisis goes home
+  | { type: 'defend'; nation: number; target: number; units: number[]; isle?: number }   // send armies to stand on our side of the border with target
   | { type: 'reserves'; nation: number; target: number; call: boolean };  // call the militia up to the front against target, or send them home
 
 export let elev = new Float32Array(NT), moist = new Float32Array(NT);
@@ -214,6 +225,8 @@ export const W = {
   kills: new Int32Array(1),          // [a*M+b] people of b's that a has killed in their war (since it began)
   stall: new Int32Array(1),          // [a*M+b] ticks their war has gone without the border between them moving much (both ways)
   lastNet: new Int32Array(1),        // [a*M+b] land a held of b's, less b's of a's, when it was last looked at
+  crisisAt: new Int32Array(1),       // [a*M+d] tick a's crisis against d began (the word to attack comes CRISIS_TICKS after it)
+  occIsle: new Map<number, number>(),   // ((isle*M+o)*M+b) → tiles of o's on that landmass that b occupies
   ships: [] as Ship[], shipSeq: 0,   // ships at sea
   docks: new Map<number, Dock>(),    // naval base (main plot) → its yard
   invasions: [] as Invasion[], invSeq: 0,

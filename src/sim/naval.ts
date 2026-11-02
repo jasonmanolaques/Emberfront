@@ -185,7 +185,7 @@ export const navalHooks: { docked: (s: Ship) => void } = { docked: () => {} };
 export function launchShip(o: number, q: number, tiles: number[], extra: Partial<Ship>={}): Ship {
   const d=tiles[0] ?? dockTile(q), s: Ship={
     id:++W.shipSeq, o, base:q, x:(d%TW)*2+1, y:((d/TW)|0)*2+1, path:waypoints(tiles), pi:0, mode:SHIP_SAIL, inv:-1, row:0, slot:0, face:1,
-    colony:-1, gold:0, lands:-1, back:[], crew:0, fleet:false,
+    colony:-1, gold:0, lands:-1, back:[], crew:0, convoy:-1, fleet:false,
     ...extra };
   // the way home: the waypoints in reverse
   for (let i=s.path.length-2;i>=0;i-=2) s.back.push(s.path[i],s.path[i+1]);

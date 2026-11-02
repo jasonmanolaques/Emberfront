@@ -8,7 +8,7 @@
    ranks behind them, ready to step up. Nothing here changes the world: sim/war.ts moves the men
    and takes the ground. */
 import { TW, TH, PW, B_CASTLE, B_CPART } from '../core/constants';
-import { W, owner, occ, pType, pOwner, type Human } from './state';
+import { W, owner, occ, isle, pType, pOwner, type Human } from './state';
 
 export const MIN_GAP = 2;              // tiles between men of the front rank, shoulder to shoulder
 export const RANK_GAP = 2;             // tiles between one rank and the next behind it
@@ -22,6 +22,7 @@ export interface Front {
   s: Float64Array;                     // how far along the line each one is (tiles, to its middle)
   len: number;                         // the line's length in tiles
   bx: Float32Array; by: Float32Array;  // at each, the way back to the attacker's side (unit)
+  own?: boolean;                       // the line is made of the attacker's own ground (a line given): its front rank stands on it, not behind it
 }
 
 /** Is tile t the attacker's ground in a's war on d: a's own land (unoccupied), or d's land a occupies? */
@@ -49,14 +50,14 @@ export function castleCutOff(d: number){
   return true;
 }
 
-/** Works out the front of a's attack on d. The castle can't be taken, only broken: the line runs
+/** Works out the front of a's attack on d (`only`: just the border on that landmass, else all of it). The castle can't be taken, only broken: the line runs
     round it, until the castle stands cut off with no free ground of its own beside it (or is all that
     is left), and then its walls are part of the front too, ringed by men who break it. */
-export function lineOf(a: number, d: number, original=false, preset?: number[]): Front {
+export function lineOf(a: number, d: number, original=false, preset?: number[], only=0): Front {
   const D=W.nations[d], A=W.nations[a], tw=TW, th=TH, own=owner, oc=occ, all: number[]=[];
-  const pset=preset ? new Set(preset) : null;   // (a line given: tiles of a's own, with its ground inland of them)
+  const pset=preset ? new Set(preset) : null;   // (a line given: tiles of a's (its own, or d's it occupies), with its ground inland of them)
   // (the original border: only a's own land counts as held, however much of d's it occupies; d's ground, occupied or not, is the line's)
-  const held=(k: number) => pset ? own[k]===a && !oc[k] && !pset.has(k) : original ? own[k]===a && !oc[k] : (own[k]===a && !oc[k]) || (own[k]===d && oc[k]===a);
+  const held=(k: number) => pset ? ((own[k]===a && !oc[k]) || (own[k]===d && oc[k]===a)) && !pset.has(k) : original ? own[k]===a && !oc[k] : (own[k]===a && !oc[k]) || (own[k]===d && oc[k]===a);
   // Others at war with d that a is not at war with (and hold some of d's ground): the ground of d's they occupy
   // is theirs, and the free ground beyond it is shared out with them in slices round d's castle, one for each attacker.
   const mates: number[]=[], M=W.M;
@@ -84,11 +85,12 @@ export function lineOf(a: number, d: number, original=false, preset?: number[]):
   else scan(D, t => own[t]===d && (original || !oc[t]));
   if (!pset && !all.length && mates.length){ slices=false; scan(D, t => own[t]===d && !oc[t]); }
   if (!original && !pset && W.occCount[a*W.M+d]>0) scan(A, t => own[t]===a && oc[t]===d);
+  if (only){ let k=0; for (const t of all) if (isle[t]===only) all[k++]=t; all.length=k; }   // (only the border on that landmass)
   const open=all.filter(t => !underCastle(d,t)), walls=all.filter(t => underCastle(d,t));
   // The castle surrounded: nothing of theirs left beside it. The armies stop pushing the border and only break the castle.
   const island=walls.length>0 && castleCutOff(d);
   const tiles=!open.length || island ? (island ? walls : all) : open;
-  const n=tiles.length, F: Front={ a, d, tiles, s:new Float64Array(n), len:0, bx:new Float32Array(n), by:new Float32Array(n) };
+  const n=tiles.length, F: Front={ a, d, tiles, s:new Float64Array(n), len:0, bx:new Float32Array(n), by:new Float32Array(n), own:!!pset };
   if (!n) return F;
   // put in order along the line: each stretch of it (tiles touching, corners too) is measured from one
   // end to the other the way a man would walk it, and the stretches follow one another across the
@@ -214,7 +216,7 @@ export function pointAt(F: Front, u: number): [number, number, number, number] {
     the line on its ground), -1 for the defender (on it, then in toward its castle); `rank` 0 the
     front rank. If the spot is somewhere he can't stand (`ok`, by tile), he stands nearer the line. */
 export function placeAt(F: Front, u: number, side: number, rank: number, ok: (t: number) => boolean): [number, number] {
-  const [x,y,bx,by]=pointAt(F,u), base=side>0 ? A_OFF : D_OFF;
+  const [x,y,bx,by]=pointAt(F,u), base=side>0 ? (F.own ? 0.3 : A_OFF) : D_OFF;
   for (let off=base+rank*RANK_GAP; off>=0.3; off-=0.5){
     const px=x+side*bx*off, py=y+side*by*off;
     if (px<0 || py<0 || px>=TW || py>=TH) continue;

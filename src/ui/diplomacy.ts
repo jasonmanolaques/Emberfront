@@ -3,13 +3,13 @@
    war; at war, attack along the front or hold it), the call-up of the militia
    reserves, and the menu under a chip for meeting an army coming at you (ask for peace, or hold your
    border against it) ---------- */
-import { PLAYER, PW, TW } from '../core/constants';
+import { PLAYER, PW, TW, GAME_SPEED } from '../core/constants';
 import { fmt } from '../core/util';
 import { W, pType, pOwner, pBurn } from '../sim/state';
 import { client } from '../client';
 import { basesOf, dockTile, shipById, SHIP_CAP, SHIP_WAIT } from '../sim/naval';
 import { queueCommand } from '../sim/sim';
-import { S_BALANCED, S_BORDER, S_RUSH, allied, atWar, available, callable, allyProblem, warProblem, navalPlan, navalOf, defendProblem, reservesOf, reservesProblem, inCrisis, OFFER_TICKS, PRESENT, F_GATHER, F_READY, F_PUSH } from '../sim/war';
+import { S_BALANCED, S_BORDER, S_RUSH, allied, atWar, available, callable, allyProblem, warProblem, navalPlan, navalOf, defendProblem, reservesOf, reservesProblem, inCrisis, crisisWait, attacks, hasArmies, OFFER_TICKS, PRESENT, F_GATHER, F_READY, F_PUSH } from '../sim/war';
 import type { Campaign, Human } from '../sim/state';
 import { toast, ui } from './hud';
 import { ArmyPicker, armyName, baseName } from './armies';
@@ -87,13 +87,13 @@ function refreshWar(force: boolean){
   $('dMilVal').textContent=String(m);
   const k=soldiers+m;
   $('dSplit').textContent = (picked || m ? `${picked ? `${picked} arm${picked===1?'y':'ies'}` : ''}${picked && m ? ' and ' : ''}${m ? `${m} militia` : ''} chosen. ` : '')
-    + 'An attack masses them along the border: a crisis, not yet a war, until you give the word.'
+    + 'An attack masses them along the border (those already deployed there stay): a crisis, not yet a war. Both sides get 30 seconds to react before you can begin the offensive.'
     + (mil && !milOn ? ` You have ${mil} militia at home: use them too, or call them up from the war bar later.` : '');
   const attackWhy=warProblem(PLAYER,target);
   const attack=$('dAttack') as HTMLButtonElement;
-  attack.disabled=!!attackWhy || k<1;
+  attack.disabled=!!attackWhy || (k<1 && !hasArmies(PLAYER,target));
   const why: string[]=[];
-  if (k<1) why.push(armies.length || mil ? 'Choose who to send' : 'No armies and no militia: raise some with the soldier slider');
+  if (k<1 && !hasArmies(PLAYER,target)) why.push(armies.length || mil ? 'Choose who to send' : 'No armies and no militia: raise some with the soldier slider');
   if (attackWhy) why.push('Attack: '+attackWhy.toLowerCase());
   $('dWhy').textContent=why.join(' · ');
   // the naval invasion: the naval bases, the ships, and what the armies chosen need
@@ -140,7 +140,7 @@ function startLanding(){
 }
 
 function send(){
-  const units=picker.chosen(), militia=milSent(); if (!target || (!units.length && !militia)) return;
+  const units=picker.chosen(), militia=milSent(); if (!target || (!units.length && !militia && !hasArmies(PLAYER,target))) return;
   if (allied(PLAYER,target)) toast(`Your alliance with ${W.nations[target].name} is over`);
   queueCommand({ type:'war', nation:PLAYER, target, units, militia });
   closeDiplomacy();
@@ -159,11 +159,12 @@ function fronts(){
     else if (W.aggr[PLAYER*M+o]) front(o,PLAYER,o).crisis=1;
     else if (W.aggr[o*M+PLAYER]) front(o,o,PLAYER).crisis=2;
   }
+  // (armies add to a war or a crisis that exists; armies deployed in peace, or on their way home, make no chip: a war that is over leaves nothing on the screen)
   for (const c of W.campaigns){
     if (!c.hostile || (c.a!==PLAYER && c.d!==PLAYER)) continue;
-    const o=c.a===PLAYER ? c.d : c.a, f=front(o,c.a,c.d);
+    const o=c.a===PLAYER ? c.d : c.a, f=map.get(o); if (!f) continue;
     if (c.a===PLAYER) f.men+=c.members.length;
-    else if (c.phase<2){ f.incoming.push(c); if (!f.crisis && !f.war){ f.a=c.a; f.d=c.d; } }
+    else if (c.phase<2) f.incoming.push(c);
   }
   for (const f of map.values()){
     const at=W.offers[f.o*M+PLAYER]; f.theyOffer=!!at && W.tickN-at<=OFFER_TICKS;
@@ -261,7 +262,8 @@ export function updateWarChips(){
   }).join('');
   if (html!==lastChips){ lastChips=html; wars.innerHTML=html; placePop(); }
   if (!pop.hidden){
-    if (popCounter){ if (!W.ready[PLAYER*W.M+popFor]) closePop(); }
+    if (!popCounter && !list.some(f => f.o===popFor)) closePop();   // (the war is over: the menu goes with it)
+    else if (popCounter){ if (!W.ready[PLAYER*W.M+popFor]) closePop(); }
     else if (!canDefend(popFor)) closePop(); else if (!popSend.hidden) refreshPop();
   }
 }
@@ -275,23 +277,29 @@ function word(o: number, byId: Map<number, Human>){
     let men=0, here=0;
     for (const c of mine) if (c.front) for (const id of c.members){
       const h=byId.get(id); if (!h || h.id===c.leader) continue;
-      men++; if (h.fk===key && (h.x-h.fx)**2+(h.y-h.fy)**2<=(PRESENT*2)**2) here++;
+      men++; if (h.fk>=0 && (h.x-h.fx)**2+(h.y-h.fy)**2<=(PRESENT*2)**2) here++;
     }
     const nm=esc(W.nations[o].name);
     const inv=navalOf(PLAYER,o);   // a landing from the sea whose ships are not yet in
+    const wait=inCrisis(PLAYER,o) ? crisisWait(PLAYER,o) : 0, secs=Math.ceil(wait/10/GAME_SPEED);
     if (inv){
       const lined=inv.ships.filter(id => shipById(id)?.mode===SHIP_WAIT).length;
       if (inv.stage===0) return `<button class="fword" disabled title="Your ships are sailing to a line off their coast, the armies aboard">⚓ Sailing to ${nm} · ${lined}/${inv.ships.length} ships in line</button>`;
-      if (inCrisis(PLAYER,o)) return `<button class="fword go" data-o="${o}" data-go="1" title="Declare war: the ships put your armies ashore on their coast, row after row, and sail home">⚔ Land! · declare war</button>`;
+      if (inCrisis(PLAYER,o)){
+        if (wait>0) return `<button class="fword" disabled title="Both sides have 30 seconds to react, and to call it off">⏳ Time to talk · ${secs} s before the landing</button>`;
+        return `<button class="fword go" data-o="${o}" data-go="1" title="Begin the offensive: the ships put your armies ashore on their coast, row after row, and sail home">⚔ Begin offensive · land!</button>`;
+      }
     }
-    if (!W.wars[key] && !W.aggr[key]) return `<button class="fword" disabled title="It is not war yet: your armies hold your side of the border, and fight only if ${nm} attacks">Holding the border · ${here}/${men} in place</button>`;
-    if (st===F_GATHER) return `<button class="fword" disabled title="Your armies are taking their places along the border">Gathering on the border · ${here}/${men} in place</button>`;
-    if (W.wars[key] && W.occCount[key]>0) return `<button class="fword" disabled title="The enemy holds some of your land: your armies on the front take it back first, and you can neither attack nor hold the border until it is yours again">Retaking your land · ${W.occCount[key]} tiles to go</button>`;
-    if (inCrisis(PLAYER,o)) return `<button class="fword go" data-o="${o}" data-go="1" title="Declare war: your armies push into ${nm} all along the front">⚔ Attack! · declare war</button>`;
-    const taken=W.occCount[o*M+PLAYER]>0;   // ground of theirs that is occupied
-    if (st===F_PUSH) return `<button class="fword hold" data-o="${o}" data-go="" title="Your armies fall back to the border as it was before you took ground, and mass there with every new recruit, for a second wave. The land taken stays occupied (until they retake it). Press attack to go again.">❚❚ Hold the border</button>`;
-    const label=!W.aggr[key] ? 'Counter-attack' : st===F_READY ? 'Attack!' : taken ? 'Attack again · second wave' : 'Attack again';   // (defending, we strike back: our own land first)
-    return `<button class="fword go" data-o="${o}" data-go="1" title="Your armies push into ${nm} all along the front${W.aggr[key] ? '' : ', taking back your own land first'}">⚔ ${label}</button>`;
+    if (inCrisis(PLAYER,o)){
+      if (wait>0) return `<button class="fword" disabled title="A crisis runs 30 seconds before the offensive can begin: time for both sides to react, to de-escalate or to answer">⏳ Time to talk · ${secs} s · ${here}/${men} in place</button>`;
+      if (st===F_GATHER) return `<button class="fword" disabled title="Your armies are taking their places along the border">Gathering on the border · ${here}/${men} in place</button>`;
+      return `<button class="fword go" data-o="${o}" data-go="1" title="Begin the offensive: every army of yours on the border attacks (set an army to defend on the armies list to keep it back)">⚔ Begin offensive</button>`;
+    }
+    if (!W.wars[key]) return '';
+    // at war: the word for every army at once; each can be set apart on the armies list
+    const all=mine.filter(c => c.front && c.naval<0).length, atk=armiesAttacking(o);
+    if (!all) return '';
+    return `<div class="fwords"><button class="fword go" data-o="${o}" data-go="1" ${atk===all ? 'disabled' : ''} title="Every army on this war attacks">⚔ Attack all</button><button class="fword hold" data-o="${o}" data-go="" ${atk===0 ? 'disabled' : ''} title="Every army falls back to the closest ground of yours that no enemy tower reaches, and defends there">🛡 Defend all</button></div>`;
   }
   const theirs=o*M+PLAYER;
   if (W.campaigns.some(c => c.front && c.a===o && c.d===PLAYER && c.phase<2)){
@@ -300,6 +308,8 @@ function word(o: number, byId: Map<number, Human>){
   }
   return '';
 }
+/** How many of our armies on the war with o attack (rather than defend). */
+const armiesAttacking = (o: number) => W.campaigns.filter(c => c.front && c.a===PLAYER && c.d===o && c.phase<2 && c.naval<0 && attacks(c)).length;
 const STANCE_TIPS = [
   'Balanced: the armies take the border all along the front, and bring down watchtowers as they meet them',
   'Border capture: the armies take as much ground as they can and keep out of reach of crowded watchtowers, to lose fewer men',

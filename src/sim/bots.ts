@@ -7,7 +7,7 @@ import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, TOPICS, M
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, togglePriority, anyWithin, isEnemyLand, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, guardsOpening, standingTower, WALL_MAX } from './fort';
-import { allied, atWar, ready, available, declare, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD, setStance, S_BORDER, S_RUSH, S_BALANCED } from './war';
+import { allied, atWar, ready, available, declare, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, frontIds, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD, setStance, S_BORDER, S_RUSH, S_BALANCED } from './war';
 
 const WALL = -1;   // a tower of the town wall, in a wishlist
 const STALE = 1800;   // ticks a war's border may stand still (3 minutes) before a bot thinks of ending it
@@ -316,7 +316,7 @@ function biggest(n: Nation){
 const waveGap = (n: Nation) => 18+(1-n.attackAt)*30+W.srand()*10;
 
 /** Who stands against a's front on d: d's armies on its own front against a, and d's guard on a's. */
-const facing = (a: number, d: number) => { let k=menOn(d,a); const key=a*W.M+d; for (const h of W.humans) if (h.o===d && h.fk===key && h.war<0) k++; return k; };
+const facing = (a: number, d: number) => { let k=menOn(d,a); const ids=frontIds(a,d); for (const h of W.humans) if (h.o===d && h.fk>=0 && h.war<0 && ids.includes(h.fk)) k++; return k; };
 
 /** War for a bot: answer peace offers, send armies to hold its border against armies massing on it,
     call up its militia when its armies on a front are badly

@@ -83,15 +83,16 @@ export function station(n: Nation, mine: Human[], switching: (h: Human) => boole
     if (!u || u.o!==n.id || u.members.length>=u.cap){ h.base=-1; continue; }   // his barracks is gone or has shrunk
     u.members.push(h);
   }
-  for (const u of U){
-    if (u.members.length>=u.cap) continue;
-    const free=mine.filter(h => h.kind===H_SOLDIER && !h.militia && h.base<0 && h.post<0 && h.war<0 && h.hp>0 && !switching(h));
-    free.sort((a,b) => b.id-a.id);   // the newest recruits first
-    for (const h of free){
-      if (u.members.length>=u.cap) break;
-      h.base=u.plots[u.members.length%u.plots.length];   // spread along the modules
-      u.members.push(h); joined.push(h);
-    }
+  // new recruits go to the army that has lost the most compared to its size (its free places over its room), one at a time,
+  // so the armies are made up evenly and the one bled hardest first
+  const free=mine.filter(h => h.kind===H_SOLDIER && !h.militia && h.base<0 && h.post<0 && h.war<0 && h.hp>0 && !switching(h));
+  free.sort((a,b) => b.id-a.id);   // the newest recruits first
+  for (const h of free){
+    let best: Unit | undefined, bs=0;
+    for (const u of U){ const s=(u.cap-u.members.length)/u.cap; if (s>bs+1e-9){ bs=s; best=u; } }
+    if (!best) break;
+    h.base=best.plots[best.members.length%best.plots.length];   // spread along the modules
+    best.members.push(h); joined.push(h);
   }
   for (const u of U){
     u.home=0; u.tiers=[0,0,0,0];
