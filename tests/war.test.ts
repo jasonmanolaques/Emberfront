@@ -13,7 +13,7 @@ import { UNIT_SIZE, buildUnits, station, unitAt, SOLDIER_DMG } from '../src/sim/
 import { wallOf, walledFor } from '../src/sim/defense';
 import { callable, partner, S_BALANCED, S_BORDER, S_RUSH, setStance, allied, atWar, available, ready, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
   RANKS, rankFor, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, defendProblem, reservesOf, reservesProblem, menOn, M_MARCH, M_HOLD, M_ASSAULT, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, frontLines, marchPace, INVADE_SLOW, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
-import { MIN_GAP, RANK_GAP, A_OFF, holds, freeOf, underCastle } from '../src/sim/front';
+import { MIN_GAP, RANK_GAP, A_OFF, holds, freeOf, underCastle, lineOf, castleCutOff } from '../src/sim/front';
 import { beggarProblem, stuck, warChest, botThink } from '../src/sim/bots';
 import { MILITIA_HIT } from '../src/sim/army';
 import { R_HOUSING } from '../src/sim/research';
@@ -1506,5 +1506,71 @@ describe('bots arming', () => {
     expect(declare(1,2,false,20)).toBe(true);
     for (let i=0;i<40;i++){ bot.nextThink=0; tick(); }
     expect(bot.soldierShare).toBeGreaterThan(0.6);        // war against a far bigger army: to arms
+  });
+});
+
+describe('invasions: the siege of a capital, peace, and two attackers', () => {
+  /** Kingdom 2's land with 1 occupying everything within `r` tiles of its castle bar the castle; 1 at war with it. */
+  function besieged(r: number){
+    world(1); quiet(); paintDisc(N(2),30); paintToward(1,2);
+    soldiers(N(1),10); noDraft(); N(2).soldierShare=0; N(2).humanProg=-1e9; run(2);
+    expect(declare(1,2,false,10)).toBe(true); giveWord(1,2);
+    const c=N(2).capPlot, cx=(c%PW)*4+4, cy=((c/PW)|0)*4+4;
+    for (let t=0;t<NT;t++){
+      if (owner[t]!==2 || occ[t]) continue;
+      const x=t%TW, y=(t/TW)|0;
+      if ((x+0.5-cx)**2+(y+0.5-cy)**2<=r*r && !underCastle(2,t)){ occ[t]=1; W.occCount[2*W.M+1]++; }
+    }
+    return { cx, cy };
+  }
+  it('an army that has the castle surrounded stops pushing the border: its front is the castle alone', () => {
+    // 1 occupies all round the castle but the land further out is still free: it is the castle that is left to break
+    const { cx, cy }=besieged(12);
+    expect(castleCutOff(2)).toBe(true);
+    const F=lineOf(1,2);
+    expect(F.tiles.length).toBeGreaterThan(10);
+    expect(F.tiles.every(t => underCastle(2,t))).toBe(true);   // nothing of the outer border is in the front
+    // (whereas with free ground left beside the castle, the front is the border and not the castle)
+    for (let t=0;t<NT;t++) if (owner[t]===2 && occ[t]===1 && Math.hypot((t%TW)+0.5-cx,((t/TW)|0)+0.5-cy)<5.5){ occ[t]=0; W.occCount[2*W.M+1]--; }
+    expect(castleCutOff(2)).toBe(false);
+    expect(lineOf(1,2).tiles.some(t => !underCastle(2,t))).toBe(true);
+  });
+  it('a peace with the castle cut off gives its kingdom the ground round it back, to rebuild on', () => {
+    const { cx, cy }=besieged(12);
+    const near=(t: number) => Math.hypot((t%TW)+0.5-cx,((t/TW)|0)+0.5-cy);
+    const farOcc=(t: number) => owner[t]===2 && occ[t]===1 && near(t)>25;
+    // further out, a belt 1 holds (joined to its own land): it keeps that at peace
+    for (let t=0;t<NT;t++) if (owner[t]===2 && !occ[t] && near(t)>25 && touchesOwn(t)){ occ[t]=1; W.occCount[2*W.M+1]++; }
+    expect(Array.from({ length: NT }, (_, t) => t).some(farOcc)).toBe(true);
+    makePeace(1,2);
+    expect(atWar(1,2)).toBe(false);
+    for (let t=0;t<NT;t++) if (owner[t]===2 && near(t)<=20 && !underCastle(2,t)) expect(occ[t]).toBe(0);   // its own again, to build on
+    expect(Array.from({ length: NT }, (_, t) => t).some(t => owner[t]===1 && near(t)>25 && near(t)<40)).toBe(true);   // (what lies further out, joined to 1's land, is 1's)
+  });
+  it('a peace with its castle not cut off leaves things as they were: only what joins on stays', () => {
+    const { cx, cy }=besieged(12);
+    // free ground right beside the castle: not cut off
+    for (let t=0;t<NT;t++) if (owner[t]===2 && occ[t]===1 && Math.hypot((t%TW)+0.5-cx,((t/TW)|0)+0.5-cy)<5.5){ occ[t]=0; W.occCount[2*W.M+1]--; }
+    expect(castleCutOff(2)).toBe(false);
+    const was=W.occCount[2*W.M+1];
+    makePeace(1,2);
+    expect(W.occCount[2*W.M+1]).toBeLessThanOrEqual(was);   // (landlocked pockets go back as ever, nothing more)
+  });
+  /** Whether t has a land neighbour of kingdom 1. */
+  function touchesOwn(t: number){ const x=t%TW; return [x>0 ? t-1 : -1, x<TW-1 ? t+1 : -1, t>=TW ? t-TW : -1, t<NT-TW ? t+TW : -1].some(k => k>=0 && ((owner[k]===1 && !occ[k]) || (owner[k]===2 && occ[k]===1))); }
+
+  it('two kingdoms attacking one split its ground and both go forward; the second is not left stuck once the first has taken the ground beside it', () => {
+    world(2); quiet(); paintDisc(N(3),50); paintToward(1,3); paintToward(2,3);
+    N(1).isPlayer=false;   // (so that both go to war by themselves)
+    soldiers(N(1),40); soldiers(N(2),40); soldiers(N(3),30); noDraft(); noDraft(2); noDraft(3); N(3).soldierShare=0.5; N(3).humanProg=-1e9; run(2);
+    expect(declare(1,3,false,40)).toBe(true); expect(declare(2,3,false,40)).toBe(true);
+    let both=false, stuck=false;
+    for (let i=0;i<2400 && N(3).alive;i++){
+      tick();
+      if (W.occCount[3*W.M+1]>50 && W.occCount[3*W.M+2]>50) both=true;
+      if (i>900 && W.occCount[3*W.M+1]>1000 && menOn(2,3)===0) stuck=true;   // (its army sent home, "no border to fight on")
+    }
+    expect(stuck).toBe(false);
+    expect(both).toBe(true);
   });
 });

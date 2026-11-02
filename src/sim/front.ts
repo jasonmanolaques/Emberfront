@@ -38,6 +38,17 @@ export function originOf(d: number): [number, number] {
   return D.capTile>=0 ? [(D.capPlot%PW)*4+4, ((D.capPlot/PW)|0)*4+4] : [D.ltx+0.5, D.lty+0.5];
 }
 
+/** Is d's castle cut off: no free ground of d's (unoccupied) in the ring of tiles round it? */
+export function castleCutOff(d: number){
+  const D=W.nations[d]; if (D.capTile<0) return false;
+  const q=D.capPlot, x0=(q%PW)*4, y0=((q/PW)|0)*4;
+  for (let y=y0-1;y<=y0+8;y++) for (let x=x0-1;x<=x0+8;x++){
+    if (x<0 || y<0 || x>=TW || y>=TH || (x>=x0 && x<x0+8 && y>=y0 && y<y0+8)) continue;
+    if (owner[y*TW+x]===d && !occ[y*TW+x]) return false;
+  }
+  return true;
+}
+
 /** Works out the front of a's attack on d. The castle can't be taken, only broken: the line runs
     round it, until the castle stands cut off with no free ground of its own beside it (or is all that
     is left), and then its walls are part of the front too, ringed by men who break it. */
@@ -45,25 +56,36 @@ export function lineOf(a: number, d: number, original=false): Front {
   const D=W.nations[d], A=W.nations[a], tw=TW, th=TH, own=owner, oc=occ, all: number[]=[];
   // (the original border: only a's own land counts as held, however much of d's it occupies; d's ground, occupied or not, is the line's)
   const held=(k: number) => original ? own[k]===a && !oc[k] : (own[k]===a && !oc[k]) || (own[k]===d && oc[k]===a);
+  // Others at war with d that a is not at war with (and hold some of d's ground): the ground of d's they occupy
+  // is theirs, and the free ground beyond it is shared out with them in slices round d's castle, one for each attacker.
+  const mates: number[]=[], M=W.M;
+  if (!original) for (let b=1;b<M;b++) if (b!==a && b!==d && W.wars[b*M+d] && !W.wars[a*M+b] && W.occCount[d*M+b]>0 && W.nations[b].alive) mates.push(b);
+  const bearing=new Map<number, number>();   // where each attacker lies, as seen from d's castle
+  if (mates.length){ const [cx,cy]=originOf(d); for (const k of [a,...mates]){ const [x,y]=originOf(k); bearing.set(k,Math.atan2(y-cy,x-cx)); } }
+  const nearest=(t: number) => {   // is tile t in a's slice of d's ground (the pie cut by the bearings of the attackers' castles), not a mate's?
+    const [cx,cy]=originOf(d), ang=Math.atan2((t/tw|0)+0.5-cy, t%tw+0.5-cx);
+    const gap=(k: number) => { const g=Math.abs(ang-bearing.get(k)!)%(2*Math.PI); return g>Math.PI ? 2*Math.PI-g : g; };
+    const ga=gap(a);
+    for (const k of mates){ const gk=gap(k); if (gk<ga-1e-9 || (Math.abs(gk-ga)<=1e-9 && k<a)) return false; }
+    return true;
+  };
+  let slices=true;   // (a's share only; with nowhere to go in it, a may go for any)
+  const mateHeld=(k: number) => mates.length>0 && own[k]===d && oc[k]>0 && oc[k]!==a && mates.includes(oc[k]);
   // (only round d's land, and a's that d occupies: every tile of a kingdom's lies inside its box)
   const scan=(K: typeof D, mine: (t: number) => boolean) => {
     for (let y=Math.max(0,K.y0);y<=Math.min(th-1,K.y1);y++) for (let x=Math.max(0,K.x0), t=y*tw+x;x<=Math.min(tw-1,K.x1);x++,t++){
       if (!mine(t)) continue;
       if ((x>0 && held(t-1)) || (x<tw-1 && held(t+1)) || (y>0 && held(t-tw)) || (y<th-1 && held(t+tw))) all.push(t);
+      else if (mates.length && !oc[t] && ((x>0 && mateHeld(t-1)) || (x<tw-1 && mateHeld(t+1)) || (y>0 && mateHeld(t-tw)) || (y<th-1 && mateHeld(t+tw))) && (!slices || nearest(t))) all.push(t);   // (free ground beside a mate's zone, in a's share)
     }
   };
   scan(D, t => own[t]===d && (original || !oc[t]));
+  if (!all.length && mates.length){ slices=false; scan(D, t => own[t]===d && !oc[t]); }
   if (!original && W.occCount[a*W.M+d]>0) scan(A, t => own[t]===a && oc[t]===d);
   const open=all.filter(t => !underCastle(d,t)), walls=all.filter(t => underCastle(d,t));
-  const island=walls.length>0 && D.capTile>=0 && (() => {   // nothing of theirs left beside the castle but the castle
-    const q=D.capPlot, x0=(q%PW)*4, y0=((q/PW)|0)*4;
-    for (let y=y0-1;y<=y0+8;y++) for (let x=x0-1;x<=x0+8;x++){
-      if (x<0 || y<0 || x>=tw || y>=th || (x>=x0 && x<x0+8 && y>=y0 && y<y0+8)) continue;
-      if (own[y*tw+x]===d && !oc[y*tw+x]) return false;
-    }
-    return true;
-  })();
-  const tiles=!open.length ? all : island ? open.concat(walls) : open;
+  // The castle surrounded: nothing of theirs left beside it. The armies stop pushing the border and only break the castle.
+  const island=walls.length>0 && castleCutOff(d);
+  const tiles=!open.length || island ? (island ? walls : all) : open;
   const n=tiles.length, F: Front={ a, d, tiles, s:new Float64Array(n), len:0, bx:new Float32Array(n), by:new Float32Array(n) };
   if (!n) return F;
   // put in order along the line: each stretch of it (tiles touching, corners too) is measured from one
@@ -150,7 +172,7 @@ export function lineOf(a: number, d: number, original=false): Front {
     const t=T[i], x=t%tw, y=(t/tw)|0; let vx=0, vy=0;
     for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){
       if ((!dx && !dy) || x+dx<0 || y+dy<0 || x+dx>=tw || y+dy>=th) continue;
-      if (held(t+dy*tw+dx)){ const L=Math.hypot(dx,dy); vx+=dx/L; vy+=dy/L; }
+      if (held(t+dy*tw+dx) || mateHeld(t+dy*tw+dx)){ const L=Math.hypot(dx,dy); vx+=dx/L; vy+=dy/L; }
     }
     if (!vx && !vy){ vx=x+0.5-ox; vy=y+0.5-oy; }
     const L=Math.hypot(vx,vy)||1; rx[i]=vx/L; ry[i]=vy/L;

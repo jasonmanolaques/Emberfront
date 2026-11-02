@@ -44,7 +44,7 @@ import { census } from './census';
 import { BLD_HP, bldHp, wear, towerTier, castleTier, TOWER_RELOADS, TOWER_DMGS, CASTLE_MEND, wallOf, wallTower, walledFor, buildWalls, resetWalls } from './defense';
 import { SOLDIER_DMG, MILITIA_HIT, units, unitAt, type Unit } from './army';
 import { Field } from './field';
-import { lineOf, deploy, placeAt, indexAt, holds, enemyOf, underCastle, type Front } from './front';
+import { lineOf, deploy, placeAt, indexAt, holds, enemyOf, underCastle, castleCutOff, type Front } from './front';
 import { H_SOLDIER, TASK_ROAM, TOWER_RANGE, maxHp, REGEN, pace, onCastle, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf, homeMilitia } from './population';
 
 export const LOOT_GOLD = 50;          // a raider's loot bag, paid when he gets it home
@@ -587,9 +587,21 @@ export function makePeace(a: number, b: number){
   for (const c of W.campaigns) if ((c.a===a && c.d===b) || (c.a===b && c.d===a)) sendHome(c,'peace',false);
   // each side keeps the land it occupies that joins on to its own; pockets cut off inside the other's
   // borders go back to their owner, so the new border has no islands in it
+  giveRoom(a,b); giveRoom(b,a);
   cede(a,b); cede(b,a);
   for (const i of [a*M+b, b*M+a]){ W.offers[i]=0; W.atWar[i]=0; W.wars[i]=0; W.aggr[i]=0; W.stall[i]=0; W.lost[i]=0; W.ready[i]=0; }
   on.peaceMade(a,b);
+}
+/** A kingdom whose castle stands cut off, with all the ground round it occupied by the other side, gets
+    room to rebuild when peace is made: whatever of its land that side holds within CAPITAL_ROOM tiles of the castle goes back. */
+export const CAPITAL_ROOM = 16;
+function giveRoom(o: number, d: number){
+  const D=W.nations[d]; if (!D.alive || D.capTile<0 || !castleCutOff(d)) return;
+  const cx=(D.capPlot%PW)*4+4, cy=((D.capPlot/PW)|0)*4+4, R=CAPITAL_ROOM+4;
+  for (let y=Math.max(0,cy-R);y<=Math.min(TH-1,cy+R);y++) for (let x=Math.max(0,cx-R);x<=Math.min(TW-1,cx+R);x++){
+    const t=y*TW+x;
+    if (owner[t]===d && occ[t]===o && (x+0.5-cx)**2+(y+0.5-cy)**2<=R*R) liberate(t);
+  }
 }
 /** At peace, the land o occupies of d's becomes o's where it joins on to o's own land (through
     other ground o occupies); the rest, landlocked in d's borders, is d's again. */
