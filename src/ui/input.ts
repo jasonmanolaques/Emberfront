@@ -11,7 +11,7 @@ import { $ } from './dom';
 import { newGame, nextMap, startGame, trySpawn, setInvest, setSoldierShare, centerHome, setPaused } from '../game';
 import { openExpand, closeExpand, expandOpen } from './expand';
 import { placeAt, clickOwnBuilding, stopPlacing, toggleBuildPanel } from './build';
-import { openDiplomacy, closeDiplomacy, diplomacyOpen, closePop } from './diplomacy';
+import { openDiplomacy, closeDiplomacy, diplomacyOpen, closePop, chooseCoast, cancelLanding } from './diplomacy';
 import { researchOpen, closeResearch } from './research';
 import { armyOpen, closeArmy } from './army';
 import { navalOpen, closeNaval } from './naval';
@@ -53,7 +53,8 @@ function endPointer(e: PointerEvent){
       else if (client.state==='play'){
         const o=t>=0 ? owner[t] : 0;
         const wasOpen=expandOpen(); closeExpand();
-        if (client.placing) placeAt(t);
+        if (client.landing){ if (t>=0) chooseCoast(t); }
+        else if (client.placing) placeAt(t);
         else if (o && o!==PLAYER){ closeResearch(); closeArmy(); closeNaval(); openDiplomacy(o); }   // another kingdom: talk first
         else if (!clickOwnBuilding(t)){
           if (armyOpen()) closeArmy(); else if (navalOpen()) closeNaval(); else if (researchOpen()) closeResearch(); else if (diplomacyOpen()) closeDiplomacy();
@@ -69,6 +70,7 @@ export function bindInput(){
   view.addEventListener('contextmenu',e=>e.preventDefault());
   view.addEventListener('pointerdown',e=>{
     if (e.button===2 && client.placing){ stopPlacing(); return; }   // right-click stops placing
+    if (e.button===2 && client.landing){ cancelLanding(); return; }
     view.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if (pointers.size===1) drag={sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false,button:e.button};
@@ -117,6 +119,7 @@ export function bindInput(){
     else if (e.key===' ' && client.state==='play'){ e.preventDefault(); centerHome(); }
     else if (e.key==='p' || e.key==='P'){ if (client.state==='play') setPaused(!client.paused); }
     else if (e.key==='b' || e.key==='B'){ if (client.state==='play') toggleBuildPanel(); }
+    else if (e.key==='Escape' && client.landing) cancelLanding();
     else if (e.key==='Escape' && nationsOpen()) closeNations();
     else if (e.key==='Escape' && client.selected>=0) deselect();   // let go of the army first
     else if (e.key==='Escape'){ closePop(); closeExpand(); if (client.placing) stopPlacing(); else if (researchOpen()) closeResearch(); else if (diplomacyOpen()) closeDiplomacy(); else toggleBuildPanel(false); }

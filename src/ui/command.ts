@@ -8,7 +8,7 @@
 import { K, PLAYER } from '../core/constants';
 import { W, type Campaign } from '../sim/state';
 import { queueCommand } from '../sim/sim';
-import { RANKS, F_GATHER, F_READY, F_PUSH, F_HOLD } from '../sim/war';
+import { RANKS, F_GATHER, F_READY, F_PUSH, F_HOLD, navalOf } from '../sim/war';
 import { unitAt } from '../sim/army';
 import { client } from '../client';
 import { cam } from '../render/camera';
@@ -36,6 +36,7 @@ function nameOf(c: Campaign){
 function word(c: Campaign): [string, boolean, boolean, string] {
   const foe=W.nations[c.d]?.name ?? 'the enemy';
   const key=c.a*W.M+c.d, st=W.offensive[key];
+  if (c.naval>=0 && navalOf(c.a,c.d)) return !W.wars[key] && navalOf(c.a,c.d)!.stage>=1 ? ['Land · declare war', true, true, `The ships lie off the coast of ${foe}, the army aboard: the word starts the war and puts it ashore.`] : ['Sailing', false, false, `The ships are on their way to the coast of ${foe}, the army aboard.`];
   if (!W.wars[key] && !W.aggr[key]) return ['Holding the border', false, false, `Holding your side of the border against ${foe}. It is not war: they fight only if ${foe} attacks.`];
   if (!W.wars[key]) return ['Attack · declare war', true, true, st===F_GATHER ? `Massing on the border of ${foe}: a crisis, not yet war. The word starts the war.` : `In place on the border of ${foe}. The word starts the war; or call the crisis off from the war bar.`];
   if (W.occCount[key]>0) return ['Retaking your land', false, false, `${foe} holds some of your land: your armies take it back first, and neither attack nor hold the border until it is yours.`];

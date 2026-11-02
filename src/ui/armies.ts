@@ -14,6 +14,12 @@ export function armyName(n: Nation, u: Unit){
   if (dx*dx+dy*dy<24*24) return 'Castle barracks';
   return DIRS[(Math.round(Math.atan2(dy,dx)/(Math.PI/4))+8)%8]+' barracks';
 }
+/** "North harbour", by where a naval base (main plot q) stands from the castle. */
+export function baseName(n: Nation, q: number){
+  if (n.capTile<0) return 'Naval base';
+  const cq=n.capPlot, cx=(cq%PW)*8+8, cy=((cq/PW)|0)*8+8, dx=(q%PW)*8+16-cx, dy=((q/PW)|0)*8+8-cy;
+  return DIRS[(Math.round(Math.atan2(dy,dx)/(Math.PI/4))+8)%8]+' harbour';
+}
 export { unitLabel as armyLine };
 
 /** A row of toggles, one per army of the player's that has soldiers at home. */

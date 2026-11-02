@@ -40,6 +40,7 @@ export interface SimEvents {
   forged(q: number, o: number, tier: number): void;            // a blacksmith left armour of `tier` at the barracks plot q
   armored(id: number, x: number, y: number, tier: number): void;   // soldier id put on armour of `tier`
   order(kind: string, a: number, d: number, rank: number, leader: number, x: number, y: number): void;   // an army's leader (leader -1 and rank 0: an army without one) gives an order ('march' setting out, 'ready' in place at the border, 'guard' in place holding its own border, 'assault', 'hold') or falls ('fell' on an attack, 'slain' on a raid or intercept)
+  invasionSails(a: number, d: number, ships: number): void;    // a's ships sail with armies for d's coast
   shipBuilt(o: number, q: number): void;                       // a ship was finished at the naval base on plot q
   colonyBound(o: number, t: number): void;                     // o sent a ship to colonize land at tile t
   colonyFounded(o: number, t: number): void;                   // a colony's ship came ashore at tile t
@@ -53,6 +54,6 @@ export const on: SimEvents = {
   towerShot: noop, produced: noop,
   warBegan: noop, crisis: noop, escalated: noop, deescalated: noop, defending: noop, reserves: noop, armyHome: noop, armyGone: noop, peaceOffered: noop, peaceRefused: noop, peaceMade: noop,
   allied: noop, allyRefused: noop, allianceBroken: noop, annexed: noop, hit: noop, bldHit: noop,
-  died: noop, occupied: noop, counterReady: noop, swing: noop, story: noop, researched: noop, upgraded: noop, builderHired: noop, shipBuilt: noop, colonyBound: noop, colonyFounded: noop, forged: noop, armored: noop, deserted: noop, order: noop,
+  died: noop, occupied: noop, counterReady: noop, swing: noop, story: noop, researched: noop, upgraded: noop, builderHired: noop, invasionSails: noop, shipBuilt: noop, colonyBound: noop, colonyFounded: noop, forged: noop, armored: noop, deserted: noop, order: noop,
 };
 export function listen(l: Partial<SimEvents>){ Object.assign(on, l); }

@@ -5,7 +5,7 @@
    out (a map tile under DETAIL_CSS screen pixels), from the overview, one pixel a map tile. */
 import { TW, TH, RW, RH, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY, B_NAVAL } from '../core/constants';
 import { clamp, fmt } from '../core/util';
-import { W, isLand, pType, pPrio, pTimer, pBurn, type Human } from '../sim/state';
+import { W, isLand, sea, pType, pPrio, pTimer, pBurn, type Human } from '../sim/state';
 import { findBlock } from '../sim/sim';
 import { placeProblem, structureOf, canAfford, navalSite, SIZE, PRODUCE_TICKS, dims } from '../sim/buildings';
 import { client, reduceMotion } from '../client';
@@ -18,6 +18,7 @@ import { styleOf } from './style';
 import { personSprite, corpseSprite, woundStage, BODY_X, FEET_Y } from './people';
 import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, psize, floats, glints, shots, hits, corpses, drips, addDrip, CORPSE_MS, DRIP_MS, updateEffects } from './effects';
 import { shipSprite, drawBoat, resetShips, SHIP_W, SHIP_H } from './ships';
+import { landingZone, offshore, dockTile, type Zone } from '../sim/naval';
 import { H_SOLDIER, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, TASK_FORGE, indoors, maxHp } from '../sim/population';
 import { units, unitLabel } from '../sim/army';
 import { chatter, drawSpeech } from './speech';
@@ -103,6 +104,31 @@ function drawSelection(now: number){
   }
 }
 
+/** The landing zone a coast would give the armies the player has chosen, at the pointer: the stretch of coast (a tile a man) in gold,
+    the ground inland of it in red, and the ships in line off it, as they would lie. Worked out only when the pointer moves. */
+let lzKey='', lz: Zone | null=null;
+function drawLandingPreview(now: number){
+  const L=client.landing; if (!L || hover.tile<0) return;
+  const key=`${hover.tile}|${L.men}|${L.base}|${L.target}`;
+  if (key!==lzKey){ lzKey=key; const dock=dockTile(L.base); lz=dock>=0 ? landingZone(PLAYER,L.target,hover.tile,L.men,sea[dock]) : null; }
+  if (!lz) return;
+  drawZone(lz,'rgba(255,90,60,.30)','rgba(255,214,90,.7)');
+  const pulse=reduceMotion ? 1 : 0.7+0.3*Math.sin(now/200);
+  lz.rows.forEach((count,row) => { for (let slot=0;slot<count;slot++){
+    const t=offshore(lz!,row,slot,count), x=(t%TW)*RS+RS/2, y=((t/TW)|0)*RS+RS/2, c=lz!.coast[Math.min(lz!.coast.length-1,Math.floor((slot+0.5)*lz!.coast.length/count))];
+    const face=(c%TW)*RS>x ? 1 : -1;
+    ctx.globalAlpha=0.65*pulse; ctx.drawImage(shipSprite(PLAYER,face,SHIP_CREW,false,0),Math.round(x)-SHIP_W/2,Math.round(y)-SHIP_H+6); ctx.globalAlpha=1;
+  } });
+}
+const SHIP_CREW = 5;
+function drawZone(z: { zone: number[]; coast: number[] }, inland: string, coast: string){
+  ctx.fillStyle=inland; for (const t of z.zone) ctx.fillRect((t%TW)*RS,((t/TW)|0)*RS,RS,RS);
+  ctx.fillStyle=coast; for (const t of z.coast) ctx.fillRect((t%TW)*RS,((t/TW)|0)*RS,RS,RS);
+}
+/** Landings on their way: the zone they will land on, for both sides to see. */
+function drawInvasions(){
+  for (const inv of W.invasions) if (inv.stage<2) drawZone(inv,'rgba(255,90,60,.16)','rgba(255,214,90,.45)');
+}
 /** Ships at sea: each a longship under its sail, bobbing; a faint wake behind one that is moving. */
 function drawShips(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
   const list=W.ships.filter(s => s.x*K>=vx0-SHIP_W && s.y*K>=vy0-SHIP_H && s.x*K<=vx1+SHIP_W && s.y*K<=vy1+SHIP_H).sort((a,b) => a.y-b.y || a.id-b.id);
@@ -314,6 +340,7 @@ export function render(now: number, dt: number){
   }
 
   drawFronts(now,vx0,vy0,vx1,vy1);
+  drawInvasions();
 
   // people and armies, once close enough to tell them apart
   if (zs>=0.8) drawShips(now,vx0,vy0,vx1,vy1);
@@ -384,6 +411,8 @@ export function render(now: number, dt: number){
       ctx.globalAlpha=0.7; ctx.drawImage(ghostOf(client.placing,turned ? 1 : 0),(hx>>2)*PS,(hy>>2)*PS); ctx.globalAlpha=1;
       ctx.strokeStyle=ok?'rgba(143,227,155,.95)':'rgba(255,90,70,.9)'; ctx.lineWidth=2*dpr/zoom;
       ctx.strokeRect((hx>>2)*PS,(hy>>2)*PS,fw*PS,fh*PS);
+    } else if (client.state==='play' && client.landing){
+      drawLandingPreview(now);
     } else if (client.state==='spawn'){
       const b=findBlock(hx,hy,0), bx=Math.round(hx/4)-1, by=Math.round(hy/4)-1;
       ctx.strokeStyle=b?'rgba(255,230,120,.95)':'rgba(255,90,70,.9)'; ctx.lineWidth=2*dpr/zoom;

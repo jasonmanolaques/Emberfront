@@ -52,14 +52,15 @@ export function castleCutOff(d: number){
 /** Works out the front of a's attack on d. The castle can't be taken, only broken: the line runs
     round it, until the castle stands cut off with no free ground of its own beside it (or is all that
     is left), and then its walls are part of the front too, ringed by men who break it. */
-export function lineOf(a: number, d: number, original=false): Front {
+export function lineOf(a: number, d: number, original=false, preset?: number[]): Front {
   const D=W.nations[d], A=W.nations[a], tw=TW, th=TH, own=owner, oc=occ, all: number[]=[];
+  const pset=preset ? new Set(preset) : null;   // (a line given: tiles of a's own, with its ground inland of them)
   // (the original border: only a's own land counts as held, however much of d's it occupies; d's ground, occupied or not, is the line's)
-  const held=(k: number) => original ? own[k]===a && !oc[k] : (own[k]===a && !oc[k]) || (own[k]===d && oc[k]===a);
+  const held=(k: number) => pset ? own[k]===a && !oc[k] && !pset.has(k) : original ? own[k]===a && !oc[k] : (own[k]===a && !oc[k]) || (own[k]===d && oc[k]===a);
   // Others at war with d that a is not at war with (and hold some of d's ground): the ground of d's they occupy
   // is theirs, and the free ground beyond it is shared out with them in slices round d's castle, one for each attacker.
   const mates: number[]=[], M=W.M;
-  if (!original) for (let b=1;b<M;b++) if (b!==a && b!==d && W.wars[b*M+d] && !W.wars[a*M+b] && W.occCount[d*M+b]>0 && W.nations[b].alive) mates.push(b);
+  if (!original && !pset) for (let b=1;b<M;b++) if (b!==a && b!==d && W.wars[b*M+d] && !W.wars[a*M+b] && W.occCount[d*M+b]>0 && W.nations[b].alive) mates.push(b);
   const bearing=new Map<number, number>();   // where each attacker lies, as seen from d's castle
   if (mates.length){ const [cx,cy]=originOf(d); for (const k of [a,...mates]){ const [x,y]=originOf(k); bearing.set(k,Math.atan2(y-cy,x-cx)); } }
   const nearest=(t: number) => {   // is tile t in a's slice of d's ground (the pie cut by the bearings of the attackers' castles), not a mate's?
@@ -79,9 +80,10 @@ export function lineOf(a: number, d: number, original=false): Front {
       else if (mates.length && !oc[t] && ((x>0 && mateHeld(t-1)) || (x<tw-1 && mateHeld(t+1)) || (y>0 && mateHeld(t-tw)) || (y<th-1 && mateHeld(t+tw))) && (!slices || nearest(t))) all.push(t);   // (free ground beside a mate's zone, in a's share)
     }
   };
-  scan(D, t => own[t]===d && (original || !oc[t]));
-  if (!all.length && mates.length){ slices=false; scan(D, t => own[t]===d && !oc[t]); }
-  if (!original && W.occCount[a*W.M+d]>0) scan(A, t => own[t]===a && oc[t]===d);
+  if (pset) all.push(...preset!);
+  else scan(D, t => own[t]===d && (original || !oc[t]));
+  if (!pset && !all.length && mates.length){ slices=false; scan(D, t => own[t]===d && !oc[t]); }
+  if (!original && !pset && W.occCount[a*W.M+d]>0) scan(A, t => own[t]===a && oc[t]===d);
   const open=all.filter(t => !underCastle(d,t)), walls=all.filter(t => underCastle(d,t));
   // The castle surrounded: nothing of theirs left beside it. The armies stop pushing the border and only break the castle.
   const island=walls.length>0 && castleCutOff(d);

@@ -2,7 +2,7 @@
 import { TW, TH, RW, RH, RS, NP, TICK } from './core/constants';
 import { W, owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, pHp } from './sim/state';
 import { findBlock, queueCommand } from './sim/sim';
-import { plotProblem } from './sim/buildings';
+import { plotProblem, navalSite } from './sim/buildings';
 import { client } from './client';
 import { view, resize, cam } from './render/camera';
 import { ovBuf } from './render/terrain';
@@ -42,5 +42,7 @@ function toSpawn(){ if (client.state!=='spawn'){ $('intro').hidden=true; $('scri
   get shots(){return shots;},
   setHp:(q: number, v: number)=>{ pHp[q]=v; }, redraw:(q: number)=>drawPlotAndNeighbours(q), openArmy,
   newWorld:(seed?: number)=>newGame(seed), loadMap:(i: number)=>{ client.mapIndex=i; newGame(); },
+  navalSites:()=>{ const n=W.nations[1], out: number[]=[]; if (n) for (let q=0;q<NP;q++) if (navalSite(n,q).orient>=0) out.push(q); return out; },
+  landing:(o: typeof client.landing)=>{ client.landing=o; },
   freePlots:()=>{ const n=W.nations[1], out: number[]=[]; if (n) for (let q=0;q<NP;q++) if (!plotProblem(n,q)) out.push(q); return out; },
   dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, overview:ovBuf, attacks:W.attacks, campaigns:W.campaigns, tickN:W.tickN }) };

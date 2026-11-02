@@ -102,6 +102,7 @@ export interface Campaign {
   leader: number;                    // id of the soldier leading it, or -1 (none for 5 or fewer, or he fell)
   rank: number;                      // the leader's rank by the army's size when it set out (RANKS in war.ts; 0 none)
   mode: number;                      // its offensive's state (F_* in war.ts)
+  naval: number;                     // an army put ashore from ships: the invasion it belongs to (it is never reinforced), else -1
   hitAt: number;                     // tick one of its soldiers was last hit
 }
 export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; isle?: number; }   // gold still to spend on this front (isle: a colony's, spent on that island's land only)

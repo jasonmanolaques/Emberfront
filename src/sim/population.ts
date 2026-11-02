@@ -61,7 +61,8 @@ export const TASK_ROAM = 0,      // between jobs: villagers think or stroll betw
              TASK_FORGE = 13,        // forging armour
              TASK_SMITH_DELIVER = 14,// carrying the armour to a barracks
              TASK_REST_GO = 15,      // villagers with nothing to do: walking home to rest
-             TASK_REST = 16;         // resting inside a house, out of sight
+             TASK_REST = 16,         // resting inside a house, out of sight
+             TASK_BOAT = 17;         // a soldier of a naval invasion aboard a ship (out of sight), or on his way home by sea
 export const HUMAN_EVERY = 200;  // progress per new human: 200 ticks (20 s), each farm adds 5% speed
 export const FARM_BONUS = 0.05;
 const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 s)
@@ -87,7 +88,7 @@ const MANOR_SHARE = 0.4;         // with manors allowed, the innermost 40% of ho
 /** Switching role: walking to a barracks (or the castle) for it, or inside training. */
 export const switching = (h: Human) => h.task===TASK_TO_TRAIN || h.task===TASK_INSIDE;
 /** Out of sight inside the capital or a barracks. */
-export const indoors = (h: Human) => h.task===TASK_INSIDE || h.task===TASK_REST;
+export const indoors = (h: Human) => h.task===TASK_INSIDE || h.task===TASK_REST || h.task===TASK_BOAT;
 
 /** Pixel position just outside the capital's door. */
 export function doorOf(n: Nation): [number, number] { const q=n.capPlot; return [(q%PW)*8+8, ((q/PW)|0)*8+15]; }

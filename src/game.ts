@@ -55,6 +55,11 @@ listen({
   },
   occupied: paintTile,
   bldHit: dustPuff,
+  invasionSails: (a,d,k) => {
+    if (a===PLAYER) log(`${k} ship${k===1?'':'s'} sail with your armies for the coast of ${nm(d)}: they wait in line off it for your word`,'good');
+    else if (d===PLAYER){ log(`${nm(a)} sails ${k} ship${k===1?'':'s'} for your coast! The landing zone is marked: send armies to it from the war bar`,'bad'); toast(`${nm(a)} invades by sea`); }
+    else log(`${nm(a)} sails an invasion fleet for ${nm(d)}`);
+  },
   shipBuilt: (o,_q) => { if (o===PLAYER){ log('A ship is ready in your harbour','good'); toast('Ship ready'); } },
   colonyBound: (o,_t) => { if (o===PLAYER) log('A ship sails to colonize the island','good'); },
   colonyFounded: (o,_t) => { if (o===PLAYER){ log('Your colonists land: your border spreads over the island, and villagers can cross by boat','good'); toast('Colony founded'); } },

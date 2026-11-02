@@ -22,6 +22,7 @@ import { on } from './events';
 export const SHIP_COST = [5,0,0];                  // [wood, stone, copper] a ship costs
 export const SHIP_TICKS = 15*GAME_SPEED*10;        // ticks to build one: 15 seconds on the clock
 export const SHIP_CAP = 5;                         // soldiers a ship carries
+export const SHIP_FRONT = 2*SHIP_CAP;              // tiles of coast a ship's men take: a man every 2 tiles, as on any front
 export const SHIP_SP = 0.6;                        // pixels a tick a ship sails (6 a second: 3 tiles)
 export const FERRY_PACE = 4;                       // a villager in a boat goes this much faster than on foot
 export const ROW_GAP = 3;                          // tiles between one row of ships and the next
@@ -177,6 +178,8 @@ export function waypoints(tiles: number[]): number[] {
 }
 
 /* ---------- ships ---------- */
+/** Called by war.ts: what to do with the soldiers aboard a ship that has come home. */
+export const navalHooks: { docked: (s: Ship) => void } = { docked: () => {} };
 /** A new ship of kingdom o, from base q, at its dock, sailing `tiles` (the way, as tiles). */
 export function launchShip(o: number, q: number, tiles: number[], extra: Partial<Ship>={}): Ship {
   const d=tiles[0] ?? dockTile(q), s: Ship={
@@ -230,6 +233,7 @@ export function updateNaval(){
 }
 /** Ship s is home: if it was one of the fleet it is ready again (at its base, or the kingdom's nearest if that is gone). */
 function dock(s: Ship){
+  navalHooks.docked(s);
   if (!s.fleet) return;   // (a colony's ship was never counted)
   const n=W.nations[s.o]; if (n?.alive) n.fleet++;
 }
@@ -317,7 +321,7 @@ const underCastleOf = (d: number, t: number) => { const q=(((t/TW)|0)>>2)*PW+((t
 /** Is land tile t d's, and on the coast of water body seaId (and not under its castle)? */
 export const isCoast = (d: number, t: number, seaId: number) => isLand[t]===1 && owner[t]===d && !underCastleOf(d,t) && waterBeside(t,seaId)>=0;
 /** The landing zone for an army of `men` put ashore on d's coast near tile t0 from water body `seaId`: the stretch
-    of coast (a tile a man, in order along it), the ground inland of it, and how the ships fall in rows. null if there
+    of coast (a man every 2 tiles, in order along it), the ground inland of it, and how the ships fall in rows. null if there
     is no coast near. `a` is the invader (a coast it holds already is safe). */
 export function landingZone(a: number, d: number, t0: number, men: number, seaId: number): Zone | null {
   if (t0<0 || seaId<=0 || men<1) return null;
@@ -333,7 +337,7 @@ export function landingZone(a: number, d: number, t0: number, men: number, seaId
   }
   if (start<0) return null;
   // the stretch: coast tiles joined to it (corners too), nearest first, as many as there are men
-  const want=Math.max(SHIP_CAP,men), seen=new Set<number>([start]), coast: number[]=[start];
+  const want=Math.max(SHIP_FRONT,men*2), seen=new Set<number>([start]), coast: number[]=[start];
   for (let i=0;i<coast.length && coast.length<want;i++){
     const t=coast[i], x=t%TW, y=(t/TW)|0;
     for (const [ox,oy] of NB8){
@@ -361,7 +365,7 @@ export function landingZone(a: number, d: number, t0: number, men: number, seaId
     }
     frontier=next;
   }
-  const ships=Math.ceil(men/SHIP_CAP), cap=Math.max(1,Math.floor(coast.length/SHIP_CAP)), rows: number[]=[];
+  const ships=Math.ceil(men/SHIP_CAP), cap=Math.max(1,Math.floor(coast.length/SHIP_FRONT)), rows: number[]=[];
   for (let left=ships;left>0;left-=cap) rows.push(Math.min(cap,left));
   return { coast, zone, rows, sea:seaId, cap, safe:coast.every(t => occ[t]===a) };
 }

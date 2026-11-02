@@ -10,6 +10,7 @@ export const client = {
   lastVillageLog: -99,
   placing: 0,            // building type being placed from the buildings panel, 0 when not placing
   selected: -1,
+  landing: null as null | { target: number; base: number; units: number[]; men: number },   // choosing the coast of `target` to land `units` (men of them) on from naval base `base`
   mapIndex: 0,           // which of MAPS (game.ts) is being played
   me: '',                // the country the player chose (core/countries.ts code)
   rivals: [] as string[],   // the countries chosen to play against

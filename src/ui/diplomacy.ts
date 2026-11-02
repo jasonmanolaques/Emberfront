@@ -3,14 +3,16 @@
    war; at war, attack along the front or hold it), the call-up of the militia
    reserves, and the menu under a chip for meeting an army coming at you (ask for peace, or hold your
    border against it) ---------- */
-import { PLAYER } from '../core/constants';
+import { PLAYER, PW, TW } from '../core/constants';
 import { fmt } from '../core/util';
-import { W } from '../sim/state';
+import { W, pType, pOwner, pBurn } from '../sim/state';
+import { client } from '../client';
+import { basesOf, dockTile, shipById, SHIP_CAP, SHIP_WAIT } from '../sim/naval';
 import { queueCommand } from '../sim/sim';
-import { S_BALANCED, S_BORDER, S_RUSH, allied, atWar, available, callable, allyProblem, warProblem, defendProblem, reservesOf, reservesProblem, inCrisis, OFFER_TICKS, PRESENT, F_GATHER, F_READY, F_PUSH } from '../sim/war';
+import { S_BALANCED, S_BORDER, S_RUSH, allied, atWar, available, callable, allyProblem, warProblem, navalPlan, navalOf, defendProblem, reservesOf, reservesProblem, inCrisis, OFFER_TICKS, PRESENT, F_GATHER, F_READY, F_PUSH } from '../sim/war';
 import type { Campaign, Human } from '../sim/state';
-import { toast } from './hud';
-import { ArmyPicker, armyName } from './armies';
+import { toast, ui } from './hud';
+import { ArmyPicker, armyName, baseName } from './armies';
 import { unitAt } from '../sim/army';
 import { flagCSS } from '../render/flags';
 import { $ } from './dom';
@@ -19,6 +21,8 @@ const panel=$('diplo'), talk=$('dTalk'), warView=$('dWarView'), wars=$('wars');
 const pop=$('warPop'), popMenu=$('wpMenu'), popSend=$('wpSend');
 const picker=new ArmyPicker($('dArmies'), () => refreshWar(false)), popPicker=new ArmyPicker($('wpArmies'), () => refreshPop());
 let target=0;
+let basesHtml='';
+let navalOn=false, baseSel=-1;   // the war screen: planning a naval invasion, and from which naval base (a main plot)
 let milOn=false, milPick=-1;   // the war screen: send militia too, and how many (-1: all of them, until moved)
 let popFor=0, popCamp=-1;   // the enemy whose army the menu is about, and that army (-2: our border with them, to hold)
 let popCounter=false;       // the menu is for our land being free again: counter-attack or peace
@@ -39,7 +43,7 @@ export const diplomacyOpen = () => !panel.hidden;
 function showWarView(){
   const me=W.nations[PLAYER]; if (!me) return;
   talk.hidden=true; warView.hidden=false;
-  picker.reset();
+  picker.reset(); navalOn=false; baseSel=-1;
   milOn=!available(me).length && callable(PLAYER).length>0; milPick=-1;   // with no armies, the militia are all there is
   refreshDiplomacy(true);
 }
@@ -92,6 +96,47 @@ function refreshWar(force: boolean){
   if (k<1) why.push(armies.length || mil ? 'Choose who to send' : 'No armies and no militia: raise some with the soldier slider');
   if (attackWhy) why.push('Attack: '+attackWhy.toLowerCase());
   $('dWhy').textContent=why.join(' · ');
+  // the naval invasion: the naval bases, the ships, and what the armies chosen need
+  const bases=basesOf(me), nv=$('dNaval') as HTMLButtonElement, box=$('dNavalBox'), need=Math.ceil(soldiers/SHIP_CAP);
+  if (!bases.length) navalOn=false;
+  nv.disabled=!bases.length; nv.setAttribute('aria-pressed',String(navalOn));
+  nv.title = bases.length ? 'Land the armies chosen from the sea: ships carry them (5 men each) from a naval base to a stretch of their coast' : 'Build a naval base (in the military menu) to invade by sea';
+  box.hidden=!navalOn;
+  if (navalOn){
+    if (!bases.includes(baseSel)) baseSel=bases.slice().sort((a,b) => dist2(a)-dist2(b))[0] ?? -1;
+    $('dShips').textContent=`${me.fleet} ship${me.fleet===1 ? '' : 's'} ready`;
+    const html=bases.map(q => `<button class="army" data-q="${q}" aria-pressed="${q===baseSel}"><span class="an">${baseName(me,q)}</span><span class="at">${me.fleet} ship${me.fleet===1 ? '' : 's'} ready</span></button>`).join('');
+    if (html!==basesHtml){ basesHtml=html; $('dBases').innerHTML=html; }
+    const short=me.fleet<need;
+    $('dNavalInfo').textContent=(soldiers ? `${soldiers} soldier${soldiers===1 ? '' : 's'} need ${need} ship${need===1 ? '' : 's'} (5 men each); ${me.fleet} ready, from any harbour. ` : 'Choose the armies to send by sea. ')
+      +(m ? 'Militia cannot sail: only soldiers of barracks go. ' : '')
+      +'The ships sail from the base you pick to a line off their coast; it is a crisis until you give the word, then they land and the ships sail home to be counted again. An army landed from ships is never reinforced.';
+    const go=$('dCoast') as HTMLButtonElement;
+    go.disabled=!soldiers || short || baseSel<0;
+    go.title = !soldiers ? 'Choose the armies to send' : short ? `You need ${need} ships: build them at a naval base` : 'Then point at the stretch of their coast to land on';
+  } else basesHtml='';
+}
+/** Squared distance from a naval base to the target's capital: the nearest harbour is the one chosen to start with. */
+function dist2(q: number){
+  const D=W.nations[target]; if (!D || D.capTile<0) return 0;
+  const [bx,by]=[(q%PW)*4+8,((q/PW)|0)*4+4];
+  return (bx-D.capTile%TW)**2+(by-((D.capTile/TW)|0))**2;
+}
+/** The coast tile (click) of the target is chosen: the landing is planned, and the ships sail. */
+export function chooseCoast(t: number){
+  const L=client.landing; if (!L) return;
+  const plan=navalPlan(PLAYER,L.target,L.units,L.base,t);
+  if (typeof plan==='string'){ toast(plan); return; }
+  queueCommand({ type:'war', nation:PLAYER, target:L.target, units:L.units, naval:{ base:L.base, coast:t } });
+  cancelLanding();
+}
+export function cancelLanding(){ if (!client.landing) return; client.landing=null; ui.banner.hidden=true; }
+function startLanding(){
+  const units=picker.chosen(), soldiers=picker.count();
+  if (!target || !units.length || baseSel<0) return;
+  client.landing={ target, base:baseSel, units, men:soldiers };
+  ui.banner.textContent=`Choose the coast of ${W.nations[target].name} to land on: point at it to see the landing zone, click to send the ships · Esc to cancel`; ui.banner.hidden=false;
+  closeDiplomacy();
 }
 
 function send(){
@@ -233,6 +278,12 @@ function word(o: number, byId: Map<number, Human>){
       men++; if (h.fk===key && (h.x-h.fx)**2+(h.y-h.fy)**2<=(PRESENT*2)**2) here++;
     }
     const nm=esc(W.nations[o].name);
+    const inv=navalOf(PLAYER,o);   // a landing from the sea whose ships are not yet in
+    if (inv){
+      const lined=inv.ships.filter(id => shipById(id)?.mode===SHIP_WAIT).length;
+      if (inv.stage===0) return `<button class="fword" disabled title="Your ships are sailing to a line off their coast, the armies aboard">⚓ Sailing to ${nm} · ${lined}/${inv.ships.length} ships in line</button>`;
+      if (inCrisis(PLAYER,o)) return `<button class="fword go" data-o="${o}" data-go="1" title="Declare war: the ships put your armies ashore on their coast, row after row, and sail home">⚔ Land! · declare war</button>`;
+    }
     if (!W.wars[key] && !W.aggr[key]) return `<button class="fword" disabled title="It is not war yet: your armies hold your side of the border, and fight only if ${nm} attacks">Holding the border · ${here}/${men} in place</button>`;
     if (st===F_GATHER) return `<button class="fword" disabled title="Your armies are taking their places along the border">Gathering on the border · ${here}/${men} in place</button>`;
     if (W.wars[key] && W.occCount[key]>0) return `<button class="fword" disabled title="The enemy holds some of your land: your armies on the front take it back first, and you can neither attack nor hold the border until it is yours again">Retaking your land · ${W.occCount[key]} tiles to go</button>`;
@@ -325,6 +376,9 @@ export function setupDiplomacy(){
   $('dAlly').onclick=()=>{ if (target){ queueCommand({ type:'ally', nation:PLAYER, target }); } };
   $('dWar').onclick=showWarView;
   $('dBack').onclick=()=>{ talk.hidden=false; warView.hidden=true; refreshDiplomacy(true); };
+  $('dNaval').onclick=()=>{ navalOn=!navalOn; refreshWar(false); };
+  $('dBases').addEventListener('click',e => { const b=(e.target as HTMLElement).closest('button.army') as HTMLButtonElement | null; if (b){ baseSel=+b.dataset.q!; basesHtml=''; refreshWar(false); } });
+  $('dCoast').onclick=startLanding;
   $('dMilOn').onclick=()=>{ milOn=!milOn; refreshWar(false); };
   $('dMil').oninput=e=>{ milPick=+(e.target as HTMLInputElement).value; refreshWar(false); };
   $('dAttack').onclick=()=>send();

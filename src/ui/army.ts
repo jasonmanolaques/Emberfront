@@ -5,7 +5,7 @@ import { PLAYER, PS, B_BARRACKS } from '../core/constants';
 import { W, pType, pOwner } from '../sim/state';
 import { unitAt, units, armorWanted, TIER_NAME, UNIT_SIZE } from '../sim/army';
 import { R_INFANTRY } from '../sim/research';
-import { RANKS, F_GATHER, F_READY, F_PUSH } from '../sim/war';
+import { RANKS, navalOf, F_GATHER, F_READY, F_PUSH } from '../sim/war';
 import { drawIcon } from '../render/sprites';
 import { styleOf } from '../render/style';
 import { armyName } from './armies';
@@ -32,7 +32,7 @@ function fieldReport(key: number){
   const c=W.campaigns.find(c => c.a===PLAYER && c.unit===key && c.phase<2);
   if (!c) return 'At home';
   const st=W.offensive[c.a*W.M+c.d];
-  const what=st===F_GATHER ? `gathering on the front with ${nm(c.d)}`
+  const what=c.naval>=0 && navalOf(c.a,c.d) ? `sailing to the coast of ${nm(c.d)}, aboard ship` : st===F_GATHER ? `gathering on the front with ${nm(c.d)}`
     : st===F_READY ? `ready on the front with ${nm(c.d)}, waiting for your word`
     : st===F_PUSH ? `attacking ${nm(c.d)} along the front`
     : `holding the front against ${nm(c.d)}`;
