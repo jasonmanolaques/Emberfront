@@ -1,9 +1,9 @@
 // Goods: nothing lies on the map to gather, the gathering buildings make it all, the first of each free.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_FARM } from '../src/core/constants';
+import { TW, TH, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_FARM, B_MINTER, B_GUILD } from '../src/core/constants';
 import { W, pType } from '../src/sim/state';
 import { newWorld, startMatch, tick } from '../src/sim/sim';
-import { build, placeProblem, structureOf, costFor, canAfford, FARM_RISE } from '../src/sim/buildings';
+import { build, placeProblem, structureOf, costFor, canAfford, RISE } from '../src/sim/buildings';
 import { TASK_REST } from '../src/sim/population';
 
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
@@ -38,8 +38,9 @@ describe('goods with nothing on the map to gather', () => {
       expect(canAfford(me(),structureOf(type)!)).toBe(true);   // with an empty stockpile
       expect(costFor(me(),structureOf(type)!)).toEqual([0,0,0]);
       expect(place(type)).toEqual([0,0,0]);
-      expect(costFor(me(),structureOf(type)!)).toEqual(structureOf(type)!.cost);
-      expect(canAfford(me(),structureOf(type)!)).toBe(false);   // the second is paid for
+      const base=structureOf(type)!.cost;
+      expect(costFor(me(),structureOf(type)!)).toEqual(base.map(c => c ? Math.ceil(c*1.1-1e-9) : 0));   // the second costs a tenth more
+      expect(canAfford(me(),structureOf(type)!)).toBe(false);   // and is paid for
     }
   });
   it('fill the stockpile through the buildings alone', () => {
@@ -48,14 +49,17 @@ describe('goods with nothing on the map to gather', () => {
     run(305);
     expect(me().stock[0]).toBe(w0+2);   // 2 wood every 30 seconds
   });
-  it('make each farm 2% dearer to the next one, rounded up', () => {
+  it('make each farm 5% dearer to the next one, and others 10%, rounded up', () => {
     start(12345, 0);
     const base=structureOf(B_FARM)!.cost;
-    expect(FARM_RISE).toBe(0.02);
+    expect(RISE[B_FARM]).toBe(0.05);
     expect(costFor(me(),structureOf(B_FARM)!)).toEqual(base);
     me().farms=10;
-    expect(costFor(me(),structureOf(B_FARM)!)).toEqual(base.map(c => c ? Math.ceil(c*1.2-1e-9) : 0));
-    me().farms=50;
-    expect(costFor(me(),structureOf(B_FARM)!)).toEqual(base.map(c => c*2));   // doubled
+    expect(costFor(me(),structureOf(B_FARM)!)).toEqual(base.map(c => c ? Math.ceil(c*1.5-1e-9) : 0));   // 10 farms: half as much again
+    me().farms=20;
+    expect(costFor(me(),structureOf(B_FARM)!)).toEqual(base.map(c => c*2));   // 20 farms: double
+    me().minters=5; me().guilds=3;
+    expect(costFor(me(),structureOf(B_MINTER)!)).toEqual(structureOf(B_MINTER)!.cost.map(c => Math.ceil(c*1.5-1e-9)));
+    expect(costFor(me(),structureOf(B_GUILD)!)).toEqual(structureOf(B_GUILD)!.cost.map(c => Math.ceil(c*1.3-1e-9)));
   });
 });

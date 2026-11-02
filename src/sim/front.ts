@@ -41,9 +41,10 @@ export function originOf(d: number): [number, number] {
 /** Works out the front of a's attack on d. The castle can't be taken, only broken: the line runs
     round it, until the castle stands cut off with no free ground of its own beside it (or is all that
     is left), and then its walls are part of the front too, ringed by men who break it. */
-export function lineOf(a: number, d: number): Front {
+export function lineOf(a: number, d: number, original=false): Front {
   const D=W.nations[d], A=W.nations[a], tw=TW, th=TH, own=owner, oc=occ, all: number[]=[];
-  const held=(k: number) => (own[k]===a && !oc[k]) || (own[k]===d && oc[k]===a);
+  // (the original border: only a's own land counts as held, however much of d's it occupies; d's ground, occupied or not, is the line's)
+  const held=(k: number) => original ? own[k]===a && !oc[k] : (own[k]===a && !oc[k]) || (own[k]===d && oc[k]===a);
   // (only round d's land, and a's that d occupies: every tile of a kingdom's lies inside its box)
   const scan=(K: typeof D, mine: (t: number) => boolean) => {
     for (let y=Math.max(0,K.y0);y<=Math.min(th-1,K.y1);y++) for (let x=Math.max(0,K.x0), t=y*tw+x;x<=Math.min(tw-1,K.x1);x++,t++){
@@ -51,8 +52,8 @@ export function lineOf(a: number, d: number): Front {
       if ((x>0 && held(t-1)) || (x<tw-1 && held(t+1)) || (y>0 && held(t-tw)) || (y<th-1 && held(t+tw))) all.push(t);
     }
   };
-  scan(D, t => own[t]===d && !oc[t]);
-  if (W.occCount[a*W.M+d]>0) scan(A, t => own[t]===a && oc[t]===d);
+  scan(D, t => own[t]===d && (original || !oc[t]));
+  if (!original && W.occCount[a*W.M+d]>0) scan(A, t => own[t]===a && oc[t]===d);
   const open=all.filter(t => !underCastle(d,t)), walls=all.filter(t => underCastle(d,t));
   const island=walls.length>0 && D.capTile>=0 && (() => {   // nothing of theirs left beside the castle but the castle
     const q=D.capPlot, x0=(q%PW)*4, y0=((q/PW)|0)*4;

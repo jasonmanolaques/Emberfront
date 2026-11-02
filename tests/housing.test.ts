@@ -142,7 +142,7 @@ describe('tax', () => {
     tick();
     expect(n.income).toBeCloseTo((TAX_PER_VILLAGER*n.taxpayers+LAND_TAX*n.tiles)*(1+0.1*n.minters), 9);
     // two minters on top
-    for (let k=0;k<2;k++){ let q=-1; for (let p=0;p<NP && q<0;p++) if (!plotProblem(n,p)) q=p; n.stock=[5,5,5]; build(n,q,B_MINTER); }
+    for (let k=0;k<2;k++){ let q=-1; for (let p=0;p<NP && q<0;p++) if (!plotProblem(n,p)) q=p; n.stock=[9,9,9]; build(n,q,B_MINTER); }   // (the second costs a tenth more)
     tick();
     expect(n.income).toBeCloseTo((TAX_PER_VILLAGER*n.taxpayers+LAND_TAX*n.tiles)*1.2, 9);
     void B_EMPTY;

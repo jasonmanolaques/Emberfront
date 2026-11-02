@@ -44,8 +44,9 @@ function word(c: Campaign): [string, boolean, boolean, string] {
   const key=c.a*W.M+c.d, st=W.offensive[key];
   if (!W.wars[key] && !W.aggr[key]) return ['Holding the border', false, false, `Holding your side of the border against ${foe}. It is not war: they fight only if ${foe} attacks.`];
   if (!W.wars[key]) return ['Attack · declare war', true, true, st===F_GATHER ? `Massing on the border of ${foe}: a crisis, not yet war. The word starts the war.` : `In place on the border of ${foe}. The word starts the war; or call the crisis off from the war bar.`];
-  if (st===F_PUSH) return ['Hold the front', false, true, `Attacking ${foe} all along the front. Hold, and it stands where it is.`];
-  if (st===F_HOLD) return [W.aggr[key] ? 'Attack' : 'Counter-attack', true, true, `Holding the front against ${foe}.`];
+  if (W.occCount[key]>0) return ['Retaking your land', false, false, `${foe} holds some of your land: your armies take it back first, and neither attack nor hold the border until it is yours.`];
+  if (st===F_PUSH) return ['Hold the border', false, true, `Attacking ${foe} all along the front. Hold the border, and it falls back to the border as it was and masses there with the new recruits, for a second wave.`];
+  if (st===F_HOLD) return [W.aggr[key] ? 'Attack again' : 'Counter-attack', true, true, `Holding the border against ${foe}: massing, with the ground it took still occupied. Attack again goes in as a second wave.`];
   if (st===F_READY) return [W.aggr[key] ? 'Attack' : 'Counter-attack', true, true, `In place on the border of ${foe}: give the word to attack.`];
   return ['Attack', true, true, `Gathering on the border of ${foe}. You can give the word before everyone is in place.`];
 }

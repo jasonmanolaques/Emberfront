@@ -117,28 +117,38 @@ export const cover = (q: number) => rect(q, dims(q));
 export const gatherTier = (q: number) => pSpan[q]+1;
 // production buildings: what they make every PRODUCE_TICKS, by type: [good, amount by tier]
 export const PRODUCE_TICKS = 300;   // 30 s
-export const PRODUCES: Record<number, [number, number[]]> = { [B_PLANTATION]: [0,[0,2,5,15]], [B_QUARRY]: [1,[0,1,3,10]], [B_COPPERMINE]: [2,[0,1,3,10]] };
+export const PRODUCES: Record<number, [number, number[]]> = { [B_PLANTATION]: [0,[0,2,5,15]], [B_QUARRY]: [1,[0,2,5,15]], [B_COPPERMINE]: [2,[0,1,3,10]] };
 export const STRUCTURES: Structure[] = [
-  { type: B_FARM,     name: 'Farm',        cost: [5,2,0], info: 'Each farm brings new villagers 5% sooner, and makes the next farm 2% dearer.' },
+  { type: B_FARM,     name: 'Farm',        cost: [5,2,0], info: 'Each farm brings new villagers 5% sooner, and makes the next farm 5% dearer.' },
   { type: B_BARRACKS, name: 'Barracks',    cost: [5,5,0], info: 'Trains soldiers and houses an army of 5, with 5 armour racks. Barracks side by side join into one bigger army: four together march as one army of 20. Soldiers without room patrol the city and only defend. Click a barracks to see its army.' },
   { type: B_TOWER,    name: 'Watchtower',  cost: [2,5,1], info: 'While you are at war, shoots enemy soldiers that come near, and their villagers. Click a placed tower to call up to 5 soldiers to guard it.' },
-  { type: B_MINTER,   name: 'Coin minter', cost: [5,5,5], info: 'Raises your gold income by 10%.' },
-  { type: B_PLANTATION, name: 'Plantation', cost: [10,0,0], info: 'Saplings growing into trees: +2 wood every 30 seconds. With resource gathering research, two side by side join (+5), then four in a square (+15).' },
-  { type: B_QUARRY,     name: 'Stone quarry', cost: [3,5,0], info: 'A pit with a pulley hauling stone up: +1 stone every 30 seconds. With resource gathering research, two side by side join (+3), then four in a square (+10).' },
-  { type: B_COPPERMINE, name: 'Copper mine', cost: [10,10,0], info: 'A shaft into the rock with the furnace glowing inside: +1 copper every 30 seconds. With resource gathering research, two side by side join (+3), then four in a square (+10).' },
+  { type: B_MINTER,   name: 'Coin minter', cost: [5,5,5], info: 'Raises your gold income by 10%. Each coin minter you own makes the next 10% dearer.' },
+  { type: B_PLANTATION, name: 'Plantation', cost: [10,0,0], info: 'Saplings growing into trees: +2 wood every 30 seconds. With resource gathering research, two side by side join (+5), then four in a square (+15). Each plantation you own makes the next 10% dearer.' },
+  { type: B_QUARRY,     name: 'Stone quarry', cost: [5,10,0], info: 'A pit with a pulley hauling stone up: +2 stone every 30 seconds. With resource gathering research, two side by side join (+5), then four in a square (+15). Each quarry you own makes the next 10% dearer.' },
+  { type: B_COPPERMINE, name: 'Copper mine', cost: [10,10,0], info: 'A shaft into the rock with the furnace glowing inside: +1 copper every 30 seconds. With resource gathering research, two side by side join (+3), then four in a square (+10). Each copper mine you own makes the next 10% dearer.' },
   { type: B_RESEARCH,   name: 'Research station', cost: [15,15,10], info: 'Scholars earn 1 research point a second; more stations, faster research. Click a placed station to choose what to study.' },
-  { type: B_GUILD,      name: 'Builders guild', cost: [10,20,5], info: 'One villager becomes its builder. As research allows, he rebuilds watchtowers (10 stone and 4 wood, then 20 and 8) and turns hovels into stone houses and manors (3 wood and 3 stone a tier), spending what the city investment slider lets him. Takes 2×1 plots.' },
+  { type: B_GUILD,      name: 'Builders guild', cost: [10,20,5], info: 'One villager becomes its builder. As research allows, he rebuilds watchtowers (10 stone and 4 wood, then 20 and 8) and turns hovels into stone houses and manors (3 wood and 3 stone a tier), spending what the city investment slider lets him. Takes 2×1 plots. Each guild you own makes the next 10% dearer.' },
   { type: B_SMITHY,     name: 'Blacksmith', cost: [10,15,5], info: 'One villager becomes its smith. With infantry research he fetches 5 copper from the castle, forges armour for 5 seconds and carries it to the barracks: reinforced armour for every rack, then heavy armour.' },
 ];
 export const structureOf = (type: number) => STRUCTURES.find(s => s.type===type);
 const countOf = (n: Nation, ty: number) => ty===B_PLANTATION ? n.plantations : ty===B_QUARRY ? n.quarries : n.copperMines;
-export const FARM_RISE = 0.02;   // each farm a kingdom has makes the next 2% dearer
+/** How much dearer each building of a kind its kingdom already has makes the next one (a share of the base price). */
+export const RISE: Record<number, number> = { [B_FARM]: 0.05, [B_MINTER]: 0.1, [B_GUILD]: 0.1, [B_PLANTATION]: 0.1, [B_QUARRY]: 0.1, [B_COPPERMINE]: 0.1 };
+/** How many of kingdom n's buildings of `type` there are for pricing: gathering buildings count by the plots they cover (four joined are four). */
+function ownedFor(n: Nation, type: number){
+  if (type===B_FARM) return n.farms;
+  if (type===B_MINTER) return n.minters;
+  if (type===B_GUILD) return n.guilds;
+  let k=0; for (const q of n.blds) if (pType[q]===type) k+=[1,2,4][pSpan[q]] ?? 1;
+  return Math.max(k,countOf(n,type));
+}
 /** What a structure costs kingdom n: the first plantation, quarry and copper mine it builds are
-    free (the map has nothing to gather, so they start its stockpile), and each farm it owns makes
-    the next one 2% dearer. */
+    free (the map has nothing to gather, so they start its stockpile), and each building of a kind it
+    owns makes the next one dearer (RISE: 5% of the base price for farms, 10% for the others). */
 export function costFor(n: Nation, s: Structure): number[] {
   if (isGatherer(s.type) && countOf(n,s.type)===0) return [0,0,0];
-  if (s.type===B_FARM) return s.cost.map(c => c ? Math.ceil(c*(1+FARM_RISE*n.farms)-1e-9) : 0);
+  const rise=RISE[s.type];
+  if (rise) { const k=ownedFor(n,s.type); return s.cost.map(c => c ? Math.ceil(c*(1+rise*k)-1e-9) : 0); }
   return s.cost;
 }
 export const canAfford = (n: Nation, s: Structure) => costFor(n,s).every((c,g) => n.stock[g]>=c);

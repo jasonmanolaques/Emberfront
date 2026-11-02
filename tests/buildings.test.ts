@@ -47,7 +47,7 @@ describe('building costs and placement', () => {
     expect(structureOf(B_TOWER)!.cost).toEqual([2,5,1]);
     expect(structureOf(B_MINTER)!.cost).toEqual([5,5,5]);
     expect(structureOf(B_PLANTATION)!.cost).toEqual([10,0,0]);
-    expect(structureOf(B_QUARRY)!.cost).toEqual([3,5,0]);
+    expect(structureOf(B_QUARRY)!.cost).toEqual([5,10,0]);
     expect(structureOf(B_COPPERMINE)!.cost).toEqual([10,10,0]);
     expect(structureOf(B_RESEARCH)!.cost).toEqual([15,15,10]);
     expect(structureOf(B_GUILD)!.cost).toEqual([10,20,5]);

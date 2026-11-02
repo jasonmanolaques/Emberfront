@@ -63,12 +63,12 @@ describe('production buildings', () => {
     }
   });
 
-  it('make 2 wood, 1 stone and 1 copper every 30 seconds at tier 1', () => {
+  it('make 2 wood, 2 stone and 1 copper every 30 seconds at tier 1', () => {
     emptyKingdom();
     for (const type of [B_PLANTATION, B_QUARRY, B_COPPERMINE]) put(type,spot(type));
     me().stock=[0,0,0]; run(PRODUCE_TICKS+1);
-    expect(me().stock).toEqual([2,1,1]);
-    expect(Object.values(PRODUCES).map(p => p[1].slice(1))).toEqual([[2,5,15],[1,3,10],[1,3,10]]);
+    expect(me().stock).toEqual([2,2,1]);
+    expect(Object.values(PRODUCES).map(p => p[1].slice(1))).toEqual([[2,5,15],[2,5,15],[1,3,10]]);
   });
 
   it('stand apart side by side until resource gathering reaches tier 2; then join in pairs, making more than the two did', () => {
@@ -96,7 +96,7 @@ describe('production buildings', () => {
     for (const k of [q+1,q+PW,q+PW+1]) expect([pType[k], pMain[k]]).toEqual([B_PART, q]);
     expect(gatherTier(q)).toBe(3);
     const made=yields(B_QUARRY); run(PRODUCE_TICKS+2);
-    expect(made).toEqual([10]);
+    expect(made).toEqual([15]);
     listen({ produced: () => {} });
   });
 
@@ -109,13 +109,14 @@ describe('production buildings', () => {
 
   it('cost what the design says', () => {
     emptyKingdom();
-    for (const [type, cost] of [[B_PLANTATION,[10,0,0]],[B_QUARRY,[3,5,0]],[B_COPPERMINE,[10,10,0]]] as [number, number[]][]){
+    for (const [type, cost] of [[B_PLANTATION,[10,0,0]],[B_QUARRY,[5,10,0]],[B_COPPERMINE,[10,10,0]]] as [number, number[]][]){
       me().stock=[0,0,0];
       expect(build(me(), spot(type), type)).toBe(true);   // the first of each is free
       expect(me().stock).toEqual([0,0,0]);
-      me().stock=cost.map(c => c ? c-1 : 0);
+      const next=cost.map(c => c ? Math.ceil(c*1.1-1e-9) : 0);   // each one owned makes the next a tenth dearer
+      me().stock=next.map(c => c ? c-1 : 0);
       expect(build(me(), spot(type), type)).toBe(false);   // the next, one short of each
-      me().stock=[...cost];
+      me().stock=[...next];
       expect(build(me(), spot(type), type)).toBe(true);
       expect(me().stock).toEqual([0,0,0]);
     }

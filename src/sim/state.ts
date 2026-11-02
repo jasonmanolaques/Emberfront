@@ -17,6 +17,8 @@ export interface Nation {
   sumX: number; sumY: number; ltx: number; lty: number; peak: number;   // ltx/lty: where the kingdom's label sits
   expandAt: number; attackAt: number; ratio: number; nextThink: number;  // bot personality
   nextWar: number; nextOffer: number;   // bots: sim time before which they start no campaign, offer no peace
+  mass: Map<number, { t: number; men: number }>;   // bots: the fronts they hold at the border to mass a second wave (by enemy): when, and the men left
+  waved: Map<number, number>;        // bots: when the last second wave went in (by enemy)
   nextWave: number;                  // bots: sim time before which they send no more armies to a war under way
   hungry: number;                    // bots: sim time their beggar problem began (0: none)
   x0: number; y0: number; x1: number; y1: number;   // a box round every tile it has ever held (so its borders are found without searching the whole map)

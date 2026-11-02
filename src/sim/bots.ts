@@ -11,6 +11,8 @@ import { allied, atWar, ready, available, declare, intercept, routeOpen, raidTar
 
 const WALL = -1;   // a tower of the town wall, in a wishlist
 const STALE = 1800;   // ticks a war's border may stand still (3 minutes) before a bot thinks of ending it
+const STUCK = 600;   // ticks an attack may make no headway (a minute) before a bot pulls back to the border to mass a second wave
+const MASS_WAIT = 1500;   // ...and the longest it waits there for the recruits
 const LOPSIDED = 2;   // ...when one side has lost this many times the other's dead (and enough have died to tell)
 /** Is n losing people to homelessness: a tenth of them or more without a home (on their way to
     begging, and to dying of want)? */
@@ -57,7 +59,7 @@ function wishlist(n: Nation, exposed: boolean){
   if (exposed && outposts < 1+(n.tiles/900|0)) w.push(B_TOWER);
   // farms bring people faster: none while beggars crowd the streets; with land lying empty, more,
   // grown together into one big farmland
-  // (farms are the foundation: more people, more taxes. Each is 2% dearer than the last, so the want is a steady one)
+  // (farms are the foundation: more people, more taxes. Each is 5% dearer than the last, so the want is a steady one)
   if (!hungry && n.farms < 3+(n.tiles/250|0)) w.push(B_FARM);
   else if (!n.homeless && n.beds>=n.villagers+n.soldiers && n.plots.length>=12 && n.farms<3+(n.tiles/120|0) && emptyPlots(n)>n.plots.length*0.3) w.push(B_FARM);   // (only while everyone has a home)
   if (wallDue(n,exposed)){
@@ -377,10 +379,20 @@ function botWar(n: Nation){
   // on the front: a war it started, hold while the line is badly outnumbered by those facing it and
   // attack again once it is not; defending, hold, and strike back once it clearly has the upper hand
   for (let o=1;o<M;o++){
-    const st=W.offensive[id*M+o]; if ((st!==F_PUSH && st!==F_HOLD) || !W.wars[id*M+o]) continue;
-    const mine=menOn(id,o), theirs=facing(id,o), aggr=!!W.aggr[id*M+o];
+    const st=W.offensive[id*M+o]; if ((st!==F_PUSH && st!==F_HOLD) || !W.wars[id*M+o]) { n.mass.delete(o); continue; }
+    const mine=menOn(id,o), theirs=facing(id,o), aggr=!!W.aggr[id*M+o], m=n.mass.get(o);
+    if (m){
+      // massing a second wave at the border: in again once the recruits have come (or it has waited long enough)
+      if (st!==F_HOLD) n.mass.delete(o);
+      else if ((mine>=m.men+Math.max(3,ready(n)) && mine>=theirs*0.8) || W.tickN-m.t>MASS_WAIT){ n.mass.delete(o); n.waved.set(o,W.tickN); setOffensive(id,o,true); }
+      continue;
+    }
     if (st===F_PUSH && mine<theirs*(aggr ? 0.5 : 0.8)) setOffensive(id,o,false);
     else if (st===F_HOLD && mine>=Math.max(3,theirs*(aggr ? 0.8 : 1.3))) setOffensive(id,o,true);
+    // an attack that has stuck with ground taken, and new soldiers to send: back to the border, to go in again together
+    else if (st===F_PUSH && aggr && W.occCount[o*M+id]>0 && stalled(id,o)>=STUCK && stalled(id,o)<STALE && mine>=3 && ready(n)>=3 && W.tickN-(n.waved.get(o) ?? -1e9)>STUCK*2){
+      if (setOffensive(id,o,false)) n.mass.set(o,{ t:W.tickN, men:mine });
+    }
   }
   let busy=false;
   for (const c of W.campaigns){

@@ -259,9 +259,11 @@ function word(o: number, byId: Map<number, Human>){
     const nm=esc(W.nations[o].name);
     if (!W.wars[key] && !W.aggr[key]) return `<button class="fword" disabled title="It is not war yet: your armies hold your side of the border, and fight only if ${nm} attacks">Holding the border · ${here}/${men} in place</button>`;
     if (st===F_GATHER) return `<button class="fword" disabled title="Your armies are taking their places along the border">Gathering on the border · ${here}/${men} in place</button>`;
+    if (W.wars[key] && W.occCount[key]>0) return `<button class="fword" disabled title="The enemy holds some of your land: your armies on the front take it back first, and you can neither attack nor hold the border until it is yours again">Retaking your land · ${W.occCount[key]} tiles to go</button>`;
     if (inCrisis(PLAYER,o)) return `<button class="fword go" data-o="${o}" data-go="1" title="Declare war: your armies push into ${nm} all along the front">⚔ Attack! · declare war</button>`;
-    if (st===F_PUSH) return `<button class="fword hold" data-o="${o}" data-go="" title="Your armies stop and hold the ground they have taken">❚❚ Hold the front</button>`;
-    const label=!W.aggr[key] ? 'Counter-attack' : st===F_READY ? 'Attack!' : 'Attack again';   // (defending, we strike back: our own land first)
+    const taken=W.occCount[o*M+PLAYER]>0;   // ground of theirs that is occupied
+    if (st===F_PUSH) return `<button class="fword hold" data-o="${o}" data-go="" title="Your armies fall back to the border as it was before you took ground, and mass there with every new recruit, for a second wave. The land taken stays occupied (until they retake it). Press attack to go again.">❚❚ Hold the border</button>`;
+    const label=!W.aggr[key] ? 'Counter-attack' : st===F_READY ? 'Attack!' : taken ? 'Attack again · second wave' : 'Attack again';   // (defending, we strike back: our own land first)
     return `<button class="fword go" data-o="${o}" data-go="1" title="Your armies push into ${nm} all along the front${W.aggr[key] ? '' : ', taking back your own land first'}">⚔ ${label}</button>`;
   }
   const raid=mine.find(c => c.raid && !c.go);

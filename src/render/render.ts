@@ -21,7 +21,7 @@ import { H_SOLDIER, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, TASK_F
 import { units, unitLabel } from '../sim/army';
 import { chatter, drawSpeech } from './speech';
 import { paintSmallFlag, flagImage } from './flags';
-import { allied, atWar, HIT_TICKS, RANKS } from '../sim/war';
+import { allied, atWar, HIT_TICKS, RANKS, frontLines, F_PUSH, F_HOLD } from '../sim/war';
 
 const PLANK='#d09a58';
 const INK='rgba(30,20,14,0.9)';
@@ -224,6 +224,24 @@ function drawLoot(bx: number, fy: number){
   ctx.fillStyle='#ffd23f'; ctx.fillRect(x+1,y,2,1);
 }
 
+/** The general front of each war, so both sides can see where the line stands: the tiles of the line,
+    in the colour of the kingdom that holds it, brighter and pulsing while it attacks, steady while
+    it holds the border. */
+function drawFronts(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
+  const fronts=frontLines(); if (!fronts.length) return;
+  const pulse=reduceMotion ? 0.6 : 0.5+0.5*Math.sin(now/260);
+  for (const f of fronts){
+    const hex=W.nations[f.a].hex, push=f.state===F_PUSH, hold=f.state===F_HOLD;
+    // a bright core with a dark edge, so it reads on any ground
+    ctx.fillStyle='rgba(14,10,8,0.55)';
+    for (const t of f.tiles){ const x=(t%TW)*RS, y=((t/TW)|0)*RS; if (x<vx0-RS||y<vy0-RS||x>vx1||y>vy1) continue; ctx.fillRect(x-1,y-1,RS+2,RS+2); }
+    ctx.globalAlpha=push ? 0.55+0.4*pulse : hold ? 0.5 : 0.65;
+    ctx.fillStyle=hex;
+    for (const t of f.tiles){ const x=(t%TW)*RS, y=((t/TW)|0)*RS; if (x<vx0-RS||y<vy0-RS||x>vx1||y>vy1) continue; ctx.fillRect(x,y,RS,RS); }
+    ctx.globalAlpha=1;
+  }
+}
+
 /** Each raid's and intercept's banner on a pole, in its kingdom's colours; a raid flies a black mark.
     (An army on a front has none: its leader carries its standard.) */
 function drawBanners(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
@@ -305,6 +323,8 @@ export function render(now: number, dt: number){
       const [bw,bh]=dims(q); drawWorking(ctx,ty,x*PS,y*PS,pTimer[q]/PRODUCE_TICKS,reduceMotion?0:now,bw,bh);
     }
   }
+
+  drawFronts(now,vx0,vy0,vx1,vy1);
 
   // people and armies, once close enough to tell them apart
   if (zs>=1.5){ drawFallen(now,vx0,vy0,vx1,vy1); drawSelection(now); drawPeople(now,vx0,vy0,vx1,vy1); drawBanners(now,vx0,vy0,vx1,vy1); }

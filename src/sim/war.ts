@@ -80,7 +80,8 @@ export const M_MARCH=0, M_HOLD=1, M_ASSAULT=2;
 // the word, attacking, or holding where it stands
 export const F_GATHER=0, F_READY=1, F_PUSH=2, F_HOLD=3;
 const REFRONT = 5;                    // ticks between working out each front and everyone's place on it
-export const ADVANCE_TICKS = 10;      // ticks between strips of ground taken by a front at full strength (1 s)
+export const ADVANCE_TICKS = 20;      // ticks between strips of ground taken by a front at full strength (2 s: an invasion is slow)
+export const INVADE_SLOW = 0.5;              // an army's pace on enemy ground it has not yet occupied
 export const DENSE = 4;               // tiles of front each man of the front rank pushes at full speed; a thinner line is slower
 export const PRESENT = 6;             // pixels from his place a man counts as there
 export const GATHER_AT = 0.9;         // the offensive is ready when this share of its men are in place...
@@ -138,6 +139,7 @@ interface Offensive {
   depth: Field | null;            // how far each tile of the defender's is from the line as the attack began (STEP a tile)
   since: number;                  // tick it began
   noFront: number;                // ticks it has had no front
+  liberating: boolean;            // its own land is occupied by the enemy: its armies take it back first, and may not attack
   men: Human[]; camps: Campaign[];   // its men (leaders aside) and armies, this tick
 }
 const offensives = new Map<number, Offensive>();
@@ -482,7 +484,7 @@ function newCampaign(a: number, d: number, raid: boolean, target: number, size: 
 function offensiveOf(a: number, d: number){
   const key=a*W.M+d;
   let o=offensives.get(key);
-  if (!o){ o={ key, a, d, F:null, walk:new Field(), k:0, progress:0, strips:0, depth:null, since:W.tickN, noFront:0, men:[], camps:[] }; offensives.set(key,o); W.offensive[key]=F_GATHER; }
+  if (!o){ o={ key, a, d, F:null, walk:new Field(), k:0, progress:0, strips:0, depth:null, since:W.tickN, noFront:0, liberating:false, men:[], camps:[] }; offensives.set(key,o); W.offensive[key]=F_GATHER; }
   return o;
 }
 /** Works out the way and calls the soldiers to form up in front of their barracks (or, if the way
@@ -798,6 +800,7 @@ function tell(c: Campaign, kind: string){
 /** Why a can't give the word to attack d (`go`) or to hold, or null if it can. */
 export function offensiveProblem(a: number, d: number, go: boolean): string | null {
   const key=a*W.M+d, st=W.offensive[key], front=offensives.has(key);
+  if (W.wars[key] && W.occCount[a*W.M+d]>0 && front) return 'Your land is occupied: your armies are taking it back first';   // no counter-charge, and no holding, until it is
   if (go && front && !W.wars[key] && !W.aggr[key]) return 'They have not attacked: your armies hold the border';
   if (go) return (front && st!==F_PUSH) || W.campaigns.some(c => c.a===a && c.d===d && c.raid && c.phase<2 && !c.go) ? null : 'No army waits for the word';
   return front && st===F_PUSH ? null : 'No offensive under way';
@@ -808,10 +811,11 @@ export function offensiveProblem(a: number, d: number, go: boolean): string | nu
 export function setOffensive(a: number, d: number, go: boolean){
   const key=a*W.M+d, o=offensives.get(key), st=W.offensive[key];
   let done=false;
+  if (o && W.wars[key] && W.occCount[a*W.M+d]>0) return false;   // its land is occupied: it takes it back first
   if (go) for (const c of W.campaigns) if (c.a===a && c.d===d && c.raid && c.phase<2 && !c.go){ c.go=true; done=true; }
   if (o && go && !W.wars[key]) return escalate(a,d) || done;   // in a crisis, the word is war (and only the side that massed first can give it)
   if (o && (go ? st!==F_PUSH : st===F_PUSH)){
-    const now=go ? F_PUSH : F_HOLD; W.offensive[key]=now; done=true;
+    const now=go ? F_PUSH : F_HOLD; W.offensive[key]=now; done=true; o.F=null;   // (the front is laid out again: the original border while holding, the line as it stands to attack)
     for (const c of W.campaigns) if (c.front && c.a===a && c.d===d && c.phase<2){ c.mode=now; tell(c, go ? 'assault' : 'hold'); }
   }
   return done;
@@ -860,6 +864,11 @@ function runOffensives(){
     o.noFront=0;
     let st=W.offensive[key];
     const war=!!W.wars[key];
+    // its own land taken by the enemy: it comes back first, the armies on the front pushing it out (and nothing else: no counter-charge until then)
+    const lib=war && W.occCount[o.a*M+o.d]>0;
+    if (lib && st!==F_GATHER && st!==F_PUSH){ st=W.offensive[key]=F_PUSH; o.F=null; redeploy(o); for (const c of cs){ c.mode=st; tell(c,'assault'); } }
+    else if (!lib && o.liberating && st===F_PUSH && !W.aggr[key]){ st=W.offensive[key]=F_HOLD; o.F=null; redeploy(o); for (const c of cs){ c.mode=st; tell(c,'hold'); } }   // (its land is back: it holds, and may strike back)
+    o.liberating=lib;
     if (st===F_GATHER){
       let present=0; for (const h of o.men) if (h.fk===key && (h.x-h.fx)**2+(h.y-h.fy)**2<=PRESENT*PRESENT) present++;
       if (present && (present>=o.men.length*GATHER_AT || now-o.since>=GATHER_MAX)){ st=W.offensive[key]=F_READY; for (const c of cs) tell(c, war || W.aggr[key] ? 'ready' : 'guard'); }
@@ -940,7 +949,8 @@ function endOffensive(o: Offensive){
 /** Works out offensive o's front again and gives its men their places on it, each leader his behind
     the middle of his men, a rank behind the last, and (every other time) the way there. */
 function redeploy(o: Offensive){
-  const F=o.F=lineOf(o.a,o.d), key=o.key, ok=standsFor(o.a,o.d);
+  // holding the border with ground taken: the armies fall back to the border as it was, and mass there
+  const F=o.F=lineOf(o.a,o.d,W.offensive[o.key]===F_HOLD && !o.liberating && W.occCount[o.d*W.M+o.a]>0), key=o.key, ok=standsFor(o.a,o.d);
   if (!F.tiles.length){ o.k=0; return; }
   o.k=deploy(F,o.men,1,key,ok);
   const srcs: number[]=[];
@@ -979,7 +989,9 @@ function push(o: Offensive){
   // what the stance leaves alone: a border capture keeps out of the reach of massed watchtowers; a
   // rush keeps to the way to the capital, and the ground about the capital
   let allowed: ((t: number) => boolean) | null=null;
-  if (stance===S_BORDER){
+  const lib=o.liberating;
+  if (lib) allowed=t => owner[t]===o.a;   // only its own land, taken back
+  else if (stance===S_BORDER){
     const R=(TOWER_RANGE+8)/2, mass=massedTowers(o.d).map(q => [((q%PW)*8+4)/2, (((q/PW)|0)*8+4)/2]);   // (in tiles)
     if (mass.length) allowed=t => { const x=t%TW, y=(t/TW)|0; for (const [mx,my] of mass) if ((x-mx)**2+(y-my)**2<=R*R) return false; return true; };
   } else if (stance===S_RUSH){
@@ -1179,6 +1191,7 @@ export function updateWar(){
   }
   fighting.clear();
   for (const h of H) if (h.foe>=0 && h.hp>0) fighting.set(h.foe,(fighting.get(h.foe) ?? 0)+1);
+  if (W.tickN%20===7) returnIslands();
   runOffensives();
   if (now%REFRONT===2) deployGuards();
   posts=N.map(n => warring[n.id] ? barracksOf(n).map(frontOf) : []);
@@ -1324,6 +1337,45 @@ function liberate(t: number){
   W.occCount[owner[t]*W.M+prev]--; occ[t]=0;
   on.occupied(t);
 }
+/** There is one general front between two kingdoms at war, and the ground a has taken of d's is all
+    one piece joined to a's own land. A pocket of it cut off from that (by the defenders retaking the
+    ground between) goes back to d at once. */
+function returnIslands(){
+  const M=W.M, N=W.nations;
+  for (let d=1;d<M;d++){
+    const D=N[d]; if (!D.alive) continue;
+    for (let a=1;a<M;a++){
+      if (a===d || W.occCount[d*M+a]<=0) continue;
+      // the ground of d's that a occupies, in d's box; the pieces that touch a's own land (or a's allies' ... just a's) are the front's
+      const stamp=++seenSeq, Q=queue, tw=TW, th=TH; let head=0, tail=0, mine=0;
+      const x0=Math.max(0,D.x0), x1=Math.min(tw-1,D.x1), y0=Math.max(0,D.y0), y1=Math.min(th-1,D.y1);
+      for (let y=y0;y<=y1;y++) for (let t=y*tw+x0, e=y*tw+x1;t<=e;t++){
+        if (owner[t]!==d || occ[t]!==a) continue;
+        mine++; const x=t%tw;
+        if ((x>0 && owner[t-1]===a && !occ[t-1]) || (x<tw-1 && owner[t+1]===a && !occ[t+1]) || (t>=tw && owner[t-tw]===a && !occ[t-tw]) || (t<NT-tw && owner[t+tw]===a && !occ[t+tw])){ seen[t]=stamp; Q[tail++]=t; }
+      }
+      if (!mine) continue;
+      while (head<tail){
+        const t=Q[head++], x=t%tw;
+        for (const k of [x>0 ? t-1 : -1, x<tw-1 ? t+1 : -1, t>=tw ? t-tw : -1, t<NT-tw ? t+tw : -1])
+          if (k>=0 && seen[k]!==stamp && owner[k]===d && occ[k]===a){ seen[k]=stamp; Q[tail++]=k; }
+      }
+      if (tail===mine) continue;
+      for (let y=y0;y<=y1;y++) for (let t=y*tw+x0, e=y*tw+x1;t<=e;t++) if (owner[t]===d && occ[t]===a && seen[t]!==stamp) liberate(t);
+    }
+  }
+}
+/** The general fronts of the wars on the map, one for each pair of kingdoms: the offensive of the one
+    that attacked (or, if it has none, the other's), as the line of tiles and which kingdom holds the front. */
+export function frontLines(): { a: number; d: number; tiles: number[]; state: number }[] {
+  const M=W.M, out: { a: number; d: number; tiles: number[]; state: number }[]=[], done=new Set<number>();
+  const list=[...offensives.values()].filter(o => o.F && o.F.tiles.length).sort((p,q) => (+!!W.aggr[q.key])-(+!!W.aggr[p.key]) || p.key-q.key);
+  for (const o of list){
+    const pair=Math.min(o.a,o.d)*M+Math.max(o.a,o.d); if (done.has(pair)) continue;
+    done.add(pair); out.push({ a:o.a, d:o.d, tiles:o.F!.tiles, state:W.offensive[o.key] });
+  }
+  return out;
+}
 /** A soldier on his kingdom's occupied land takes it back around him, unless the occupier holds it. */
 function reclaim(h: Human){
   if ((h.id+W.tickN)%CAPTURE_EVERY) return;
@@ -1407,7 +1459,11 @@ function strike(h: Human, e: Human){
 /** Is h marching in a counter-attack? */
 const revenge = (h: Human) => h.war>=0 && !!camps.get(h.war)?.inspired;
 /** How fast h marches with his army: a counter-attack's men a little faster. */
-const marchPace = (h: Human, c: Campaign) => pace(h)*(c.inspired ? REVENGE_PACE : 1);
+/** Pace of h marching with c: a counter-attack a little faster, an army on enemy ground not yet occupied half as fast (ground already occupied crosses at full pace). */
+export function marchPace(h: Human, c: Campaign){
+  const t=tileOf(h.x,h.y);
+  return pace(h)*(c.inspired ? REVENGE_PACE : 1)*(c.front && owner[t]===c.d && !occ[t] ? INVADE_SLOW : 1);
+}
 /** Steps toward (gx,gy): straight if the way is open, otherwise along the army's way. Going back to
     his place in the line (`toLine`), he heads for his own army's banner instead, and if he has got
     ahead of it he waits for his army to come up rather than march on alone. */
