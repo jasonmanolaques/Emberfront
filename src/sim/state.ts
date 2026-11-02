@@ -123,6 +123,7 @@ export type Command =
   | { type: 'peace'; nation: number; target: number }                 // accept the target's peace offer
   | { type: 'research'; nation: number; topic: number }               // study this topic next (R_* in research.ts)
   | { type: 'invest'; nation: number; share: number }                // city investment (0..1)
+  | { type: 'stance'; nation: number; target: number; stance: number }   // how the armies on the front against target fight: balanced, border capture, capital rush
   | { type: 'offensive'; nation: number; target: number; go: boolean }   // attack along the front (in a crisis: go to war), send raiders waiting at the border in, or hold the front
   | { type: 'deescalate'; nation: number; target: number }            // call off the crisis our massed armies started: everyone goes home
   | { type: 'defend'; nation: number; target: number; units: number[] }   // send armies to stand on our side of the border with target
@@ -178,6 +179,7 @@ export const W = {
   occCount: new Int32Array(1),       // [o*M+b] tiles of o's that b occupies
   lost: new Uint8Array(1),           // [o*M+b] b has occupied some of o's land in this war (cleared when o has it all back)
   ready: new Int32Array(1),          // [o*M+b] tick o's army took all its land back from b and stands ready to counter-attack (0 = not)
+  stance: new Uint8Array(1),         // [a*M+d] how a's armies fight d: balanced, border capture or capital rush (S_* in war.ts)
   offensive: new Uint8Array(1),      // [a*M+d] a's offensive against d: gathering at the border, ready, attacking or holding (F_* in war.ts)
   kills: new Int32Array(1),          // [a*M+b] people of b's that a has killed in their war (since it began)
   stall: new Int32Array(1),          // [a*M+b] ticks their war has gone without the border between them moving much (both ways)

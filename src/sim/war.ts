@@ -146,10 +146,10 @@ const DIRS8 = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
 export function resetWar(M: number){
   W.campaigns=[]; W.campSeq=0;
   W.ally=new Uint8Array(M*M); W.atWar=new Uint8Array(M*M); W.offers=new Int32Array(M*M); W.grudge=new Int32Array(M*M).fill(-1e9);
-  W.wars=new Uint8Array(M*M); W.aggr=new Uint8Array(M*M); W.warSince=new Int32Array(M*M); W.occCount=new Int32Array(M*M); W.lost=new Uint8Array(M*M); W.ready=new Int32Array(M*M); W.offensive=new Uint8Array(M*M); W.kills=new Int32Array(M*M); W.stall=new Int32Array(M*M); W.lastNet=new Int32Array(M*M);
+  W.wars=new Uint8Array(M*M); W.aggr=new Uint8Array(M*M); W.warSince=new Int32Array(M*M); W.occCount=new Int32Array(M*M); W.lost=new Uint8Array(M*M); W.ready=new Int32Array(M*M); W.offensive=new Uint8Array(M*M); W.stance=new Uint8Array(M*M); W.kills=new Int32Array(M*M); W.stall=new Int32Array(M*M); W.lastNet=new Int32Array(M*M);
   if (queue.length!==NT){ heldAt=new Int32Array(NT); heldBy=new Uint8Array(NT); queue=new Int32Array(NT); want=new Int32Array(NT); wantSeq=0; seen=new Int32Array(NT); seenSeq=0; came=new Int32Array(NT); }   // the map changed size
   byId.clear(); camps.clear(); troops.clear(); armies=[]; posts=[]; warring=new Uint8Array(M); rallies=[]; homeField=[]; homeFieldFor=[]; heldAt.fill(0); resetWalls();
-  offensives.clear(); defended=new Uint8Array(M);
+  offensives.clear(); defended=new Uint8Array(M); massCache=new Map();
 }
 
 /* ---------- the way there ---------- */
@@ -868,7 +868,7 @@ function runOffensives(){
     for (const c of cs) c.mode=st;
     if (st===F_PUSH){
       if (!o.depth) o.depth=depths(o);
-      if ((now+key)%ADVANCE_TICKS===0) push(o);
+      if ((now+key)%(W.stance[key]===S_RUSH ? ADVANCE_TICKS/RUSH_PACE : ADVANCE_TICKS)===0) push(o);   // (a rush's strips come twice as often)
       if ((now+key)%20===10) encircle(o);
     }
   }
@@ -879,6 +879,52 @@ function runOffensives(){
 function botCrisis(o: Offensive){
   const mine=menOn(o.a,o.d), theirs=menOn(o.d,o.a)+0.5*W.humans.filter(h => h.o===o.d && h.kind===H_SOLDIER && !h.militia && h.war<0).length;
   if (theirs>mine*(OUTMATCHED+W.nations[o.a].attackAt)) deescalate(o.a,o.d); else escalate(o.a,o.d);
+}
+/* ---------- stances: how the armies on a front fight ---------- */
+export const S_BALANCED = 0, S_BORDER = 1, S_RUSH = 2;
+export const STANCES = ['Balanced', 'Border capture', 'Capital rush'];
+const MASS_TOWERS = 3;        // watchtowers within reach of each other that make a heavily defended area
+const RUSH_WIDTH = 14;        // tiles either side of the way to the capital a rush keeps to
+const RUSH_PACE = 2;          // a rush's strips come twice as often: its men are all on the one way
+const RUSH_TOWER = 20;        // pixels from the way to the capital a watchtower still counts as in it
+/** Sets how a's armies fight on the front against d. */
+export function setStance(a: number, d: number, st: number){
+  if (!W.nations[a]?.alive || !W.nations[d]?.alive || !(st>=0 && st<STANCES.length)) return false;
+  W.stance[a*W.M+d]=st; return true;
+}
+const stanceOf = (a: number, d: number) => W.stance[a*W.M+d];
+/** Watchtowers of d's that stand among at least MASS_TOWERS (themselves included), within shooting reach of each other. */
+function massedTowers(d: number){
+  const T=W.nations[d].blds.filter(q => pType[q]===B_TOWER && pOwner[q]===d && pBurn[q]<=0), out: number[]=[];
+  for (const q of T){
+    let k=0; for (const r of T) if (Math.abs((q%PW)-(r%PW))<=4 && Math.abs(((q/PW)|0)-((r/PW)|0))<=4) k++;
+    if (k>=MASS_TOWERS) out.push(q);
+  }
+  return out;
+}
+let massCache=new Map<number, { at: number; set: Set<number> }>();
+/** d's massed watchtowers, worked out again every two seconds. */
+function massedSet(d: number){
+  let m=massCache.get(d);
+  if (!m || W.tickN<m.at || W.tickN-m.at>=20){ m={ at:W.tickN, set:new Set(massedTowers(d)) }; massCache.set(d,m); }
+  return m.set;
+}
+/** Is watchtower q close to the way c's army takes to d's capital (or by the capital)? */
+function inRushWay(q: number, c: Campaign){
+  const D=W.nations[c.d]; if (D.capTile<0) return true;
+  const [gx,gy]=doorOf(D), x=(q%PW)*8+4, y=((q/PW)|0)*8+4;
+  return toSegment(x,y,c.bx,c.by,gx,gy)<=RUSH_TOWER || Math.hypot(x-gx,y-gy)<=RUSH_WIDTH*3;
+}
+/** Distance in pixels from point (x,y) to the segment (ax,ay)-(bx,by). */
+function toSegment(x: number, y: number, ax: number, ay: number, bx: number, by: number){
+  const dx=bx-ax, dy=by-ay, L=dx*dx+dy*dy, u=L ? clamp(((x-ax)*dx+(y-ay)*dy)/L,0,1) : 0;
+  return Math.hypot(x-(ax+u*dx), y-(ay+u*dy));
+}
+/** Where a rush against d heads: d's gate, and from where (the middle of a's front). */
+function rushWay(o: Offensive): [number, number, number, number] | null {
+  const D=W.nations[o.d]; if (D.capTile<0 || !o.camps.length) return null;
+  let x=0, y=0, k=0; for (const c of o.camps){ x+=c.bx; y+=c.by; k++; }
+  const [gx,gy]=doorOf(D); return [x/k, y/k, gx, gy];
 }
 /** a's offensive against d, as it stands: its front (null before it is first worked out) and how many men hold its front rank. */
 export function offensiveFront(a: number, d: number): { F: Front | null; k: number } | undefined { const o=offensives.get(a*W.M+d); return o && { F:o.F, k:o.k }; }
@@ -923,8 +969,20 @@ function redeploy(o: Offensive){
 function push(o: Offensive){
   const F=o.F; if (!F || !F.tiles.length || !o.k) return;
   const gap=F.len/o.k;
+  const stance=stanceOf(o.a,o.d);
   o.progress+=Math.min(1,DENSE/gap); if (o.progress<1) return;
   o.progress-=1;
+  // what the stance leaves alone: a border capture keeps out of the reach of massed watchtowers; a
+  // rush keeps to the way to the capital, and the ground about the capital
+  let allowed: ((t: number) => boolean) | null=null;
+  if (stance===S_BORDER){
+    const R=(TOWER_RANGE+8)/2, mass=massedTowers(o.d).map(q => [((q%PW)*8+4)/2, (((q/PW)|0)*8+4)/2]);   // (in tiles)
+    if (mass.length) allowed=t => { const x=t%TW, y=(t/TW)|0; for (const [mx,my] of mass) if ((x-mx)**2+(y-my)**2<=R*R) return false; return true; };
+  } else if (stance===S_RUSH){
+    const way=rushWay(o);
+    if (way){ const [ax,ay,bx,by]=way; allowed=t => { const x=(t%TW)*2+1, y=((t/TW)|0)*2+1; return toSegment(x,y,ax,ay,bx,by)<=RUSH_WIDTH*2 || Math.hypot(x-bx,y-by)<=RUSH_WIDTH*3; }; }
+  }
+  const takeIt=(t: number, a: number, d: number) => (!allowed || allowed(t)) && takeTile(t,a,d);
   const T=F.tiles, take=new Uint8Array(T.length), a=o.a, d=o.d, tw=TW, R2=(PRESENT*2+gap)**2;   // (pixels: a little more room for a thin line, whose men have further to go when it closes up)
   for (const h of o.men){
     if (h.fk!==o.key || h.line!==0 || (h.x-h.fx)**2+(h.y-h.fy)**2>R2) continue;
@@ -941,7 +999,7 @@ function push(o: Offensive){
   for (let deep=0; deep<STRIP_DEEP && layer.length; deep++){
     const next: number[]=[];
     for (const t of layer){
-      if (!takeTile(t,a,d)) continue;
+      if (!takeIt(t,a,d)) continue;
       taken.push(t);
       const x=t%tw;
       for (const m of [x>0 ? t-1 : -1, x<tw-1 ? t+1 : -1, t>=tw ? t-tw : -1, t<NT-tw ? t+tw : -1]) if (m>=0 && D.at(m)>=0 && D.at(m)<=due && enemyOf(a,d,m)) next.push(m);
@@ -956,7 +1014,7 @@ function push(o: Offensive){
     for (const t of check){
       if (seen[t]===stamp || !enemyOf(a,d,t)) continue;
       seen[t]=stamp;
-      if (!behind(t,a,d) || !takeTile(t,a,d)) continue;
+      if (!behind(t,a,d) || !takeIt(t,a,d)) continue;
       const x=t%tw; for (const m of [x>0 ? t-1 : -1, x<tw-1 ? t+1 : -1, t>=tw ? t-tw : -1, t<NT-tw ? t+tw : -1]) if (m>=0) next.push(m);
     }
     check=next;
@@ -1164,8 +1222,8 @@ function findRallies(){
       let lost=0; for (let b=1;b<M;b++) lost+=W.occCount[o*M+b];
       if (lost){
         const cx=n.capTile>=0 ? n.capTile%TW : n.ltx, cy=n.capTile>=0 ? (n.capTile/TW)|0 : n.lty;
-        // what the guard can walk to from the heart of the kingdom; pockets cut off from it, and
-        // from the enemy's army, can't be held by anyone and fall back to us
+        // what the guard can walk to from the heart of the kingdom (land cut off from it is never
+        // handed back: occupied ground stays occupied until a liberating army arrives)
         const reach=reachOwn(cy*TW+cx,o);
         // a tile the guard can reach and stand on to take t back (within reclaim reach), or -1
         const standFor=(t: number) => { const x=t%TW, y=(t/TW)|0; let bs=-1, bk=99;
@@ -1177,7 +1235,7 @@ function findRallies(){
         for (let y=Math.max(0,n.y0);y<=Math.min(TH-1,n.y1);y++) for (let t=y*TW+Math.max(0,n.x0), e=y*TW+Math.min(TW-1,n.x1);t<=e;t++){
           if (owner[t]!==o || !occ[t]) continue;
           const at=standFor(t);
-          if (at<0){ if (!(heldAt[t]===W.tickN && heldBy[t]===occ[t])) liberate(t); continue; }
+          if (at<0) continue;   // (out of the guard's reach: it stays occupied until somebody comes to take it back, or peace)
           const x=t%TW, y=(t/TW)|0, d=(x-cx)**2+(y-cy)**2;
           if (d<bd){ bd=d; const L=Math.hypot(x-cx,y-cy)||1; best={ x:(at%TW)*2+1, y:((at/TW)|0)*2+1, dx:(x-cx)/L, dy:(y-cy)/L, threat:false, n:0 }; }
         }
@@ -1376,7 +1434,13 @@ function targetable(q: number, c: Campaign){
   const ty=pType[q];
   if (c.target>=0 || pOwner[q]!==c.d || pBurn[q]>0) return false;
   if (ty===B_CASTLE) return !c.raid;
-  return isStructure(ty) && ty!==B_PART && (c.raid || ty===B_TOWER || occ[pCenter[q]]===c.a || (ty===B_HOUSE && pIn[q]>0));   // (a house with people resting inside draws them in)
+  if (!isStructure(ty) || ty===B_PART) return false;
+  if (c.front){   // the stance: a rush goes for watchtowers in its way only; a border capture leaves the massed ones be
+    const st=stanceOf(c.a,c.d);
+    if (st===S_RUSH) return ty===B_TOWER && inRushWay(q,c);
+    if (st===S_BORDER && ty===B_TOWER && massedSet(c.d).has(q)) return false;
+  }
+  return (c.raid || ty===B_TOWER || occ[pCenter[q]]===c.a || (ty===B_HOUSE && pIn[q]>0));   // (a house with people resting inside draws them in)
 }
 /** House q is broken open: the people resting inside come out of the rubble and, with the enemy
     upon them, fight. */

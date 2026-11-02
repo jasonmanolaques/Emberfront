@@ -11,7 +11,7 @@ import { build, plotProblem, structureOf, togglePriority, finishHouse } from '..
 import { H_SOLDIER, H_VILLAGER, TASK_REST, TASK_STORE, TASK_TO_TRAIN, TASK_INSIDE, MILITIA_HP, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, frontOf, switching, pace, maxHp } from '../src/sim/population';
 import { UNIT_SIZE, buildUnits, station, unitAt, SOLDIER_DMG } from '../src/sim/army';
 import { wallOf, walledFor } from '../src/sim/defense';
-import { allied, atWar, available, ready, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
+import { S_BALANCED, S_BORDER, S_RUSH, setStance, allied, atWar, available, ready, declare, intercept, interceptProblem, warProblem, routeOpen, mayStand, endWar, makePeace, LOOT_GOLD, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
   RANKS, rankFor, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, reservesOf, reservesProblem, menOn, M_MARCH, M_HOLD, M_ASSAULT, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
 import { MIN_GAP, RANK_GAP, A_OFF, holds, freeOf, underCastle } from '../src/sim/front';
 import { beggarProblem, stuck, warChest } from '../src/sim/bots';
@@ -1059,6 +1059,50 @@ describe('crisis', () => {
   });
 });
 
+describe('stances', () => {
+  /** A war on a broad front against a kingdom far off, run for a while in `stance`; what its army took. */
+  function fight(stance: number, setup?: () => void, ticks=240){
+    world(1); quiet(); paintDisc(N(2),60); paintToward(1,2);
+    soldiers(N(1),40); noDraft(); N(2).soldierShare=0; N(2).humanProg=-1e9; setup?.(); run(2);
+    queueCommand({ type:'stance', nation:1, target:2, stance }); tick();
+    expect(declare(1,2,false,40)).toBe(true); giveWord(1,2); run(ticks);
+    const [gx,gy]=doorOf(N(2)), took: number[]=[];
+    for (let t=0;t<NT;t++) if (owner[t]===2 && occ[t]===1) took.push(t);
+    const near=Math.min(...took.map(t => Math.hypot((t%TW)*2+1-gx, ((t/TW)|0)*2+1-gy)));
+    return { took, near, gx, gy };
+  }
+  it('are set by command, for kingdoms that are alive', () => {
+    world(1); quiet();
+    queueCommand({ type:'stance', nation:1, target:2, stance:S_RUSH }); tick();
+    expect(W.stance[1*W.M+2]).toBe(S_RUSH);
+    expect(setStance(1,2,7)).toBe(false); expect(W.stance[1*W.M+2]).toBe(S_RUSH);
+  });
+  it('rush: takes a narrow way to the capital, further in than a balanced front gets, and not the rest of the border', () => {
+    const bal=fight(S_BALANCED), rush=fight(S_RUSH);
+    expect(bal.took.length).toBeGreaterThan(50);
+    expect(rush.took.length).toBeGreaterThan(50);
+    expect(rush.near).toBeLessThan(bal.near-10);       // closer to the capital
+    expect(rush.took.length).toBeLessThan(bal.took.length);   // for less ground
+  });
+  it('border capture: keeps out of the reach of massed watchtowers, and still takes ground where there are none', () => {
+    const mass=(far: boolean) => () => {   // four watchtowers together, on the ground of theirs nearest our capital (or the farthest from it)
+      const c=N(1).capTile, d=(q: number) => (((q%PW)*4+2-c%TW)**2+(((q/PW)|0)*4+2-((c/TW)|0))**2)*(far ? -1 : 1);
+      for (let k=0;k<4;k++){
+        const q=Array.from({ length: NP }, (_, i) => i).filter(i => !plotProblem(N(2),i)).sort((a,b) => d(a)-d(b))[0];
+        N(2).stock=[50,50,50]; build(N(2),q,B_TOWER); TQ.push(q);
+      }
+    };
+    const TQ: number[]=[];   // (the towers as they were placed: a balanced front brings them down)
+    const inReach=(t: number) => TQ.some(q => Math.hypot((t%TW)-((q%PW)*8+4)/2, ((t/TW)|0)-(((q/PW)|0)*8+4)/2)<=20);
+    const bal=fight(S_BALANCED,mass(false),500); const balIn=bal.took.filter(inReach).length;
+    TQ.length=0; const bor=fight(S_BORDER,mass(false),500);
+    expect(balIn).toBeGreaterThan(0);                              // a balanced front goes straight in
+    expect(bor.took.filter(inReach).length).toBe(0);               // a border capture won't
+    const away=fight(S_BORDER,mass(true),500);
+    expect(away.took.length).toBeGreaterThan(50);                  // with the towers elsewhere, it takes the border as ever
+  });
+});
+
 describe('people resting at home in a war', () => {
   it('draw raiders to their house, who break it open: they come out of the rubble and fight', () => {
     world(1); quiet();
@@ -1092,6 +1136,21 @@ describe('bots going to war', () => {
 
 describe('militia', () => {
   const M = () => W.M;
+  it('go home after a peace deal, every one of them, and no army or war is left', () => {
+    world(1); quiet(); paintToward(1,2);
+    soldiers(N(1),10); const mil=soldiers(N(1),12,false); const foes=soldiers(N(2),8); noDraft(); run(2); for (const h of [...mil,...foes]) h.hp=1e6;
+    expect(declare(1,2,false,10,8)).toBe(true);
+    giveWord(1,2); run(500);
+    queueCommand({ type:'reserves', nation:1, target:2, call:true }); run(200);
+    expect(mil.some(h => h.war>=0)).toBe(true);
+    makePeace(1,2);
+    run(900);
+    const [dx,dy]=doorOf(N(1));
+    for (const h of mil){ expect(h.war).toBe(-1); expect(Math.hypot(h.x-dx,h.y-dy)).toBeLessThan(80); }   // back round the castle, none left standing out at the front
+    expect(W.campaigns.filter(c => c.hostile || c.a===1 || c.d===1)).toHaveLength(0);
+    expect([W.wars[1*W.M+2], W.aggr[1*W.M+2], W.atWar[1*W.M+2], W.offensive[1*W.M+2], W.offensive[2*W.M+1]]).toEqual([0,0,0,0,0]);
+  });
+
   it('can go with an attack, as many as asked; calling the reserves at war then calls up the rest', () => {
     world(1); quiet(); paintToward(1,2);
     const mil=soldiers(N(1),8,false); noDraft(); run(2);   // no barracks: militia only
@@ -1152,7 +1211,7 @@ describe('militia', () => {
     expect(N(1).income).toBeCloseTo(grossIncome(N(1))-10*WAGE, 6);
   });
 
-  it('without reserves called, fill the places of fallen soldiers one at a time, and go to the front as soldiers', () => {
+  it('without reserves called, fill the places of fallen soldiers all at once, and go to the front as soldiers', () => {
     world(1); quiet(); paintToward(1,2);
     const army=soldiers(N(1),10), mil=soldiers(N(1),6,false); noDraft(); run(2);
     expect(declare(1,2,false,10)).toBe(true); run(20);
@@ -1161,7 +1220,7 @@ describe('militia', () => {
     run(2);
     let most=0;
     until(() => { most=Math.max(most, mil.filter(h => h.task===TASK_TO_TRAIN || h.task===TASK_INSIDE).length); return mil.filter(h => !h.militia).length===3; }, 3000);
-    expect(most).toBe(1);   // one at a time
+    expect(most).toBe(3);   // all three together
     expect(N(1).militia).toBe(3);
     until(() => c.members.length===10, 600);   // and they join the army at the front
   });

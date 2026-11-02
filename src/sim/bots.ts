@@ -7,7 +7,7 @@ import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, TOPICS, s
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, canAfford, placeProblem, build, togglePriority, anyWithin, isEnemyLand, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, guardsOpening, standingTower, WALL_MAX } from './fort';
-import { allied, atWar, ready, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD } from './war';
+import { allied, atWar, ready, available, declare, intercept, routeOpen, raidTargets, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD, setStance, S_BORDER, S_RUSH, S_BALANCED } from './war';
 
 const WALL = -1;   // a tower of the town wall, in a wishlist
 const STALE = 1800;   // ticks a war's border may stand still (3 minutes) before a bot thinks of ending it
@@ -278,6 +278,13 @@ function botWar(n: Nation){
   const want=armyShare(n), d=want-n.soldierShare;
   n.soldierShare=Math.min(1,Math.max(0,n.soldierShare+Math.max(-0.04,Math.min(0.1,d))));
   const dug=outnumbered(n);
+  // how its armies fight a front: a rush on the capital when it is far the stronger, a border capture
+  // against a land bristling with watchtowers, else balanced
+  if (W.tickN%100===id%100) for (let o=1;o<M;o++){
+    if (o===id || !W.nations[o].alive || !(W.wars[id*M+o] || W.aggr[id*M+o])) continue;
+    const D=W.nations[o];
+    setStance(id,o, D.towers>=8 ? S_BORDER : menOn(id,o)>=defence(D)*2.2 && n.attackAt>0.6 ? S_RUSH : S_BALANCED);
+  }
   for (let o=1;o<M;o++){
     if (!W.offers[o*M+id]) continue;
     if (wantsPeace(n,o)) makePeace(id,o); else refusePeace(o,id);

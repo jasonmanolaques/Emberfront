@@ -1,8 +1,10 @@
 // Villagers resting at home when there is nothing to do, the counts kept as the map changes, and
 // full investment.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, B_HOUSE } from '../src/core/constants';
-import { W, owner, isLand, occ, pType, pIn, pTier, resType, resLeft } from '../src/sim/state';
+import { TW, TH, NP, B_HOUSE, B_GUILD } from '../src/core/constants';
+import { build, plotProblem, finishHouse } from '../src/sim/buildings';
+import { R_HOUSING } from '../src/sim/research';
+import { W, owner, isLand, occ, pType, pIn, pTier, pCenter, resType, resLeft } from '../src/sim/state';
 import { newWorld, startMatch, tick } from '../src/sim/sim';
 import { setOwner } from '../src/sim/territory';
 import { scanContacts } from '../src/sim/census';
@@ -82,6 +84,40 @@ describe('resting at home', () => {
     start(12345, 0); bare(); run(10*E);
     const h = mine().find(h => h.task===TASK_REST)!;
     expect(h.wait).toBeGreaterThan(0); expect(h.wait).toBeLessThanOrEqual(120);
+  });
+});
+
+describe('the way round the kingdom', () => {
+  it('has villagers gather trees the straight way home to which is shut: round the wall, by the walking field', () => {
+    start(12345, 0); bare();
+    const c=me().capTile, cx=c%TW, cy=(c/TW)|0;
+    // a wide kingdom, with a wall of unclaimed ground from the top to near the bottom, 12 tiles east of the castle
+    for (let y=cy-25;y<=cy+25;y++) for (let x=cx-20;x<=cx+40;x++){ const t=y*TW+x; if (isLand[t] && !owner[t]) setOwner(t,1); }
+    for (let y=cy-25;y<=cy+20;y++) for (let x=cx+12;x<=cx+14;x++) setOwner(y*TW+x,0);
+    const trees=[[cx+30,cy],[cx+31,cy+1],[cx+30,cy-2]].map(([x,y]) => y*TW+x);
+    for (const t of trees){ resType[t]=R_TREE; resLeft[t]=1; freeIn[((t/TW|0)>>2)*(TW>>2)+((t%TW)>>2)]++; }
+    scanContacts(true);
+    run(3500);
+    expect(trees.map(t => resLeft[t])).toEqual([0,0,0]);   // felled and taken home
+    expect(me().stock[0]).toBeGreaterThanOrEqual(13);
+  });
+});
+
+describe('builders and smiths round a wall', () => {
+  it('improve houses the straight way to which is shut', () => {
+    start(12345, 0); bare();
+    const c=me().capTile, cx=c%TW, cy=(c/TW)|0;
+    for (let y=cy-25;y<=cy+25;y++) for (let x=cx-20;x<=cx+40;x++){ const t=y*TW+x; if (isLand[t] && !owner[t]) setOwner(t,1); }
+    for (let y=cy-25;y<=cy+20;y++) for (let x=cx+12;x<=cx+14;x++) setOwner(y*TW+x,0);
+    scanContacts(true);
+    // houses on the far side of the wall, and a guild at home
+    const far: number[]=[];
+    for (let q=0;q<NP && far.length<3;q++){ const t=pCenter[q]; if (t%TW>=cx+20 && Math.abs(((t/TW)|0)-cy)<8 && !plotProblem(me(),q)){ finishHouse(q,1); far.push(q); } }
+    expect(far).toHaveLength(3);
+    me().stock=[100,100,100]; me().tier[R_HOUSING]=2; me().invest=1;
+    for (let q=0;q<NP;q++) if (!plotProblem(me(),q) && (pCenter[q]%TW)<cx+8){ expect(build(me(),q,B_GUILD)).toBe(true); break; }
+    for (let k=0;k<20 && far.some(q => pTier[q]<2);k++){ me().stock=[100,100,100]; run(300); }
+    expect(far.map(q => pTier[q])).toEqual([2,2,2]);   // stone houses
   });
 });
 

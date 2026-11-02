@@ -5,7 +5,7 @@
    wants more, newcomers are born soldiers at a barracks with room and the nearest villagers walk there
    to train, and once the barracks are full the rest train at the castle as militia instead. Militia
    patrol the kingdom and guard its watchtowers; they pay no tax and draw no wages until they are
-   called up to a front (sim/war.ts). Room in a barracks goes to militia first: one at a time, they
+   called up to a front (sim/war.ts). Room in a barracks goes to militia first: all together, they
    walk over and train as soldiers. With too many under arms, the militia go back to work first.
    Every person needs a home. While the kingdom has fewer houses than people, a villager's next
    job is to pick a plot, walk there and build a hovel; once everyone is housed, villagers are the
@@ -32,10 +32,11 @@
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, until the kingdom sends them to war (sim/war.ts). */
 import { TW, TH, PW, PH, TICK, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY } from '../core/constants';
-import { W, owner, occ, pType, pOwner, pBurn, pPrio, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, resType, type Human, type Nation } from './state';
+import { W, owner, occ, resLeft, pType, pOwner, pBurn, pPrio, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, resType, type Human, type Nation } from './state';
 import { homeScore, startSite, cancelSite, finishHouse } from './buildings';
 import { on } from './events';
 import { GOOD_OF, YIELD, WORK_TICKS, available, harvest, claim, unclaim, freeIn } from './resources';
+import { Field } from './field';
 import { updateWar, reinforce, marchStep, guardStep, alarmStep, mayStand, spread } from './war';
 import { HOUSE_BEDS, R_HOUSING, R_TOWERS, MAX_TIER } from './research';
 import { gained, spent, mayInvest } from './ledger';
@@ -73,7 +74,7 @@ export const HOME_PACE = 1.15;   // soldiers on their own kingdom's land move 15
 export const REGEN = 0.01;        // hit points everyone heals a tick (0.1 a second)
 export const GARRISON = 5;       // soldiers a watchtower calls for
 export const TOWER_RANGE = 32;   // pixels a watchtower can shoot
-const SEARCH_R = 40;             // tiles a villager looks around for work
+const WALK_EVERY = 100;          // ticks between a kingdom's walking fields being worked out again (10 s)
 const LOOK_TICKS = 100;          // a villager with nothing to do looks for work again every 10 to 12 seconds
 const WAKE_PER_TICK = 8;         // villagers a kingdom wakes a tick for land newly gained
 const lookAgain = () => (LOOK_TICKS+W.prand()*20)|0;
@@ -173,11 +174,11 @@ function route(h: Human, picky=false){
     }
     if (prev[5]>=0){ const way: number[]=[]; for (let i=prev[5];i>0;i=prev[i]) way.unshift(P[i][0],P[i][1]); h.path=way; return true; }
     if (picky) return false;
-    // a stroll is optional: rather than climb the castle, stay put
-    if (h.task===TASK_ROAM){ h.tx=h.x; h.ty=h.y; return false; }
+    // a stroll is optional: rather than climb the castle, go round by the walking field, or stay put
+    if (h.task===TASK_ROAM){ if (routeField(h,h.tx,h.ty)) return true; h.tx=h.x; h.ty=h.y; return false; }
   }
   // likewise rather than step outside the borders
-  if (!direct && h.task===TASK_ROAM){ h.tx=h.x; h.ty=h.y; }
+  if (!direct && h.task===TASK_ROAM){ if (routeField(h,h.tx,h.ty)) return true; h.tx=h.x; h.ty=h.y; }
   return direct;
 }
 
@@ -230,14 +231,15 @@ export function chooseGood(have: number[], dist: number[]){
 const pending: number[][]=[];   // per nation: goods already claimed or on their way home, updated each tick
 
 const CANDIDATES = 3;   // spots remembered per good, nearest first, in case the nearest can't be reached
-/** The nearest free resources of each good on the kingdom's own land, within SEARCH_R tiles. */
-function nearestResources(h: Human){
+/** The nearest free resources of each good on the kingdom's own land that its people can walk to. */
+export function nearestResources(h: Human){
   const found: [number, number][][]=[[],[],[]];   // per good: [distance, tile], nearest first
   const here=W.nations[h.o].resHere;   // a good the kingdom has none of left needn't be looked for
   const far=(g: number)=>!here[g] ? -1 : found[g].length<CANDIDATES ? Infinity : found[g][CANDIDATES-1][0];
   // ring by ring of building plots round his own (4x4 tiles each), looking only inside plots with
   // something free in them
-  const px=(h.x/8)|0, py=(h.y/8)|0, R=SEARCH_R>>2;
+  const n=W.nations[h.o], f=walkOf(n).f;
+  const px=(h.x/8)|0, py=(h.y/8)|0, R=Math.min(80,(Math.max(n.x1-n.x0,n.y1-n.y0)>>2)+2);   // as far as the kingdom reaches
   for (let r=0;r<=R;r++){
     // a tile in plot ring r is at least 8(r-1) pixels away: stop once every good's list is closer than that
     if (far(0)<8*(r-1) && far(1)<8*(r-1) && far(2)<8*(r-1)) break;
@@ -247,7 +249,7 @@ function nearestResources(h: Human){
       for (let dx=-r;dx<=r;dx+=step || 1){
         const qx=px+dx; if (qx<0||qx>=PW || !freeIn[qy*PW+qx]) continue;
         for (let k=0;k<16;k++){
-          const t=(qy*4+(k>>2))*TW+qx*4+(k&3); if (owner[t]!==h.o || occ[t] || !available(t)) continue;
+          const t=(qy*4+(k>>2))*TW+qx*4+(k&3); if (owner[t]!==h.o || occ[t] || !available(t) || f.at(t)<0) continue;   // (only what he can walk to)
           const g=GOOD_OF[resType[t]], [sx,sy]=workSpot(t), d=Math.sqrt((sx-h.x)**2+(sy-h.y)**2), L=found[g];
           if (L.length===CANDIDATES && (d>L[CANDIDATES-1][0] || (d===L[CANDIDATES-1][0] && t>L[CANDIDATES-1][1]))) continue;
           let i=L.length; while (i>0 && (L[i-1][0]>d || (L[i-1][0]===d && L[i-1][1]>t))) i--;
@@ -318,16 +320,85 @@ function think(h: Human){
 }
 /** Sends villager h to gather at tile t, if he can get there and back home with the load. */
 function gatherAt(h: Human, t: number){
-  const n=W.nations[h.o], [sx,sy]=workSpot(t), [dx,dy]=doorOf(n), was=[h.task,h.tx,h.ty] as const;
-  // the load has to come home too, so check the way back to the gate as well
-  const back: Human={ ...h, x:sx, y:sy, tx:dx, ty:dy, path:[], task:TASK_HAUL };
+  const [sx,sy]=workSpot(t), was=[h.task,h.tx,h.ty] as const;
+  if (walkOf(W.nations[h.o]).f.at(t)<0) return false;   // no way there over the kingdom's own land
   h.tx=sx; h.ty=sy; h.task=TASK_GATHER;
-  if (route(back,true) && route(h,true)){ h.res=t; claim(t); h.wait=0; return true; }
+  if (route(h,true) || routeField(h,sx,sy)){ h.res=t; claim(t); h.wait=0; return true; }
   [h.task,h.tx,h.ty]=was; h.path=[];
   return false;
 }
-/** Is there anything on n's land nobody has claimed yet? (A search can still find it out of reach.) */
-const freeWork = (n: Nation) => n.resHere[0]+n.resHere[1]+n.resHere[2]>(claimed[n.id] ?? 0);
+
+/* ---------- the way round the kingdom: a walking field from the gate ----------
+   Straight lines and a detour round the castle's corners are all a villager's route knows, and in a
+   big kingdom (bays, borders, occupied ground) the straight way is often shut. So each kingdom has a
+   field of steps from its castle's gate over its own free land, worked out again every 10 seconds
+   for everyone at once: what can't be walked to isn't looked for, and what can is reached by
+   following the field to the gate and out again, pulled straight where it can be. */
+interface Walk { f: Field; at: number; reach: number; }
+const walks=new Map<number, Walk>();
+export function resetWalks(){ walks.clear(); }
+let queue=new Int32Array(0);
+const NB: [number, number][]=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+function walkOf(n: Nation){
+  let w=walks.get(n.id);
+  if (!w){ w={ f:new Field(), at:-1e9, reach:0 }; walks.set(n.id,w); }
+  if (W.tickN<w.at || W.tickN-w.at>=WALK_EVERY) fillWalk(n,w);
+  return w;
+}
+function fillWalk(n: Nation, w: Walk){
+  const f=w.f; w.at=W.tickN; w.reach=0;
+  if (n.capTile<0 || n.x1<n.x0){ f.fit(0,0,-1,-1); return; }
+  f.fit(n.x0-1,n.y0-1,n.x1+1,n.y1+1);
+  const open=(t: number) => owner[t]===n.id && !occ[t] && !onCastle(n,(t%TW)*2+1,((t/TW)|0)*2+1);
+  const [dx,dy]=doorOf(n), s=((dy/2)|0)*TW+((dx/2)|0);
+  if (!open(s)) return;
+  if (queue.length<f.w*f.h) queue=new Int32Array(f.w*f.h);
+  let head=0, tail=0; f.d[f.idx(s)]=0; queue[tail++]=s;
+  while (head<tail){
+    const t=queue[head++], x=t%TW, y=(t/TW)|0, d=f.d[f.idx(t)];
+    if (resLeft[t]>0) w.reach++;
+    for (const [ox,oy] of NB){
+      const nx=x+ox, ny=y+oy; if (nx<0||ny<0||nx>=TW||ny>=TH) continue;
+      const k=ny*TW+nx, i=f.idx(k); if (i<0 || f.d[i]>=0 || !open(k)) continue;
+      if (ox && oy && !(open(y*TW+nx) && open(ny*TW+x))) continue;   // (no cutting a corner)
+      f.d[i]=d+1; queue[tail++]=k;
+    }
+  }
+}
+/** The tiles from t down the field to the gate, or null if the field doesn't reach t. */
+function descent(f: Field, t: number){
+  if (f.at(t)<0) return null;
+  const out=[t];
+  for (let d=f.at(t); d>0; d--){
+    const x=t%TW, y=(t/TW)|0; let next=-1;
+    for (const [ox,oy] of NB){ const k=(y+oy)*TW+x+ox; if (f.at(k)===d-1 && (!ox || !oy || (f.at(y*TW+x+ox)>=0 && f.at((y+oy)*TW+x)>=0))){ next=k; break; } }
+    if (next<0) return null;
+    t=next; out.push(t);
+  }
+  return out;
+}
+/** Plans h's walk to (tx,ty) over the walking field: from where he stands down to the gate and out
+    to the goal, the two ways joined where they meet, and pulled straight wherever the line is clear.
+    False if the field doesn't reach one end. */
+function routeField(h: Human, tx: number, ty: number){
+  const n=W.nations[h.o], f=walkOf(n).f, o=h.o;
+  const a=descent(f,tileOf(h.x,h.y)), b=descent(f,tileOf(tx,ty)); if (!a || !b) return false;
+  const inB=new Map<number, number>(); b.forEach((t,i) => inB.set(t,i));
+  let i=0, j=b.length-1; for (;i<a.length;i++){ const k=inB.get(a[i]); if (k!==undefined){ j=k; break; } }
+  const tiles=[...a.slice(0,i+1)]; for (let k=j-1;k>=0;k--) tiles.push(b[k]);
+  const pts=tiles.map(t => [(t%TW)*2+1, ((t/TW)|0)*2+1]); pts.push([tx,ty]);
+  const q=n.capPlot, ox=(q%PW)*8, oy=((q/PW)|0)*8;
+  const clear=(ax: number, ay: number, bx: number, by: number) => safeWalk(o,ax,ay,bx,by) && !(n.capTile>=0 && crossesCastle(ox,oy,ax,ay,bx,by));
+  const way: number[]=[]; let ax=h.x, ay=h.y, last: number[] | null=null;
+  for (const p of pts){
+    if (last && !clear(ax,ay,p[0],p[1])){ way.push(last[0],last[1]); ax=last[0]; ay=last[1]; }
+    last=p;
+  }
+  h.path=way; h.tx=tx; h.ty=ty;
+  return true;
+}
+/** Is there anything on n's land nobody has claimed yet, that its people can walk to? */
+const freeWork = (n: Nation) => walkOf(n).reach>(claimed[n.id] ?? 0);
 const claimed: number[]=[];   // resources each kingdom's villagers have claimed, counted every tick
 
 /** Can people of kingdom o rest in plot q: a house of theirs, standing and lived in? */
@@ -354,7 +425,7 @@ function goRest(h: Human, at=-1){
   h.rest=best; pIn[best]++; h.tx=x; h.ty=y; h.wait=0;
   if ((x-h.x)**2+(y-h.y)**2<1){ h.x=x; h.y=y; h.task=TASK_REST; h.wait=lookAgain(); return true; }   // already there
   h.task=TASK_REST_GO;
-  if (route(h,true)) return true;
+  if (route(h,true) || routeField(h,x,y)) return true;
   unrest(h); h.task=TASK_ROAM; h.path=[];
   return false;
 }
@@ -362,13 +433,14 @@ function goRest(h: Human, at=-1){
     reach) gets up and goes for it, a few a tick. */
 function wake(n: Nation, mine: Human[]){
   const resting=mine.filter(h => h.task===TASK_REST);
+  if (resting.length){ const w=walkOf(n); fillWalk(n,w); }   // (the new land is on the field)
   let k=0, i=0;
   for (; i<n.fresh.length && k<WAKE_PER_TICK && resting.length; i++){
     const t=n.fresh[i]; if (owner[t]!==n.id || !available(t)) continue;
     const [sx,sy]=workSpot(t);
-    let bi=-1, bd=(SEARCH_R*2)**2;
+    let bi=-1, bd=Infinity;
     for (let j=0;j<resting.length;j++){ const h=resting[j], d=(h.x-sx)**2+(h.y-sy)**2; if (d<bd){ bd=d; bi=j; } }
-    if (bi<0) continue;   // nobody resting near enough
+    if (bi<0) continue;
     const h=resting[bi], q=h.rest; k++;
     unrest(h);
     if (gatherAt(h,t)){ resting.splice(bi,1); continue; }
@@ -435,7 +507,7 @@ function roomIn(n: Nation, mine: Human[]){
 const reservesOut = (n: Nation) => W.campaigns.some(c => c.militia && c.all && c.a===n.id && c.phase<2);
 
 /** Moves the kingdom's headcount toward its requested share under arms. Free places in the barracks
-    go to militia first, one at a time to each barracks; then to villagers; once the barracks are
+    go to militia first, all of them at once to each barracks; then to villagers; once the barracks are
     full (or with no barracks at all), villagers train at the castle as militia. With too many under
     arms, militia stand down first. */
 function balance(n: Nation, mine: Human[], barracks: number[]){
@@ -448,14 +520,17 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
   const militia=reservesOut(n) ? [] : mine.filter(h => homeMilitia(h) && h.post<0);
   let forMilitia=0;
   if (militia.length){
-    const busy=new Set<Unit>(); for (const h of mine) if (switching(h) && h.militia && h.to===T_SOLDIER){ const u=unitAt(h.site); if (u) busy.add(u); }
+    // every free place of every barracks gets its militiaman at once, the nearest first
     let left=militia.length;
+    const free=militia.filter(h => !switching(h));
     for (const [u,k] of room){
       if (k<=0) continue;
       forMilitia+=Math.min(k,left); left=Math.max(0,left-k);
-      if (busy.has(u)) continue;
-      const pick=nearest(militia.filter(h => !switching(h)),u.x,u.y)[0];
-      if (pick && sendToTrain(pick,nearestPlot(u.plots,pick.x,pick.y),T_SOLDIER)) room.set(u,k-1);
+      for (let i=0;i<k && free.length;i++){
+        const pick=nearest(free,u.x,u.y)[0];
+        free.splice(free.indexOf(pick),1);
+        if (sendToTrain(pick,nearestPlot(u.plots,pick.x,pick.y),T_SOLDIER)) room.set(u,room.get(u)!-1);
+      }
     }
   }
   let spare=0; for (const k of room.values()) spare+=Math.max(0,k);
@@ -592,7 +667,7 @@ function goImprove(h: Human){
     const cost=upgradeCost(q);
     if (!cost.every((c,g) => n.stock[g]>=c) || !mayInvest(n,cost)) continue;
     const [x,y]=frontOf(q); h.tx=x; h.ty=y; h.task=TASK_FIX_GO;
-    if (route(h,true)){ h.fix=q; h.wait=0; return true; }
+    if (route(h,true) || routeField(h,x,y)){ h.fix=q; h.wait=0; return true; }   // (round by the field where the straight way is shut: a coast, a cove)
     if (++tries>=3) break;
   }
   h.task=TASK_ROAM;
@@ -666,14 +741,14 @@ function forging(n: Nation){
 function goForge(h: Human){
   const n=W.nations[h.o];
   if (h.load===1){   // copper in hand: back to the forge
-    const [x,y]=frontOf(h.work); h.tx=x; h.ty=y; h.task=TASK_SMITH_BACK; route(h); h.wait=0; return true;
+    const [x,y]=frontOf(h.work); h.tx=x; h.ty=y; h.task=TASK_SMITH_BACK; walkTo(h,x,y); h.wait=0; return true;
   }
   if (h.load>=2){    // armour in hand: to the barracks it was made for, or the nearest one left
     let u=unitAt(h.dest);
     if (!u || u.o!==h.o){ const U=units[h.o] ?? []; u=U.slice().sort((a,b)=>((a.x-h.x)**2+(a.y-h.y)**2)-((b.x-h.x)**2+(b.y-h.y)**2) || a.key-b.key)[0]; }
     if (!u) return false;   // no barracks at all: he waits with it
     if (unitAt(h.dest)!==u) h.dest=nearestPlot(u.plots,h.x,h.y);
-    const [x,y]=frontOf(h.dest); h.tx=x; h.ty=y; h.task=TASK_SMITH_DELIVER; route(h); h.wait=0; return true;
+    const [x,y]=frontOf(h.dest); h.tx=x; h.ty=y; h.task=TASK_SMITH_DELIVER; walkTo(h,x,y); h.wait=0; return true;
   }
   if (n.capTile<0 || n.stock[2]<ARMOR_COPPER) return false;
   // the barracks nearest the smithy that still wants armour
@@ -686,8 +761,14 @@ function goForge(h: Human){
   if (!best) return false;
   h.make=tier; h.dest=nearestPlot(best.plots,sx,sy);
   const [x,y]=doorOf(n); h.tx=x; h.ty=y; h.task=TASK_SMITH_FETCH; h.wait=0;
-  if (!route(h)){ h.make=0; h.dest=-1; h.task=TASK_ROAM; return false; }
+  if (!walkTo(h,x,y)){ h.make=0; h.dest=-1; h.task=TASK_ROAM; return false; }
   return true;
+}
+/** Plans h's walk to (x,y): the straight way (round the castle) if it is safe, else round by the
+    kingdom's walking field. False if there is no safe way (he then walks the straight way anyway). */
+function walkTo(h: Human, x: number, y: number){
+  if (route(h,true) || routeField(h,x,y)) return true;
+  route(h); return false;
 }
 
 function step(h: Human){
@@ -718,7 +799,8 @@ function step(h: Human){
       release(h);
       if (!got){ think(h); return; }
       h.carry=good; h.amount=got;
-      const [x,y]=doorOf(n); h.task=TASK_HAUL; h.tx=x; h.ty=y; route(h);
+      const [x,y]=doorOf(n); h.task=TASK_HAUL; h.tx=x; h.ty=y;
+      if (!route(h,true) && !routeField(h,x,y)) route(h);   // (the straight way, else round by the field, else just go)
     }
     return;
   }

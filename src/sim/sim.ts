@@ -12,9 +12,9 @@ import { setOwner, stepAttack, launch, touches } from './territory';
 import { toRuins, build, togglePriority, produce } from './buildings';
 import { scanContacts, census } from './census';
 import { botThink } from './bots';
-import { updatePopulation } from './population';
+import { updatePopulation, resetWalks } from './population';
 import { genResources, clearPlot } from './resources';
-import { resetWar, declare, intercept, proposeAlliance, endWar, makePeace, setOffensive, deescalate, defend, callReserves } from './war';
+import { resetWar, declare, intercept, proposeAlliance, endWar, makePeace, setOffensive, setStance, deescalate, defend, callReserves } from './war';
 import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
 import { turnLedger, resetLedger } from './ledger';
@@ -89,7 +89,7 @@ export function newWorld(seed: number, map='gen'){
   W.M=1; W.contact=new Int32Array(1);
   W.simTime=0; W.tickN=0;
   W.humans=[]; W.humanSeq=0;
-  resetWar(1); resetStories(1); resetLedger();
+  resetWar(1); resetStories(1); resetLedger(); resetWalks();
 }
 
 /** Founds the player's capital near tile t and places the bot kingdoms: `rivals` of them, countries
@@ -214,6 +214,8 @@ function applyCommand(c: Command){
     declare(c.nation,c.target,c.raid,c.units ?? c.soldiers ?? 0,c.militia ?? 0);
   } else if (c.type==='intercept'){
     intercept(c.nation,c.campaign,c.units ?? c.soldiers ?? 0);
+  } else if (c.type==='stance'){
+    setStance(c.nation,c.target,c.stance);
   } else if (c.type==='offensive'){
     setOffensive(c.nation,c.target,c.go);
   } else if (c.type==='deescalate'){
