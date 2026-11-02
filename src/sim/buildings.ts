@@ -5,8 +5,8 @@
    at tier 3 four of a kind in a square join into one of 2×2 (tier 3); a joined building makes far
    more than its parts did apart. ---------- */
 import { plannedWall } from './fort';
-import { TW, PW, PH, NP, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, isStructure } from '../core/constants';
-import { W, owner, occ, terr, isLand, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, pMain, pHp, pTier, pSpan, pArmor, type Nation } from './state';
+import { TW, PW, PH, NP, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_NAVAL, TH, isStructure } from '../core/constants';
+import { W, owner, occ, terr, isLand, isle, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, pMain, pHp, pTier, pSpan, pArmor, type Nation } from './state';
 import { R_GATHER } from './research';
 import { on } from './events';
 import { gained } from './ledger';
@@ -72,10 +72,21 @@ function placeBuilding(q: number, id: number, type: number, isNew: boolean){
 /* ---------- houses: each villager builds one when the kingdom is short of homes ---------- */
 /** How well plot q suits a new house: towns grow outward from their edges and along their roads,
     dense cores fill slowly, and open countryside now and then seeds a new village. 0 = unsuitable. */
+/** How many buildings kingdom o has on landmass I, looked at every 10 seconds. */
+const isleBuildings=new Map<number, [number, number]>();
+function buildingsOnIsle(n: Nation, I: number){
+  const key=n.id*65536+I; let c=isleBuildings.get(key);
+  if (!c || W.tickN<c[0] || W.tickN-c[0]>=100){ c=[W.tickN, n.blds.reduce((k,q) => k+(isle[pCenter[q]]===I ? 1 : 0),0)]; isleBuildings.set(key,c); }
+  return c[1];
+}
+export function resetHomes(){ isleBuildings.clear(); }
 export function homeScore(n: Nation, q: number){
   if (plotProblem(n,q) || plannedWall(n,q)) return 0;   // a bot's houses keep off the line of its wall
   const nb=nbBuildings(q,n.id);
   let w = nb>0 ? (nb<=3 ? 1+nb*1.4 : nb<=5 ? 1.6 : 0.35) : n.bCount<2 ? 0.3 : (!anyWithin(q,n.id,5,isOwnBld) ? 0.9 : 0.03);
+  // a colony with no building on its island yet: the people go over by boat to found its first village
+  const I=isle[pCenter[q]];
+  if (n.navals>0 && I && n.capTile>=0 && I!==isle[n.capTile] && buildingsOnIsle(n,I)===0) w=Math.max(w,3.5);
   if (pType[q]===B_RUINS) w*=1.8;   // rebuilding on the ashes
   if (terr[pCenter[q]]===T_FOREST) w*=0.5;
   // beside a road
@@ -96,9 +107,9 @@ export function finishHouse(q: number, id: number){
 /* ---------- buildings a kingdom places ---------- */
 export interface Structure { type: number; name: string; cost: number[]; info: string; }   // cost: [wood, stone, copper]
 // buildings placed bigger than one plot: [width, height] in plots
-export const SIZE: Record<number, [number, number]> = { [B_GUILD]: [2,1] };
-/** The plots a building of `type` placed with its top-left on plot q covers. */
-export function footprint(q: number, type: number){ return rect(q, SIZE[type] ?? [1,1]); }
+export const SIZE: Record<number, [number, number]> = { [B_GUILD]: [2,1], [B_NAVAL]: [4,2] };
+/** The plots a building of `type` placed with its top-left on plot q covers (a naval base is 4×2, or, turned, 2×4). */
+export function footprint(q: number, type: number, orient=0){ return rect(q, type===B_NAVAL && orient ? [2,4] : SIZE[type] ?? [1,1]); }
 const rect = (q: number, [w,h]: number[]) => { const out: number[]=[]; for (let y=0;y<h;y++) for (let x=0;x<w;x++) out.push(q+y*PW+x); return out; };
 // plantations, quarries and copper mines: their size (pSpan) is their tier
 export const GATHERERS = [B_PLANTATION, B_QUARRY, B_COPPERMINE];
@@ -108,6 +119,7 @@ const SPANS = [[1,1],[2,1],[2,2]];
 export function dims(q: number): [number, number] {
   const ty=pType[q];
   if (ty===B_CASTLE) return [2,2];
+  if (ty===B_NAVAL) return pSpan[q]===1 ? [2,4] : [4,2];
   if (isGatherer(ty)){ const [w,h]=SPANS[pSpan[q]]; return [w,h]; }
   return SIZE[ty] ?? [1,1];
 }
@@ -128,6 +140,7 @@ export const STRUCTURES: Structure[] = [
   { type: B_COPPERMINE, name: 'Copper mine', cost: [10,10,0], info: 'A shaft into the rock with the furnace glowing inside: +1 copper every 30 seconds. With resource gathering research, two side by side join (+3), then four in a square (+10). Each copper mine you own makes the next 10% dearer.' },
   { type: B_RESEARCH,   name: 'Research station', cost: [15,15,10], info: 'Scholars earn 1 research point a second; more stations, faster research. Click a placed station to choose what to study.' },
   { type: B_GUILD,      name: 'Builders guild', cost: [10,20,5], info: 'One villager becomes its builder. As research allows, he rebuilds watchtowers (10 stone and 4 wood, then 20 and 8) and turns hovels into stone houses and manors (3 wood and 3 stone a tier), spending what the city investment slider lets him. Takes 2×1 plots. Each guild you own makes the next 10% dearer.' },
+  { type: B_NAVAL,      name: 'Naval base', cost: [15,5,0], info: 'A harbour on the coast: 8 plots (4×2 or 2×4), at least a third of them on the water. Click it to build ships (5 wood each). Click an island to colonize it: a ship sails there and your border spreads over it; villagers cross by boat to build. Ships carry 5 soldiers each, for naval invasions.' },
   { type: B_SMITHY,     name: 'Blacksmith', cost: [10,15,5], info: 'One villager becomes its smith. With infantry research he fetches 5 copper from the castle, forges armour for 5 seconds and carries it to the barracks: reinforced armour for every rack, then heavy armour.' },
 ];
 export const structureOf = (type: number) => STRUCTURES.find(s => s.type===type);
@@ -174,9 +187,38 @@ export function plotProblem(n: Nation, q: number, over: Over='none'): string | n
   return null;
 }
 
+/** Why a naval base can't stand with its top-left on plot q turned `orient` (0: 4×2, 1: 2×4), or null. Its plots may lie
+    on the water, but every bit of land in it must be the kingdom's own; a third of it at least is water, and some is land. */
+export function navalProblem(n: Nation, q: number, orient: number, over: Over='none'): string | null {
+  const [w,h]=orient ? [2,4] : [4,2];
+  if (q<0 || q%PW+w>PW || ((q/PW)|0)+h>PH) return 'There is no room to build there';
+  let water=0, land=0;
+  for (const k of rect(q,[w,h])){
+    if (((pType[k]!==B_EMPTY && pType[k]!==B_RUINS) || pBurn[k]>0) && !replaceable(n,k,over)) return 'Something already stands there';
+    const px=(k%PW)*4, py=((k/PW)|0)*4;
+    for (let y=py;y<py+4;y++) for (let x=px;x<px+4;x++){
+      const t=y*TW+x;
+      if (!isLand[t]){ water++; continue; }
+      land++;
+      if (owner[t]!==n.id) return owner[t] ? 'Too close to the border' : 'Build on your own land';
+      if (occ[t]) return 'The enemy holds that ground';
+    }
+  }
+  if (water*3<w*h*16) return 'At least a third of a naval base must be on the water';
+  if (land<16) return 'A naval base needs some of your land beside the water';
+  return null;
+}
+/** How a naval base goes with its top-left on plot q: the way it is turned (-1 if it can't stand there), and why not. */
+export function navalSite(n: Nation, q: number, over: Over='none'): { orient: number; problem: string | null } {
+  const p0=navalProblem(n,q,0,over); if (!p0) return { orient:0, problem:null };
+  const p1=navalProblem(n,q,1,over); if (!p1) return { orient:1, problem:null };
+  return { orient:-1, problem: p0==='There is no room to build there' ? p1 : p0 };
+}
+
 /** Why kingdom n can't put a `type` building with its top-left on plot q, or null if it can. With
     `over`, it may go over buildings of the kingdom's (they are pulled down), but not over one just like it. */
 export function placeProblem(n: Nation, q: number, type: number, over: Over='none'): string | null {
+  if (type===B_NAVAL) return navalSite(n,q,over).problem;
   const [w,h]=SIZE[type] ?? [1,1];
   if (q<0 || q%PW+w>PW || ((q/PW)|0)+h>PH) return 'There is no room to build there';
   for (const k of footprint(q,type)){ const p=plotProblem(n,k,over); if (p) return w*h>1 && p==='Something already stands there' ? `Needs ${w}×${h} free plots` : p; }
@@ -184,9 +226,9 @@ export function placeProblem(n: Nation, q: number, type: number, over: Over='non
   return null;
 }
 /** The buildings a `type` building placed on plot q would pull down (main plots). */
-export function underneath(q: number, type: number){
+export function underneath(q: number, type: number, orient=0){
   const out: number[]=[];
-  for (const k of footprint(q,type)){ const ty=pType[k]; if ((isStructure(ty) || ty===B_SITE) && !out.includes(mainOf(k))) out.push(mainOf(k)); }
+  for (const k of footprint(q,type,orient)){ const ty=pType[k]; if ((isStructure(ty) || ty===B_SITE) && !out.includes(mainOf(k))) out.push(mainOf(k)); }
   return out;
 }
 /** Pulls down the building on plot q (all of it, if it covers several plots): its plots are left bare. */
@@ -210,9 +252,11 @@ export function build(n: Nation, q: number, type: number, over: Over='none'){
   const s=structureOf(type);
   if (!s || !n.alive || !canAfford(n,s) || placeProblem(n,q,type,over)) return false;
   costFor(n,s).forEach((c,g) => n.stock[g]-=c);
-  for (const m of underneath(q,type)) demolish(m);
-  for (const k of footprint(q,type).slice(1)){ pType[k]=B_PART; pOwner[k]=n.id; pMain[k]=q; pBurn[k]=0; pAband[k]=0; pPrio[k]=0; }
+  const orient=type===B_NAVAL ? navalSite(n,q,over).orient : 0;
+  for (const m of underneath(q,type,orient)) demolish(m);
+  for (const k of footprint(q,type,orient).slice(1)){ pType[k]=B_PART; pOwner[k]=n.id; pMain[k]=q; pBurn[k]=0; pAband[k]=0; pPrio[k]=0; }
   placeBuilding(q,n.id,type,false);
+  if (type===B_NAVAL) pSpan[q]=orient;
   // count it right away rather than at the next census, so its effect starts now
   countUp(n,type);
   if (isGatherer(type)) joinGatherers(n);
@@ -222,12 +266,12 @@ function countDown(n: Nation, type: number){
   if (type===B_HOUSE){ n.houses=Math.max(0,n.houses-1); n.beds=Math.max(0,n.beds-1); }   // (the census counts beds exactly, once a second)
   else if (type===B_FARM) n.farms--; else if (type===B_BARRACKS) n.barracks--; else if (type===B_TOWER) n.towers--; else if (type===B_MINTER) n.minters--;
   else if (type===B_PLANTATION) n.plantations--; else if (type===B_QUARRY) n.quarries--; else if (type===B_COPPERMINE) n.copperMines--;
-  else if (type===B_RESEARCH) n.labs--; else if (type===B_GUILD) n.guilds--; else if (type===B_SMITHY) n.smithies--;
+  else if (type===B_RESEARCH) n.labs--; else if (type===B_GUILD) n.guilds--; else if (type===B_SMITHY) n.smithies--; else if (type===B_NAVAL) n.navals--;
 }
 export function countUp(n: Nation, type: number){
   if (type===B_FARM) n.farms++; else if (type===B_BARRACKS) n.barracks++; else if (type===B_TOWER) n.towers++; else if (type===B_MINTER) n.minters++;
   else if (type===B_PLANTATION) n.plantations++; else if (type===B_QUARRY) n.quarries++; else if (type===B_COPPERMINE) n.copperMines++;
-  else if (type===B_RESEARCH) n.labs++; else if (type===B_GUILD) n.guilds++; else if (type===B_SMITHY) n.smithies++;
+  else if (type===B_RESEARCH) n.labs++; else if (type===B_GUILD) n.guilds++; else if (type===B_SMITHY) n.smithies++; else if (type===B_NAVAL) n.navals++;
 }
 
 /** Production buildings fill the stockpile every 30 seconds by their tier; pTimer counts their

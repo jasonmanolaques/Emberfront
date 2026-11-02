@@ -5,8 +5,8 @@
    Farms, barracks, watchtowers and coin minters are modular: each plot looks at its four
    neighbours, and plots of the same kind and owner join up, so fields merge into one farmland,
    barracks into one long hall, minters into one workshop, and towers link with walls. */
-import { PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY } from '../core/constants';
-import { W, pType, pOwner, pVar, pMain, pAband, pTier, pBurn } from '../sim/state';
+import { PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_NAVAL, TW } from '../core/constants';
+import { W, isLand, pType, pOwner, pVar, pMain, pAband, pTier, pBurn } from '../sim/state';
 import { cultureOf, drawCapital, wearCapital } from './capitals';
 import { styleOf, type NationStyle } from './style';
 import { towerTier, castleTier, wear } from '../sim/defense';
@@ -29,7 +29,7 @@ function objectsOf(c: Tile){
   only=null;
 }
 painters.objects=objectsOf;
-const tmp = document.createElement('canvas'); tmp.width = 2*PS; tmp.height = 2*PS;
+const tmp = document.createElement('canvas'); tmp.width = 4*PS; tmp.height = 4*PS;   // (room for a naval base: 4×2 plots, or 2×4)
 const tctx = tmp.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
 let G = tctx;   // where P and R draw: the scratch canvas, or an icon
 
@@ -312,6 +312,63 @@ function drawGuild(ox: number, oy: number, n: NationStyle){
   R(ox+29,oy,1,3,'#4a3a2a'); R(ox+30,oy,2,2,n.roof);         // the guild's pennant
 }
 
+/* ---------- the naval base (4×2 plots, or 2×4): a yard on the shore and piers over the water ----------
+   Drawn tile by tile (4×4 pixels each): flagstones where there is land, a plank quay along the
+   shore, piers running out from it, a warehouse on the yard, a crane and a pennant. */
+function drawNaval(ox: number, oy: number, n: NationStyle, w: number, h: number, q: number){
+  const TX=w*4, TY=h*4, px0=q>=0 ? (q%PW)*4 : 0, py0=q>=0 ? ((q/PW)|0)*4 : 0;
+  const wet=(tx: number, ty: number) => tx<0||ty<0||tx>=TX||ty>=TY ? false : q>=0 ? !isLand[(py0+ty)*TW+px0+tx] : (w>=h ? tx>=Math.round(TX*0.62) : ty>=Math.round(TY*0.62));
+  // how far each water tile is from the yard, and which way the shore runs (a horizontal or vertical step away from it)
+  const dist=new Int8Array(TX*TY).fill(-1), axis=new Int8Array(TX*TY), Q: number[]=[];
+  for (let ty=0;ty<TY;ty++) for (let tx=0;tx<TX;tx++) if (!wet(tx,ty)){ dist[ty*TX+tx]=0; Q.push(ty*TX+tx); }
+  for (let i=0;i<Q.length;i++){
+    const k=Q[i], tx=k%TX, ty=(k/TX)|0;
+    for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const x=tx+dx, y=ty+dy; if (x<0||y<0||x>=TX||y>=TY||dist[y*TX+x]>=0) continue;
+      dist[y*TX+x]=dist[k]+1; axis[y*TX+x]=dist[k]===0 ? (dx ? 0 : 1) : axis[k]; Q.push(y*TX+x);
+    }
+  }
+  for (let ty=0;ty<TY;ty++) for (let tx=0;tx<TX;tx++){
+    const k=ty*TX+tx, x=ox+tx*4, y=oy+ty*4, d=dist[k];
+    if (d===0){   // the yard: flagstones
+      R(x,y,4,4,'#b3ab98'); R(x,y+3,4,1,'#9b937f'); R(x+((tx+ty)&1 ? 2 : 0),y,1,3,'#9b937f'); P(x+1,y+1,'#c6bfae');
+    } else if (d>0){
+      const lateral=axis[k]===0 ? ty : tx;
+      if (d===1 || (d<=6 && lateral%6===2)){   // the quay along the shore, and piers out from it
+        R(x,y,4,4,'#9b6b3f');
+        if (axis[k]===0){ R(x,y,4,1,'#b98650'); R(x,y+2,4,1,'#7d5430'); } else { R(x,y,1,4,'#b98650'); R(x+2,y,1,4,'#7d5430'); }
+        if (d===1 && lateral%6===2) P(x+1,y+1,'#4a3220');   // a mooring post
+      } else if (d<=5 && ((tx+ty)%7===3)){ P(x+1,y+1,'#4a3220'); P(x+1,y+2,'#7a5634'); }   // a pile standing in the water
+    }
+  }
+  // the warehouse: on the yard where a 3×2 block of land lies nearest its middle
+  let best=-1, bd=1e9;
+  for (let ty=0;ty<=TY-2;ty++) for (let tx=0;tx<=TX-3;tx++){
+    let ok=true; for (let j=0;j<2 && ok;j++) for (let i=0;i<3;i++) if (dist[(ty+j)*TX+tx+i]!==0){ ok=false; break; }
+    if (!ok) continue;
+    const dd=(tx+1.5-TX/2)**2+(ty+1-TY/2)**2; if (dd<bd){ bd=dd; best=ty*TX+tx; }
+  }
+  if (best>=0){
+    const bx=ox+(best%TX)*4, by=oy+((best/TX)|0)*4;
+    R(bx,by+3,12,5,'#e6dabd'); R(bx,by+7,12,1,'#b9ab8c'); R(bx+3,by+3,1,5,'#5a3e28'); R(bx+8,by+3,1,5,'#5a3e28');
+    R(bx-1,by+2,14,1,'#3b2a1e'); R(bx-1,by,14,2,n.roofD); R(bx,by-1,12,1,n.roof); R(bx+2,by-2,8,1,n.roofL);
+    R(bx+4,by+4,4,4,'#3a2a1c'); R(bx+6,by+4,1,4,'#5a4030');
+    R(bx+10,by-1,1,2,'#4a3a2a'); R(bx+11,by-2,2,2,n.roof);   // a pennant
+    // crates and a barrel by the door
+    R(bx-4,by+5,3,3,C.wood); R(bx-4,by+5,3,1,C.woodL); P(bx-3,by+6,C.woodD);
+    R(bx+13,by+4,3,4,'#7a5634'); R(bx+13,by+5,3,1,'#4a3220'); R(bx+13,by+7,3,1,'#4a3220');
+  }
+  // a crane at the quay: a mast on the yard, a jib over the water
+  for (let ty=0;ty<TY;ty++) for (let tx=0;tx<TX;tx++){
+    if (dist[ty*TX+tx]!==0) continue;
+    const e=dist[ty*TX+tx+1]===1 && tx+1<TX ? 0 : dist[(ty+1)*TX+tx]===1 && ty+1<TY ? 1 : -1;
+    if (e<0 || (tx+ty)%6!==1) continue;
+    const x=ox+tx*4, y=oy+ty*4;
+    R(x+1,y-6,1,9,C.woodD); if (e===0){ R(x+1,y-6,7,1,C.wood); P(x+7,y-5,'#c9b48a'); R(x+7,y-4,1,3,'#c9b48a'); } else { R(x-5,y-6,7,1,C.wood); P(x-4,y-5,'#c9b48a'); R(x-4,y-4,1,3,'#c9b48a'); }
+    break;
+  }
+}
+
 /* ---------- the castle (2×2 plots) ----------
    Tier 1 a keep within a curtain wall; tier 2 a fortress, its corner towers taller and roofed,
    a turret rising from the keep; tier 3 a pale citadel trimmed in gold, a spire on the keep and
@@ -398,8 +455,9 @@ export function drawPlot(q: number){
   if (!only) ovPlot(q);   // (the overview shows towns too)
   const ox=(q%PW)*PS, oy=((q/PW)|0)*PS, ty=pType[q];
   if (ty===B_CPART){ const m=pMain[q]; if (pType[m]===B_CASTLE){ drawPlot(m); return; } }
-  if (ty===B_PART){ const m=pMain[q]; if (BIG[pType[m]]){ drawPlot(m); return; } clearAt(ox,oy,PS,PS); return; }
+  if (ty===B_PART){ const m=pMain[q]; if (BIG[pType[m]] || pType[m]===B_NAVAL){ drawPlot(m); return; } clearAt(ox,oy,PS,PS); return; }
   const n=styleOf(pOwner[q]);
+  if (ty===B_NAVAL){ const [w,h]=dims(q); stamp(ox,oy,w*PS,h*PS,()=>drawNaval(0,0,n,w,h,q)); return; }
   if (BIG[ty]){ const [w,h]=dims(q); stamp(ox,oy,w*PS,h*PS,()=>drawBig(0,0,ty,n,w,h)); return; }
   if (ty===B_CASTLE){
     // each country builds its capital in its own tradition (render/capitals.ts); the West, a keep
@@ -431,13 +489,14 @@ export function drawPlotAndNeighbours(q: number){
 }
 
 /** Draws a building's sprite into an icon (one plot is 16×16, unjoined) in the given kingdom colours. */
-export function drawIcon(ctx: CanvasRenderingContext2D, type: number, n: NationStyle){
+export function drawIcon(ctx: CanvasRenderingContext2D, type: number, n: NationStyle, orient=0){
   const prev=G; G=ctx; ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
   if (type===B_FARM) drawFarm(0,0,n,1,0); else if (type===B_BARRACKS) drawBarracks(0,0,n,0);
   else if (type===B_TOWER) drawTower(0,0,n,0); else if (type===B_MINTER) drawMinter(0,0,n,0);
   else if (type===B_HOUSE) drawHouse(0,0,n,0,false);
   else if (type===B_RESEARCH) drawResearch(0,0,n);
   else if (type===B_SMITHY) drawSmithy(0,0,n);
+  else if (type===B_NAVAL) drawNaval(0,0,n,orient ? 2 : 4,orient ? 4 : 2,-1);
   else if (BIG[type]){ drawBig(0,0,type,n); drawWorking(ctx,type,0,0,0.99,0); }
   outline(ctx,0,0,ctx.canvas.width,ctx.canvas.height,EDGE);
   G=prev;

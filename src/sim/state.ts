@@ -12,7 +12,8 @@ export interface Nation {
   tiles: number; alive: boolean; capTile: number; capPlot: number;
   plots: number[]; blds: number[]; bCount: number;
   houses: number; farms: number; towers: number; mines: number; barracks: number; minters: number;
-  plantations: number; quarries: number; copperMines: number; labs: number; guilds: number; smithies: number;   // labs: research stations
+  plantations: number; quarries: number; copperMines: number; labs: number; guilds: number; smithies: number; navals: number;   // labs: research stations; navals: naval bases
+  fleet: number;                     // ships docked and ready (any naval base's: they are the kingdom's)
   beds: number;                      // people the houses can hold: a hovel 1, a stone house 2, a manor 3
   sumX: number; sumY: number; ltx: number; lty: number; peak: number;   // ltx/lty: where the kingdom's label sits
   expandAt: number; attackAt: number; ratio: number; nextThink: number;  // bot personality
@@ -76,6 +77,7 @@ export interface Human {
   fk: number;                        // soldiers on a front (sim/front.ts): the offensive it belongs to (attacker*M+defender), or -1
   line: number;                      // ...their rank there: 0 the front rank, 1 the rank behind it, …
   fx: number; fy: number;            // ...and where they stand, in pixels (slot: how far along the line)
+  boat: number;                      // soldiers of a naval invasion: the ship that carries them (they are out of sight while aboard), or -1
 }
 /** An army in the field: an attack (holding its part of a front, and pushing it on when the offensive
     is on), or an army defending a border. */
@@ -102,7 +104,36 @@ export interface Campaign {
   mode: number;                      // its offensive's state (F_* in war.ts)
   hitAt: number;                     // tick one of its soldiers was last hit
 }
-export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; }   // gold still to spend on this front
+export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; isle?: number; }   // gold still to spend on this front (isle: a colony's, spent on that island's land only)
+/** A ship at sea (sim/naval.ts): sailing out, waiting off a coast, or sailing home to its naval base. */
+export interface Ship {
+  id: number; o: number; base: number;   // its kingdom, and the main plot of the naval base it sails from and returns to
+  x: number; y: number;                  // where it is, in pixels
+  path: number[]; pi: number;            // waypoints (x,y pairs, pixels) and the next one
+  mode: number;                          // SHIP_* in naval.ts
+  inv: number;                           // the invasion it carries (-1 for a colony's ship)
+  row: number; slot: number;             // in a landing: which row of ships, and its place along it
+  face: number;                          // -1 heading west, 1 east
+  colony: number;                        // a colony's ship: the island it settles (isle id), else -1
+  gold: number;                          // a colony's ship: the gold it carries to spend settling
+  lands: number;                         // a colony's ship: the tile it lands on
+  back: number[];                        // the way home
+  crew: number;                          // soldiers aboard (an invasion's ship)
+  fleet: boolean;                        // one of the kingdom's fleet (counted again when it docks), not a colony's
+}
+/** A naval base's yard: ships being built. */
+export interface Dock { q: number; queued: number; prog: number; }
+/** A landing from the sea, planned and under way. */
+export interface Invasion {
+  id: number; a: number; d: number; base: number;
+  ships: number[]; camps: number[];      // the ships (ids) and the armies aboard them (campaign ids)
+  zone: number[]; coast: number[];       // the landing zone (tiles of d's, coast first) and its coast tiles in order along it
+  rows: number[];                        // ships in each row
+  stage: number;                         // INV_* in naval.ts
+  safe: boolean;                         // the coast is already held by a: no defence, no crisis
+  landAt: number;                        // tick the next row lands
+  row: number;                           // rows landed so far
+}
 
 /** A player action. Actions are queued and applied at the start of the next tick, so every
     client that receives the same actions in the same ticks runs the same game. */
@@ -111,6 +142,8 @@ export type Command =
   | { type: 'soldiers'; nation: number; share: number }
   | { type: 'build'; nation: number; plot: number; kind: number }     // kind: B_FARM, B_BARRACKS, B_TOWER or B_MINTER
   | { type: 'priority'; nation: number; plot: number }                // toggle a watchtower's call for a garrison
+  | { type: 'colonize'; nation: number; tile: number; ratio: number }   // send a ship to colonize the landmass of this unclaimed tile, with this share of the treasury
+  | { type: 'ship'; nation: number; plot: number }                   // build a ship at this naval base
   | { type: 'ally'; nation: number; target: number }                  // propose an alliance
   | { type: 'war'; nation: number; target: number; naval?: { base: number; coast: number }; soldiers?: number; units?: number[]; militia?: number }   // units: barracks plots, each army marches on its own; militia: how many of the militia at home go too
   | { type: 'endWar'; nation: number; target: number }                // offer peace
@@ -127,6 +160,9 @@ export let elev = new Float32Array(NT), moist = new Float32Array(NT);
 // resources: at most one per tile (R_* in resources.ts), harvests left, claimed by a villager
 export let terr = new Uint8Array(NT), isLand = new Uint8Array(NT), owner = new Uint8Array(NT), road = new Uint8Array(NT);
 export let frontMark = new Int32Array(NT);
+export let isle = new Uint16Array(NT);   // each landmass (4-connected land) has an id from 1; 0 for water
+export let sea = new Uint16Array(NT);    // each body of water has an id from 1; 0 for land
+export let ferry = new Uint8Array(NT);   // sea lanes a kingdom's villagers cross by boat: the kingdom's id, or 0
 export let pType = new Uint8Array(NP), pOwner = new Uint8Array(NP), pVar = new Uint8Array(NP), pBuild = new Uint8Array(NP);
 export let pMain = new Int32Array(NP), pCenter = new Int32Array(NP), pBurn = new Float32Array(NP), pTimer = new Float32Array(NP);
 export let pAband = new Uint8Array(NP);   // houses standing empty, run down
@@ -145,7 +181,7 @@ export function resizeGrid(w: number, h: number){
   setGrid(w,h);
   elev=new Float32Array(NT); moist=new Float32Array(NT);
 
-  terr=new Uint8Array(NT); isLand=new Uint8Array(NT); owner=new Uint8Array(NT); road=new Uint8Array(NT); frontMark=new Int32Array(NT); occ=new Uint8Array(NT);
+  terr=new Uint8Array(NT); isLand=new Uint8Array(NT); owner=new Uint8Array(NT); road=new Uint8Array(NT); frontMark=new Int32Array(NT); occ=new Uint8Array(NT); isle=new Uint16Array(NT); sea=new Uint16Array(NT); ferry=new Uint8Array(NT);
   pType=new Uint8Array(NP); pOwner=new Uint8Array(NP); pVar=new Uint8Array(NP); pBuild=new Uint8Array(NP);
   pMain=new Int32Array(NP); pCenter=new Int32Array(NP); pBurn=new Float32Array(NP); pTimer=new Float32Array(NP);
   pAband=new Uint8Array(NP); pIn=new Uint8Array(NP); pHp=new Float32Array(NP); pArmor=[new Uint8Array(0), new Uint8Array(0), new Uint8Array(NP), new Uint8Array(NP)];
@@ -177,4 +213,9 @@ export const W = {
   kills: new Int32Array(1),          // [a*M+b] people of b's that a has killed in their war (since it began)
   stall: new Int32Array(1),          // [a*M+b] ticks their war has gone without the border between them moving much (both ways)
   lastNet: new Int32Array(1),        // [a*M+b] land a held of b's, less b's of a's, when it was last looked at
+  ships: [] as Ship[], shipSeq: 0,   // ships at sea
+  docks: new Map<number, Dock>(),    // naval base (main plot) → its yard
+  invasions: [] as Invasion[], invSeq: 0,
+  isleOwn: new Int32Array(0),        // [isle*M+o] tiles of o's on that island (and every landmass: sim/naval.ts)
+  isleCount: 0,
 };

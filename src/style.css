@@ -325,7 +325,15 @@ button:disabled:active{transform:none;box-shadow:2px 2px 0 var(--ink)}
 #army{left:50%;top:50%;transform:translate(-50%,-60%);width:min(320px,calc(100% - 32px));padding:12px 14px 14px;display:grid;gap:8px;z-index:4}
 #army .dhead{display:flex;align-items:center;gap:8px}
 #army .dname{font-weight:700;font-size:18px;flex:1}
+#expand.off .exrow{opacity:.45}
 #army .x{width:30px;height:30px;padding:0;font-size:18px;line-height:1}
+#naval{left:50%;top:50%;transform:translate(-50%,-60%);width:min(320px,calc(100% - 32px));padding:12px 14px 14px;display:grid;gap:8px;z-index:4}
+#naval .dhead{display:flex;align-items:center;gap:8px}
+#naval .dhead canvas{height:24px;width:48px;image-rendering:pixelated}
+#naval .dname{font-weight:700;font-size:18px;flex:1}
+#naval .x{width:30px;height:30px;padding:0;font-size:18px;line-height:1}
+#nProg{pointer-events:none}
+@media (max-width:640px){#naval{top:auto;bottom:196px;left:16px;width:calc(100% - 90px);transform:none}}
 #aIcon{width:32px;height:32px;image-rendering:pixelated;background:#2a3a2a;border:1px solid var(--ink)}
 .arow{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:14px;font-weight:600}
 @media (max-width:640px){#army{top:auto;bottom:196px;left:16px;width:calc(100% - 90px);transform:none}}

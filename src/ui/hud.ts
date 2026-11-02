@@ -8,6 +8,7 @@ import { client } from '../client';
 import { updateWarChips, refreshDiplomacy } from './diplomacy';
 import { refreshResearch } from './research';
 import { refreshArmy } from './army';
+import { refreshNaval } from './naval';
 import { refreshCommand } from './command';
 import { flagCSS } from '../render/flags';
 import { $ } from './dom';
@@ -74,7 +75,7 @@ export function updateHUD(now: number){
   updateWarChips();
   refreshDiplomacy();
   refreshResearch();
-  refreshArmy();
+  refreshArmy(); refreshNaval();
   refreshCommand();
 }
 

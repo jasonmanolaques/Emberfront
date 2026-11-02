@@ -25,6 +25,7 @@ import { setupDiplomacy, resetDiplomacy, noteDeath } from './ui/diplomacy';
 import './render/nature';   // (paints the cacti)
 import { refreshResearch, closeResearch } from './ui/research';
 import { closeArmy } from './ui/army';
+import { closeNaval } from './ui/naval';
 import { deselect } from './ui/command';
 import { TIER_NAME } from './sim/army';
 import { R_CASTLE } from './sim/research';
@@ -54,6 +55,9 @@ listen({
   },
   occupied: paintTile,
   bldHit: dustPuff,
+  shipBuilt: (o,_q) => { if (o===PLAYER){ log('A ship is ready in your harbour','good'); toast('Ship ready'); } },
+  colonyBound: (o,_t) => { if (o===PLAYER) log('A ship sails to colonize the island','good'); },
+  colonyFounded: (o,_t) => { if (o===PLAYER){ log('Your colonists land: your border spreads over the island, and villagers can cross by boat','good'); toast('Colony founded'); } },
   warBegan: (a,d) => {
     if (a===PLAYER) log(`Your soldiers muster to attack ${nm(d)}`,'good');
     else if (d===PLAYER){ log(`${nm(a)} has declared war on you!`,'bad'); toast(`${nm(a)} attacks you`); }
@@ -162,7 +166,7 @@ export function newGame(seed?: number){
   fitChoice();
   ui.banner.textContent = W.map==='gen' ? 'Tap open land to found your capital' : 'Tap open land to found your capital: you play the country whose capital is nearest';
   resetStyles(); resetLabels(); resetEffects(); resetGhosts(); resetPeople(); resetSpeech();
-  toggleBuildPanel(false); resetDiplomacy(); closeResearch(); closeArmy(); deselect();
+  toggleBuildPanel(false); resetDiplomacy(); closeResearch(); closeArmy(); closeNaval(); deselect();
   client.overShown=false; client.lastVillageLog=-99; client.paused=false;
   setSoldierShare(0); setInvest(0.5);
   sizeTerrain();   // (the real-world maps are bigger: the picture's tiles are let go and made again as they come into view)
@@ -210,6 +214,14 @@ export function playerAttack(t: number, ratio=0.4){
   if (!bordersOn(PLAYER,0)){ toast('Your border no longer touches unclaimed land'); return; }
   const send=me.gold*ratio;
   if (send<2){ toast('Not enough gold yet'); return; }
+  floats.push({x:(t%TW)*2+1, y:((t/TW)|0)*2, text:'−'+fmt(send)+' gold', t0:performance.now(), c:'#ffe27a'});
+}
+
+/** Colonizing: a ship takes `ratio` of the treasury over the sea to the landmass of unclaimed tile t. */
+export function playerColonize(t: number, ratio=0.4){
+  const me=W.nations[PLAYER]; if (!me || !me.alive || t<0 || !isLand[t] || owner[t]) return;
+  const send=me.gold*ratio; if (send<2){ toast('Not enough gold yet'); return; }
+  queueCommand({ type:'colonize', nation:PLAYER, tile:t, ratio });
   floats.push({x:(t%TW)*2+1, y:((t/TW)|0)*2, text:'−'+fmt(send)+' gold', t0:performance.now(), c:'#ffe27a'});
 }
 

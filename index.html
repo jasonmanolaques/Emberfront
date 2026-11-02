@@ -116,6 +116,18 @@
     <p class="tnote" id="aSmith"></p>
     <p class="dnote" id="aNote"></p>
   </section>
+  <section id="naval" class="plate" hidden aria-label="Naval base">
+    <div class="dhead"><canvas id="nIcon" width="64" height="32" aria-hidden="true"></canvas><span class="dname">Naval base</span><button id="nClose" class="x" aria-label="Close">×</button></div>
+    <dl class="stats dstats">
+      <div><dt title="Ships ready in the harbour: the fleet belongs to the kingdom, and any base can send it">Ships ready</dt><dd id="nReady">0</dd></div>
+      <div><dt>Building</dt><dd id="nBuilding">0</dd></div>
+      <div><dt title="Ships of the fleet at sea, or on their way home">At sea</dt><dd id="nOut">0</dd></div>
+    </dl>
+    <div class="arow"><span class="tag">Ship in the yard</span><b id="nProgVal">idle</b></div>
+    <input type="range" id="nProg" min="0" max="100" step="1" value="0" disabled aria-label="Ship construction progress">
+    <button id="nBuild" class="danger">Build a ship · 5 wood</button>
+    <p class="dnote" id="nNote"></p>
+  </section>
   <section id="research" class="plate" hidden aria-label="Research">
     <div class="dhead"><canvas id="rIcon" width="16" height="16" aria-hidden="true"></canvas><span class="dname">Research</span><button id="rClose" class="x" aria-label="Close">×</button></div>
     <div class="tag" id="rRate"></div>

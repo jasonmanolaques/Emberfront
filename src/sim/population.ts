@@ -33,11 +33,12 @@
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, until the kingdom sends them to war (sim/war.ts). */
 import { TW, TH, PW, PH, TICK, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY } from '../core/constants';
-import { W, owner, occ, pType, pOwner, pBurn, pPrio, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, type Human, type Nation } from './state';
+import { W, owner, occ, isLand, ferry, pType, pOwner, pBurn, pPrio, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, type Human, type Nation } from './state';
 import { homeScore, startSite, cancelSite, finishHouse } from './buildings';
 import { on } from './events';
 import { Field } from './field';
 import { updateWar, reinforce, marchStep, guardStep, alarmStep, mayStand, spread, warringNow } from './war';
+import { FERRY_PACE, laneBox } from './naval';
 import { HOUSE_BEDS, R_HOUSING, R_TOWERS, MAX_TIER } from './research';
 import { gained, spent, mayInvest } from './ledger';
 import { TOWER_COST } from './defense';
@@ -96,7 +97,7 @@ const ownFree = (o: number, x: number, y: number) => { const t=tileOf(x,y); retu
 /** Pixel position at the front of building plot q (barracks door, foot of a watchtower). */
 export const frontOf = (q: number): [number, number] => [(q%PW)*8+4, ((q/PW)|0)*8+7.5];
 /** How fast h walks, pixels a second: soldiers are quicker at home, so defenders can catch invaders. */
-export const pace = (h: Human) => h.kind===H_SOLDIER && owner[tileOf(h.x,h.y)]===h.o ? h.sp*HOME_PACE : h.sp;
+export const pace = (h: Human) => { const t=tileOf(h.x,h.y); return !isLand[t] ? h.sp*FERRY_PACE : h.kind===H_SOLDIER && owner[t]===h.o ? h.sp*HOME_PACE : h.sp; };   // (a villager on a sea lane is in a boat: quicker)
 const standing = (q: number, type: number, id: number) => pType[q]===type && pOwner[q]===id && pBurn[q]<=0;
 /** Does the barracks (or castle) h is training at still stand? */
 const siteStands = (h: Human) => { const n=W.nations[h.o]; return h.site>=0 && (standing(h.site,B_BARRACKS,h.o) || (h.site===n.capPlot && n.capTile>=0)); };
@@ -141,7 +142,7 @@ function safeWalk(o: number, ax: number, ay: number, bx: number, by: number){
   const tdx=dx ? Math.abs(1/dx) : Infinity, tdy=dy ? Math.abs(1/dy) : Infinity;
   let tmx=dx ? (sx>0 ? tx+1-x0 : x0-tx)*tdx : Infinity, tmy=dy ? (sy>0 ? ty+1-y0 : y0-ty)*tdy : Infinity;
   for (let guard=0;guard<2000;guard++){
-    const t=ty*TW+tx; if (owner[t]!==o || occ[t]) return false;   // occupied land is no place for daily life
+    const t=ty*TW+tx; if ((owner[t]!==o && ferry[t]!==o) || occ[t]) return false;   // occupied land is no place for daily life (a sea lane is: the boats)
     if (tx===ex && ty===ey) return true;
     if (tmx<tmy){ tmx+=tdx; tx+=sx; } else { tmy+=tdy; ty+=sy; }
   }
@@ -232,7 +233,7 @@ function goBuildHome(h: Human){
   for (const picky of [true,false]) for (const [,q] of cands.slice(0,8)){
     const [x,y]=frontOf(q);
     h.tx=x; h.ty=y; h.task=TASK_HOME_GO;
-    if (route(h,picky)){ startSite(q,h.o); h.home=q; h.wait=0; housing[h.o].builders++; return true; }
+    if (route(h,picky) || routeField(h,x,y)){ startSite(q,h.o); h.home=q; h.wait=0; housing[h.o].builders++; return true; }
   }
   h.task=TASK_ROAM;
   return false;
@@ -271,7 +272,8 @@ function fillWalk(n: Nation, w: Walk){
   const f=w.f; w.at=W.tickN;
   if (n.capTile<0 || n.x1<n.x0){ f.fit(0,0,-1,-1); return; }
   f.fit(n.x0-1,n.y0-1,n.x1+1,n.y1+1);
-  const open=(t: number) => owner[t]===n.id && !occ[t] && !onCastle(n,(t%TW)*2+1,((t/TW)|0)*2+1);
+  const lane=laneBox.get(n.id); if (lane) f.fit(Math.min(n.x0,lane[0])-1,Math.min(n.y0,lane[1])-1,Math.max(n.x1,lane[2])+1,Math.max(n.y1,lane[3])+1);   // (the sea lanes may leave the box)
+  const open=(t: number) => (owner[t]===n.id || ferry[t]===n.id) && !occ[t] && !onCastle(n,(t%TW)*2+1,((t/TW)|0)*2+1);
   const [dx,dy]=doorOf(n), s=((dy/2)|0)*TW+((dx/2)|0);
   if (!open(s)) return;
   if (queue.length<f.w*f.h) queue=new Int32Array(f.w*f.h);
@@ -350,7 +352,7 @@ function goRest(h: Human, at=-1){
 export function makeHuman(n: Nation, kind: number, x: number, y: number): Human {
   return { id:++W.humanSeq, o:n.id, kind, militia:false, to:0, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+W.prand()*2,
     hp:kind===H_SOLDIER?SOLDIER_HP[1]:VILLAGER_HP, post:-1, site:-1, home:-1, rest:-1, duel:-1, housed:false, homeless:0, beggar:false,
-    war:-1, foe:-1, aim:-1, cool:0, slot:0, brave:-1, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
+    war:-1, boat:-1, foe:-1, aim:-1, cool:0, slot:0, brave:-1, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
     tier:kind===H_SOLDIER?1:0, base:-1, load:0, make:0, dest:-1 };
 }
 /** A new villager or militiaman walks out of the capital; a new soldier out of the barracks nearest the capital. */

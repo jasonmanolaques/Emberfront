@@ -1,6 +1,6 @@
 /* ---------- territory & combat ---------- */
 import { TW, TH, NT, PW, PH, TMULT, B_TOWER, B_CASTLE, B_CPART, GOLD_PER_TILE, isStructure } from '../core/constants';
-import { W, owner, occ, terr, isLand, frontMark, pType, pOwner, pBurn, type Attack } from './state';
+import { W, owner, occ, terr, isLand, isle, frontMark, pType, pOwner, pBurn, type Attack } from './state';
 import { on } from './events';
 import { ignite } from './buildings';
 
@@ -40,6 +40,7 @@ export function setOwner(t: number, o: number){
   if (occ[t]){ W.occCount[prev*W.M+occ[t]]--; occ[t]=0; }   // changing hands ends any occupation
   recountEdges(t,prev,o);
   owner[t]=o;
+  if (W.isleOwn.length && isLand[t]){ const i=isle[t]*W.M; W.isleOwn[i+prev]--; W.isleOwn[i+o]++; }   // (the tiles each kingdom has on each landmass)
   const x=t%TW, y=(t/TW)|0;
   if (prev){ const P=W.nations[prev]; P.tiles--; P.sumX-=x; P.sumY-=y; }
   if (o){ const n=W.nations[o]; n.tiles++; n.sumX+=x; n.sumY+=y; if (x<n.x0) n.x0=x; if (x>n.x1) n.x1=x; if (y<n.y0) n.y0=y; if (y>n.y1) n.y1=y;  }   // (contacts and sums are kept exact as tiles change: no scan of the map)
@@ -51,17 +52,17 @@ export function setOwner(t: number, o: number){
   if (prev){ const Pn=W.nations[prev]; if (t===Pn.capTile) capitalFalls(prev,o); if (Pn.tiles<=0 && Pn.alive) eliminate(prev,o); }
 }
 
-function startAttack(a: number, d: number, gold: number){
-  for (const A of W.attacks) if (!A.done && A.att===a && A.def===d){ A.gold+=gold; return A; }
+function startAttack(a: number, d: number, gold: number, onIsle=0){
+  for (const A of W.attacks) if (!A.done && A.att===a && A.def===d && (A.isle ?? 0)===onIsle){ A.gold+=gold; return A; }
   const id=++W.attackSeq, F: number[]=[], A0=W.nations[a];
   // the front: d's land touching a's, looked for only round a's land
   const x0=Math.max(0,A0.x0-1), x1=Math.min(TW-1,A0.x1+1), y0=Math.max(0,A0.y0-1), y1=Math.min(TH-1,A0.y1+1);
-  for (let y=y0;y<=y1;y++) for (let t=y*TW+x0, e=y*TW+x1;t<=e;t++){ if (owner[t]!==d || !isLand[t]) continue; if (touches(t,a)){ F.push(t); frontMark[t]=id; } }
-  const A: Attack={ id, att:a, def:d, gold, front:F, done:false };
+  for (let y=y0;y<=y1;y++) for (let t=y*TW+x0, e=y*TW+x1;t<=e;t++){ if (owner[t]!==d || !isLand[t] || (onIsle && isle[t]!==onIsle)) continue; if (touches(t,a)){ F.push(t); frontMark[t]=id; } }
+  const A: Attack={ id, att:a, def:d, gold, front:F, done:false }; if (onIsle) A.isle=onIsle;
   W.attacks.push(A); return A;
 }
 function finishAttack(A: Attack){ if (A.done) return; const n=W.nations[A.att]; if (n.alive) n.gold+=A.gold; A.gold=0; A.done=true; }   // unspent gold goes back
-function pushF(A: Attack, t: number){ if (owner[t]===A.def && isLand[t] && frontMark[t]!==A.id){ frontMark[t]=A.id; A.front.push(t); } }
+function pushF(A: Attack, t: number){ if (owner[t]===A.def && isLand[t] && frontMark[t]!==A.id && (!A.isle || isle[t]===A.isle)){ frontMark[t]=A.id; A.front.push(t); } }
 
 /** Unclaimed ground a kingdom has closed in on all sides is its own: after it takes tile t, any pocket of
     unowned land (up to POCKET tiles) next to t that has only a's land, or sea and mountains no one can stand on, round it is claimed
@@ -114,6 +115,8 @@ export function stepAttack(A: Attack){
   }
 }
 
+/** A colony's gold, already paid, spent settling the island `onIsle` only. */
+export function launchOn(a: number, gold: number, onIsle: number){ startAttack(a,0,gold,onIsle); }
 /** Sends `gold` from nation a's treasury to push its border into d's land (0 = unclaimed). */
 export function launch(a: number, d: number, gold: number){ const n=W.nations[a]; gold=Math.min(gold,n.gold); if (gold<GOLD_PER_TILE*2) return false; n.gold-=gold; startAttack(a,d,gold); return true; }
 

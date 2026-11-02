@@ -9,7 +9,7 @@ import { genRealMap, capitalsOn, REAL_MAPS } from './realmap';
 import { VIEWS } from './mapview';
 import { COUNTRIES, MAJOR, countryByCode, colourGap, type Country } from '../core/countries';
 import { setOwner, stepAttack, launch, touches } from './territory';
-import { toRuins, build, togglePriority, produce } from './buildings';
+import { toRuins, build, togglePriority, produce, resetHomes } from './buildings';
 import { scanContacts, census } from './census';
 import { botThink } from './bots';
 import { updatePopulation, resetWalks } from './population';
@@ -17,13 +17,14 @@ import { resetWar, declare, proposeAlliance, endWar, makePeace, setOffensive, se
 import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
 import { turnLedger, resetLedger } from './ledger';
+import { labelWorld, allocIsles, resetNaval, updateNaval, queueShip, colonize } from './naval';
 
 
 /* ---------- nations ---------- */
 function blankNation(id: number, name: string, hex: string, isPlayer: boolean, code=''): Nation {
   return { id, name, hex, isPlayer, code,
     gold:0, income:0, strength:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
-    plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, beds:0,
+    plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, navals:0, fleet:0, beds:0,
     sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0, nextWave:0, mass:new Map(), waved:new Map(), hungry:0, x0:1e9, y0:1e9, x1:-1, y1:-1, wallR:0, nextWall:0, unpaid:0,
     soldierShare:0, humanProg:0, villagers:0, soldiers:0, militia:0, called:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0,
     study:R_HOUSING, tier:[1,1,1,1,1,1], xp:[0,0,0,0,0,0], invest:0.5, gain:new Array(180).fill(0), spend:new Array(180).fill(0) };
@@ -87,7 +88,7 @@ export function newWorld(seed: number, map='gen'){
   W.M=1; W.contact=new Int32Array(1);
   W.simTime=0; W.tickN=0;
   W.humans=[]; W.humanSeq=0;
-  resetWar(1); resetStories(1); resetLedger(); resetWalks();
+  resetWar(1); resetStories(1); resetLedger(); resetWalks(); labelWorld(); resetNaval(); resetHomes();
 }
 
 /** Founds the player's capital near tile t and places the bot kingdoms: `rivals` of them, countries
@@ -109,7 +110,7 @@ export function startMatch(t: number, rivals: number | string[], me?: string){
   else for (let i=0;i<(rivals as number);i++) add(i+2,undefined,false);
   if (named) tellApart(N);
   W.M=N.length; W.contact=new Int32Array(W.M*W.M);
-  resetWar(W.M); resetStories(W.M);
+  resetWar(W.M); resetStories(W.M); allocIsles();
   spawnNation(mine,b[0],b[1]);
   const caps=[mine.capTile];
   for (let i=2;i<W.M;i++){
@@ -172,7 +173,7 @@ function startReal(b: [number, number], rivals: number | string[], me?: string){
   chosen.forEach((c,i) => N.push(makeNation(i+2,c.country,false)));
   if (Array.isArray(rivals)) tellApart(N);
   W.M=N.length; W.contact=new Int32Array(W.M*W.M);
-  resetWar(W.M); resetStories(W.M);
+  resetWar(W.M); resetStories(W.M); allocIsles();
   spawnNation(meN,b[0],b[1]);
   // each at its capital, or as near it as there is room (close capitals push each other apart)
   chosen.forEach((c,i) => { const n=N[i+2], blk=findBlock(c.tile%TW,(c.tile/TW)|0,6); if (blk) spawnNation(n,blk[0],blk[1]); else n.alive=false; });
@@ -199,6 +200,11 @@ function applyCommand(c: Command){
     const send=n.gold*c.ratio;
     if (send<2) return;
     launch(c.nation,o,send);
+  } else if (c.type==='colonize'){
+    const n=W.nations[c.nation]; if (!n || !n.alive || c.tile<0) return;
+    colonize(n,c.tile,n.gold*c.ratio);
+  } else if (c.type==='ship'){
+    const n=W.nations[c.nation]; if (n) queueShip(n,c.plot);
   } else if (c.type==='soldiers'){
     const n=W.nations[c.nation]; if (!n || !n.alive) return;
     n.soldierShare=Math.min(1,Math.max(0,c.share));
@@ -261,6 +267,7 @@ export function tick(){
   for (let i=1;i<N.length;i++){ const n=N[i]; if (n.alive && !n.isPlayer && W.simTime>=n.nextThink) botThink(n); }
   produce();
   updateResearch();
+  updateNaval();
   updatePopulation();
   updateStories();
   for (let i=1;i<N.length;i++){

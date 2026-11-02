@@ -1,11 +1,12 @@
 /* ---------- buildings panel: pick a building, then click your land to place it ---------- */
-import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_PART } from '../core/constants';
+import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_PART, B_NAVAL } from '../core/constants';
 import type { Nation } from '../sim/state';
 import { W, owner, pType, pOwner, pPrio, pMain } from '../sim/state';
 import { R_HOUSING, R_INFANTRY } from '../sim/research';
 import { TASK_FORGE } from '../sim/population';
 import { openResearch } from './research';
 import { openArmy } from './army';
+import { openNaval, closeNaval } from './naval';
 import { queueCommand } from '../sim/sim';
 import { STRUCTURES, canAfford, costFor, placeProblem, structureOf, SIZE, type Structure } from '../sim/buildings';
 import { GOOD_NAME } from '../sim/resources';
@@ -19,14 +20,14 @@ const panel=$('buildPanel'), list=$('buildList'), tip=$('btip'), title=$('buildT
 /** The building menus on the right: what each holds. */
 export const CATEGORIES = [
   { id:'urban',     name:'Urban development',   types:[B_FARM, B_GUILD, B_MINTER] },
-  { id:'military',  name:'Military',            types:[B_BARRACKS, B_TOWER, B_SMITHY] },
+  { id:'military',  name:'Military',            types:[B_BARRACKS, B_TOWER, B_SMITHY, B_NAVAL] },
   { id:'resources', name:'Resource buildings',  types:[B_PLANTATION, B_QUARRY, B_COPPERMINE] },
   { id:'society',   name:'Society advancement', types:[B_RESEARCH] },
 ];
 let category='urban';   // the menu showing, or the last one opened
 const ICO=['wood','stone','copper'];
 const owned = (n: Nation, type: number) => type===B_FARM ? n.farms : type===B_BARRACKS ? n.barracks : type===B_TOWER ? n.towers : type===B_MINTER ? n.minters
-  : type===B_PLANTATION ? n.plantations : type===B_QUARRY ? n.quarries : type===B_COPPERMINE ? n.copperMines : type===B_RESEARCH ? n.labs : type===B_GUILD ? n.guilds : type===B_SMITHY ? n.smithies : 0;
+  : type===B_PLANTATION ? n.plantations : type===B_QUARRY ? n.quarries : type===B_COPPERMINE ? n.copperMines : type===B_RESEARCH ? n.labs : type===B_GUILD ? n.guilds : type===B_SMITHY ? n.smithies : type===B_NAVAL ? n.navals : 0;
 const rows=new Map<number, HTMLButtonElement>();
 
 /** Builds the panel's rows once a match starts, with icons in the player's colours. */
@@ -132,7 +133,8 @@ export function clickOwnBuilding(t: number){
   if (owner[t]!==PLAYER || pOwner[q]!==PLAYER) return false;
   const me=W.nations[PLAYER]!;
   if (pType[q]===B_RESEARCH){ openResearch(); return true; }
-  if (pType[q]===B_BARRACKS){ openArmy(q); return true; }
+  if (pType[q]===B_BARRACKS){ closeNaval(); openArmy(q); return true; }
+  if (pType[q]===B_NAVAL){ openNaval(q); return true; }
   if (pType[q]===B_SMITHY){
     const b=W.humans.find(h => h.work===q);
     toast(!b ? 'The blacksmith waits for a villager to take up the hammer' : me.tier[R_INFANTRY]<2 ? 'Your smith waits: research infantry to forge armour'

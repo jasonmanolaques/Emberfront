@@ -3,11 +3,11 @@
    is screen pixels per render pixel. Close in, the map is drawn from the tiles of its picture
    (render/tiles.ts), a few made each frame, those nearest the middle of the screen first; far
    out (a map tile under DETAIL_CSS screen pixels), from the overview, one pixel a map tile. */
-import { TW, TH, RW, RH, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY } from '../core/constants';
+import { TW, TH, RW, RH, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY, B_NAVAL } from '../core/constants';
 import { clamp, fmt } from '../core/util';
 import { W, isLand, pType, pPrio, pTimer, pBurn, type Human } from '../sim/state';
 import { findBlock } from '../sim/sim';
-import { placeProblem, structureOf, canAfford, SIZE, PRODUCE_TICKS, dims } from '../sim/buildings';
+import { placeProblem, structureOf, canAfford, navalSite, SIZE, PRODUCE_TICKS, dims } from '../sim/buildings';
 import { client, reduceMotion } from '../client';
 import { view, ctx, cam, stepCamAnim } from './camera';
 import { ovC, flushWorld, SEA } from './terrain';
@@ -17,6 +17,7 @@ import { CH, MAKE_PER_FRAME, tileAt, makeTile, nextFrame, tileCols, tileRows, fr
 import { styleOf } from './style';
 import { personSprite, corpseSprite, woundStage, BODY_X, FEET_Y } from './people';
 import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, psize, floats, glints, shots, hits, corpses, drips, addDrip, CORPSE_MS, DRIP_MS, updateEffects } from './effects';
+import { shipSprite, drawBoat, resetShips, SHIP_W, SHIP_H } from './ships';
 import { H_SOLDIER, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, TASK_FORGE, indoors, maxHp } from '../sim/population';
 import { units, unitLabel } from '../sim/army';
 import { chatter, drawSpeech } from './speech';
@@ -30,12 +31,13 @@ export const hover = { sx: -1, sy: -1, tile: -1, mouse: false };
 
 // ghost previews of buildings while placing, in the player's colours
 const ghosts = new Map<number, HTMLCanvasElement>();
-function ghostOf(type: number){
-  let c=ghosts.get(type);
-  if (!c){ const [w,h]=SIZE[type] ?? [1,1]; c=document.createElement('canvas'); c.width=w*PS; c.height=h*PS; drawIcon(c.getContext('2d')!,type,styleOf(PLAYER)); ghosts.set(type,c); }
+function ghostOf(type: number, orient=0){
+  const key=type+orient*100;
+  let c=ghosts.get(key);
+  if (!c){ const [w,h]=type===B_NAVAL && orient ? [2,4] : SIZE[type] ?? [1,1]; c=document.createElement('canvas'); c.width=w*PS; c.height=h*PS; drawIcon(c.getContext('2d')!,type,styleOf(PLAYER),orient); ghosts.set(key,c); }
   return c;
 }
-export function resetGhosts(){ ghosts.clear(); }
+export function resetGhosts(){ ghosts.clear(); resetShips(); }
 
 // smoothed label positions per nation (they glide toward the census anchor)
 const labX = new Float64Array(256).fill(-1), labY = new Float64Array(256);
@@ -101,6 +103,16 @@ function drawSelection(now: number){
   }
 }
 
+/** Ships at sea: each a longship under its sail, bobbing; a faint wake behind one that is moving. */
+function drawShips(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
+  const list=W.ships.filter(s => s.x*K>=vx0-SHIP_W && s.y*K>=vy0-SHIP_H && s.x*K<=vx1+SHIP_W && s.y*K<=vy1+SHIP_H).sort((a,b) => a.y-b.y || a.id-b.id);
+  for (const s of list){
+    const bob=reduceMotion ? 0 : ((now/600+s.id)|0)&1, x=Math.round(s.x*K), y=Math.round(s.y*K);
+    const spr=shipSprite(s.o,s.face,s.crew,s.colony>=0,bob);
+    if (s.mode!==1 && !reduceMotion){ ctx.fillStyle='rgba(235,245,250,.45)'; for (let i=1;i<=4;i++) ctx.fillRect(x-s.face*(SHIP_W/2+i*4),y+4+((i&1)*2),3,1); }
+    ctx.drawImage(spr,x-SHIP_W/2,y-SHIP_H+6);
+  }
+}
 function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
   const byId = new Map<number, Human>(); for (const p of W.humans) byId.set(p.id,p);
   const lead = leaders();
@@ -143,6 +155,7 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
     } else bleeding.delete(p.id);
     const spr = personSprite(p.o,kind,look,frame,left,wound,p.militia ? 0 : p.tier || 1);
     const bx = Math.round(rx+px)-2, fy = Math.floor(ry+py)+1;   // body's left column, and its feet row
+    if (!isLand[((p.y/2)|0)*TW+((p.x/2)|0)]) drawBoat(ctx,bx+2,fy+1,left ? -1 : 1,reduceMotion ? 0 : ((now/500+p.id)|0)&1);   // on a sea lane: in a small boat
     const sx = left ? bx-(spr.width-BODY_X-4) : bx-BODY_X;
     ctx.drawImage(spr, sx, fy-FEET_Y);
     if (flash>0){ ctx.globalAlpha=flash*0.9; ctx.drawImage(flashOf(spr), sx, fy-FEET_Y); ctx.globalAlpha=1; }
@@ -303,6 +316,7 @@ export function render(now: number, dt: number){
   drawFronts(now,vx0,vy0,vx1,vy1);
 
   // people and armies, once close enough to tell them apart
+  if (zs>=0.8) drawShips(now,vx0,vy0,vx1,vy1);
   if (zs>=1.5){ drawFallen(now,vx0,vy0,vx1,vy1); drawSelection(now); drawPeople(now,vx0,vy0,vx1,vy1); }
   else if (client.selected>=0) drawSelection(now);
 
@@ -365,8 +379,9 @@ export function render(now: number, dt: number){
     const hx=hover.tile%TW, hy=(hover.tile/TW)|0;
     if (client.state==='play' && client.placing){
       const q=(hy>>2)*PW+(hx>>2), me=W.nations[PLAYER], s=structureOf(client.placing);
-      const ok=!!me && !!s && canAfford(me,s) && !placeProblem(me,q,client.placing,'any'), [fw,fh]=SIZE[client.placing] ?? [1,1];
-      ctx.globalAlpha=0.7; ctx.drawImage(ghostOf(client.placing),(hx>>2)*PS,(hy>>2)*PS); ctx.globalAlpha=1;
+      const ok=!!me && !!s && canAfford(me,s) && !placeProblem(me,q,client.placing,'any');
+      const turned=client.placing===B_NAVAL && !!me && navalSite(me,q,'any').orient===1, [fw,fh]=turned ? [2,4] : SIZE[client.placing] ?? [1,1];   // (a naval base turns to fit)
+      ctx.globalAlpha=0.7; ctx.drawImage(ghostOf(client.placing,turned ? 1 : 0),(hx>>2)*PS,(hy>>2)*PS); ctx.globalAlpha=1;
       ctx.strokeStyle=ok?'rgba(143,227,155,.95)':'rgba(255,90,70,.9)'; ctx.lineWidth=2*dpr/zoom;
       ctx.strokeRect((hx>>2)*PS,(hy>>2)*PS,fw*PS,fh*PS);
     } else if (client.state==='spawn'){
