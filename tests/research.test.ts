@@ -35,9 +35,9 @@ function expand(rounds: number){
 function until(ok: () => boolean, max = 6000){ for (let i=0;i<max;i++){ if (ok()) return; tick(); } throw new Error('condition never met'); }
 const fromCapital = (q: number) => { const c=me().capTile; return Math.hypot((pCenter[q]%TW)-(c%TW), ((pCenter[q]/TW)|0)-((c/TW)|0)); };
 /** Places a building of `type` on the first free spot, paying for it. Returns its plot. */
-function place(type: number){
+function place(type: number, near=false){
   me().stock=[100,100,100];
-  for (const q of me().plots) if (!placeProblem(me(),q,type) && build(me(),q,type)) return q;
+  for (const q of near ? me().plots.slice().sort((a,b) => fromCapital(a)-fromCapital(b)) : me().plots) if (!placeProblem(me(),q,type) && build(me(),q,type)) return q;
   throw new Error('nowhere to build');
 }
 
@@ -151,7 +151,7 @@ describe('house tiers and the builders guild', () => {
 describe('watchtowers rebuilt by the builders guild', () => {
   it('rebuilds a watchtower a tier up for 10 stone and 4 wood, then 20 stone and 8 wood, towers before houses', () => {
     start(12345); expand(6); until(() => houses().length>=6);
-    const t=place(B_TOWER); place(B_GUILD);
+    const t=place(B_TOWER,true); place(B_GUILD,true);   // (beside the capital, where the builder can walk)
     me().tier[R_TOWERS]=3; me().tier[R_HOUSING]=2; me().invest=1;
     expect(pTier[t]).toBe(1);
     expect(improvements(me())[0]).toBe(t);

@@ -63,6 +63,32 @@ function startAttack(a: number, d: number, gold: number){
 function finishAttack(A: Attack){ if (A.done) return; const n=W.nations[A.att]; if (n.alive) n.gold+=A.gold; A.gold=0; A.done=true; }   // unspent gold goes back
 function pushF(A: Attack, t: number){ if (owner[t]===A.def && isLand[t] && frontMark[t]!==A.id){ frontMark[t]=A.id; A.front.push(t); } }
 
+/** Unclaimed ground a kingdom has closed in on all sides is its own: after it takes tile t, any pocket of
+    unowned land (up to POCKET tiles) next to t that has only a's land, or sea and mountains no one can stand on, round it is claimed
+    with it, so a border never leaves empty squares inside it. */
+const POCKET = 200;
+let pocketSeen=new Int32Array(0), pocketStamp=0;
+function fillPockets(t: number, a: number, A?: Attack){
+  if (pocketSeen.length!==NT) pocketSeen=new Int32Array(NT);
+  const x=t%TW;
+  for (const n of [x>0 ? t-1 : -1, x<TW-1 ? t+1 : -1, t>=TW ? t-TW : -1, t<NT-TW ? t+TW : -1]){
+    if (n<0 || owner[n] || !isLand[n]) continue;
+    if (nCount(n,a)>=3){ setOwner(n,a); if (A) A.gold=Math.max(0,A.gold-GOLD_PER_TILE); fillPockets(n,a,A); continue; }   // a dent with three sides in its land goes with it
+    if (nCount(n,a)<2) continue;   // (a pocket has at least two of a's tiles beside the tile that closes it: open ground isn't searched)
+    const stamp=++pocketStamp, Q=[n]; pocketSeen[n]=stamp; let closed=true;
+    for (let i=0;i<Q.length && closed;i++){
+      const c=Q[i], cx=c%TW;
+      for (const k of [cx>0 ? c-1 : -1, cx<TW-1 ? c+1 : -1, c>=TW ? c-TW : -1, c<NT-TW ? c+TW : -1]){
+        if (k<0){ closed=false; break; }
+        if (!isLand[k]) continue;
+        if (!owner[k]){ if (pocketSeen[k]!==stamp){ pocketSeen[k]=stamp; Q.push(k); if (Q.length>POCKET){ closed=false; break; } } }
+        else if (owner[k]!==a){ closed=false; break; }
+      }
+    }
+    if (closed) for (const c of Q){ setOwner(c,a); if (A) A.gold=Math.max(0,A.gold-GOLD_PER_TILE); }   // (they are paid for like the rest, as far as the attack's gold goes)
+  }
+}
+
 export function stepAttack(A: Attack){
   if (!W.nations[A.att].alive){ A.done=true; return; }
   if (A.def && !W.nations[A.def].alive){ finishAttack(A); return; }
@@ -82,6 +108,7 @@ export function stepAttack(A: Attack){
     F[i]=F[F.length-1]; F.pop();
     setOwner(t,A.att);
     if (A.done) return;
+    if (!A.def) fillPockets(t,A.att,A);   // (no empty squares left inside the border)
     const x=t%TW;
     if (x>0) pushF(A,t-1); if (x<TW-1) pushF(A,t+1); if (t>=TW) pushF(A,t-TW); if (t<NT-TW) pushF(A,t+TW);
   }
