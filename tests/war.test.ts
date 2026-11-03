@@ -12,12 +12,12 @@ import { indoors, H_SOLDIER, H_VILLAGER, TASK_REST, TASK_TO_TRAIN, TASK_INSIDE, 
 import { UNIT_SIZE, buildUnits, station, unitAt, SOLDIER_DMG } from '../src/sim/army';
 import { wallOf, walledFor, buildWalls } from '../src/sim/defense';
 import { callable, partner, S_BALANCED, S_RUSH, setStance, allied, atWar, available, ready, declare, warProblem, mayStand, endWar, makePeace, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
-  RANKS, rankFor, CRISIS_TICKS, frontKey, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, defendProblem, reservesOf, reservesProblem, menOn, deployArmies, armyOrder, armyFront, armyRecall, frontIsles, occOn, attacks, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, frontLines, marchPace, INVADE_SLOW, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
+  RANKS, rankFor, assignArmy, assignProblem, bordersOf, freeArmy, CRISIS_TICKS, frontKey, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, defendProblem, reservesOf, reservesProblem, menOn, deployArmies, armyOrder, armyFront, armyRecall, frontIsles, occOn, attacks, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, frontLines, marchPace, INVADE_SLOW, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
 import { navalPlan, declareNaval, navalOf, landingOn } from '../src/sim/war';
 import { botSea, navalAttack, seaDrive } from '../src/sim/botsea';
-import { basesOf, labelWorld, allocIsles, landingZone, SHIP_CAP, SHIP_FRONT, INV_SAIL, INV_READY, INV_LAND, INV_DONE, shipById } from '../src/sim/naval';
+import { basesOf, dockTile, labelWorld, allocIsles, landingZone, SHIP_CAP, SHIP_FRONT, INV_SAIL, INV_READY, INV_LAND, INV_DONE, shipById } from '../src/sim/naval';
 import { navalSite, cover } from '../src/sim/buildings';
-import { sea } from '../src/sim/state';
+import { sea, ferry } from '../src/sim/state';
 import { MIN_GAP, RANK_GAP, A_OFF, holds, freeOf, underCastle, lineOf, castleCutOff } from '../src/sim/front';
 import { beggarProblem, stuck, warChest, botThink } from '../src/sim/bots';
 import { MILITIA_HIT } from '../src/sim/army';
@@ -1791,7 +1791,7 @@ describe('two fronts', () => {
     until(() => { const s=W.ships.find(k => k.convoy===ci.id); if (s){ crew=Math.max(crew,s.crew); fleetLow=Math.min(fleetLow,N(1).fleet); }
       return ci.members.every(id => { const h=W.humans.find(k => k.id===id)!; return h.boat<0 && isle[((h.y/2)|0)*TW+((h.x/2)|0)]===island; }); }, 3000);
     expect(crew).toBe(5);                                          // one full ship
-    expect(fleetLow).toBe(2);
+    expect(fleetLow).toBe(3);                                      // (the base's own boat: the fleet is not used)
     until(() => N(1).fleet===3, 3000);                            // the ship sails home and counts again
     until(() => W.offensive[1*W.M+2]===F_READY, 3000);
     // a crisis with both armies in place: nobody marches. Then war
@@ -1873,7 +1873,7 @@ describe('two fronts', () => {
     expect(foot).toBeGreaterThan(withBoat*1.2);
   });
 
-  it('the army on the island is reinforced by new soldiers sailing out: a ship leaves only when it holds 5', () => {
+  it('the army on the island is reinforced by new soldiers sailing out: the base\'s boat takes up to 5, and leaves a few seconds after the first man, never using the fleet', () => {
     const { b, island }=twoFronts();
     const next=[b+1,b-1,b+PW,b-PW].find(q => q>=0 && q<NP && !plotProblem(N(1),q))!;
     N(1).stock=[200,200,200]; expect(build(N(1),next,B_BARRACKS)).toBe(true); census(); tick();
@@ -1881,18 +1881,62 @@ describe('two fronts', () => {
     expect(deployArmies(1,2,[b],0,island)).toBe(1);
     const [ci]=W.campaigns;
     const onIsland = (id: number) => { const h=W.humans.find(k => k.id===id)!; return h.boat<0 && isle[((h.y/2)|0)*TW+((h.x/2)|0)]===island; };
-    until(() => N(1).fleet===3 && W.ships.length===0 && ci.members.every(onIsland), 5000);
-    // four new recruits: not a boatload
+    until(() => W.ships.length===0 && ci.members.every(onIsland), 5000);
+    // four new recruits: a boat of four, not kept waiting for a fifth
     soldiers(N(1),4,false); N(1).soldierShare=1;
-    run(1500);
-    expect(ci.members).toHaveLength(9);                            // they joined the army...
-    expect(W.ships.some(s => s.convoy===ci.id)).toBe(false);       // ...but wait at the base for a ship
-    expect(ci.members.filter(onIsland)).toHaveLength(5);
-    // the fifth completes the boatload
+    let crew=0, fleetLow=3;
+    until(() => { for (const s of W.ships) if (s.convoy===ci.id){ crew=Math.max(crew,s.crew); fleetLow=Math.min(fleetLow,N(1).fleet); } return ci.members.length===9 && ci.members.every(onIsland); }, 5000);
+    expect([crew,fleetLow]).toEqual([4,3]);
+    // and the tenth man, alone: a boat of one, after a few seconds
     soldiers(N(1),1,false);
-    let crew=0;
-    until(() => { const s=W.ships.find(k => k.convoy===ci.id); if (s) crew=Math.max(crew,s.crew); return ci.members.length===10 && ci.members.every(onIsland); }, 5000);
-    expect(crew).toBe(5);
+    crew=0;
+    until(() => { for (const s of W.ships) if (s.convoy===ci.id) crew=Math.max(crew,s.crew); return ci.members.length===10 && ci.members.every(onIsland); }, 5000);
+    expect(crew).toBe(1);
+  });
+
+  it('an army at home is stationed on a border in peace, moved to the other front of the same kingdom, and told to attack or defend, before and during the war', () => {
+    const { a, main, island }=twoFronts();
+    expect(bordersOf(1).map(b => [b.d,b.isle]).sort()).toEqual([[2,main],[2,island]].sort());
+    expect(bordersOf(1).every(b => b.tiles.length>0)).toBe(true);
+    expect(assignProblem(1,a,2)).toBeNull();
+    expect(assignArmy(1,a,2,main)).toBe(true);
+    const [c]=W.campaigns; expect([c.isle,c.deployed]).toEqual([main,true]);
+    expect(assignArmy(1,a,2,main)).toBe(false);                    // it is there already
+    expect(assignArmy(1,a,2,island)).toBe(true);                   // the same army, another front
+    expect(W.campaigns).toHaveLength(1); expect(c.isle).toBe(island);
+    expect(assignArmy(1,a,2,island,false)).toBe(true);             // told to defend there, in peace: kept for the war
+    expect([c.ordered,c.attack]).toEqual([true,false]);
+    until(() => W.offensive[1*W.M+2]===F_READY, 4000);
+    expect(declare(1,2,0)).toBe(true);
+    W.crisisAt[1*W.M+2]-=CRISIS_TICKS;
+    expect(escalate(1,2)).toBe(true);
+    expect(attacks(c)).toBe(false);                                // it defends, as it was told
+    expect(assignArmy(1,a,2,main,true)).toBe(true);                // in the war: to the mainland, to attack
+    expect([c.isle,attacks(c)]).toEqual([main,true]);
+    expect(W.campaigns).toHaveLength(1);
+  });
+
+  it('naval bases on two landmasses are joined by a sea lane for the kingdom\'s villagers, and an army\'s boat sails from base to base', () => {
+    const { b, island, base }=twoFronts();
+    let q2=-1;
+    for (let q=0;q<NP && q2<0;q++){
+      if (navalSite(N(1),q).orient<0) continue;
+      let ok=false; const px=(q%PW)*4, py=((q/PW)|0)*4;
+      for (let y=py;y<py+8 && !ok;y++) for (let x=px;x<px+8;x++){ const t=y*TW+x; if (isLand[t] && isle[t]===island && owner[t]===1){ ok=true; break; } }
+      if (ok) q2=q;
+    }
+    expect(q2).toBeGreaterThanOrEqual(0);
+    N(1).stock=[200,200,200]; expect(build(N(1),q2,B_NAVAL)).toBe(true); census();
+    run(101);
+    const d1=dockTile(base), d2=dockTile(q2);
+    expect([ferry[d1],ferry[d2]]).toEqual([1,1]);                  // both harbours are on the lane
+    // the army sent to the island sails to the island's harbour
+    expect(deployArmies(1,2,[b],0,island)).toBe(1);
+    let landed=-1;
+    until(() => { const s=W.ships.find(k => k.fleet===false && k.convoy>=0); if (s) landed=s.lands; return landed>=0; }, 3000);
+    expect(isle[landed]).toBe(island);
+    const [lx,ly]=[landed%TW,(landed/TW)|0], [dx,dy]=[d2%TW,(d2/TW)|0];
+    expect(Math.hypot(lx-dx,ly-dy)).toBeLessThan(14);              // ...beside the second base, not on some far coast
   });
 });
 
@@ -2003,6 +2047,66 @@ describe('marching to a border before war', () => {
     v.home=-1; v.homeless=800; v.beggar=false; N(1).beds=0;
     tick();
     expect(v.beggar).toBe(true);     // with no home to build, the minute counts
+  });
+});
+
+describe('watchtowers', () => {
+  it('an invading army goes for the watchtowers in reach of its line first, and brings a ring of them down', () => {
+    world(1); quiet(); paintDisc(N(2),60); paintToward(1,2);
+    soldiers(N(1),40); soldiers(N(2),10); noDraft(); noDraft(2); N(2).soldierShare=0; N(2).humanProg=-1e9; run(2);
+    // eight towers of theirs near the border
+    const c=N(1).capTile, d=(q: number) => ((q%PW)*4+2-c%TW)**2+(((q/PW)|0)*4+2-((c/TW)|0))**2;
+    const TQ: number[]=[];
+    for (let k=0;k<8;k++){
+      const q=Array.from({ length: NP }, (_, i) => i).filter(i => !plotProblem(N(2),i)).sort((a,b) => d(a)-d(b))[0];
+      N(2).stock=[50,50,50]; expect(build(N(2),q,B_TOWER)).toBe(true); TQ.push(q);
+    }
+    census(); buildWalls();
+    expect(declare(1,2,40)).toBe(true); giveWord(1,2);
+    let tDown=-1, menAtDown=0;
+    for (let i=0;i<2500 && tDown<0;i++){ tick(); if (TQ.filter(q => pType[q]===B_TOWER && pBurn[q]<=0).length<=2){ tDown=i; menAtDown=menOn(1,2); } }
+    expect(tDown).toBeGreaterThan(0);                      // the ring comes down
+    expect(menAtDown).toBeGreaterThan(20);                 // without bleeding the army white
+  });
+});
+
+describe('stationing armies on borders (assign)', () => {
+  it('an army can leave one kingdom\'s border for another\'s, even one that is fighting a war', () => {
+    world(2); quiet(); paintDisc(N(1),14); paintDisc(N(2),60); paintDisc(N(3),60); place(N(2),B_FARM); place(N(3),B_FARM); paintToward(1,2); paintToward(1,3); labelWorld(); allocIsles();
+    const a=place(N(1),B_BARRACKS);
+    soldiers(N(1),5,false); N(1).soldierShare=1; noDraft(); noDraft(2); noDraft(3); N(2).soldierShare=0; N(3).soldierShare=0; tick();
+    expect([W.contact[1*W.M+2]>0, W.contact[1*W.M+3]>0]).toEqual([true,true]);
+    expect(assignArmy(1,a,2)).toBe(true);
+    const [c]=W.campaigns; expect(c.d).toBe(2);
+    run(30);
+    expect(assignArmy(1,a,3)).toBe(true);                          // not committed: it goes on to the other kingdom
+    expect(W.campaigns.map(k => k.d)).toEqual([3]);
+    expect(W.campaigns[0].deployed).toBe(true);
+    until(() => W.offensive[1*W.M+3]===F_READY, 4000);
+    expect(declare(1,3,0)).toBe(true);                             // the crisis is 1's: the army is committed
+    expect(freeArmy(W.campaigns[0])).toBe(false);
+    expect(assignArmy(1,a,2)).toBe(true);                          // ...and is still moved, as the player may at any time
+    expect(W.campaigns.map(k => k.d)).toEqual([2]);
+    expect(assignProblem(1,-2,2)).toMatch(/militia/i);
+  });
+});
+
+describe('bots at war on several fronts', () => {
+  it('a bot threatened on one border with nobody at home brings an army over from a quiet border', () => {
+    world(2); quiet(); paintDisc(N(1),14); paintDisc(N(2),60); paintDisc(N(3),60); place(N(2),B_FARM); place(N(3),B_FARM); paintToward(1,2); paintToward(1,3); labelWorld(); allocIsles();
+    const a=place(N(1),B_BARRACKS);
+    soldiers(N(1),5,false); N(1).soldierShare=1; noDraft(); noDraft(2); noDraft(3); N(2).soldierShare=0; N(3).soldierShare=0; tick();
+    expect([W.contact[1*W.M+2]>0, W.contact[1*W.M+3]>0]).toEqual([true,true]);
+    soldiers(N(3),10); N(3).soldierShare=1; tick();
+    expect(assignArmy(1,a,2)).toBe(true);                            // 1's one army stands on a quiet border
+    expect(W.campaigns.map(k => k.d)).toEqual([2]);
+    run(30);
+    N(3).nextThink=1e9; N(1).nextThink=1e9;
+    expect(declare(3,1,10)).toBe(true);                            // 3 masses against 1
+    run(200);
+    expect(menOn(3,1)).toBeGreaterThan(0);
+    botThink(N(1));
+    expect(W.campaigns.filter(k => k.a===1 && k.front && k.phase<2).map(k => k.d)).toEqual([3]);   // the army now faces 3
   });
 });
 

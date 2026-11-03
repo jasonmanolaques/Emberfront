@@ -37,7 +37,7 @@ import { BLD_HP, bldHp, wear, towerTier, castleTier, TOWER_RELOADS, TOWER_DMGS, 
 import { SOLDIER_DMG, MILITIA_HIT, units, unitAt, type Unit } from './army';
 import { Field } from './field';
 import { lineOf, deploy, placeAt, indexAt, holds, enemyOf, underCastle, castleCutOff, type Front } from './front';
-import { landingZone, offshore, landingTile, seaPaths, seaNearest, dockTile, shipById, launchShip, recall, navalHooks, basesOf, SHIP_SP, SHIP_CAP, INV_SAIL, INV_READY, INV_LAND, INV_DONE, SHIP_WAIT, SHIP_BACK } from './naval';
+import { landingZone, offshore, landingTile, seaPaths, seaNearest, dockTile, shipById, launchShip, recall, navalHooks, basesOf, baseWater, SHIP_SP, SHIP_CAP, INV_SAIL, INV_READY, INV_LAND, INV_DONE, SHIP_WAIT, SHIP_BACK } from './naval';
 import { H_SOLDIER, TASK_ROAM, TASK_BOAT, TOWER_RANGE, maxHp, REGEN, pace, onCastle, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf, homeMilitia } from './population';
 
 export const MELEE_R = 2.6;           // pixels: close enough to strike
@@ -130,6 +130,7 @@ interface Offensive {
   Fd: Front | null;               // the line its defending armies hold: the edge of the ground no enemy tower reaches (null: the front's own line)
   safeAt: number;                 // tick Fd was worked out
   lineAt: number;                 // tick F (the line) was worked out
+  towers: number[];               // enemy watchtowers within reach of its line: what its men go for first
   lineSig: number;                // how much land of either kingdom was occupied then (the line is worked out again when that changes)
   men: Human[]; atk: Human[]; def: Human[]; camps: Campaign[];   // its men (leaders aside), those of its attacking and of its defending armies, and its armies, this tick
 }
@@ -201,7 +202,7 @@ export function resetWar(M: number){
   W.wars=new Uint8Array(M*M); W.aggr=new Uint8Array(M*M); W.warSince=new Int32Array(M*M); W.occCount=new Int32Array(M*M); W.lost=new Uint8Array(M*M); W.ready=new Int32Array(M*M); W.offensive=new Uint8Array(M*M); W.stance=new Uint8Array(M*M); W.kills=new Int32Array(M*M); W.stall=new Int32Array(M*M); W.lastNet=new Int32Array(M*M);
   if (queue.length!==NT){ heldAt=new Int32Array(NT); heldBy=new Uint8Array(NT); queue=new Int32Array(NT); want=new Int32Array(NT); wantSeq=0; seen=new Int32Array(NT); seenSeq=0; came=new Int32Array(NT); }   // the map changed size
   byId.clear(); camps.clear(); troops.clear(); armies=[]; posts=[]; warring=new Uint8Array(M); rallies=[]; homeField=[]; homeFieldFor=[]; heldAt.fill(0); resetWalls();
-  offensives.clear(); dockQ.clear(); lanes.clear(); lanesAt.clear(); cuts.clear(); cutsAt.clear(); seaQ.clear(); seaBound.clear(); defended=new Uint8Array(M); borderCache.clear(); W.occIsle=new Map(); W.crisisAt=new Int32Array(M*M);
+  offensives.clear(); cuts.clear(); cutsAt.clear(); seaQ.clear(); seaBound.clear(); defended=new Uint8Array(M); borderCache.clear(); W.occIsle=new Map(); W.crisisAt=new Int32Array(M*M);
   if (beach.length!==NT) beach=new Uint8Array(NT); else beach.fill(0);
 }
 
@@ -469,13 +470,12 @@ export function deescalate(a: number, d: number){
 }
 
 
-/* ---------- convoys ----------
-   An army whose front is on another landmass than its men (a colony across the sea) is carried over: the men walk to a naval
-   base of their kingdom on their own landmass and wait at its door; a transport of the fleet sails only when it is full (5 men),
-   to a coast of the kingdom's on the front's landmass, and puts them ashore there to march to the front. Reinforcements go the same way. */
-const dockQ = new Map<number, number[]>();   // naval base -> the soldiers waiting at its door for a ship
+/* ---------- by sea, between naval bases ----------
+   An army whose way to its front is not over land (the front is on another landmass, or a third kingdom's ground lies between) is carried by
+   the boats of its kingdom's naval bases, from one base to another: its men walk to a base of theirs and wait at its door, a boat takes
+   up to five, and sails to a base of the kingdom's on the front's landmass (or, with none, to its coast there), and puts them ashore to march on
+   to the front. The boats are the bases' own, no ship of the fleet is needed; reinforcements go the same way. */
 interface Lane { base: number; path: number[]; land: number; at: number; }
-const lanes = new Map<number, Lane | null>();   // by (army, landmass its men are on): the way over, worked out again every 10 seconds
 const LANE_EVERY = 100;
 /** The own land beside water tile t on landmass `on`, or -1. */
 function landBeside(a: number, on: number, t: number){
@@ -505,66 +505,69 @@ function laneBetween(a: number, from: number, to: number): Lane | null {
   }
   return best;
 }
-const lanesAt = new Map<number, number>();
-const laneFor = (c: Campaign, from: number) => {
-  const k=c.id*65536+from, at=lanesAt.get(k) ?? -1e9;
-  if (W.tickN-at>=(lanes.get(k) ? LANE_EVERY*30 : LANE_EVERY)){ lanes.set(k,laneBetween(c.a,from,c.isle)); lanesAt.set(k,W.tickN); }
-  return lanes.get(k) ?? null;
-};
 /** Can a's men on landmass `from` get to its front on landmass `to` (the same one, or across the sea from a naval base)? */
 export const crossable = (a: number, from: number, to: number) => from===to || !!laneBetween(a,from,to);
-/** A man whose army's front is on another landmass: he goes to the naval base's door and waits there for a ship. True while he is at it. */
-function ferryMan(h: Human, c: Campaign){
-  const lane=laneFor(c,isle[tileOf(h.x,h.y)]); if (!lane) return false;
-  const { x:dx, y:dy }=baseSpot(lane.base);
-  if ((h.x-dx)**2+(h.y-dy)**2>36){ stepHome(h,dx,dy,2); return true; }
-  let q=dockQ.get(lane.base); if (!q){ q=[]; dockQ.set(lane.base,q); }
-  if (!q.includes(h.id)) q.push(h.id);
-  return true;
-}
-
-/* ---------- the short way by sea ----------
-   An army marching a long way to its front over its own land may take a naval base of its kingdom's on the way: when sailing to a coast of
-   the kingdom's nearer the front (and walking on from there) is clearly quicker than walking all the way, its men go to the base and a
-   boat takes them across. No ship of the fleet is needed: the boat is the base's own, leaves as soon as five are there (or a few seconds
-   after the first), and sails home empty. */
+/* ---------- the boats of the naval bases ----------
+   A man who has no way on foot to the front (across the sea, or with another kingdom's land between), or whose way is long and clearly quicker
+   by sea, goes to a naval base of his kingdom's on his landmass and waits at its door; the base's boat leaves as soon as five are there (or a few
+   seconds after the first) for a base of the kingdom's nearer the front, and sails home empty. */
 const SHORTCUT_MIN = 50;      // steps from his place a man must be before the sea is thought of
 const SHORTCUT_GAIN = 0.75;   // the way by sea must take no more than this share of the time on foot
 const SEA_WAIT = 40;          // ticks the first man waits for others at the base
 interface Cut { base: number; path: number[]; land: number; fLand: number; }
-const cuts = new Map<number, Cut | null>(), cutsAt = new Map<number, number>();   // by army: the short way found, and when it was looked for
+const cuts = new Map<number, Cut | null>(), cutsAt = new Map<number, number>();   // by army and landmass of its men: the way by sea found, and when it was looked for
 const seaQ = new Map<number, Map<number, number>>();                               // naval base -> men waiting for a boat -> tick they came
 const seaBound = new Map<number, number>();                                        // man -> the base he has set out for
-/** The quickest way by sea for army c's men on landmass `from` (worked out again every 10 seconds), or null. */
+const cutKey = (c: Campaign, from: number) => c.id*65536+from;
+/** The quickest way by sea for army c's men on landmass `from` (worked out again every 10 seconds), or null: from a naval base of theirs, to one
+    of the kingdom's on the front's landmass if there is one, else to a coast of its there. With no way on foot the nearest will do; with one,
+    the sea must save a good deal. */
 function cutFor(c: Campaign, from: number): Cut | null {
-  const at=cutsAt.get(c.id) ?? -1e9;
-  if (W.tickN-at>=LANE_EVERY){
-    cutsAt.set(c.id,W.tickN);
-    let best: Cut | null=null, bestGain=0;
-    for (const q of basesOf(W.nations[c.a])){
-      const spot=baseSpot(q); if (spot.isle!==from) continue;
-      const fB=c.field.at(tileOf(spot.x,spot.y)); if (fB<SHORTCUT_MIN) continue;
-      const dk=dockTile(q); if (dk<0) continue;
-      const r=seaNearest(dk,t => { const n=landBeside(c.a,c.isle,t); if (n<0) return false; const f=c.field.at(n); return f>=0 && f<fB*0.5; },40000);
-      if (!r) continue;
-      const land=landBeside(c.a,c.isle,r.tile), fLand=c.field.at(land), gain=fB-fLand-r.path.length*0.7;   // (a tile of sea is worth about 0.7 of one on foot)
-      if (gain>bestGain){ bestGain=gain; best={ base:q, path:r.path, land, fLand }; }
-    }
-    cuts.set(c.id,best);
+  const k=cutKey(c,from), at=cutsAt.get(k) ?? -1e9;
+  if (W.tickN-at<LANE_EVERY) return cuts.get(k) ?? null;
+  cutsAt.set(k,W.tickN);
+  const bases=basesOf(W.nations[c.a]);
+  const dests: { q: number; land: number; fLand: number; water: Set<number> }[]=[];
+  for (const r of bases){
+    const sp=baseSpot(r); if (sp.isle!==c.isle) continue;
+    const land=tileOf(sp.x,sp.y), f=c.field.at(land); if (f<0) continue;
+    dests.push({ q:r, land, fLand:f, water:new Set(baseWater(r)) });
   }
-  return cuts.get(c.id) ?? null;
+  let best: Cut | null=null, bestScore=-Infinity;
+  for (const q of bases){
+    const spot=baseSpot(q); if (spot.isle!==from) continue;
+    const fB=c.field.at(tileOf(spot.x,spot.y)), cutoff=fB<0;
+    if (!cutoff && fB<SHORTCUT_MIN) continue;
+    const dk=dockTile(q); if (dk<0) continue;
+    const consider = (r: { tile: number; path: number[] } | null, land: number, fLand: number, bonus: number) => {
+      if (!r || land<0 || fLand<0 || (!cutoff && fLand>=fB*0.5)) return;
+      const raw=cutoff ? -(r.path.length*0.7+fLand) : fB-fLand-r.path.length*0.7;   // (a tile of sea is worth about 0.7 of one on foot)
+      if (!cutoff && raw<=0) return;
+      const score=raw+bonus;
+      if (score>bestScore){ bestScore=score; best={ base:q, path:r.path, land, fLand }; }
+    };
+    const to=dests.filter(d => d.q!==q);
+    if (to.length){ const r=seaNearest(dk,t => to.some(d => d.water.has(t)),40000); if (r){ const d=to.find(d => d.water.has(r.tile))!; consider(r,d.land,d.fLand,1e4); } }   // (base to base is always preferred: a harbour of ours to land at)
+    const r=seaNearest(dk,t => { const n=landBeside(c.a,c.isle,t); if (n<0) return false; const f=c.field.at(n); return f>=0 && (cutoff || f<fB*0.5); },40000);
+    if (r){ const land=landBeside(c.a,c.isle,r.tile); consider(r,land,c.field.at(land),0); }
+  }
+  cuts.set(k,best);
+  return best;
 }
-/** A man far from his place who would do better by sea goes to the base and waits for its boat. True while he is at it. */
+/** A man with no way on foot, or far from his place and better by sea, goes to the base and waits for its boat. True while he is at it. */
 function seaMan(h: Human, c: Campaign){
   const t=tileOf(h.x,h.y), bound=seaBound.get(h.id);
   const cut=cutFor(c,isle[t]);
   if (bound!==undefined && (!cut || cut.base!==bound)){ seaBound.delete(h.id); seaQ.get(bound)?.delete(h.id); return false; }
   if (bound===undefined){
     if (!cut) return false;
-    const here=c.field.at(t); if (here<SHORTCUT_MIN) return false;
-    const spot=baseSpot(cut.base), p=Math.max(0.1,marchPace(h,c)*TICK);
-    const via=Math.hypot(h.x-spot.x,h.y-spot.y)/p+cut.path.length*2/SHIP_SP+cut.fLand*2/p, walk=here*2/p;
-    if (via>walk*SHORTCUT_GAIN) return false;
+    const here=c.field.at(t);
+    if (here>=0){   // (there is a way on foot: the sea has to be clearly quicker)
+      if (here<SHORTCUT_MIN) return false;
+      const spot=baseSpot(cut.base), p=Math.max(0.1,marchPace(h,c)*TICK);
+      const via=Math.hypot(h.x-spot.x,h.y-spot.y)/p+cut.path.length*2/SHIP_SP+cut.fLand*2/p, walk=here*2/p;
+      if (via>walk*SHORTCUT_GAIN) return false;
+    }
     seaBound.set(h.id,cut.base);
   }
   const base=seaBound.get(h.id)!, spot=baseSpot(base);
@@ -577,14 +580,14 @@ function seaMan(h: Human, c: Campaign){
 function seaBoats(){
   for (const [base,wait] of [...seaQ]){
     const spot=baseSpot(base), byArmy=new Map<number, Human[]>();
-    for (const [id,since] of [...wait]){
+    for (const [id] of [...wait]){
       const h=byId.get(id), c=h && camps.get(h.war);
       if (!h || h.hp<=0 || !c || c.phase!==1 || h.boat>=0 || h.task===TASK_BOAT){ wait.delete(id); seaBound.delete(id); continue; }
       if ((h.x-spot.x)**2+(h.y-spot.y)**2>64) continue;
-      let L=byArmy.get(c.id); if (!L){ L=[]; byArmy.set(c.id,L); } L.push(h); void since;
+      let L=byArmy.get(c.id); if (!L){ L=[]; byArmy.set(c.id,L); } L.push(h);
     }
     for (const [cid,men] of byArmy){
-      const c=camps.get(cid)!, cut=cuts.get(cid);
+      const c=camps.get(cid)!, cut=cuts.get(cutKey(c,spot.isle));
       if (!cut || cut.base!==base){ for (const h of men){ wait.delete(h.id); seaBound.delete(h.id); } continue; }
       men.sort((x,y) => wait.get(x.id)!-wait.get(y.id)!);
       while (men.length && (men.length>=SHIP_CAP || W.tickN-wait.get(men[0].id)!>=SEA_WAIT)){
@@ -596,29 +599,8 @@ function seaBoats(){
     if (!wait.size) seaQ.delete(base);
   }
 }
-/** Transports sail when full, and put their men ashore on arrival; one whose army is gone turns back. */
+/** Boats put their men ashore on arrival; one whose army is gone turns back. */
 function ferryShips(){
-  for (const [base,ids] of [...dockQ]){
-    const buckets=new Map<number, Human[]>(), spot=baseSpot(base);   // the waiting, by landmass they cross to
-    const stay: number[]=[];
-    for (const id of ids){
-      const h=byId.get(id), c=h && camps.get(h.war);
-      if (!h || h.hp<=0 || !c || c.phase!==1 || h.boat>=0 || h.task===TASK_BOAT || (h.x-spot.x)**2+(h.y-spot.y)**2>64) continue;
-      stay.push(id);
-      let L=buckets.get(c.isle); if (!L){ L=[]; buckets.set(c.isle,L); } L.push(h);
-    }
-    const A=W.nations[pOwner[base]];
-    for (const [to,men] of buckets){
-      while (men.length>=SHIP_CAP && A?.alive && A.fleet>0){
-        const crew=men.splice(0,SHIP_CAP), c=camps.get(crew[0].war)!, lane=laneFor(c,spot.isle);
-        if (!lane || lane.base!==base) break;
-        A.fleet--;
-        const s=launchShip(A.id,base,lane.path,{ fleet:true, convoy:c.id, lands:lane.land });
-        for (const h of crew){ h.boat=s.id; h.task=TASK_BOAT; h.x=s.x; h.y=s.y; h.fx=h.x; h.fy=h.y; s.crew++; stay.splice(stay.indexOf(h.id),1); }
-      }
-    }
-    if (stay.length) dockQ.set(base,stay); else dockQ.delete(base);
-  }
   for (const s of W.ships){
     if (s.convoy<0 || s.mode===SHIP_BACK) continue;
     const c=camps.get(s.convoy);
@@ -831,7 +813,7 @@ function offensiveOf(a: number, d: number, isle=0, aboard=false){
   let o=offensives.get(id);
   if (!o){
     if (!frontsOf(key).length) W.offensive[key]=F_GATHER;
-    o={ id, key, a, d, isle, st:W.offensive[key], F:null, walk:new Field(), k:0, progress:0, strips:0, depth:null, since:W.tickN, noFront:0, liberating:false, Fd:null, safeAt:-1e9, lineAt:-1e9, lineSig:-1, men:[], atk:[], def:[], camps:[] };
+    o={ id, key, a, d, isle, st:W.offensive[key], F:null, walk:new Field(), k:0, progress:0, strips:0, depth:null, since:W.tickN, noFront:0, liberating:false, Fd:null, safeAt:-1e9, lineAt:-1e9, lineSig:-1, towers:[], men:[], atk:[], def:[], camps:[] };
     offensives.set(id,o);
   }
   return o;
@@ -1139,6 +1121,76 @@ export function armyRecall(a: number, id: number){
   return true;
 }
 
+/** A stretch of border the player can station an army on: kingdom d's ground that touches a's, on one landmass (the tiles, for the map). */
+export interface Border { d: number; isle: number; tiles: number[]; }
+let bordersAt=-1e9, bordersFor=0, bordersList: Border[]=[];
+/** Every stretch of border a has with a kingdom it is not allied with, a landmass at a time, longest first. Worked out only when asked (the army
+    assignment screen), and kept for a second. */
+export function bordersOf(a: number): Border[] {
+  if (bordersFor===a && W.tickN>=bordersAt && W.tickN-bordersAt<10) return bordersList;
+  const out: Border[]=[], tw=TW, th=TH;
+  for (let d=1;d<W.M;d++){
+    const D=W.nations[d]; if (d===a || !D?.alive || !W.contact[a*W.M+d] || allied(a,d)) continue;
+    const by=new Map<number, number[]>();
+    for (let y=Math.max(0,D.y0);y<=Math.min(th-1,D.y1);y++) for (let x=Math.max(0,D.x0), t=y*tw+x;x<=Math.min(tw-1,D.x1);x++,t++){
+      if (owner[t]!==d || !isLand[t]) continue;
+      if ((x>0 && owner[t-1]===a) || (x<tw-1 && owner[t+1]===a) || (y>0 && owner[t-tw]===a) || (y<th-1 && owner[t+tw]===a)){
+        const i=isle[t]; let l=by.get(i); if (!l){ l=[]; by.set(i,l); } l.push(t);
+      }
+    }
+    for (const [i,tiles] of by) out.push({ d, isle:i, tiles });
+  }
+  out.sort((p,q) => q.tiles.length-p.tiles.length || p.d-q.d || p.isle-q.isle);
+  bordersAt=W.tickN; bordersFor=a; bordersList=out;
+  return out;
+}
+/** Why army `key` of a (a barracks' key, or -2 for the militia) can't be stationed on the border with d, or null. */
+export function assignProblem(a: number, key: number, d: number): string | null {
+  const why=warProblem(a,d); if (why) return why;
+  const mil=key===-2;
+  const c=W.campaigns.find(k => k.a===a && k.front && k.phase<2 && (mil ? k.militia : k.unit===key && !k.militia));
+  if (c && c.naval>=0) return 'It is at sea, on an invasion';
+  if (!c && (mil ? !callable(a).length : !(units[a] ?? []).some(u => u.key===key && u.home>0))) return mil ? 'No militia at home' : 'Nobody of that army is at home';
+  return null;
+}
+/** The HOI4 way: army `key` of a (a barracks' key, or -2 for the militia) is stationed on the border with d on landmass `isle`, wherever it stands now
+    (at home, on another border, or in the middle of a war), and all its men set off for it. In peace it is a precaution, at war it attacks or defends
+    as it was ordered (`go`: true to attack, false to defend, left out: as it stood, or as the war stands). Returns true if anything changed. */
+export function assignArmy(a: number, key: number, d: number, isle=0, go?: boolean){
+  if (assignProblem(a,key,d)) return false;
+  const M=W.M, mil=key===-2;
+  isle=isle || (frontIsles(a,d)[0] ?? 0);
+  const find = () => W.campaigns.find(k => k.a===a && k.d===d && k.front && k.phase<2 && k.naval<0 && (mil ? k.militia : k.unit===key && !k.militia));
+  const c=W.campaigns.find(k => k.a===a && k.front && k.phase<2 && (mil ? k.militia : k.unit===key && !k.militia));
+  let done=false;
+  if (c){
+    if (c.d===d){
+      if (c.isle!==isle) done=armyFront(a,c.id,isle);
+    } else {
+      const men=c.members.map(k => byId.get(k)).filter((h): h is Human => !!h && h.hp>0);
+      if (!men.length) return false;
+      if (isle && !crossable(a,tileIsle(men[0].x,men[0].y),isle)) return false;
+      const unit=c.unit, militia=c.militia, all=c.all;
+      unhitch(c);
+      const nc=newCampaign(a,d,men.length,W.nations[d].tiles,unit,isle);
+      nc.militia=militia; nc.all=all;
+      muster(nc,men,unit>=0 ? unitAt(unit) : undefined);
+      if (W.wars[a*M+d]) W.atWar[a*M+d]=W.atWar[d*M+a]=1;
+      if (W.aggr[d*M+a] || W.wars[a*M+d]) on.defending(a,d,men.length);
+      else if (!W.aggr[a*M+d]) nc.deployed=true;   // (a precaution, not a crisis)
+      done=true;
+    }
+  } else if (mil){
+    if (W.wars[a*M+d] || W.aggr[a*M+d] || W.aggr[d*M+a]) done=callReserves(a,d,true);
+    else done=deployArmies(a,d,[],callable(a).length,isle)>0;
+  } else if (W.wars[a*M+d] || W.aggr[d*M+a]) done=defend(a,d,[key],isle);
+  else if (W.aggr[a*M+d]) done=declare(a,d,[key],0,isle);
+  else done=deployArmies(a,d,[key],0,isle)>0;
+  const k=find();
+  if (k && go!==undefined && (!k.ordered || k.attack!==go) && !aboardOf(k)){ k.ordered=true; k.attack=go; done=true; regroup(a,d); }
+  return done;
+}
+
 /* ---------- leaders ---------- */
 /** The leader is no longer with army c: home ahead of it, or fallen. */
 function leaderGone(c: Campaign){ const l=byId.get(c.leader); if (l && l.hp>0){ c.leader=-1; unlead(l); } else leaderFell(c); }
@@ -1295,6 +1347,19 @@ function safeLine(o: Offensive): number[] {
     }
   return out;
 }
+/** d's standing watchtowers within shooting reach (and a little more) of front line F, nearest the line first: the men of the front go for these before anything else. */
+const TOWER_SEEK = TOWER_RANGE+12;   // pixels from a man's place a tower still draws him out
+function towersNear(o: Offensive, F: Front): number[] {
+  if (!F.tiles.length) return [];
+  const D=W.nations[o.d], out: { q: number; d: number }[]=[], step=Math.max(1,F.tiles.length>>6);
+  for (const q of D.blds){
+    if (pType[q]!==B_TOWER || pOwner[q]!==o.d || pBurn[q]>0) continue;
+    const x=(q%PW)*8+4, y=((q/PW)|0)*8+4; let best=Infinity;
+    for (let i=0;i<F.tiles.length;i+=step){ const t=F.tiles[i], e=Math.hypot((t%TW)*2+1-x,((t/TW)|0)*2+1-y); if (e<best) best=e; }
+    if (best<=TOWER_SEEK) out.push({ q, d:best });
+  }
+  return out.sort((a,b) => a.d-b.d || a.q-b.q).map(e => e.q);
+}
 /** All the land of a's and of d's that anyone occupies, as one number: it changes whenever a front's line may have. */
 function occSig(a: number, d: number){
   const M=W.M; let x=0, y=0;
@@ -1309,7 +1374,7 @@ function redeploy(o: Offensive){
   // (the line is worked out from the map only now and then, or when something calls for it: o.F set to null; the men's places are laid out on it every REFRONT ticks)
   const sig=occSig(o.a,o.d), keep=!coming && !!o.F && W.tickN-o.lineAt<LINE_EVERY && sig===o.lineSig;
   const F=o.F=keep ? o.F! : coming ? lineOf(o.a,o.d,false,coming.coast.filter(t => owner[t]===o.a)) : lineOf(o.a,o.d,false,undefined,o.isle), id=o.id, ok=standsFor(o.a,o.d);
-  if (!keep){ o.lineAt=W.tickN; o.lineSig=sig; }
+  if (!keep){ o.lineAt=W.tickN; o.lineSig=sig; o.towers=towersNear(o,F); }
   let Fd: Front | null=null;
   if (o.def.length){
     if (W.tickN-o.safeAt>=SAFE_EVERY || !o.Fd){ o.safeAt=W.tickN; const line=safeLine(o); o.Fd=line.length ? lineOf(o.a,o.d,false,line) : null; }
@@ -1933,8 +1998,10 @@ export function marchStep(h: Human){
     by his place while attacking, and otherwise go to his place and stand there. Its leader fights
     only whoever is on him. */
 function frontStep(h: Human, c: Campaign){
-  if (c.naval<0 && c.isle && isLand[tileOf(h.x,h.y)] && isle[tileOf(h.x,h.y)]!==c.isle && ferryMan(h,c)) return;   // (its front is across the sea: he waits for a ship)
-  if (c.naval<0 && c.phase===1 && isLand[tileOf(h.x,h.y)] && isle[tileOf(h.x,h.y)]===c.isle && (seaBound.has(h.id) || h.fk<0 || (h.x-h.fx)**2+(h.y-h.fy)**2>1600) && seaMan(h,c)) return;   // (a long march: the base's boat may be quicker)
+  if (c.naval<0 && c.phase===1){   // (no way on foot, or a long march that a base's boat would shorten: he goes to the base and waits for it)
+    const t=tileOf(h.x,h.y);
+    if (isLand[t] && ((c.isle && isle[t]!==c.isle) || seaBound.has(h.id) || h.fk<0 || (h.x-h.fx)**2+(h.y-h.fy)**2>1600) && seaMan(h,c)) return;
+  }
   const key=c.a*W.M+c.d, pushing=c.mode===F_PUSH, retaking=pushing && !!frontOfC(c)?.liberating, invading=pushing && !retaking, leader=h.id===c.leader;
   if ((h.id+W.tickN)%4===0) chooseOnFront(h,c,invading,retaking,leader);
   let foe=h.foe>=0 ? byId.get(h.foe) : undefined;
@@ -1983,6 +2050,15 @@ function chooseOnFront(h: Human, c: Campaign, invading: boolean, retaking: boole
       if (s<bs || (s===bs && best && e.id<best.id)){ bs=s; best=e; }
     }
   }
+  // an invading army goes for the watchtowers in reach of its line before anything else (each one it leaves standing shoots its men down), unless an enemy is on him
+  if (invading && !leader && h.fk>=0 && !(best && best.foe===h.id)){
+    const o=frontOfC(c);
+    if (o){
+      let tq=-1, td=Infinity;
+      for (const q of o.towers){ if (pBurn[q]>0 || pType[q]!==B_TOWER || !targetable(q,c)) continue; const d=Math.hypot((q%PW)*8+4-h.fx,((q/PW)|0)*8+4-h.fy); if (d<td){ td=d; tq=q; } }
+      if (tq>=0 && td<=TOWER_SEEK){ h.aim=tq; h.foe=-1; return; }
+    }
+  }
   if (best){ h.foe=best.id; h.aim=-1; return; }
   h.foe=-1;
   if (leader || !invading || h.fk<0){ h.aim=-1; return; }
@@ -1997,11 +2073,11 @@ function chooseOnFront(h: Human, c: Campaign, invading: boolean, retaking: boole
   }
   h.aim=q;
 }
-/** Is building q by the place of h on the front (times `k`)? A watchtower within 12 pixels of it, the
+/** Is building q by the place of h on the front (times `k`)? A watchtower within TOWER_SEEK pixels of it, the
     castle within 8, anything else within 5. */
 function byPlace(h: Human, q: number, k: number){
   const [x0,y0,x1,y1]=rectOf(q), ty=pType[q];
-  return Math.hypot(clamp(h.fx,x0,x1)-h.fx, clamp(h.fy,y0,y1)-h.fy)<=(ty===B_TOWER ? 12 : ty===B_CASTLE ? 8 : 5)*k;
+  return Math.hypot(clamp(h.fx,x0,x1)-h.fx, clamp(h.fy,y0,y1)-h.fy)<=(ty===B_TOWER ? TOWER_SEEK : ty===B_CASTLE ? 8 : 5)*k;
 }
 
 /** The post a soldier at home defends, and how far around it. */

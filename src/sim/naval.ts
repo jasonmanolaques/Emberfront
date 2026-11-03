@@ -64,7 +64,7 @@ export const hasLandOn = (o: number, t: number) => isLand[t]===1 && W.isleOwn.le
 
 /* ---------- reset ---------- */
 export function resetNaval(){
-  laneBox.clear(); W.ships=[]; W.shipSeq=0; W.docks=new Map(); W.invasions=[]; W.invSeq=0; ferry.fill(0);
+  laneBox.clear(); linked.clear(); W.ships=[]; W.shipSeq=0; W.docks=new Map(); W.invasions=[]; W.invSeq=0; ferry.fill(0);
 }
 
 /* ---------- naval bases and their yards ---------- */
@@ -206,6 +206,7 @@ export { shipById };
 /** Ships sail along their waypoints; a ship home is docked (and counts as ready again), a colony's ship that has arrived
     founds its colony. Docks build ships. */
 export function updateNaval(){
+  if (W.tickN%100===0) for (const n of W.nations) if (n && n.alive) linkBases(n);
   // yards
   for (const [q,d] of [...W.docks]){
     const o=pOwner[q];
@@ -297,15 +298,37 @@ function landColony(s: Ship){
   s.gold=0; s.colony=-1;
 }
 /** The sea lane between the naval base and the new colony: its water tiles open to the kingdom's villagers, in boats. */
+const markLane = (o: number, t: number) => { ferry[t]=o; const x=t%TW, y=(t/TW)|0, b=laneBox.get(o); if (!b) laneBox.set(o,[x,y,x,y]); else { b[0]=Math.min(b[0],x); b[1]=Math.min(b[1],y); b[2]=Math.max(b[2],x); b[3]=Math.max(b[3],y); } };
 function openLane(s: Ship){
   const q=s.base, o=s.o;
-  const mark=(t: number) => { ferry[t]=o; const x=t%TW, y=(t/TW)|0, b=laneBox.get(o); if (!b) laneBox.set(o,[x,y,x,y]); else { b[0]=Math.min(b[0],x); b[1]=Math.min(b[1],y); b[2]=Math.max(b[2],x); b[3]=Math.max(b[3],y); } };
+  const mark=(t: number) => markLane(o,t);
   for (const t of baseWater(q)) mark(t);
   const dock=dockTile(q); if (dock<0) return;
   // the way the ship came, as tiles: from the dock to the water beside the landing
   const near=(w: number) => { const x=w%TW; return w+1===s.lands && x<TW-1 || w-1===s.lands && x>0 || w+TW===s.lands || w-TW===s.lands; };
   const way=seaNearest(dock,near);
   if (way) for (const t of way.path) mark(t);
+}
+/** The landmass a naval base stands on (the one its land plots are on), or 0. */
+function baseIsle(q: number){ for (const k of baseCover(q)){ const px=(k%PW)*4, py=((k/PW)|0)*4; for (let y=py;y<py+4;y++) for (let x=px;x<px+4;x++) if (isLand[y*TW+x]) return isle[y*TW+x]; } return 0; }
+const LINK_MAX = 400;                           // tiles of sea between two bases beyond which no lane is opened
+const linked = new Set<number>();               // pairs of bases (smaller plot * 65536 + larger) joined by a lane, or found to have none
+/** Sea lanes between a kingdom's naval bases on different landmasses, so that its villagers (builders, blacksmiths, anyone sent over) can cross
+    from one harbour to the other by boat, as they do to a colony. Looked for once for each pair of bases. */
+export function linkBases(n: Nation){
+  const bases=basesOf(n); if (bases.length<2) return;
+  for (let i=0;i<bases.length;i++) for (let j=i+1;j<bases.length;j++){
+    const q=Math.min(bases[i],bases[j]), r=Math.max(bases[i],bases[j]), key=q*65536+r;
+    if (linked.has(key)) continue;
+    linked.add(key);
+    const dq=dockTile(q), dr=dockTile(r);
+    if (dq<0 || dr<0 || sea[dq]!==sea[dr] || baseIsle(q)===baseIsle(r)) continue;
+    const path=seaPaths(dq,[dr]).get(dr);
+    if (!path || path.length>LINK_MAX) continue;
+    for (const t of baseWater(q)) markLane(n.id,t);
+    for (const t of baseWater(r)) markLane(n.id,t);
+    for (const t of path) markLane(n.id,t);
+  }
 }
 /** The box (tiles x0,y0,x1,y1) round each kingdom's sea lanes. */
 export const laneBox = new Map<number, [number, number, number, number]>();

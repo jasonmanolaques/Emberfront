@@ -19,6 +19,7 @@ import { hasLandOn } from '../sim/naval';
 import { navalSettleAt, cancelNavalSettle } from '../game';
 import { rightClick, deselect } from './command';
 import { nationsOpen, closeNations } from './nations';
+import { assignHover, assignClick, cancelAssign } from './assign';
 
 interface Drag { sx: number; sy: number; lx: number; ly: number; moved: boolean; button: number; }
 const pointers=new Map<number,{x: number; y: number}>(); let drag: Drag | null=null, pinch: {d: number; mx: number; my: number} | null=null;
@@ -54,7 +55,8 @@ function endPointer(e: PointerEvent){
       else if (client.state==='play'){
         const o=t>=0 ? owner[t] : 0;
         const wasOpen=expandOpen(); closeExpand();
-        if (client.settling){ if (t>=0) navalSettleAt(t,e.clientX,e.clientY); }
+        if (client.assigning) assignClick();
+        else if (client.settling){ if (t>=0) navalSettleAt(t,e.clientX,e.clientY); }
         else if (client.landing){ if (t>=0) chooseCoast(t); }
         else if (client.placing) placeAt(t);
         else if (o && o!==PLAYER){ closeResearch(); closeArmy(); closeNaval(); openDiplomacy(o); }   // another kingdom: talk first
@@ -72,6 +74,7 @@ export function bindInput(){
   view.addEventListener('contextmenu',e=>e.preventDefault());
   view.addEventListener('pointerdown',e=>{
     if (e.button===2 && client.placing){ stopPlacing(); return; }   // right-click stops placing
+    if (e.button===2 && client.assigning){ cancelAssign(); return; }
     if (e.button===2 && client.landing){ cancelLanding(); return; }
     if (e.button===2 && client.settling){ cancelNavalSettle(); return; }
     view.setPointerCapture(e.pointerId);
@@ -97,6 +100,7 @@ export function bindInput(){
       if (drag.moved){ cam.x-=(e.clientX-drag.lx)*cam.dpr/cam.zoom; cam.y-=(e.clientY-drag.ly)*cam.dpr/cam.zoom; cam.anim=null; clampCam(); }
       drag.lx=e.clientX; drag.ly=e.clientY;
     }
+    if (client.assigning) assignHover(sx,sy);
     updateTip(e);
   });
   view.addEventListener('pointerup',endPointer);
@@ -122,6 +126,7 @@ export function bindInput(){
     else if (e.key===' ' && client.state==='play'){ e.preventDefault(); centerHome(); }
     else if (e.key==='p' || e.key==='P'){ if (client.state==='play') setPaused(!client.paused); }
     else if (e.key==='b' || e.key==='B'){ if (client.state==='play') toggleBuildPanel(); }
+    else if (e.key==='Escape' && client.assigning) cancelAssign();
     else if (e.key==='Escape' && client.landing) cancelLanding();
     else if (e.key==='Escape' && client.settling) cancelNavalSettle();
     else if (e.key==='Escape' && nationsOpen()) closeNations();

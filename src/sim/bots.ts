@@ -7,7 +7,7 @@ import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, TOPICS, M
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, togglePriority, anyWithin, isEnemyLand, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, guardsOpening, standingTower, WALL_MAX } from './fort';
-import { allied, atWar, ready, available, declare, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, frontIds, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD, setStance, S_RUSH, S_BALANCED } from './war';
+import { allied, atWar, assignArmy, ready, available, declare, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, frontIds, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD, setStance, S_RUSH, S_BALANCED } from './war';
 
 const WALL = -1;   // a tower of the town wall, in a wishlist
 const STALE = 1800;   // ticks a war's border may stand still (3 minutes) before a bot thinks of ending it
@@ -348,6 +348,15 @@ function botWar(n: Nation){
     const pool=available(n).sort((x,y) => y.men.length-x.men.length || x.unit.key-y.unit.key), send: number[]=[];
     for (let got=mine, i=0; i<pool.length && got<theirs*1.2; i++){ send.push(pool[i].unit.key); got+=pool[i].men.length; }
     if (send.length) defend(id,o,send);
+    // short of men on this front with nobody left at home: armies standing on a quiet border (no enemy massed against us there, no attack of ours)
+    // are reassigned, so that a war on several fronts is not lost on the one the armies are not at
+    let got=menOn(id,o);
+    if (got<theirs*1.2) for (const c of W.campaigns.slice()){
+      if (got>=theirs*1.2) break;
+      if (c.a!==id || !c.front || c.phase!==1 || c.naval>=0 || c.militia || c.d===o || c.unit<0 || W.wars[id*M+c.d] || W.aggr[id*M+c.d] || menOn(c.d,id)>0) continue;
+      const men=c.members.length;
+      if (assignArmy(id,c.unit,o)) got+=men;
+    }
   }
   // the militia, called up only when our armies on a front are badly outnumbered (they pay no tax and
   // die easily, and called up they are paid); home again once the front is safe

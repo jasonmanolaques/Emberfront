@@ -167,6 +167,7 @@ export type Command =
   | { type: 'order'; nation: number; camp: number; go: boolean }   // an army at war attacks (go) or defends
   | { type: 'front'; nation: number; camp: number; isle: number }   // an army goes to the border on that landmass
   | { type: 'redirect'; nation: number; camp: number; target: number; isle?: number }   // an army out on a border, not committed, goes to another kingdom's border
+  | { type: 'assign'; nation: number; army: number; target: number; isle?: number; go?: boolean }   // station an army (a barracks' key, or -2 for the militia) on the border with a kingdom, wherever it is now
   | { type: 'recall'; nation: number; camp: number }   // an army at the border in peace or crisis goes home
   | { type: 'defend'; nation: number; target: number; units: number[]; isle?: number }   // send armies to stand on our side of the border with target
   | { type: 'reserves'; nation: number; target: number; call: boolean };  // call the militia up to the front against target, or send them home

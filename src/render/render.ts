@@ -23,7 +23,7 @@ import { H_SOLDIER, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, TASK_F
 import { units, unitLabel } from '../sim/army';
 import { chatter, drawSpeech } from './speech';
 import { paintSmallFlag, flagImage } from './flags';
-import { allied, atWar, HIT_TICKS, RANKS, frontLines, F_PUSH, F_HOLD } from '../sim/war';
+import { allied, atWar, HIT_TICKS, RANKS, frontLines, bordersOf, F_PUSH, F_HOLD } from '../sim/war';
 
 const PLANK='#d09a58';
 const INK='rgba(30,20,14,0.9)';
@@ -267,6 +267,22 @@ function drawFallen(now: number, vx0: number, vy0: number, vx1: number, vy1: num
   ctx.globalAlpha=1;
 }
 
+/** The army being assigned: every stretch of border it could go to, faint, and the one under the pointer lit in gold. */
+function drawAssign(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
+  const A=client.assigning; if (!A) return;
+  const pulse=reduceMotion ? 0.6 : 0.5+0.5*Math.sin(now/180);
+  const paint = (tiles: number[], dark: string, fill: string, alpha: number) => {
+    ctx.fillStyle=dark; ctx.globalAlpha=1;
+    for (const t of tiles){ const x=(t%TW)*RS, y=((t/TW)|0)*RS; if (x<vx0-RS||y<vy0-RS||x>vx1||y>vy1) continue; ctx.fillRect(x-1,y-1,RS+2,RS+2); }
+    ctx.fillStyle=fill; ctx.globalAlpha=alpha;
+    for (const t of tiles){ const x=(t%TW)*RS, y=((t/TW)|0)*RS; if (x<vx0-RS||y<vy0-RS||x>vx1||y>vy1) continue; ctx.fillRect(x,y,RS,RS); }
+    ctx.globalAlpha=1;
+  };
+  for (const b of bordersOf(PLAYER)) if (b!==A.hot && !(A.hot && b.d===A.hot.d && b.isle===A.hot.isle)) paint(b.tiles,'rgba(14,10,8,0.35)','#ffffff',0.35);
+  const h=A.hot ? bordersOf(PLAYER).find(b => b.d===A.hot!.d && b.isle===A.hot!.isle) : undefined;
+  if (h) paint(h.tiles,'rgba(14,10,8,0.7)','#ffd23f',0.65+0.3*pulse);
+}
+
 /** The general front of each war, so both sides can see where the line stands: the tiles of the line,
     in the colour of the kingdom that holds it, brighter and pulsing while it attacks, steady while
     it holds the border. */
@@ -351,6 +367,7 @@ export function render(now: number, dt: number){
   }
 
   drawFronts(now,vx0,vy0,vx1,vy1);
+  if (client.state==='play' && client.assigning) drawAssign(now,vx0,vy0,vx1,vy1);
   drawInvasions();
 
   // people and armies, once close enough to tell them apart
