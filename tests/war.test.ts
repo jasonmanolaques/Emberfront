@@ -8,7 +8,8 @@ import { listen, on } from '../src/sim/events';
 import { setOwner, occIsleAdd } from '../src/sim/territory';
 import { census } from '../src/sim/census';
 import { build, plotProblem, structureOf, costFor, togglePriority, finishHouse } from '../src/sim/buildings';
-import { indoors, H_SOLDIER, H_VILLAGER, TASK_REST, TASK_TO_TRAIN, TASK_INSIDE, MILITIA_HP, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, frontOf, switching, pace, maxHp } from '../src/sim/population';
+import { resetRooms } from '../src/sim/population';
+import { indoors, TASK_ROAM, TASK_HOME_GO, H_SOLDIER, H_VILLAGER, TASK_REST, TASK_TO_TRAIN, TASK_INSIDE, MILITIA_HP, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, frontOf, switching, pace, maxHp } from '../src/sim/population';
 import { UNIT_SIZE, buildUnits, station, unitAt, SOLDIER_DMG } from '../src/sim/army';
 import { wallOf, walledFor, buildWalls } from '../src/sim/defense';
 import { callable, partner, S_BALANCED, S_RUSH, setStance, allied, atWar, available, ready, declare, warProblem, mayStand, endWar, makePeace, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
@@ -2041,12 +2042,15 @@ describe('marching to a border before war', () => {
     const v=W.humans.find(h => h.o===1 && h.kind===H_VILLAGER) ?? makeHuman(N(1),H_VILLAGER,N(1).capTile%TW*2,((N(1).capTile/TW)|0)*2);
     if (!W.humans.includes(v)) W.humans.push(v);
     N(1).beds=0; N(1).houses=0;
-    v.home=5; v.housed=false; v.homeless=800;   // (on his way to a site: a minute and more homeless)
+    v.home=5; v.task=TASK_HOME_GO; v.housed=false; v.homeless=800;   // (on his way to a site: a minute and more homeless)
     tick();
     expect(v.beggar).toBe(false);
-    v.home=-1; v.homeless=800; v.beggar=false; N(1).beds=0;
+    v.home=-1; v.task=TASK_ROAM; v.homeless=800; v.beggar=false; N(1).beds=0;
     tick();
-    expect(v.beggar).toBe(true);     // with no home to build, the minute counts
+    expect(v.beggar).toBe(false);    // between jobs with room to build: still on his way to a house
+    pBuild.fill(0); resetRooms(); v.homeless=800;
+    tick();
+    expect(v.beggar).toBe(true);     // with no room to build, the minute counts
   });
 });
 

@@ -8,6 +8,7 @@ export const client = {
   speed: GAME_SPEED,
   overShown: false,
   lastVillageLog: -99,
+  block: false,          // the building being placed goes four at a time (a 2 by 2 block of plots)
   placing: 0,            // building type being placed from the buildings panel, 0 when not placing
   selected: -1,
   settling: 0,           // a naval settlement is chosen (1; 0 when not choosing): the next click on land picks where the ship lands

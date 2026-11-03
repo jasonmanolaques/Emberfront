@@ -383,3 +383,5 @@ button.army[aria-pressed=true] .at{color:var(--gold)}
 #expand button{padding:5px 8px;font-weight:600;min-width:46px}
 #expand button.sea{min-width:36px}
 #cmList .ao.assign{border-color:var(--gold);color:var(--gold)}
+.fhead{display:flex;gap:4px;justify-content:center;align-items:center}
+.fclose{pointer-events:auto;flex:none;width:26px;height:26px;padding:0;font-size:16px;line-height:1}

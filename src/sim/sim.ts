@@ -9,10 +9,10 @@ import { genRealMap, capitalsOn, REAL_MAPS } from './realmap';
 import { VIEWS } from './mapview';
 import { COUNTRIES, MAJOR, countryByCode, colourGap, type Country } from '../core/countries';
 import { setOwner, stepAttack, launch, touches } from './territory';
-import { toRuins, build, togglePriority, produce, resetHomes } from './buildings';
+import { toRuins, build, buildBlock, togglePriority, produce, resetHomes } from './buildings';
 import { scanContacts, census, censusStep } from './census';
 import { botThink } from './bots';
-import { updatePopulation, resetWalks } from './population';
+import { updatePopulation, resetWalks, resetRooms } from './population';
 import { resetWar, declare, declareNaval, proposeAlliance, endWar, makePeace, setOffensive, armyOrder, armyFront, armyRecall, armyRedirect, assignArmy, deployArmies, setStance, deescalate, defend, callReserves } from './war';
 import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
@@ -88,7 +88,7 @@ export function newWorld(seed: number, map='gen'){
   W.M=1; W.contact=new Int32Array(1);
   W.simTime=0; W.tickN=0;
   W.humans=[]; W.humanSeq=0;
-  resetWar(1); resetStories(1); resetLedger(); resetWalks(); labelWorld(); resetNaval(); resetHomes();
+  resetWar(1); resetStories(1); resetLedger(); resetWalks(); labelWorld(); resetNaval(); resetHomes(); resetRooms();
 }
 
 /** Founds the player's capital near tile t and places the bot kingdoms: `rivals` of them, countries
@@ -234,7 +234,7 @@ function applyCommand(c: Command){
     const n=W.nations[c.nation]; if (!n || !n.alive) return;
     n.soldierShare=Math.min(1,Math.max(0,c.share));
   } else if (c.type==='build'){
-    const n=W.nations[c.nation]; if (n) build(n,c.plot,c.kind,'any');   // the player may build over his own buildings
+    const n=W.nations[c.nation]; if (n){ if (c.block) buildBlock(n,c.plot,c.kind,'any'); else build(n,c.plot,c.kind,'any'); }   // the player may build over his own buildings
   } else if (c.type==='priority'){
     const n=W.nations[c.nation]; if (n && n.alive) togglePriority(n,c.plot);
   } else if (c.type==='ally'){

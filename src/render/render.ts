@@ -7,7 +7,7 @@ import { TW, TH, RW, RH, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD
 import { clamp, fmt } from '../core/util';
 import { W, owner, isLand, sea, pType, pPrio, pTimer, pBurn, type Human } from '../sim/state';
 import { findBlock } from '../sim/sim';
-import { placeProblem, structureOf, canAfford, navalSite, SIZE, PRODUCE_TICKS, dims } from '../sim/buildings';
+import { placeProblem, structureOf, canAfford, navalSite, blockPlan, SIZE, PRODUCE_TICKS, dims } from '../sim/buildings';
 import { client, reduceMotion } from '../client';
 import { view, ctx, cam, stepCamAnim } from './camera';
 import { ovC, flushWorld, SEA } from './terrain';
@@ -436,9 +436,16 @@ export function render(now: number, dt: number){
       const q=(hy>>2)*PW+(hx>>2), me=W.nations[PLAYER], s=structureOf(client.placing);
       const ok=!!me && !!s && canAfford(me,s) && !placeProblem(me,q,client.placing,'any');
       const turned=client.placing===B_NAVAL && !!me && navalSite(me,q,'any').orient===1, [fw,fh]=turned ? [2,4] : SIZE[client.placing] ?? [1,1];   // (a naval base turns to fit)
+      if (client.block && me){   // four at a time: a square of 2 by 2 plots
+        const plan=blockPlan(me,q,client.placing,'any'), good=!plan.problem;
+        ctx.globalAlpha=0.7; for (let i=0;i<4;i++) ctx.drawImage(ghostOf(client.placing),((hx>>2)+(i%2))*PS,((hy>>2)+((i/2)|0))*PS); ctx.globalAlpha=1;
+        ctx.strokeStyle=good?'rgba(143,227,155,.95)':'rgba(255,90,70,.9)'; ctx.lineWidth=2*dpr/zoom;
+        ctx.strokeRect((hx>>2)*PS,(hy>>2)*PS,2*PS,2*PS);
+      } else {
       ctx.globalAlpha=0.7; ctx.drawImage(ghostOf(client.placing,turned ? 1 : 0),(hx>>2)*PS,(hy>>2)*PS); ctx.globalAlpha=1;
       ctx.strokeStyle=ok?'rgba(143,227,155,.95)':'rgba(255,90,70,.9)'; ctx.lineWidth=2*dpr/zoom;
       ctx.strokeRect((hx>>2)*PS,(hy>>2)*PS,fw*PS,fh*PS);
+      }
     } else if (client.state==='play' && client.settling){
       drawSettlePreview();
     } else if (client.state==='play' && client.landing){

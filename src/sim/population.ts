@@ -34,7 +34,7 @@
    them, until the kingdom sends them to war (sim/war.ts). */
 import { TW, TH, PW, PH, TICK, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY } from '../core/constants';
 import { W, owner, occ, isLand, ferry, pType, pOwner, pBurn, pPrio, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, type Human, type Nation } from './state';
-import { homeScore, startSite, cancelSite, finishHouse } from './buildings';
+import { homeScore, startSite, cancelSite, finishHouse, plotProblem } from './buildings';
 import { on } from './events';
 import { Field } from './field';
 import { updateWar, wageOf, reinforce, marchStep, guardStep, alarmStep, mayStand, spread, warringNow } from './war';
@@ -488,6 +488,16 @@ function garrison(n: Nation, mine: Human[]){
   }
 }
 
+const roomAt=new Map<number, [number, boolean]>();
+export const resetRooms = () => roomAt.clear();
+/** Has kingdom n a plot a house could be built on? (looked at every 5 seconds) */
+function roomForHome(n: Nation){
+  const c=roomAt.get(n.id);
+  if (c && W.tickN>=c[0] && W.tickN-c[0]<50) return c[1];
+  let ok=false; for (const q of n.plots) if (!plotProblem(n,q)){ ok=true; break; }
+  roomAt.set(n.id,[W.tickN,ok]);
+  return ok;
+}
 /** Hands out the houses, longest-standing people first, turns long-homeless villagers into beggars,
     and lets beggars homeless for 90 seconds die of want. */
 function house(n: Nation, mine: Human[]){
@@ -499,10 +509,12 @@ function house(n: Nation, mine: Human[]){
       if (h.beggar){ h.beggar=false; h.sp=3+W.prand()*2; think(h); }   // a home at last: back to work
     } else if (h.kind===H_VILLAGER){
       ++h.homeless;
-      // (a villager on his way to build himself a home, or building it, is not turned beggar by the minute: in a big kingdom the walk alone takes that long; but not for ever)
-      const building=h.home>=0 && !h.beggar && h.homeless<BEG_TICKS*4;
-      if (!h.beggar && h.homeless>=BEG_TICKS && !building){
-        // a minute without a roof: he gives up work, drops what he carries, and begs
+      // Beggars are for a kingdom too crammed to build in. A villager on his way to build himself a home, or building it, is never turned beggar (in a big
+      // kingdom the walk alone takes more than a minute), nor one between jobs while the kingdom has room for a house: he is on his way to one. (Not for ever.)
+      const onRoute=h.home>=0 && (h.task===TASK_HOME_GO || h.task===TASK_HOME_BUILD);
+      const spared=onRoute || (h.homeless<BEG_TICKS*10 && roomForHome(n));
+      if (!h.beggar && h.homeless>=BEG_TICKS && !spared){
+        // a minute without a roof and nowhere to build one: he gives up work, drops what he carries, and begs
         release(h); h.beggar=true; h.sp=1; h.task=TASK_ROAM; h.path=[]; roamTarget(h);
       } else if (h.beggar && h.homeless>=STARVE_TICKS) h.hp=0;   // half a minute more, and he dies where he stands
     }
@@ -729,14 +741,37 @@ function step(h: Human){
     think(h); return;
   }
   const sp=pace(h);
-  const st=Math.min(d,sp*TICK); h.x+=dx/d*st; h.y+=dy/d*st;
+  const st=Math.min(d,sp*TICK), nx=h.x+dx/d*st, ny=h.y+dy/d*st;
+  if (h.kind===H_VILLAGER){   // a villager never steps onto another kingdom's ground (the border may have moved since his walk was planned): he plans again
+    const k=tileOf(nx,ny), o=owner[k];
+    if (o!==0 && o!==h.o && ferry[k]!==h.o){ h.path=[]; if (h.beggar) roamTarget(h); else think(h); return; }
+  }
+  h.x=nx; h.y=ny;
 }
 
+/** A villager found standing on another kingdom's ground, which is not at war with his: he is set down on the nearest ground of his own, and thinks again.
+    Returns true if he was moved. (People should never get there: their walks are checked tile by tile; but ground changes hands under a walker.) */
+function shelter(h: Human){
+  const t=tileOf(h.x,h.y), o=owner[t];
+  if (o===0 || o===h.o || ferry[t]===h.o || W.atWar[o*W.M+h.o] || mayStand(h,o)) return false;
+  const cx=t%TW, cy=(t/TW)|0;
+  for (let r=1;r<=24;r++){
+    for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){
+      if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
+      const x=cx+dx, y=cy+dy; if (x<0||y<0||x>=TW||y>=TH) continue;
+      const k=y*TW+x; if (owner[k]!==h.o || !isLand[k] || occ[k]) continue;
+      h.x=x*2+1; h.y=y*2+1; h.path=[]; h.wait=0; if (h.home>=0){ cancelSite(h.home); h.home=-1; } if (h.beggar) roamTarget(h); else think(h);
+      return true;
+    }
+  }
+  return false;
+}
 export function updatePopulation(){
   const N=W.nations, H=W.humans;
   // people die when their kingdom falls, the ground under them is taken, or they fall in battle
   for (let i=H.length-1;i>=0;i--){
     const h=H[i];
+    if (h.hp>0 && N[h.o].alive && h.kind===H_VILLAGER && shelter(h)) continue;   // (a villager on ground that is another's, not at war: set back on his own, not lost)
     if (!N[h.o].alive || !mayStand(h,owner[tileOf(h.x,h.y)]) || h.hp<=0){
       if (h.hp<=0 && N[h.o].alive) on.died(h.x,h.y,h.o,h.id,h.kind===H_SOLDIER ? 1 : h.beggar ? 2 : 0,h.militia ? 0 : h.tier,h.beggar && h.homeless>=STARVE_TICKS);   // they drop where they fell
       if (h.work>=0 && (pType[h.work]===B_GUILD || pType[h.work]===B_SMITHY)) pTimer[h.work]=REHIRE_TICKS+1;   // the workshop waits a while for a new hand

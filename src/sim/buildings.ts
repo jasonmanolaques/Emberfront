@@ -267,6 +267,33 @@ export function build(n: Nation, q: number, type: number, over: Over='none'){
   if (joinsUp(type)) joinGatherers(n);
   return true;
 }
+/* ---------- four at a time ----------
+   A farm or a watchtower can be placed as a block of four: a square of 2 by 2 plots, built as four single ones in turn (each dearer than the last by
+   the usual rise), all or none. */
+export const BLOCKABLE=[B_FARM, B_TOWER];
+export const blockPlots = (q: number) => [q, q+1, q+PW, q+PW+1];
+/** What four of `type` cost one after the other (each farm or tower owned makes the next dearer), and why not, if they can't go on the block of plots at q. */
+export function blockPlan(n: Nation, q: number, type: number, over: Over='any'): { cost: number[]; problem: string | null } {
+  const s=structureOf(type), cost=[0,0,0];
+  if (!s || !BLOCKABLE.includes(type)) return { cost, problem:'Not a building that goes four at a time' };
+  const stock=n.stock.slice(); let problem: string | null=null, k=0;
+  const plots = q%PW>=PW-1 || q+PW>=NP ? [] : blockPlots(q);
+  if (!plots.length) problem='No room for four here';
+  for (const p of plots){
+    const w=placeProblem(n,p,type,over); if (w && !problem) problem=w;
+    const c=costFor(n,s); c.forEach((v,g) => { cost[g]+=v; stock[g]-=v; });
+    countUp(n,type); k++;
+  }
+  for (;k>0;k--) countDown(n,type);
+  if (!problem && stock.some(v => v<0)) problem='Not enough materials for four';
+  return { cost, problem };
+}
+/** Four of `type` on the block of plots at q, as if placed one by one; all or none. */
+export function buildBlock(n: Nation, q: number, type: number, over: Over='any'){
+  if (!n.alive || blockPlan(n,q,type,over).problem) return false;
+  for (const p of blockPlots(q)) build(n,p,type,over);
+  return true;
+}
 function countDown(n: Nation, type: number){
   if (type===B_HOUSE){ n.houses=Math.max(0,n.houses-1); n.beds=Math.max(0,n.beds-1); }   // (the census counts beds exactly, once a second)
   else if (type===B_FARM) n.farms--; else if (type===B_BARRACKS) n.barracks--; else if (type===B_TOWER) n.towers--; else if (type===B_MINTER) n.minters--;

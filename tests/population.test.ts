@@ -208,13 +208,15 @@ describe('population', () => {
     expect(onWalls).toBe(0);
   });
 
-  it('kills a human when another kingdom takes the ground under them', () => {
+  it('sets a villager down on his own ground when another kingdom takes the ground under him in peace: nobody is lost', () => {
     start(12345, 3);
     run(300);
-    const h = mine()[0];
-    setOwner(((h.y/2)|0)*TW + ((h.x/2)|0), 2);
+    const h = mine().find(k => k.kind===H_VILLAGER)!;
+    const t=((h.y/2)|0)*TW + ((h.x/2)|0);
+    setOwner(t, 2);
     tick();
-    expect(W.humans.find(x => x.id === h.id)).toBeUndefined();
+    expect(W.humans.includes(h)).toBe(true);
+    expect(owner[((h.y/2)|0)*TW + ((h.x/2)|0)]).toBe(1);
   });
 });
 

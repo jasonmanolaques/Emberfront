@@ -6,7 +6,7 @@ import { newWorld, startMatch, queueCommand, tick, incomeParts } from '../src/si
 import { declare, escalate } from '../src/sim/war';
 import { listen } from '../src/sim/events';
 import { setOwner, tileCost } from '../src/sim/territory';
-import { STRUCTURES, structureOf, costFor, build, plotProblem, placeProblem } from '../src/sim/buildings';
+import { STRUCTURES, structureOf, costFor, build, buildBlock, blockPlan, blockPlots, plotProblem, placeProblem } from '../src/sim/buildings';
 import { HUMAN_EVERY as E, H_SOLDIER, H_VILLAGER, SOLDIER_HP, frontOf, doorOf, switching, makeHuman } from '../src/sim/population';
 
 const me = () => W.nations[1];
@@ -88,6 +88,36 @@ describe('building costs and placement', () => {
     expect(pType[q]).toBe(B_EMPTY);   // nothing happens until the next tick
     tick();
     expect(pType[q]).toBe(B_FARM);
+  });
+
+  it('places four farms or four watchtowers at once on a square of 2 by 2 plots: each dearer than the last, all or none', () => {
+    start(12345, 0); expand(6);
+    const blocks=freePlots().filter(q => blockPlots(q).every(k => k===q || freePlots().includes(k)) && q%PW<PW-1);
+    expect(blocks.length).toBeGreaterThan(1);
+    const q=blocks[0];
+    // the price is that of four single farms placed one after the other
+    me().stock=[500,500,500];
+    const one=costFor(me(),structureOf(B_FARM)!), plan=blockPlan(me(),q,B_FARM);
+    me().farms=0; let sum=[0,0,0]; for (let k=0;k<4;k++){ const c=costFor(me(),structureOf(B_FARM)!); sum=sum.map((v,g) => v+c[g]); me().farms++; } me().farms=0;
+    expect(plan.cost).toEqual(sum); expect(plan.cost[0]).toBeGreaterThan(4*one[0]-1);
+    expect(plan.problem).toBeNull();
+    // too poor for four: nothing is built
+    me().stock=[plan.cost[0]-1,plan.cost[1],plan.cost[2]];
+    expect(blockPlan(me(),q,B_FARM).problem).toMatch(/Not enough/);
+    expect(buildBlock(me(),q,B_FARM)).toBe(false);
+    expect(blockPlots(q).every(k => pType[k]===B_EMPTY)).toBe(true);
+    expect(me().farms).toBe(0);
+    // with the means: four farms, the stock down by the price, the count up by four
+    me().stock=[plan.cost[0],plan.cost[1],plan.cost[2]];
+    queueCommand({ type: 'build', nation: 1, plot: q, kind: B_FARM, block: true }); tick();
+    expect(blockPlots(q).every(k => pType[k]===B_FARM)).toBe(true);
+    expect(me().farms).toBe(4);
+    expect(me().stock).toEqual([0,0,0]);
+    // and four towers the same way, on another block
+    const q2=freePlots().find(k => blockPlots(k).every(j => !plotProblem(me(),j)) && k%PW<PW-1)!;
+    me().stock=[500,500,500]; expect(buildBlock(me(),q2,B_TOWER)).toBe(true);
+    expect(me().towers).toBe(4);
+    expect(buildBlock(me(),q2,B_MINTER)).toBe(false);   // (only farms and towers)
   });
 
   it('only gets houses without asking (its villagers build them); everything else is built on purpose', () => {

@@ -150,7 +150,7 @@ export interface Invasion {
 export type Command =
   | { type: 'attack'; nation: number; tile: number; ratio: number }
   | { type: 'soldiers'; nation: number; share: number }
-  | { type: 'build'; nation: number; plot: number; kind: number }     // kind: B_FARM, B_BARRACKS, B_TOWER or B_MINTER
+  | { type: 'build'; nation: number; plot: number; kind: number; block?: boolean }     // kind: B_FARM, B_BARRACKS, B_TOWER or B_MINTER; block: four farms or towers on the 2 by 2 plots from `plot`
   | { type: 'priority'; nation: number; plot: number }                // toggle a watchtower's call for a garrison
   | { type: 'colonize'; nation: number; tile: number; ratio: number }   // send a ship to colonize the landmass of this unclaimed tile, with this share of the treasury
   | { type: 'ship'; nation: number; plot: number }                   // build a ship at this naval base

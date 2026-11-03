@@ -240,10 +240,13 @@ function powerBar(f: Front, b: Battle, byId: Map<number, Human>){
 }
 
 let lastChips='';
+const dismissed=new Set<number>();   // wars and crises whose bar the player closed (it returns with the next one)
 /** Can we send armies to hold our border with o: they are massing on it, or at war with us? */
 const canDefend = (o: number) => !defendProblem(PLAYER,o);
 export function updateWarChips(){
-  const list=fronts(), byId=new Map<number, Human>();
+  const all=fronts(), byId=new Map<number, Human>();
+  for (const o of [...dismissed]) if (!all.some(f => f.o===o)) dismissed.delete(o);
+  const list=all.filter(f => !dismissed.has(f.o));
   for (const h of W.humans) byId.set(h.id,h);
   const html=list.map(f => {
     const kind=f.war ? 'War' : 'Crisis', open=(f.crisis===2 || f.war) && canDefend(f.o) && W.campaigns.some(c => c.front && c.a===f.o && c.d===PLAYER && c.phase<2);
@@ -258,7 +261,7 @@ export function updateWarChips(){
     const massed=f.incoming.reduce((k,c)=>k+c.members.length,0);
     const men=(massed ? ` · ${massed} ${f.a===PLAYER ? 'holding their border' : 'on your border'}` : '')+(f.men>0 ? ` · ${f.men} out` : '');
     const chip=`<button class="chip war${f.theyOffer||f.ready?' offer':''}${open?' threat':''}" data-o="${f.o}" data-act="${act}" ${off||!act?'disabled':''}><i class="flag" style="${flagCSS(W.nations[f.a].code)}"></i>${esc(nameOf(f.a))} – ${esc(nameOf(f.d))} · ${kind}${men}<b>${label}</b></button>`;
-    return `<div class="front" data-o="${f.o}">${chip}${word(f.o,byId)}${stances(f.o)}${powerBar(f,track(f.o,byId),byId)}${reserves(f.o)}</div>`;
+    return `<div class="front" data-o="${f.o}"><div class="fhead">${chip}<button class="x fclose" data-o="${f.o}" aria-label="Close this war bar" title="Close this bar (it comes back with the next war or crisis)">×</button></div>${word(f.o,byId)}${stances(f.o)}${powerBar(f,track(f.o,byId),byId)}${reserves(f.o)}</div>`;
   }).join('');
   if (html!==lastChips){ lastChips=html; wars.innerHTML=html; placePop(); }
   if (!pop.hidden){
@@ -392,6 +395,8 @@ export function setupDiplomacy(){
   $('dMil').oninput=e=>{ milPick=+(e.target as HTMLInputElement).value; refreshWar(false); };
   $('dAttack').onclick=()=>send();
   wars.addEventListener('click',e=>{
+    const x=(e.target as HTMLElement).closest('button.fclose') as HTMLButtonElement | null;
+    if (x){ const o=+x.dataset.o!; dismissed.add(o); if (popFor===o) closePop(); lastChips='\0'; updateWarChips(); return; }
     const w=(e.target as HTMLElement).closest('button.fword') as HTMLButtonElement | null;
     if (w){ if (!w.disabled){ queueCommand({ type:'offensive', nation:PLAYER, target:+w.dataset.o!, go:!!w.dataset.go }); lastChips=''; w.disabled=true; } return; }
     const st=(e.target as HTMLElement).closest('button.fst') as HTMLButtonElement | null;
@@ -418,4 +423,4 @@ export function setupDiplomacy(){
     closePop();
   };
 }
-export function resetDiplomacy(){ closeDiplomacy(); closePop(); wars.innerHTML=''; lastChips=''; battles.clear(); }
+export function resetDiplomacy(){ dismissed.clear(); closeDiplomacy(); closePop(); wars.innerHTML=''; lastChips=''; battles.clear(); }
