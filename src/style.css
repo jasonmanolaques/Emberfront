@@ -33,6 +33,7 @@ html{height:100%;box-sizing:border-box;background:var(--sea)}
 *,*::before,*::after{box-sizing:border-box}
 [hidden]{display:none!important}
 body{height:100%;margin:0;background:var(--sea);color:var(--text);font-family:var(--f-ui);font-size:15px;line-height:1.3;overflow:hidden;-webkit-font-smoothing:antialiased}
+#game > :not(#view):not(#scrim){zoom:var(--ui,0.8)}   /* the whole interface at 80%: every panel, none of the map */
 #game{position:relative;width:100%;height:100%;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
 #view{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
 #view.dragging{cursor:grabbing}

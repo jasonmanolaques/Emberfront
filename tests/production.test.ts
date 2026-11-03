@@ -110,8 +110,8 @@ describe('production buildings', () => {
   it('cost what the design says', () => {
     emptyKingdom();
     for (const [type, cost] of [[B_PLANTATION,[10,0,0]],[B_QUARRY,[5,10,0]],[B_COPPERMINE,[10,10,0]]] as [number, number[]][]){
-      me().stock=[0,0,0];
-      expect(build(me(), spot(type), type)).toBe(true);   // the first of each is free
+      me().stock=type===B_COPPERMINE ? [...cost] : [0,0,0];
+      expect(build(me(), spot(type), type)).toBe(true);   // the first plantation and quarry are free, the copper mine is paid for
       expect(me().stock).toEqual([0,0,0]);
       const next=cost.map(c => c ? Math.ceil(c*1.1-1e-9) : 0);   // each one owned makes the next a tenth dearer
       me().stock=next.map(c => c ? c-1 : 0);

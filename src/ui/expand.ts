@@ -3,7 +3,7 @@
    a single ⚓ button for a naval settlement: it asks for the coast to land on, and then the same choice of how
    much gold the ship carries over the sea; the border begins where it lands. */
 import { W } from '../sim/state';
-import { PLAYER } from '../core/constants';
+import { PLAYER, UI_SCALE } from '../core/constants';
 import { fmt } from '../core/util';
 import { playerAttack, startNavalSettle, settleBySea } from '../game';
 import { hasLandOn, basesOf } from '../sim/naval';
@@ -14,9 +14,9 @@ let tile=-1, sea=false;   // the tile clicked, and whether the menu is the naval
 
 export const expandOpen = () => !menu.hidden;
 function place(x: number, y: number){
-  const g=$('game').getBoundingClientRect();
-  menu.style.left=Math.max(8,Math.min(g.width-menu.offsetWidth-8,x-g.left-menu.offsetWidth/2))+'px';
-  menu.style.top=Math.max(8,Math.min(g.height-menu.offsetHeight-8,y-g.top-menu.offsetHeight-12))+'px';
+  const g=$('game').getBoundingClientRect(), m=menu.getBoundingClientRect();   // (on screen: the panel is drawn at UI_SCALE, so its left and top are set in its own units)
+  menu.style.left=Math.max(8,Math.min(g.width-m.width-8,x-g.left-m.width/2))/UI_SCALE+'px';
+  menu.style.top=Math.max(8,Math.min(g.height-m.height-8,y-g.top-m.height-12))/UI_SCALE+'px';
 }
 /** Opens the menu for unclaimed tile t at (x, y): page pixels where the player clicked. */
 export function openExpand(t: number, x: number, y: number){

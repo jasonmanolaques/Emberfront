@@ -780,7 +780,7 @@ export function updatePopulation(){
   for (const h of H){
     const n=N[h.o];
     if (h.kind===H_SOLDIER){ n.soldiers++; if (h.militia){ n.militia++; if (h.war>=0) n.called++; n.wageM+=wageOf(h); } else n.wageS+=wageOf(h); } else if (h.beggar) n.beggars++; else { n.villagers++; if (h.housed) n.taxpayers++; }
-    if (!h.housed) n.homeless++;
+    if (!h.housed && !(h.home>=0 && h.kind===H_VILLAGER && !h.beggar)) n.homeless++;   // (one on his way to build himself a home is not homeless yet)
     if (switching(h)) n.training++;
   }
 }

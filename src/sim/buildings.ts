@@ -158,11 +158,13 @@ function ownedFor(n: Nation, type: number){
   let k=0; for (const q of n.blds) if (pType[q]===type) k+=[1,2,4][pSpan[q]] ?? 1;
   return Math.max(k,countOf(n,type));
 }
-/** What a structure costs kingdom n: the first plantation, quarry and copper mine it builds are
+/** The first plantation and the first quarry a kingdom builds cost nothing, so that every kingdom can start its stockpile; the copper mine is paid for. */
+const FIRST_FREE = [B_PLANTATION, B_QUARRY];
+/** What a structure costs kingdom n: the first plantation and quarry it builds are
     free (the map has nothing to gather, so they start its stockpile), and each building of a kind it
     owns makes the next one dearer (RISE: 5% of the base price for farms and watchtowers, 10% for the others). */
 export function costFor(n: Nation, s: Structure): number[] {
-  if (isGatherer(s.type) && countOf(n,s.type)===0) return [0,0,0];
+  if (FIRST_FREE.includes(s.type) && countOf(n,s.type)===0) return [0,0,0];
   const rise=RISE[s.type];
   if (rise) { const k=ownedFor(n,s.type); return s.cost.map(c => c ? Math.ceil(c*(1+rise*k)-1e-9) : 0); }
   return s.cost;

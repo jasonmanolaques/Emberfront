@@ -212,6 +212,7 @@ export function trySpawn(t: number){
   $('meName').textContent=me.name; $('meCrest').style.cssText=flagCSS(me.code);
   client.state='play'; ui.banner.hidden=true; showHUD(true);
   setupBuildPanel(); setupDiplomacy();
+  toggleBuildPanel(true,'resources');   // (the first plantation and quarry are free: the resource buildings are what the first minutes are for)
   focusOn(me.capTile, Math.max(cam.fitZ*2.2, 1.8*cam.dpr));
   log(`${me.name} is founded. Expand fast while the land is empty.`,'good');
 }

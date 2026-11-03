@@ -3,7 +3,7 @@
    war; at war, attack along the front or hold it), the call-up of the militia
    reserves, and the menu under a chip for meeting an army coming at you (ask for peace, or hold your
    border against it) ---------- */
-import { PLAYER, PW, TW, GAME_SPEED } from '../core/constants';
+import { PLAYER, PW, TW, GAME_SPEED, UI_SCALE } from '../core/constants';
 import { fmt } from '../core/util';
 import { W, pType, pOwner, pBurn } from '../sim/state';
 import { client } from '../client';
@@ -339,9 +339,9 @@ function placePop(){
   if (pop.hidden) return;
   const chip=wars.querySelector(`.front[data-o="${popFor}"]`) as HTMLElement | null;
   if (!chip){ closePop(); return; }
-  const g=$('game').getBoundingClientRect(), r=chip.getBoundingClientRect();
-  pop.style.left=Math.max(8,Math.min(g.width-pop.offsetWidth-8,r.left-g.left+r.width/2-pop.offsetWidth/2))+'px';
-  pop.style.top=(r.bottom-g.top+6)+'px';
+  const g=$('game').getBoundingClientRect(), r=chip.getBoundingClientRect(), p=pop.getBoundingClientRect();   // (all on screen; set in the panel's own units, it is drawn at UI_SCALE)
+  pop.style.left=Math.max(8,Math.min(g.width-p.width-8,r.left-g.left+r.width/2-p.width/2))/UI_SCALE+'px';
+  pop.style.top=(r.bottom-g.top+6)/UI_SCALE+'px';
 }
 function openPop(o: number, counter=false){
   popFor=o; popCamp=-1; popCounter=counter; pop.hidden=false; popMenu.hidden=false; popSend.hidden=true;

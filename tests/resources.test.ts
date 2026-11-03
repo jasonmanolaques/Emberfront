@@ -31,10 +31,12 @@ describe('goods with nothing on the map to gather', () => {
     expect(me().stock).toEqual([10,10,10]);   // nobody goes out to gather: there is nothing out there
     expect(W.humans.filter(h => h.o===1 && h.task===TASK_REST).length).toBeGreaterThan(0);   // they are at home
   });
-  it('make the first plantation, quarry and copper mine free, and the next ones cost', () => {
+  it('make the first plantation and quarry free (the copper mine is paid for), and the next ones cost', () => {
     start(12345, 0);
     me().stock=[0,0,0];
-    for (const type of [B_PLANTATION, B_QUARRY, B_COPPERMINE]){
+    expect(canAfford(me(),structureOf(B_COPPERMINE)!)).toBe(false);
+    expect(costFor(me(),structureOf(B_COPPERMINE)!)).toEqual(structureOf(B_COPPERMINE)!.cost);   // not free: 10 wood, 10 stone
+    for (const type of [B_PLANTATION, B_QUARRY]){
       expect(canAfford(me(),structureOf(type)!)).toBe(true);   // with an empty stockpile
       expect(costFor(me(),structureOf(type)!)).toEqual([0,0,0]);
       expect(place(type)).toEqual([0,0,0]);

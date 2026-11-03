@@ -1,5 +1,5 @@
 /* ---------- input: pointer, wheel, keys, buttons, tooltip ---------- */
-import { TNAME, TMULT, PLAYER } from '../core/constants';
+import { TNAME, TMULT, PLAYER, UI_SCALE } from '../core/constants';
 import { fmt } from '../core/util';
 import { W, owner, occ, terr, isLand } from '../sim/state';
 import { allied, atWar } from '../sim/war';
@@ -36,10 +36,10 @@ function updateTip(e: PointerEvent){
   ui.tip.innerHTML=`<span class="t1"></span><span class="t2"></span><span class="t2"></span>`;
   ui.tip.children[0].textContent=l1; ui.tip.children[1].textContent=l2; ui.tip.children[2].textContent=l3;
   ui.tip.hidden=false;
-  const gr=$('game').getBoundingClientRect(), tw=ui.tip.offsetWidth, th=ui.tip.offsetHeight;
+  const gr=$('game').getBoundingClientRect(), tipR=ui.tip.getBoundingClientRect(), tw=tipR.width, th=tipR.height;
   let x=e.clientX-gr.left+16, y=e.clientY-gr.top+16;
   if (x+tw>gr.width-8) x=e.clientX-gr.left-tw-12; if (y+th>gr.height-8) y=e.clientY-gr.top-th-12;
-  ui.tip.style.left=x+'px'; ui.tip.style.top=y+'px';
+  ui.tip.style.left=x/UI_SCALE+'px'; ui.tip.style.top=y/UI_SCALE+'px';
 }
 
 function endPointer(e: PointerEvent){

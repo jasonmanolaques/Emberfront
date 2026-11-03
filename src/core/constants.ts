@@ -51,6 +51,7 @@ export const GOLD_PER_TILE = 0.5;         // cost of settling one unclaimed tile
 export const STR_TILE = 1, STR_VILLAGER = 50, STR_SOLDIER = 100, STR_GOLD = 3;
 
 export const PLAYER = 1;                  // nation id of the local player
+export const UI_SCALE = 0.8;             // the interface is drawn at this share of its first size (CSS zoom on every panel: see --ui in style.css)
 export const MAX_KINGDOMS = 64;           // kingdoms in one game at most, the player's included (a full game)
 export const EUROPE_KINGDOMS = 24;        // ...on the Europe map: you and 23 rivals picked at random from the other countries, a size the late game runs smoothly at
 /** The most kingdoms a game on that map holds. */

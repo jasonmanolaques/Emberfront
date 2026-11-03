@@ -1,5 +1,5 @@
 /* ---------- Emberfront: boot & main loop ---------- */
-import { TW, TH, RW, RH, RS, NP, TICK } from './core/constants';
+import { TW, TH, RW, RH, RS, NP, TICK, UI_SCALE } from './core/constants';
 import { W, owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, pHp } from './sim/state';
 import { findBlock, queueCommand } from './sim/sim';
 import { plotProblem, navalSite } from './sim/buildings';
@@ -16,6 +16,7 @@ import { $ } from './ui/dom';
 import { openArmy } from './ui/army';
 import { newGame, step, trySpawn, playerAttack, setInvest, setSoldierShare } from './game';
 
+document.documentElement.style.setProperty('--ui',String(UI_SCALE));
 let acc=0, last=performance.now(), hudAt=0;
 const STEP_BUDGET = 10;   // milliseconds of each frame the simulation may take (a frame is 16.7)
 function frame(now: number){
