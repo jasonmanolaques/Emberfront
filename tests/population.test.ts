@@ -1,6 +1,6 @@
 // Humans: spawning from the capital and switching between villager and soldier at a barracks.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { TW, TH, PW, NP, B_BARRACKS, WAGE } from '../src/core/constants';
+import { TW, TH, PW, NP, B_BARRACKS, WAGE, WAGE_IDLE } from '../src/core/constants';
 import { W, owner, isLand, pType } from '../src/sim/state';
 import { build, plotProblem } from '../src/sim/buildings';
 import { newWorld, startMatch, queueCommand, tick, grossIncome } from '../src/sim/sim';
@@ -127,7 +127,7 @@ describe('population', () => {
     expect(n.militia).toBeGreaterThanOrEqual(4);   // ...and the rest militia (a beggar can't be recruited)
     expect(mine().filter(h => h.militia).every(h => h.base<0 && h.hp===MILITIA_HP)).toBe(true);
     const was=n.taxpayers; tick(); expect(n.taxpayers).toBe(was);
-    expect(n.income).toBeCloseTo(grossIncome(n)-5*WAGE, 6);   // only the 5 in the barracks are paid
+    expect(n.income).toBeCloseTo(grossIncome(n)-5*WAGE_IDLE, 6);   // only the 5 in the barracks are paid
     while (mine().length < 11) tick();
     const newest = mine().reduce((a, b) => a.id > b.id ? a : b);
     expect([newest.kind, newest.militia]).toEqual([H_SOLDIER, true]);   // born a militiaman, at the castle

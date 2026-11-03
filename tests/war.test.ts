@@ -1,7 +1,7 @@
 // War: diplomacy, attacks, fighting, peace, and the fall of a kingdom.
 // Most of these play on a flat all-grass map, so distances and borders are predictable.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NT, NP, PW, WAGE, T_GRASS, T_WATER, B_NAVAL, B_HOUSE, B_FARM, B_TOWER, B_BARRACKS, B_RUINS } from '../src/core/constants';
+import { TW, TH, NT, NP, PW, WAGE, WAGE_IDLE, WAGE_ATTACK, MIL_WAGE, MIL_ATTACK, T_GRASS, T_WATER, B_NAVAL, B_HOUSE, B_FARM, B_TOWER, B_BARRACKS, B_RUINS } from '../src/core/constants';
 import { W, owner, occ, isLand, isle, terr, pBuild, pType, pOwner, pBurn, pCenter, pHp, pIn, type Human, type Nation } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick, grossIncome } from '../src/sim/sim';
 import { listen, on } from '../src/sim/events';
@@ -20,6 +20,8 @@ import { sea } from '../src/sim/state';
 import { MIN_GAP, RANK_GAP, A_OFF, holds, freeOf, underCastle, lineOf, castleCutOff } from '../src/sim/front';
 import { beggarProblem, stuck, warChest, botThink } from '../src/sim/bots';
 import { MILITIA_HIT } from '../src/sim/army';
+import { armyName, renameArmy, resetArmyNames } from '../src/ui/armies';
+import { incomeParts } from '../src/sim/sim';
 import { R_HOUSING } from '../src/sim/research';
 
 const N = (i: number) => W.nations[i];
@@ -1226,7 +1228,7 @@ describe('militia', () => {
     expect(R.members).toHaveLength(12);
     tick();
     expect(N(1).called).toBe(12);
-    expect(N(1).income).toBeCloseTo(grossIncome(N(1))-22*WAGE, 6);   // called up, they are paid like soldiers
+    expect(N(1).income).toBeCloseTo(grossIncome(N(1))-(10*WAGE+12*MIL_WAGE), 6);   // the army on the border costs 0.3 a man, the militia called up 0.1
     until(() => mil.every(h => h.fk===frontKey(1,2)), 400);   // on the front with the army
     queueCommand({ type:'reserves', nation:1, target:2, call:false }); tick();
     expect(R.phase).toBe(2);
@@ -1817,5 +1819,88 @@ describe('two fronts', () => {
     let crew=0;
     until(() => { const s=W.ships.find(k => k.convoy===ci.id); if (s) crew=Math.max(crew,s.crew); return ci.members.length===10 && ci.members.every(onIsland); }, 5000);
     expect(crew).toBe(5);
+  });
+});
+
+describe('what armies cost, and where they stand', () => {
+  const wages=(n: Nation) => [n.wageS, n.wageM].map(v => +v.toFixed(6));
+  it('a soldier costs 0.22 idle in his barracks, 0.3 on a border or defending, 0.4 attacking; militia nothing at home, 0.1 on a border or defending, 0.2 attacking', () => {
+    world(1); quiet(); paintDisc(N(1),14); paintDisc(N(2),60); place(N(2),B_FARM); paintToward(1,2);
+    const a=place(N(1),B_BARRACKS), b=place(N(1),B_BARRACKS,pCenter[a]);
+    soldiers(N(1),10,false); N(1).soldierShare=1; noDraft(); noDraft(2); N(2).soldierShare=0; N(2).humanProg=-1e9; tick();
+    const mil=soldiers(N(1),3,false); for (const h of mil){ h.militia=true; h.base=-1; } tick();
+    expect(wages(N(1))).toEqual([+(10*WAGE_IDLE).toFixed(6), 0]);                 // idle at home
+    expect(deployArmies(1,2,[a])).toBe(1); tick();
+    expect(wages(N(1))[0]).toBeCloseTo(5*WAGE+5*WAGE_IDLE,6);                      // one army deployed on a border
+    expect(declare(1,2,[b],3)).toBe(true); until(() => W.offensive[1*W.M+2]===F_READY, 3000);
+    expect(wages(N(1))[0]).toBeCloseTo(10*WAGE,6);                                 // both massed in a crisis: border pay
+    expect(wages(N(1))[1]).toBeCloseTo(3*MIL_WAGE,6);                              // the militia called up
+    W.crisisAt[1*W.M+2]-=CRISIS_TICKS; expect(escalate(1,2)).toBe(true); run(3);
+    expect(wages(N(1))[0]).toBeCloseTo(10*WAGE_ATTACK,6);                          // attacking
+    expect(wages(N(1))[1]).toBeCloseTo(3*MIL_ATTACK,6);
+    const [c1,c2]=army(1,2); expect(armyOrder(1,c1.id,false)).toBe(true); run(2);
+    expect(wages(N(1))[0]).toBeCloseTo(5*WAGE_ATTACK+5*WAGE,6);                    // one defends
+    for (const c of W.campaigns.filter(k => k.a===1)) armyOrder(1,c.id,false); run(2);
+    expect(wages(N(1))).toEqual([+(10*WAGE).toFixed(6), +(3*MIL_WAGE).toFixed(6)]);   // all defend
+    void c2;
+  });
+  const army = (a: number, d: number) => W.campaigns.filter(c => c.front && c.a===a && c.d===d && c.phase<2);
+
+  it('land the enemy occupies pays no land tax', () => {
+    world(1); quiet(); paintDisc(N(1),14); paintDisc(N(2),30);
+    const full=incomeParts(N(2)).land;
+    for (let t=0, k=0;t<NT && k<40;t++) if (owner[t]===2 && !occ[t]){ occupyHack(t,1); k++; }
+    expect(incomeParts(N(2)).land).toBeCloseTo(full*(N(2).tiles-40)/N(2).tiles,9);
+  });
+
+  it('an army deployed in peace takes no ground from a war it is not in: the front is only the free land of theirs beside its own', () => {
+    world(2); quiet(); paintDisc(N(1),14); paintDisc(N(2),40);
+    const [ax,ay]=[N(1).capTile%TW,(N(1).capTile/TW)|0], [bx,by]=[N(2).capTile%TW,(N(2).capTile/TW)|0], mx=Math.round((ax+bx)/2), my=Math.round((ay+by)/2);
+    for (let y=my-60;y<my+60;y++) for (let x=mx-100;x<mx+100;x++) setOwner(y*TW+x, x<mx ? 1 : 2);
+    census();
+    // 3 occupies a band of 2's land beside the border, at war with 2
+    for (let y=my-60;y<my+60;y++) for (let x=mx;x<mx+12;x++) occupyHack(y*TW+x,3);
+    W.wars[3*W.M+2]=W.wars[2*W.M+3]=1; W.occCount[2*W.M+3]=W.occCount[2*W.M+3];
+    const inZone=(t: number) => { const x=t%TW, y=(t/TW)|0; return Math.abs(y-my)<59 && x>=mx-1 && x<=mx+13; };
+    expect(lineOf(1,2).tiles.filter(inZone)).toHaveLength(0);               // at peace: the free land of theirs touching ours is none here (the army goes home), and the band the other holds is not ours to follow
+    W.wars[1*W.M+2]=W.wars[2*W.M+1]=1;
+    expect(lineOf(1,2).tiles.filter(inZone).length).toBeGreaterThan(50);    // at war with them, it shares the zone with the other attacker
+  });
+
+  it('an army that answered one crisis can be taken to answer another, and armies out on a border are listed with the rest', () => {
+    world(2); quiet();
+    W.contact[1*W.M+2]=W.contact[2*W.M+1]=W.contact[1*W.M+3]=W.contact[3*W.M+1]=1;
+    soldiers(N(2),5); soldiers(N(3),5); const mine=soldiers(N(1),5); void mine;
+    N(1).soldierShare=1; noDraft(); noDraft(2); run(2);
+    expect(declare(2,1,5)).toBe(true); expect(declare(3,1,5)).toBe(true);
+    const key=available(N(1))[0].unit.key;
+    expect(defend(1,2,[key])).toBe(true);
+    expect(army(1,2)).toHaveLength(1);
+    expect(available(N(1))).toHaveLength(0);                  // none at home...
+    expect(available(N(1),true).map(a => !!a.out)).toEqual([true]);   // ...but it is listed, out on that border
+    expect(defendProblem(1,3)).toBeNull();
+    expect(defend(1,3,[key])).toBe(true);                     // taken from there, to this one
+    expect([army(1,2).length, army(1,3).length]).toEqual([0, 1]);
+  });
+
+  it('armies are Army 1, Army 2, … until the player names one; a name stays through changes to the barracks', () => {
+    world(1); quiet(); resetArmyNames();
+    const a=place(N(1),B_BARRACKS), b=place(N(1),B_BARRACKS,pCenter[a]); soldiers(N(1),10,false); N(1).soldierShare=1; tick();
+    const ua=unitAt(a)!, ub=unitAt(b)!;
+    expect([armyName(N(1),ua), armyName(N(1),ub)]).toEqual(['Army 1','Army 2']);
+    renameArmy(ub,'The Sea Guard');
+    expect(armyName(N(1),ub)).toBe('The Sea Guard');
+    expect(armyName(N(1),ua)).toBe('Army 1');
+    renameArmy(ub,'');                                          // an empty name gives the number back
+    expect(armyName(N(1),ub)).toBe('Army 2');
+    const q2=place(N(2),B_BARRACKS); tick();
+    expect(armyName(N(2),unitAt(q2)!)).toBe('Army 1');   // (a kingdom of its own numbers its own)
+  });
+
+  it('a crisis with nothing left of it (its armies gone, no landing under way) ends', () => {
+    world(1); quiet(); paintToward(1,2);
+    W.aggr[2*W.M+1]=1; W.crisisAt[2*W.M+1]=5;
+    run(11);
+    expect(W.aggr[2*W.M+1]).toBe(0);
   });
 });

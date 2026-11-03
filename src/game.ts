@@ -28,6 +28,8 @@ import { refreshResearch, closeResearch } from './ui/research';
 import { closeArmy } from './ui/army';
 import { closeNaval } from './ui/naval';
 import { deselect } from './ui/command';
+import { openExpandSea } from './ui/expand';
+import { resetArmyNames } from './ui/armies';
 import { TIER_NAME } from './sim/army';
 import { R_CASTLE } from './sim/research';
 import { TOPIC_NAME } from './sim/research';
@@ -95,7 +97,7 @@ listen({
   armyHome: (a,d,why) => {
     if (a!==PLAYER) return;
     if (why==='cut'){ log(`The way to ${nm(d)} is blocked: your army turns back`,'bad'); toast(`Your attack on ${nm(d)} was cut off`); }
-    else if (why==='done'){ log(`Nothing is left to take of ${nm(d)} on that front: your army is unassigned, waiting for orders`,'good'); toast('An army finished its front'); }
+    else if (why==='done'){ log(`Your army has no border left with ${nm(d)} on that front: it is unassigned, back at its barracks`,'good'); toast('An army finished its front'); }
   },
   armyGone: (a,d,why) => { if (a===PLAYER && why==='lost') log(`Your army in ${nm(d)} has been wiped out`,'bad'); },
   peaceOffered: (from,to) => { if (to===PLAYER){ log(`${nm(from)} offers peace: click the war at the top to accept`,'good'); toast(`${nm(from)} offers peace`); } },
@@ -173,7 +175,7 @@ export function newGame(seed?: number){
   fitChoice();
   ui.banner.textContent = W.map==='gen' ? 'Tap open land to found your capital' : 'Tap open land to found your capital: you play the country whose capital is nearest';
   resetStyles(); resetLabels(); resetEffects(); resetGhosts(); resetPeople(); resetSpeech();
-  toggleBuildPanel(false); resetDiplomacy(); closeResearch(); closeArmy(); closeNaval(); deselect();
+  toggleBuildPanel(false); resetDiplomacy(); resetArmyNames(); closeResearch(); closeArmy(); closeNaval(); deselect();
   client.overShown=false; client.lastVillageLog=-99; client.paused=false;
   setSoldierShare(0); setInvest(0.5);
   sizeTerrain();   // (the real-world maps are bigger: the picture's tiles are let go and made again as they come into view)
@@ -224,21 +226,27 @@ export function playerAttack(t: number, ratio=0.4){
   floats.push({x:(t%TW)*2+1, y:((t/TW)|0)*2, text:'−'+fmt(send)+' gold', t0:performance.now(), c:'#ffe27a'});
 }
 
-/** Naval settlement chosen in the settle menu: `ratio` of the treasury goes by ship to the land the player clicks next. */
-export function startNavalSettle(ratio: number){
-  client.settling=ratio;
+/** Naval settlement chosen in the settle menu: the next click on land is the coast the ship is to land on. */
+export function startNavalSettle(){
+  client.settling=1;
   ui.banner.textContent='Naval settlement: click the land to send a ship to (an island, or land within 10 tiles of the shore) · Esc to cancel'; ui.banner.hidden=false;
 }
 export function cancelNavalSettle(){ if (!client.settling) return; client.settling=0; ui.banner.hidden=true; }
-/** The land clicked for the naval settlement: a ship of the fleet takes the gold there, and the border begins where it lands. */
-export function navalSettleAt(t: number){
-  const me=W.nations[PLAYER], ratio=client.settling; if (!me || !ratio) return;
+/** The land clicked for the naval settlement: if a ship can reach it, the menu asks how much of the gold it carries. */
+export function navalSettleAt(t: number, x: number, y: number){
+  const me=W.nations[PLAYER]; if (!me || !client.settling) return;
   const plan=settlePlan(me,t);
   if (typeof plan==='string'){ toast(plan); return; }
-  const send=me.gold*ratio; if (send<2){ toast('Not enough gold yet'); cancelNavalSettle(); return; }
+  if (me.gold<2){ toast('Not enough gold yet'); cancelNavalSettle(); return; }
+  cancelNavalSettle();
+  openExpandSea(t,x,y);
+}
+/** A ship of the fleet takes `ratio` of the gold to the land at t, and the border begins where it lands. */
+export function settleBySea(t: number, ratio: number){
+  const me=W.nations[PLAYER]; if (!me) return;
+  const send=me.gold*ratio; if (send<2){ toast('Not enough gold yet'); return; }
   queueCommand({ type:'colonize', nation:PLAYER, tile:t, ratio });
   floats.push({x:(t%TW)*2+1, y:((t/TW)|0)*2, text:'−'+fmt(send)+' gold', t0:performance.now(), c:'#ffe27a'});
-  cancelNavalSettle();
 }
 
 /** Asks the kingdom to keep `v` (0..1) of its people as soldiers. */

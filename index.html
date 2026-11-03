@@ -171,7 +171,7 @@
   </section>
   <div id="wars" aria-label="Wars"></div>
   <section id="command" class="plate" hidden aria-label="Armies">
-    <div class="dhead"><span class="dname">Armies</span><span class="tag" id="cmCount"></span><button id="cmFold" class="x" aria-label="Fold the list" aria-expanded="true" title="Fold the list">▾</button></div>
+    <div class="dhead"><span class="dname">Armies</span><span class="tag" id="cmCount"></span><button id="cmRename" class="x" aria-label="Rename an army" aria-pressed="false" title="Rename an army">✎</button><button id="cmFold" class="x" aria-label="Fold the list" aria-expanded="true" title="Fold the list">▾</button></div>
     <div id="cmList"></div>
   </section>
   <section id="warPop" class="plate" hidden aria-label="Meet the army">
@@ -187,9 +187,7 @@
 
   <div id="expand" class="plate" hidden role="dialog" aria-label="Settle this land">
     <span class="tag" id="exTitle">Settle: spend of your gold</span>
-    <div class="exrow"><button data-r="0.25">25%</button><button data-r="0.5">50%</button><button data-r="0.75">75%</button><button data-r="1">100%</button></div>
-    <span class="tag" id="exSea">⚓ Naval settlement: send a ship</span>
-    <div class="exrow" id="exNaval"><button data-r="0.25">25%</button><button data-r="0.5">50%</button><button data-r="0.75">75%</button><button data-r="1">100%</button></div>
+    <div class="exrow" id="exLand"><button data-r="0.25">25%</button><button data-r="0.5">50%</button><button data-r="0.75">75%</button><button data-r="1">100%</button><button id="exSeaBtn" class="sea" aria-label="Naval settlement" title="Naval settlement">⚓</button></div>
   </div>
   <div id="log" aria-live="polite"></div>
   <div id="banner" class="plate" hidden>Tap open land to found your capital</div>

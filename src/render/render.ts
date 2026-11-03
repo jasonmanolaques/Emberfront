@@ -117,7 +117,7 @@ function drawLandingPreview(now: number){
   lz.rows.forEach((count,row) => { for (let slot=0;slot<count;slot++){
     const t=offshore(lz!,row,slot,count), x=(t%TW)*RS+RS/2, y=((t/TW)|0)*RS+RS/2, c=lz!.coast[Math.min(lz!.coast.length-1,Math.floor((slot+0.5)*lz!.coast.length/count))];
     const face=(c%TW)*RS>x ? 1 : -1;
-    ctx.globalAlpha=0.65*pulse; ctx.drawImage(shipSprite(PLAYER,face,SHIP_CREW,false,0),Math.round(x)-SHIP_W/2,Math.round(y)-SHIP_H+6); ctx.globalAlpha=1;
+    ctx.globalAlpha=0.65*pulse; ctx.drawImage(shipSprite(PLAYER,face,SHIP_CREW,false,0),Math.round(x)-SHIP_W/2,Math.round(y)-SHIP_H+3); ctx.globalAlpha=1;
   } });
 }
 /** A naval settlement being chosen: where the ship would put its settlers ashore for the land at the pointer (green), or the land that cannot be (red). */
@@ -146,8 +146,8 @@ function drawShips(now: number, vx0: number, vy0: number, vx1: number, vy1: numb
   for (const s of list){
     const bob=reduceMotion ? 0 : ((now/600+s.id)|0)&1, x=Math.round(s.x*K), y=Math.round(s.y*K);
     const spr=shipSprite(s.o,s.face,s.crew,s.colony>=0,bob);
-    if (s.mode!==1 && !reduceMotion){ ctx.fillStyle='rgba(235,245,250,.45)'; for (let i=1;i<=4;i++) ctx.fillRect(x-s.face*(SHIP_W/2+i*4),y+4+((i&1)*2),3,1); }
-    ctx.drawImage(spr,x-SHIP_W/2,y-SHIP_H+6);
+    if (s.mode!==1 && !reduceMotion){ ctx.fillStyle='rgba(235,245,250,.45)'; for (let i=1;i<=4;i++) ctx.fillRect(x-s.face*(SHIP_W/2+i*3),y+2+(i&1),2,1); }
+    ctx.drawImage(spr,x-SHIP_W/2,y-SHIP_H+3);
   }
 }
 function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: number){

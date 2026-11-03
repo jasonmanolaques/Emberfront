@@ -72,12 +72,12 @@ export function updateHUD(now: number){
       ah+=`<span class="chip"><i ${A.def ? `class="flag" style="${flagCSS(d.code)}"` : 'style="background:#cfc6a8"'}></i>${A.def?d.name:'Unclaimed land'} · ${fmt(A.gold)} gold</span>`; }
     ui.attacks.innerHTML=ah;
   }
-  updateWarChips();
-  refreshDiplomacy();
-  refreshResearch();
-  refreshArmy(); refreshNaval();
-  refreshCommand();
+  // each panel on its own: one that fails can't leave the others (the war chips, say) frozen as they were
+  for (const f of [updateWarChips, refreshDiplomacy, refreshResearch, refreshArmy, refreshNaval, refreshCommand]){
+    try { f(); } catch (e){ if (!failed.has(f)){ failed.add(f); console.error(e); } }
+  }
 }
+const failed=new Set<() => void>();
 
 export function log(text: string, kind?: string){
   const d=document.createElement('div'); d.className='entry'+(kind?' '+kind:''); d.textContent=text;

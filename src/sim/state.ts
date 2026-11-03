@@ -30,6 +30,7 @@ export interface Nation {
   soldierShare: number;              // share of the population the kingdom wants as soldiers (0..1)
   humanProg: number;                 // progress toward the next human; one arrives at HUMAN_EVERY (farms speed it up)
   villagers: number; soldiers: number; training: number;   // headcount, updated every tick; soldiers: everyone under arms (militia too); training = switching role
+  wageS: number; wageM: number;      // what its soldiers and its called-up militia cost a second (by what each is doing: sim/war.ts wageOf)
   militia: number; called: number;   // of the soldiers, the militia, and of them those called up to a front (who are paid)
   beggars: number; homeless: number; taxpayers: number;     // villagers turned beggar; people without a home; housed working villagers
   stock: number[];                   // goods stored in the capital: [wood, stone, copper]
@@ -164,6 +165,7 @@ export type Command =
   | { type: 'deploy'; nation: number; target: number; units?: number[]; militia?: number; isle?: number }   // put armies on the border in peace, ready for a crisis
   | { type: 'order'; nation: number; camp: number; go: boolean }   // an army at war attacks (go) or defends
   | { type: 'front'; nation: number; camp: number; isle: number }   // an army goes to the border on that landmass
+  | { type: 'redirect'; nation: number; camp: number; target: number; isle?: number }   // an army out on a border, not committed, goes to another kingdom's border
   | { type: 'recall'; nation: number; camp: number }   // an army at the border in peace or crisis goes home
   | { type: 'defend'; nation: number; target: number; units: number[]; isle?: number }   // send armies to stand on our side of the border with target
   | { type: 'reserves'; nation: number; target: number; call: boolean };  // call the militia up to the front against target, or send them home

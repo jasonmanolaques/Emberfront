@@ -215,6 +215,8 @@ button.pick #pcName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;wh
 #command .dhead{display:flex;align-items:center;gap:8px}
 #command .dname{font-weight:700;font-size:15px;flex:1;min-width:0}
 #command .x{width:26px;height:26px;padding:0;font-size:15px;line-height:1}
+#cmRename{font-size:13px!important}
+#cmRename[aria-pressed=true]{border-color:var(--gold);color:var(--gold)}
 #cmList{display:grid;gap:5px;overflow-y:auto;align-content:start}
 #cmList .arow{display:grid;gap:4px}
 #cmList .ahead{display:grid;gap:1px;text-align:left;padding:5px 8px;font-size:13px;width:100%}
@@ -229,6 +231,9 @@ button.pick #pcName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;wh
 #cmList .ao[aria-pressed=true]{color:var(--gold);border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-d),2px 2px 0 var(--ink)}
 #cmList .ao.atk[aria-pressed=true]{color:#f0b8a8;border-color:#b5483a;box-shadow:0 0 0 2px #5a2820,2px 2px 0 var(--ink)}
 #cmList .ao.def[aria-pressed=true]{color:#a8d0f0;border-color:#4a78b0;box-shadow:0 0 0 2px #203a5a,2px 2px 0 var(--ink)}
+#cmList .rename{display:grid;gap:6px}
+#cmList .rename input{font:inherit;font-size:13px;padding:5px 8px;color:var(--text,#f2ead0);background:#0d1424;border:2px solid var(--edge);outline:none;width:100%;box-sizing:border-box}
+#cmList .rename input:focus{border-color:var(--gold)}
 #cmList .dnote{margin:0;font-size:12px;color:var(--muted)}
 .fwords{display:grid;grid-template-columns:1fr 1fr;gap:6px;width:100%;pointer-events:auto}
 .fwords .fword{justify-self:stretch;padding:4px 6px}
@@ -371,3 +376,4 @@ button.army[aria-pressed=true] .at{color:var(--gold)}
 #expand{position:absolute;padding:6px 8px 8px;display:grid;gap:5px;z-index:6}
 #expand .exrow{display:flex;gap:5px}
 #expand button{padding:5px 8px;font-weight:600;min-width:46px}
+#expand button.sea{min-width:36px}

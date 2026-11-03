@@ -35,7 +35,11 @@ export const isStructure = (ty: number) => ty===B_HOUSE || ty===B_FARM || ty===B
 /* ---------- economy ---------- */
 export const GOLD_START = 250;            // gold each kingdom starts with
 export const GOODS_START = [10, 10, 10];  // wood, stone and copper each kingdom starts with
-export const WAGE = 0.3;                  // gold a second each soldier is paid
+export const WAGE = 0.3;                  // gold a second each soldier is paid on a border (deployed in peace, or defending at war)
+export const WAGE_IDLE = 0.22;            // ...idle in his barracks or about the town (a low-maintenance rate)
+export const WAGE_ATTACK = 0.4;           // ...on the offensive
+export const MIL_WAGE = 0.1;              // a militiaman called up and out on a border or defending (at home he is unpaid)
+export const MIL_ATTACK = 0.2;            // ...on the offensive
 export const UNPAID_TICKS = 100;          // ticks below zero gold before unpaid soldiers start to desert (10 s)
 export const DESERT_TICKS = 30;           // then one deserts every 3 s, the least armoured first
 export const SCRAP_GOLD = 30;             // gold back per tier of a deserter's armour, scrapped

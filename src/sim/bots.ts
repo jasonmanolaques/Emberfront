@@ -331,11 +331,12 @@ function botWar(n: Nation){
   n.soldierShare=Math.min(1,Math.max(0,n.soldierShare+Math.max(-0.04,Math.min(0.1,d))));
   const dug=outnumbered(n);
   // how its armies fight a front: a rush on the capital when it is far the stronger, a border capture
-  // against a land bristling with watchtowers, else balanced
+  // against a land bristling with watchtowers (until it gets nowhere: then it brings them down), else balanced
   if (W.tickN%100===id%100) for (let o=1;o<M;o++){
     if (o===id || !W.nations[o].alive || !(W.wars[id*M+o] || W.aggr[id*M+o])) continue;
     const D=W.nations[o];
-    setStance(id,o, D.towers>=8 ? S_BORDER : menOn(id,o)>=defence(D)*2.2 && n.attackAt>0.6 ? S_RUSH : S_BALANCED);
+    setStance(id,o, D.towers>=8 && stalled(id,o)<STUCK ? S_BORDER :   // (a border capture that has made no headway for a minute breaks the towers instead of sitting in their fire)
+       menOn(id,o)>=defence(D)*2.2 && n.attackAt>0.6 ? S_RUSH : S_BALANCED);
   }
   for (let o=1;o<M;o++){
     if (!W.offers[o*M+id]) continue;

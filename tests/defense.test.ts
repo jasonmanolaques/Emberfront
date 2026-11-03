@@ -1,6 +1,6 @@
 // Watchtowers and the castle by tier, battle damage, and soldiers' wages.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NT, NP, PW, T_GRASS, B_FARM, B_TOWER, B_CASTLE, B_BARRACKS, WAGE, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD } from '../src/core/constants';
+import { TW, TH, NT, NP, PW, T_GRASS, B_FARM, B_TOWER, B_CASTLE, B_BARRACKS, WAGE, WAGE_IDLE, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD } from '../src/core/constants';
 import { W, owner, isLand, terr, pBuild, pType, pOwner, pHp, pTier, pPrio, type Human, type Nation } from '../src/sim/state';
 import { botThink } from '../src/sim/bots';
 import { wallPlots, ringOf, isGate, plannedWall, wallNeighbours } from '../src/sim/fort';
@@ -114,7 +114,7 @@ describe('wages', () => {
     for (let i=0;i<14;i++) W.humans.push(makeHuman(N(1),H_SOLDIER,x,y));
     N(1).soldierShare=1; N(1).humanProg=-1e9; run(2);
     expect([N(1).soldiers, N(1).militia]).toEqual([14, 4]);   // the 4 without room in a barracks serve as militia
-    expect(N(1).income).toBeCloseTo(grossIncome(N(1))-10*WAGE, 6);
+    expect(N(1).income).toBeCloseTo(grossIncome(N(1))-10*WAGE_IDLE, 6);
     expect(WAGE).toBe(0.3);
     N(1).gold=-5; run(1);
     expect(N(1).gold).toBeLessThan(0);

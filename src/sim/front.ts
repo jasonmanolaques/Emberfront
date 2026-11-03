@@ -61,7 +61,7 @@ export function lineOf(a: number, d: number, original=false, preset?: number[], 
   // Others at war with d that a is not at war with (and hold some of d's ground): the ground of d's they occupy
   // is theirs, and the free ground beyond it is shared out with them in slices round d's castle, one for each attacker.
   const mates: number[]=[], M=W.M;
-  if (!original && !pset) for (let b=1;b<M;b++) if (b!==a && b!==d && W.wars[b*M+d] && !W.wars[a*M+b] && W.occCount[d*M+b]>0 && W.nations[b].alive) mates.push(b);
+  if (!original && !pset && W.wars[a*M+d]) for (let b=1;b<M;b++) if (b!==a && b!==d && W.wars[b*M+d] && !W.wars[a*M+b] && W.occCount[d*M+b]>0 && W.nations[b].alive) mates.push(b);
   const bearing=new Map<number, number>();   // where each attacker lies, as seen from d's castle
   if (mates.length){ const [cx,cy]=originOf(d); for (const k of [a,...mates]){ const [x,y]=originOf(k); bearing.set(k,Math.atan2(y-cy,x-cx)); } }
   const nearest=(t: number) => {   // is tile t in a's slice of d's ground (the pie cut by the bearings of the attackers' castles), not a mate's?

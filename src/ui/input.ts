@@ -54,7 +54,7 @@ function endPointer(e: PointerEvent){
       else if (client.state==='play'){
         const o=t>=0 ? owner[t] : 0;
         const wasOpen=expandOpen(); closeExpand();
-        if (client.settling){ if (t>=0) navalSettleAt(t); }
+        if (client.settling){ if (t>=0) navalSettleAt(t,e.clientX,e.clientY); }
         else if (client.landing){ if (t>=0) chooseCoast(t); }
         else if (client.placing) placeAt(t);
         else if (o && o!==PLAYER){ closeResearch(); closeArmy(); closeNaval(); openDiplomacy(o); }   // another kingdom: talk first

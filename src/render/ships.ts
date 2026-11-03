@@ -38,11 +38,18 @@ export function shipSprite(o: number, face: number, crew: number, settlers: bool
     // foam at the waterline
     ctx.fillStyle='rgba(235,245,250,.75)'; ctx.fillRect(3,25+by,5,1); ctx.fillRect(34,25+by,4,1); ctx.fillRect(12,26+by,6,1); ctx.fillRect(25,26+by,5,1);
   });
+  c=halve(c);   // (half the size: it only stands for the five men it carries)
   if (face<0) c=flipped(c);
   cache.set(key,c);
   return c;
 }
-export const SHIP_W = W, SHIP_H = H;
+/** The sprite at half size, the pixels averaged. */
+function halve(src: HTMLCanvasElement){
+  const c=document.createElement('canvas'); c.width=src.width>>1; c.height=src.height>>1;
+  const ctx=c.getContext('2d')!; ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high'; ctx.drawImage(src,0,0,c.width,c.height);
+  return c;
+}
+export const SHIP_W = W>>1, SHIP_H = H>>1;
 export function resetShips(){ cache.clear(); }
 
 /** A small boat under a villager (drawn at his feet, in render pixels). */

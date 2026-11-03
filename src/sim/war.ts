@@ -27,7 +27,7 @@
    Once the invaders are gone the guard takes the occupied land back; with all of it back, the army
    reports ready to counter-attack. Guards stay by their watchtowers, and the castle shoots too.
    Everyone heals slowly. Allies open their land to each other's armies. */
-import { TW, TH, NT, NP, PW, PH, TICK, GAME_SPEED, B_CASTLE, B_CPART, B_TOWER, B_HOUSE, B_FARM, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_MINE, B_RESEARCH, B_GUILD, B_NAVAL, isStructure } from '../core/constants';
+import { TW, TH, NT, NP, PW, PH, TICK, GAME_SPEED, WAGE, WAGE_IDLE, WAGE_ATTACK, MIL_WAGE, MIL_ATTACK, B_CASTLE, B_CPART, B_TOWER, B_HOUSE, B_FARM, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_MINE, B_RESEARCH, B_GUILD, B_NAVAL, isStructure } from '../core/constants';
 import { W, owner, occ, isLand, isle, sea, pType, pOwner, pBurn, pMain, pHp, pPrio, pCenter, pTier, pIn, type Campaign, type Human, type Nation, type Invasion } from './state';
 import { on } from './events';
 import { setOwner, occIsleAdd } from './territory';
@@ -138,6 +138,16 @@ export function frontKey(a: number, d: number){
   let best: Offensive | undefined;
   for (const o of frontsOf(a*W.M+d)) if (!best || o.men.length>best.men.length) best=o;
   return best ? best.id : ofId(a*W.M+d,frontIsles(a,d)[0] ?? 0);
+}
+/** What soldier h costs a second by what he is doing: idle at home 0.22, on a border (deployed in peace, or defending) 0.3, on the offensive 0.4;
+    militia are unpaid until called up, then 0.1 on a border or defending and 0.2 on the offensive. */
+export function wageOf(h: Human){
+  if (h.kind!==H_SOLDIER) return 0;
+  const c=h.war>=0 ? camps.get(h.war) : undefined;
+  if (!c) return h.militia ? 0 : WAGE_IDLE;
+  if (c.phase===2) return h.militia ? MIL_WAGE : WAGE_IDLE;
+  const hit=!!W.wars[c.a*W.M+c.d] && attacks(c);
+  return h.militia ? (hit ? MIL_ATTACK : MIL_WAGE) : (hit ? WAGE_ATTACK : WAGE);
 }
 /** The landmass of the pixel (x,y). */
 const tileIsle = (x: number, y: number) => isle[tileOf(x,y)];
@@ -294,21 +304,32 @@ function clearWay(f: Field, ax: number, ay: number, bx: number, by: number){
 
 
 /* ---------- declaring war ---------- */
-/** n's armies ready to march: each barracks with the soldiers of its army who are at home. */
-export function available(n: Nation){
-  const out: { unit: Unit; men: Human[] }[]=[];
+/** Is campaign c not committed to an aggression: out on a border (deployed in peace, or standing against someone else's crisis), not in a war
+    and not part of a crisis its kingdom began? Its men may be sent elsewhere. */
+export const freeArmy = (c: Campaign) => c.front && c.phase===1 && c.naval<0 && c.hostile && !W.wars[c.a*W.M+c.d] && !W.aggr[c.a*W.M+c.d];
+/** n's armies ready to march: each barracks with the soldiers of its army who are at home. With `free`, armies out on a border
+    but not committed (freeArmy) are listed too, with their men and the campaign (`out`) they would be taken from. */
+export function available(n: Nation, free=false){
+  const out: { unit: Unit; men: Human[]; out?: Campaign }[]=[];
   for (const u of units[n.id] ?? []){
-    const men=u.members.filter(h => h.war<0 && h.hp>0 && !switching(h)).sort((x,y)=>x.id-y.id);
-    if (men.length) out.push({ unit:u, men });
+    const c=free ? W.campaigns.find(k => k.a===n.id && k.unit===u.key && !k.militia && freeArmy(k)) : undefined;
+    const men=(c ? u.members.filter(h => h.war===c.id) : u.members.filter(h => h.war<0 && !switching(h))).filter(h => h.hp>0).sort((x,y)=>x.id-y.id);
+    if (men.length) out.push(c ? { unit:u, men, out:c } : { unit:u, men });
   }
   return out;
 }
 /** How many of n's soldiers could march right now. */
 export const ready = (n: Nation) => available(n).reduce((k,a) => k+a.men.length, 0);
-/** The armies to send: the barracks named (any plot of each), or, for a number, the biggest armies
+/** An army taken off its border: its men are free, where they stand (to be sent somewhere else at once). */
+function unhitch(c: Campaign){
+  for (const id of c.members){ const h=byId.get(id) ?? W.humans.find(k => k.id===id); if (h){ h.war=-1; h.foe=-1; h.aim=-1; h.fk=-1; h.line=-1; unlead(h); } }
+  const i=W.campaigns.indexOf(c); if (i>=0) W.campaigns.splice(i,1);
+  camps.delete(c.id); troops.delete(c.id);
+}
+/** The armies to send: the barracks named (any plot of each, and those out on a border but not committed), or, for a number, the biggest armies
     first until that many soldiers are found (the last one sending only as many as are missing). */
 function pickArmies(n: Nation, pick: number | number[]){
-  const all=available(n);
+  const all=available(n,Array.isArray(pick));
   if (Array.isArray(pick)){ const want=new Set(pick.map(q => unitAt(q)?.key)); return all.filter(a => want.has(a.unit.key)); }
   all.sort((a,b) => b.men.length-a.men.length || a.unit.key-b.unit.key);
   const out: typeof all=[]; let left=Math.floor(pick);
@@ -334,9 +355,10 @@ function sendArmies(a: number, d: number, pick: number | number[], militia: numb
   const A=W.nations[a], D=W.nations[d];
   let sent=0;
   isle=isle || (frontIsles(a,d)[0] ?? 0);
-  for (const { unit, men } of pickArmies(A,pick)){
+  for (const { unit, men, out } of pickArmies(A,pick)){
     if (onFront(a,d,unit.key)) continue;   // its army is there already: its men join it (reinforce)
-    if (isle && !crossable(a,tileIsle(unit.x,unit.y),isle)) continue;   // (its front is across the sea, with no naval base to sail from)
+    if (isle && !crossable(a,tileIsle(unit.x,unit.y),isle)) continue;
+    if (out) unhitch(out);   // (out on another border: it comes away)   // (its front is across the sea, with no naval base to sail from)
     const c=newCampaign(a,d,men.length,D.tiles,unit.key,isle);
     c.inspired=counter;
     if (muster(c,men,unit)) sent++;
@@ -392,6 +414,15 @@ export function deployArmies(a: number, d: number, pick: number | number[], mili
   for (const c of W.campaigns) if (c.front && c.a===a && c.d===d && c.phase<2 && c.naval<0 && !c.deployed && W.tickN-c.started<=1 && !W.aggr[a*W.M+d] && !W.wars[a*W.M+d]) c.deployed=true;
   if (W.wars[a*W.M+d]) W.atWar[a*W.M+d]=W.atWar[d*W.M+a]=1;
   return sent;
+}
+/** A crisis with nothing left of it (every army that massed is gone, and no landing is under way) is over. */
+function endDeadCrises(){
+  const M=W.M;
+  for (let a=1;a<M;a++) for (let d=1;d<M;d++){
+    const k=a*M+d; if (!W.aggr[k] || W.wars[k]) continue;
+    if (W.campaigns.some(c => c.front && c.a===a && c.d===d && c.phase<2) || W.invasions.some(i => i.a===a && i.d===d && i.stage<INV_DONE)) continue;
+    W.aggr[k]=0; W.crisisAt[k]=0;
+  }
 }
 /** Is a's attack on d still a crisis: massed on the border, but not yet at war? */
 export const inCrisis = (a: number, d: number) => !!W.aggr[a*W.M+d] && !W.wars[a*W.M+d];
@@ -636,7 +667,7 @@ export function defendProblem(n: number, o: number): string | null {
   if (!N?.alive || !O?.alive || !o || n===o) return 'That kingdom is gone';
   if (!W.wars[n*M+o] && !W.aggr[o*M+n]) return 'They are not massing against you';
   if (!W.contact[n*M+o] && !landingOn(o,n) && !(W.occCount[n*M+o]>0)) return 'Needs a shared border';   // (a landing from the sea, or land of ours they hold, will do)
-  if (!ready(N)) return 'No soldiers in your barracks';
+  if (!ready(N) && !available(N,true).some(a => a.out)) return 'No soldiers in your barracks';
   return null;
 }
 /** n sends its armies (the barracks named, or enough for `pick` soldiers) to stand on its side of
@@ -645,8 +676,9 @@ export function defendProblem(n: number, o: number): string | null {
 export function defend(n: number, o: number, pick: number | number[], isle=0){
   if (defendProblem(n,o)) return false;
   let sent=0;
-  for (const { unit, men } of pickArmies(W.nations[n],pick)){
+  for (const { unit, men, out } of pickArmies(W.nations[n],pick)){
     if (onFront(n,o,unit.key)) continue;   // its army is there already: its men join it (reinforce)
+    if (out) unhitch(out);
     const c=newCampaign(n,o,men.length,W.nations[o].tiles,unit.key,isle);
     if (muster(c,men,unit)) sent+=men.length;
   }
@@ -660,6 +692,12 @@ export function defend(n: number, o: number, pick: number | number[], isle=0){
 export const reservesOf = (n: number, o?: number) => W.campaigns.find(c => c.militia && c.front && c.a===n && (o===undefined || c.d===o) && c.phase<2);
 /** Militia of n's at home who would answer a call-up: all but the watchtowers' guards. */
 export const callable = (n: number) => W.humans.filter(h => h.o===n && homeMilitia(h) && h.post<0);
+let ccAt=-1, ccFor=0, ccN=0;
+/** How many militia n has at home (for the screen: counted once a tick, however often it is asked). */
+export function callableCount(n: number){
+  if (ccAt!==W.tickN || ccFor!==n){ ccAt=W.tickN; ccFor=n; ccN=callable(n).length; }
+  return ccN;
+}
 /** The k of n's militia at home nearest its castle, to send with an attack. */
 function militiaFor(n: number, k: number){
   k=Math.floor(k); if (k<=0) return [];
@@ -979,6 +1017,24 @@ export function armyFront(a: number, id: number, isle: number){
   for (const id2 of c.members){ const h=byId.get(id2); if (h){ h.fk=-1; h.line=-1; h.slot=-1; } }
   return true;
 }
+/** Sends army `id` of a (out on a border but not committed: freeArmy), militia included, to the border with d (landmass `isle`): it goes on from where it stands. */
+export function armyRedirect(a: number, id: number, d: number, isle=0){
+  const c=camps.get(id);
+  if (!c || c.a!==a || c.d===d || c.naval>=0 || !c.front || c.phase!==1 || !freeArmy(c) || warProblem(a,d)) return false;
+  const men=c.members.map(k => byId.get(k)).filter((h): h is Human => !!h && h.hp>0);
+  if (!men.length) return false;
+  isle=isle || (frontIsles(a,d)[0] ?? 0);
+  if (isle && !crossable(a,tileIsle(men[0].x,men[0].y),isle)) return false;
+  const unit=c.unit, mil=c.militia, all=c.all;
+  unhitch(c);
+  const nc=newCampaign(a,d,men.length,W.nations[d].tiles,unit,isle);
+  nc.militia=mil; nc.all=all;
+  muster(nc,men,unit>=0 ? unitAt(unit) : undefined);
+  if (W.wars[a*W.M+d]) W.atWar[a*W.M+d]=W.atWar[d*W.M+a]=1;
+  if (W.aggr[d*W.M+a] || W.wars[a*W.M+d]) on.defending(a,d,men.length);
+  else nc.deployed=true;   // (a precaution, not a crisis)
+  return true;
+}
 /** a recalls army `id`: it goes home (an army at war can't be recalled). */
 export function armyRecall(a: number, id: number){
   const c=camps.get(id);
@@ -1039,7 +1095,7 @@ function runOffensives(){
     }
     if (!o.F || (now+id)%REFRONT===0) redeploy(o);
     if (!o.F!.tiles.length){   // no border left to fight on: the armies wait, and in the end are unassigned (back at their barracks)
-      if (++o.noFront>=NO_FRONT) for (const c of cs) sendHome(c,war ? 'done' : 'cut');
+      if (++o.noFront>=NO_FRONT) for (const c of cs) sendHome(c,'done');
       note(key,war,o.st); continue;
     }
     o.noFront=0;
@@ -1415,6 +1471,7 @@ export function updateWar(){
   stepInvasions();
   runOffensives();
   ferryShips();
+  if (W.tickN%10===4) endDeadCrises();
   if (now%REFRONT===2) deployGuards();
   posts=N.map(n => warring[n.id] ? barracksOf(n).map(frontOf) : []);
   if (W.tickN%5===0) findRallies();

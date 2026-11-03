@@ -37,7 +37,7 @@ import { W, owner, occ, isLand, ferry, pType, pOwner, pBurn, pPrio, pAband, pIn,
 import { homeScore, startSite, cancelSite, finishHouse } from './buildings';
 import { on } from './events';
 import { Field } from './field';
-import { updateWar, reinforce, marchStep, guardStep, alarmStep, mayStand, spread, warringNow } from './war';
+import { updateWar, wageOf, reinforce, marchStep, guardStep, alarmStep, mayStand, spread, warringNow } from './war';
 import { FERRY_PACE, laneBox } from './naval';
 import { HOUSE_BEDS, R_HOUSING, R_TOWERS, MAX_TIER } from './research';
 import { gained, spent, mayInvest } from './ledger';
@@ -774,10 +774,10 @@ export function updatePopulation(){
   for (const h of H) if (h.war>=0) marchStep(h); else step(h);
   spread();   // fighters keep a little room between them
   // headcount after everyone has moved, so it matches what is on the map this tick
-  for (const n of N){ n.villagers=0; n.soldiers=0; n.militia=0; n.called=0; n.training=0; n.beggars=0; n.homeless=0; n.taxpayers=0; }
+  for (const n of N){ n.villagers=0; n.soldiers=0; n.militia=0; n.called=0; n.wageS=0; n.wageM=0; n.training=0; n.beggars=0; n.homeless=0; n.taxpayers=0; }
   for (const h of H){
     const n=N[h.o];
-    if (h.kind===H_SOLDIER){ n.soldiers++; if (h.militia){ n.militia++; if (h.war>=0) n.called++; } } else if (h.beggar) n.beggars++; else { n.villagers++; if (h.housed) n.taxpayers++; }
+    if (h.kind===H_SOLDIER){ n.soldiers++; if (h.militia){ n.militia++; if (h.war>=0) n.called++; n.wageM+=wageOf(h); } else n.wageS+=wageOf(h); } else if (h.beggar) n.beggars++; else { n.villagers++; if (h.housed) n.taxpayers++; }
     if (!h.housed) n.homeless++;
     if (switching(h)) n.training++;
   }

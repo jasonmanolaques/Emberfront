@@ -1,6 +1,6 @@
 // Buildings a kingdom places, and the gold economy.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_FARM, B_BARRACKS, B_NAVAL, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, WAGE, GOLD_PER_TILE, TAX_PER_VILLAGER, LAND_TAX, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
+import { TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_FARM, B_BARRACKS, B_NAVAL, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, WAGE, WAGE_IDLE, GOLD_PER_TILE, TAX_PER_VILLAGER, LAND_TAX, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
 import { W, owner, isLand, pType, pCenter, pBuild, type Human } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick, incomeParts } from '../src/sim/sim';
 import { declare, escalate } from '../src/sim/war';
@@ -224,7 +224,7 @@ describe('gold and strength', () => {
     expect(p.tax).toBeCloseTo(TAX_PER_VILLAGER*n.taxpayers, 9);
     expect(p.land).toBeCloseTo(LAND_TAX*n.tiles, 9);
     expect(p.boost).toBeCloseTo((p.tax+p.land)*0.1*n.minters, 9);
-    expect(p.soldiers).toBeCloseTo((n.soldiers-n.militia)*WAGE, 9);
+    expect(p.soldiers).toBeCloseTo((n.soldiers-n.militia)*WAGE_IDLE, 9);
     expect(n.soldiers-n.militia).toBe(5);
     expect(p.militia).toBe(0);   // (militia are paid only while called up)
     expect(n.income).toBeCloseTo(p.tax+p.land+p.boost-p.soldiers-p.militia, 9);
