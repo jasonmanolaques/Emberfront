@@ -1,7 +1,7 @@
 /* ---------- game flow: ties the simulation to this browser's screen ---------- */
 import { TW, PLAYER, B_SMITHY, B_TOWER } from './core/constants';
 import { flagCSS } from './render/flags';
-import { fitChoice, available } from './ui/nations';
+import { fitChoice, available, randomRivals, handPicked } from './ui/nations';
 import { clamp, fmt } from './core/util';
 import { W, owner, isLand, pType } from './sim/state';
 import { listen } from './sim/events';
@@ -197,6 +197,7 @@ export function step(){
 export function startGame(){
   $('intro').hidden=true; $('scrim').hidden=true;
   if (W.map==='gen'){ client.state='spawn'; ui.banner.hidden=false; return; }
+  if (W.map==='europe' && !handPicked()) client.rivals=randomRivals();   // (29 of the other countries, drawn afresh for each game)
   const cap=available().find(a => a.country.code===client.me);
   client.state='spawn';
   if (cap) trySpawn(cap.tile);

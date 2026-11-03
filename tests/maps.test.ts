@@ -1,6 +1,6 @@
 // The real-world maps, and kingdoms as real countries with their flags and capitals.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NT, T_SNOW, T_MOUNT, MAX_KINGDOMS } from '../src/core/constants';
+import { TW, TH, NT, T_SNOW, T_MOUNT, MAX_KINGDOMS, EUROPE_KINGDOMS, kingdomLimit } from '../src/core/constants';
 import { W, isLand, terr } from '../src/sim/state';
 import { newWorld, startMatch } from '../src/sim/sim';
 import { capitalsOn, REAL_MAPS } from '../src/sim/realmap';
@@ -105,18 +105,18 @@ describe('the real-world maps', () => {
     for (let i=1;i<N.length;i++) for (let j=i+1;j<N.length;j++) expect(colourGap(N[i].hex,N[j].hex)).toBeGreaterThanOrEqual(0.05);
   });
 
-  it('hold a full game on Europe: every country with a capital on it, 62 kingdoms', () => {
+  it('hold a full game on Europe: 30 kingdoms (you and 29 of the 61 other countries with a capital on it), each at its real capital', () => {
     newWorld(2,'europe');
     expect([TW,TH]).toEqual([1824,1488]);
     const caps=capitalsOn('europe'), codes=caps.map(c => c.country.code);
     expect(codes.length).toBeGreaterThanOrEqual(60);
     for (const k of ['IS','PT','GB','FR','DE','IT','PL','RU','TR','EG','AZ','AD','VA','LI']) expect(codes).toContain(k);
     expect(startMatch(caps.find(c => c.country.code==='FR')!.tile,codes.filter(c => c!=='FR'),'FR')).toBe(true);
-    expect(W.nations.length-1).toBe(codes.length);   // all of them (Iran's Tehran lies just past the eastern edge)
+    expect(W.nations.length-1).toBe(EUROPE_KINGDOMS);   // the limit, though every country was asked for
     expect(W.nations.slice(1).every(n => n.alive)).toBe(true);
     const at=new Map(caps.map(c => [c.country.code, c.tile]));
     for (const n of W.nations.slice(1)) expect(near(n.capTile,at.get(n.code)!)).toBeLessThan(30);
-    expect(W.landCount/MAX_KINGDOMS).toBeGreaterThan(12000);   // room to grow: twice the land each of a generated game of 10 (with 64)
+    expect(W.landCount/EUROPE_KINGDOMS).toBeGreaterThan(25000);   // room to grow: far more land each than a generated game of 10
   });
 
   it('are bigger than a generated map, so close capitals have room', () => {
@@ -157,5 +157,17 @@ describe('countries', () => {
       expect(Math.abs(k.cap[0])).toBeLessThan(70);
     }
     expect(new Set(COUNTRIES.map(k => k.code)).size).toBe(COUNTRIES.length);
+  });
+
+  it('Europe holds 30 kingdoms: you and 29 rivals, however many are asked for, out of all the countries that could play', () => {
+    expect([kingdomLimit('europe'), EUROPE_KINGDOMS, kingdomLimit('balkans'), kingdomLimit('gen')]).toEqual([30, 30, MAX_KINGDOMS, MAX_KINGDOMS]);
+    newWorld(5,'europe');
+    const all=capitalsOn('europe');
+    expect(all.length).toBeGreaterThan(61);   // (more than 29 could be drawn from)
+    const me=all.find(c => c.country.code==='GR')!;
+    const rivals=all.map(c => c.country.code).filter(c => c!=='GR');
+    expect(startMatch(me.tile,rivals,'GR')).toBe(true);
+    expect(W.nations.length-1).toBe(30);
+    expect(W.nations[1].code).toBe('GR');
   });
 });

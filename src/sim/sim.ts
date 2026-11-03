@@ -1,6 +1,6 @@
 /* ---------- simulation entry points: worlds, matches, commands, ticks ----------
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
-import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, LAND_TAX, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
+import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, kingdomLimit, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, LAND_TAX, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
 import { mulberry32 } from '../core/rng';
 import { W, resizeGrid, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pIn, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
@@ -98,7 +98,8 @@ export function newWorld(seed: number, map='gen'){
     their countries' real capitals. */
 export function startMatch(t: number, rivals: number | string[], me?: string){
   if (t<0) return false;
-  if (Array.isArray(rivals)) rivals=rivals.slice(0,MAX_KINGDOMS-1); else rivals=Math.min(rivals,MAX_KINGDOMS-1);   // a full game is 64
+  const most=kingdomLimit(W.map)-1;
+  if (Array.isArray(rivals)) rivals=rivals.slice(0,most); else rivals=Math.min(rivals,most);   // a full game is 64 (30 on Europe)
   const b=findBlock(t%TW,(t/TW)|0,W.map==='gen' ? 4 : 6);   // (a real capital may sit between sea and mountains)
   if (!b) return false;
   if (W.map!=='gen') return startReal(b,rivals,me);

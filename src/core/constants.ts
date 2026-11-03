@@ -51,4 +51,7 @@ export const STR_TILE = 1, STR_VILLAGER = 50, STR_SOLDIER = 100, STR_GOLD = 3;
 
 export const PLAYER = 1;                  // nation id of the local player
 export const MAX_KINGDOMS = 64;           // kingdoms in one game at most, the player's included (a full game)
+export const EUROPE_KINGDOMS = 30;        // ...on the Europe map: you and 29 rivals picked at random from the other countries, a size the late game runs smoothly at
+/** The most kingdoms a game on that map holds. */
+export const kingdomLimit = (map: string | null | undefined) => map==='europe' ? EUROPE_KINGDOMS : MAX_KINGDOMS;
 export const PLAYER_COL = '#ffd23f';     // the player's highlight (kingdoms take their colours from their flags: core/countries.ts)
