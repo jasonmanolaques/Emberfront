@@ -1904,3 +1904,31 @@ describe('what armies cost, and where they stand', () => {
     expect(W.aggr[2*W.M+1]).toBe(0);
   });
 });
+
+describe('shortcuts that keep the late game fast', () => {
+  it('a front\'s line is kept while nothing changes, and worked out again at once when land is occupied', () => {
+    world(1); quiet(); paintDisc(N(2),40); paintToward(1,2); place(N(2),B_FARM);
+    soldiers(N(1),20); noDraft(); noDraft(2); N(2).soldierShare=0; N(2).humanProg=-1e9; run(2);
+    expect(declare(1,2,20)).toBe(true);
+    run(7);
+    const F=offensiveFront(1,2)!.F!;
+    run(5); expect(offensiveFront(1,2)!.F).toBe(F);           // (placed again every 5 ticks, on the same line)
+    run(5); expect(offensiveFront(1,2)!.F).toBe(F);
+    const t=Array.from({ length: NT }, (_, i) => i).find(i => owner[i]===2 && !occ[i] && [i-1,i+1,i-TW,i+TW].some(k => owner[k]===1))!;
+    occupyHack(t,1);
+    run(6); expect(offensiveFront(1,2)!.F).not.toBe(F);       // the land changed hands: the line is new
+    run(25); expect(offensiveFront(1,2)!.F).not.toBeNull();
+  });
+
+  it('the census counts over ten ticks, never showing a half-made count, and a direct census is at once', () => {
+    world(1); quiet(); paintDisc(N(1),14);
+    const q=place(N(1),B_HOUSE); census();
+    const houses=N(1).houses, plots=N(1).plots.length;
+    expect(houses).toBeGreaterThan(0);
+    for (let i=0;i<40;i++){ tick(); expect(N(1).houses).toBeGreaterThan(0); expect(N(1).plots.length).toBeGreaterThan(plots*0.8); }   // (never a count half made)
+    const q2=place(N(1),B_HOUSE); void q; void q2;
+    const h0=N(1).houses; census(); expect(N(1).houses).toBeGreaterThanOrEqual(h0);   // (asked for, it is counted now)
+    const again=place(N(1),B_FARM); void again;
+    run(20); expect(N(1).farms).toBeGreaterThan(0);            // (left to the ticks, it is counted within a pass or two)
+  });
+});

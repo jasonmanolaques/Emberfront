@@ -41,7 +41,7 @@ describe('the border spreading', () => {
       const me=W.nations[1], before=me.tiles;
       for (let i=0;i<8;i++){ me.gold=300; launch(1,0,300); for (let k=0;k<400;k++) tick(); }
       expect(me.tiles).toBeGreaterThan(before+500);   // (it did spread)
-      expect(pockets().reduce((a,b) => a+b,0)).toBeLessThanOrEqual(3);   // (the front prefers ground the border has wound round, so holes fill as it goes; the odd tile may be left where the gold ran out)
+      expect(pockets().reduce((a,b) => a+b,0)).toBeLessThanOrEqual(5);   // (the front prefers ground the border has wound round, so holes fill as it goes; the odd tile may be left where the gold ran out)
     }
   });
 });

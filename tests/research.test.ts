@@ -98,7 +98,7 @@ describe('house tiers and the builders guild', () => {
     start(12345); expand(4); until(() => houses().length>=4);
     const [a,b,c]=houses(); pTier[b]=2; pTier[c]=3;
     expect([bldHp(a),bldHp(b),bldHp(c)]).toEqual([10,30,60]);
-    run(10);   // census
+    run(20);   // census (a pass takes ten ticks, and one may be under way)
     expect(me().beds).toBe(houses().length+1+2);
   });
 

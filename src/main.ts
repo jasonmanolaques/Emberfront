@@ -17,10 +17,18 @@ import { openArmy } from './ui/army';
 import { newGame, step, trySpawn, playerAttack, setInvest, setSoldierShare } from './game';
 
 let acc=0, last=performance.now(), hudAt=0;
+const STEP_BUDGET = 10;   // milliseconds of each frame the simulation may take (a frame is 16.7)
 function frame(now: number){
   const dt=Math.min(0.25,(now-last)/1000); last=now;
   const running = client.state==='play' && !client.paused;
-  if (running){ acc+=dt*client.speed; let n=0; while (acc>=TICK && n<12){ step(); acc-=TICK; n++; } if (n>=12) acc=0; }
+  if (running){
+    // the game's clock runs on as fast as the machine allows: ticks are run for at most STEP_BUDGET ms of the frame (always one, if one is due),
+    // and a backlog the machine can't catch up on is let go, so a heavy late game runs slower rather than freezing the picture for a second
+    acc+=dt*client.speed;
+    const t0=performance.now(); let n=0;
+    while (acc>=TICK && n<12 && (n===0 || performance.now()-t0<STEP_BUDGET)){ step(); acc-=TICK; n++; }
+    if (acc>=TICK*2) acc=TICK*2;
+  }
   render(now, running ? dt*client.speed : (client.state==='play' ? 0 : dt));
   if (now>hudAt && client.state==='play'){ updateHUD(now); refreshBuildPanel(); hudAt=now+200; }
   requestAnimationFrame(frame);

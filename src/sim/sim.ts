@@ -10,7 +10,7 @@ import { VIEWS } from './mapview';
 import { COUNTRIES, MAJOR, countryByCode, colourGap, type Country } from '../core/countries';
 import { setOwner, stepAttack, launch, touches } from './territory';
 import { toRuins, build, togglePriority, produce, resetHomes } from './buildings';
-import { scanContacts, census } from './census';
+import { scanContacts, census, censusStep } from './census';
 import { botThink } from './bots';
 import { updatePopulation, resetWalks } from './population';
 import { resetWar, declare, declareNaval, proposeAlliance, endWar, makePeace, setOffensive, armyOrder, armyFront, armyRecall, armyRedirect, deployArmies, setStance, deescalate, defend, callReserves } from './war';
@@ -275,7 +275,7 @@ export function tick(){
   if (W.tickN%2===0) W.attacks=W.attacks.filter(A=>!A.done);
   const burning=W.burning;
   for (let i=burning.length-1;i>=0;i--){ const q=burning[i]; pBurn[q]-=TICK; if (pBurn[q]<=0){ burning[i]=burning[burning.length-1]; burning.pop(); toRuins(q); } }
-  if (W.tickN%10===0) census();
+  censusStep(W.tickN%10);
   for (let i=1;i<N.length;i++){ const n=N[i]; if (n.alive && !n.isPlayer && W.simTime>=n.nextThink) botThink(n); }
   produce();
   updateResearch();

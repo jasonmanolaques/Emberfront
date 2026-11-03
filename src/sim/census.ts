@@ -20,21 +20,50 @@ export function scanContacts(withSums: boolean){
   } }
   if (withSums) for (let i=1;i<N.length;i++){ N[i].sumX=sx[i]; N[i].sumY=sy[i]; }
 }
-export function census(){
+/** One nation's building tally, built while the count is under way. */
+interface Tally { plots: number[]; blds: number[]; houses: number; farms: number; towers: number; mines: number; barracks: number; minters: number; plantations: number; quarries: number; copperMines: number; labs: number; guilds: number; smithies: number; navals: number; beds: number; bCount: number; }
+const newTally = (): Tally => ({ plots:[], blds:[], houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, navals:0, beds:0, bCount:0 });
+let tallies: Tally[] = [];
+/** The plots from q0 up to (not including) q1: each owner's plots to build on, and its buildings, into the tallies. */
+function tally(q0: number, q1: number){
   const N=W.nations;
-  for (const n of N){ n.plots.length=0; n.blds.length=0; n.houses=n.farms=n.towers=n.mines=n.barracks=n.minters=n.plantations=n.quarries=n.copperMines=n.labs=n.guilds=n.smithies=n.navals=n.beds=0; n.bCount=0; }
-  for (let q=0;q<NP;q++){
-    const o=owner[pCenter[q]]; if (o && pBuild[q] && !occ[pCenter[q]]) N[o].plots.push(q);   // nobody builds on occupied ground
+  for (let q=q0;q<q1;q++){
+    const o=owner[pCenter[q]]; if (o && pBuild[q] && !occ[pCenter[q]]) tallies[o].plots.push(q);   // nobody builds on occupied ground
     const ty=pType[q];
     if (ty===B_RUINS){ pTimer[q]-=1; if (pTimer[q]<=0){ pType[q]=B_EMPTY; pOwner[q]=0; on.plotChanged(q); } continue; }
     if (isBld(ty) && pBurn[q]<=0){
       const n=N[pOwner[q]]; if (!n || !n.alive) continue;
-      n.bCount++; if (ty!==B_CPART && ty!==B_PART) n.blds.push(q);
-      if (ty===B_HOUSE){ n.houses++; n.beds+=HOUSE_BEDS[pTier[q]]; } else if (ty===B_FARM) n.farms++; else if (ty===B_TOWER) n.towers++; else if (ty===B_MINE) n.mines++;
-      else if (ty===B_BARRACKS) n.barracks++; else if (ty===B_MINTER) n.minters++;
-      else if (ty===B_PLANTATION) n.plantations++; else if (ty===B_QUARRY) n.quarries++; else if (ty===B_COPPERMINE) n.copperMines++;
-      else if (ty===B_RESEARCH) n.labs++; else if (ty===B_GUILD) n.guilds++; else if (ty===B_SMITHY) n.smithies++; else if (ty===B_NAVAL) n.navals++;
+      const T=tallies[pOwner[q]];
+      T.bCount++; if (ty!==B_CPART && ty!==B_PART) T.blds.push(q);
+      if (ty===B_HOUSE){ T.houses++; T.beds+=HOUSE_BEDS[pTier[q]]; } else if (ty===B_FARM) T.farms++; else if (ty===B_TOWER) T.towers++; else if (ty===B_MINE) T.mines++;
+      else if (ty===B_BARRACKS) T.barracks++; else if (ty===B_MINTER) T.minters++;
+      else if (ty===B_PLANTATION) T.plantations++; else if (ty===B_QUARRY) T.quarries++; else if (ty===B_COPPERMINE) T.copperMines++;
+      else if (ty===B_RESEARCH) T.labs++; else if (ty===B_GUILD) T.guilds++; else if (ty===B_SMITHY) T.smithies++; else if (ty===B_NAVAL) T.navals++;
     }
+  }
+}
+/** Counts every kingdom's plots and buildings from scratch, all at once (the start of a match, or when a test needs the counts now). */
+export function census(){
+  tallies=W.nations.map(() => newTally());
+  tally(0,NP);
+  commit();
+}
+/** The same count spread over ten ticks (`k`, 0 to 9, is the tick's place in the ten): a tenth of the plots each, so no one tick pays for
+    all of it. The kingdoms' counts are those of the last whole pass. */
+export function censusStep(k: number){
+  const N=W.nations;
+  if (k===0) tallies=N.map(() => newTally());
+  else if (tallies.length!==N.length) return;   // (a new match began part way through: wait for the next pass)
+  tally(Math.floor(NP*k/10), Math.floor(NP*(k+1)/10));
+  if (k===9) commit();
+}
+/** A whole pass is done: its tallies become the kingdoms' counts, and what follows from them is worked out. */
+function commit(){
+  const N=W.nations;
+  for (let i=1;i<N.length;i++){
+    const n=N[i], T=tallies[i];
+    [n.plots,T.plots]=[T.plots,n.plots]; [n.blds,T.blds]=[T.blds,n.blds];
+    n.houses=T.houses; n.farms=T.farms; n.towers=T.towers; n.mines=T.mines; n.barracks=T.barracks; n.minters=T.minters; n.plantations=T.plantations; n.quarries=T.quarries; n.copperMines=T.copperMines; n.labs=T.labs; n.guilds=T.guilds; n.smithies=T.smithies; n.navals=T.navals; n.beds=T.beds; n.bCount=T.bCount;
   }
   for (let i=1;i<N.length;i++) if (N[i].alive) joinGatherers(N[i]);   // what research now lets join up
   for (let i=1;i<N.length;i++){

@@ -64,7 +64,9 @@ export const rankFor = (size: number) => size<=5 ? 0 : size<=15 ? 1 : size<=30 ?
 export const F_GATHER=0, F_READY=1, F_PUSH=2, F_HOLD=3;
 const EVAC_TICKS = 600;               // ticks soldiers landed by sea take to come home by ship (1 minute)
 const ROW_TICKS = 60;                 // ticks between one row of ships landing and the next
-const REFRONT = 5;                    // ticks between working out each front and everyone's place on it
+const REFRONT = 5;                    // ticks between working out everyone's place on each front
+const SAFE_EVERY = 60;                // ticks the line of the defending armies (the ground no enemy tower reaches) is kept
+const LINE_EVERY = 20;                // ticks a front's line is kept before it is worked out again from the map (it moves a strip every 20 ticks at most; a strip, a change of orders, or taken land works it out at once)
 export const ADVANCE_TICKS = 20;      // ticks between strips of ground taken by a front at full strength (2 s: an invasion is slow)
 export const INVADE_SLOW = 0.5;              // an army's pace on enemy ground it has not yet occupied
 export const DENSE = 4;               // tiles of front each man of the front rank pushes at full speed; a thinner line is slower
@@ -127,6 +129,8 @@ interface Offensive {
   liberating: boolean;            // its own land is occupied by the enemy: its armies take it back first, and may not attack
   Fd: Front | null;               // the line its defending armies hold: the edge of the ground no enemy tower reaches (null: the front's own line)
   safeAt: number;                 // tick Fd was worked out
+  lineAt: number;                 // tick F (the line) was worked out
+  lineSig: number;                // how much land of either kingdom was occupied then (the line is worked out again when that changes)
   men: Human[]; atk: Human[]; def: Human[]; camps: Campaign[];   // its men (leaders aside), those of its attacking and of its defending armies, and its armies, this tick
 }
 const offensives = new Map<number, Offensive>();   // by id
@@ -304,6 +308,8 @@ function clearWay(f: Field, ax: number, ay: number, bx: number, by: number){
 
 
 /* ---------- declaring war ---------- */
+/** Kingdom n's soldiers out of doors and alive, and villagers who took up arms, as of this tick. */
+export const armiesOf = (n: number): readonly Human[] => armies[n] ?? [];
 /** Is campaign c not committed to an aggression: out on a border (deployed in peace, or standing against someone else's crisis), not in a war
     and not part of a crisis its kingdom began? Its men may be sent elsewhere. */
 export const freeArmy = (c: Campaign) => c.front && c.phase===1 && c.naval<0 && c.hostile && !W.wars[c.a*W.M+c.d] && !W.aggr[c.a*W.M+c.d];
@@ -745,7 +751,7 @@ function offensiveOf(a: number, d: number, isle=0){
   let o=offensives.get(id);
   if (!o){
     if (!frontsOf(key).length) W.offensive[key]=F_GATHER;
-    o={ id, key, a, d, isle, st:W.offensive[key], F:null, walk:new Field(), k:0, progress:0, strips:0, depth:null, since:W.tickN, noFront:0, liberating:false, Fd:null, safeAt:-1e9, men:[], atk:[], def:[], camps:[] };
+    o={ id, key, a, d, isle, st:W.offensive[key], F:null, walk:new Field(), k:0, progress:0, strips:0, depth:null, since:W.tickN, noFront:0, liberating:false, Fd:null, safeAt:-1e9, lineAt:-1e9, lineSig:-1, men:[], atk:[], def:[], camps:[] };
     offensives.set(id,o);
   }
   return o;
@@ -925,25 +931,35 @@ const fighting = new Map<number, number>();   // enemy id -> how many are fighti
 const crowdOn = (e: Human, h: Human) => (fighting.get(e.id) ?? 0) - (h.foe===e.id ? 1 : 0);
 /** In kingdoms at war, soldiers (and armed villagers) closer than ROOM to a comrade step apart, each where he may
     stand, so a crowd spreads into ranks rather than piling onto one spot. */
+const SPREAD_BUCKETS = 16384;
+const spreadHead = new Int32Array(SPREAD_BUCKETS);
+let spreadNext = new Int32Array(1024), spreadList: Human[] = [];
+const spreadKey = (cx: number, cy: number) => ((cx*73856093) ^ (cy*19349663)) & (SPREAD_BUCKETS-1);
 export function spread(){
-  const cell=new Map<number, Human[]>(), key=(x: number, y: number) => ((y/4)|0)*1000+((x/4)|0);
   const fights=(h: Human) => h.hp>0 && !indoors(h) && warring[h.o]===1 && (h.kind===H_SOLDIER || h.brave>=1);
-  for (const h of W.humans){
-    if (!fights(h)) continue;
-    const k=key(h.x,h.y); let L=cell.get(k); if (!L){ L=[]; cell.set(k,L); } L.push(h);
-  }
-  for (const h of W.humans){
-    if (!fights(h)) continue;
-    let px=0, py=0;
+  const L=spreadList; L.length=0;
+  for (const h of W.humans) if (fights(h)) L.push(h);
+  if (!L.length) return;
+  spreadHead.fill(-1); if (spreadNext.length<L.length) spreadNext=new Int32Array(L.length*2);
+  const next=spreadNext, head=spreadHead;
+  for (let i=0;i<L.length;i++){ const k=spreadKey((L[i].x/4)|0,(L[i].y/4)|0); next[i]=head[k]; head[k]=i; }
+  const seenK=[0,0,0,0,0,0,0,0,0];
+  for (const h of L){
+    let px=0, py=0, nk=0;
     const cx=(h.x/4)|0, cy=(h.y/4)|0;
-    for (let y=cy-1;y<=cy+1;y++) for (let x=cx-1;x<=cx+1;x++) for (const e of cell.get(y*1000+x) ?? []){
-      if (e===h || e.o!==h.o) continue;
-      let dx=h.x-e.x, dy=h.y-e.y; const d=Math.hypot(dx,dy); if (d>=ROOM) continue;
-      if (d<1e-3){ const a=((h.id*2654435761)>>>0)/4294967296*6.283; dx=Math.cos(a); dy=Math.sin(a); } else { dx/=d; dy/=d; }   // exactly on top: apart along a fixed way
-      px+=dx*(ROOM-d)*0.5; py+=dy*(ROOM-d)*0.5;
+    for (let y=cy-1;y<=cy+1;y++) for (let x=cx-1;x<=cx+1;x++){
+      const k=spreadKey(x,y); let dup=false; for (let j=0;j<nk;j++) if (seenK[j]===k){ dup=true; break; }
+      if (dup) continue; seenK[nk++]=k;   // (two cells sharing a bucket are looked through once)
+      for (let i=head[k];i>=0;i=next[i]){
+        const e=L[i];
+        if (e===h || e.o!==h.o) continue;
+        let dx=h.x-e.x, dy=h.y-e.y; const d=Math.hypot(dx,dy); if (d>=ROOM) continue;
+        if (d<1e-3){ const a=((h.id*2654435761)>>>0)/4294967296*6.283; dx=Math.cos(a); dy=Math.sin(a); } else { dx/=d; dy/=d; }   // exactly on top: apart along a fixed way
+        px+=dx*(ROOM-d)*0.5; py+=dy*(ROOM-d)*0.5;
+      }
     }
     if (!px && !py) continue;
-    const L=Math.hypot(px,py), m=Math.min(L,0.6)/L, nx=h.x+px*m, ny=h.y+py*m, t=tileOf(nx,ny);
+    const Ln=Math.hypot(px,py), m=Math.min(Ln,0.6)/Ln, nx=h.x+px*m, ny=h.y+py*m, t=tileOf(nx,ny);
     if (nx<0 || ny<0 || nx>=TW*2 || ny>=TH*2 || !isLand[t] || (owner[t] && onCastle(W.nations[owner[t]],nx,ny))) continue;
     if (h.war>=0 ? mayStand(h,owner[t]) : owner[t]===h.o){ h.x=nx; h.y=ny; }   // armies where they may go, everyone else at home
   }
@@ -1124,7 +1140,10 @@ function runOffensives(){
     note(key,war,o.st);
     if (o.st===F_PUSH && o.atk.length){
       if (!o.depth) o.depth=depths(o);
-      if ((now+id)%(W.stance[key]===S_RUSH ? ADVANCE_TICKS/RUSH_PACE : ADVANCE_TICKS)===0) push(o);   // (a rush's strips come twice as often)
+      if ((now+id)%(W.stance[key]===S_RUSH ? ADVANCE_TICKS/RUSH_PACE : ADVANCE_TICKS)===0){   // (a rush's strips come twice as often)
+        if (o.lineAt<now){ o.F=null; redeploy(o); }   // (each strip goes from the line as the map stands)
+        push(o);
+      }
       if ((now+id)%20===10 && !o.liberating) encircle(o);   // (a kingdom retaking its land takes none of the enemy's)
     }
   }
@@ -1209,15 +1228,24 @@ function safeLine(o: Offensive): number[] {
     }
   return out;
 }
+/** All the land of a's and of d's that anyone occupies, as one number: it changes whenever a front's line may have. */
+function occSig(a: number, d: number){
+  const M=W.M; let x=0, y=0;
+  for (let b=1;b<M;b++){ x+=W.occCount[a*M+b]; y+=W.occCount[d*M+b]; }
+  return x+y*4194304;
+}
 /** Works out offensive o's front again and gives its men their places on it, each leader his behind
     the middle of his men, a rank behind the last, and (every other time) the way there. The armies that attack stand on the
     line as it is; those that defend (at war) fall back to the line no enemy tower reaches. */
 function redeploy(o: Offensive){
   const coming=W.invasions.find(i => i.a===o.d && i.d===o.a && i.stage<INV_LAND && !i.safe);   // (a landing coming at us from the sea: our front is the coast it will land on)
-  const F=o.F=coming ? lineOf(o.a,o.d,false,coming.coast.filter(t => owner[t]===o.a)) : lineOf(o.a,o.d,false,undefined,o.isle), id=o.id, ok=standsFor(o.a,o.d);
+  // (the line is worked out from the map only now and then, or when something calls for it: o.F set to null; the men's places are laid out on it every REFRONT ticks)
+  const sig=occSig(o.a,o.d), keep=!coming && !!o.F && W.tickN-o.lineAt<LINE_EVERY && sig===o.lineSig;
+  const F=o.F=keep ? o.F! : coming ? lineOf(o.a,o.d,false,coming.coast.filter(t => owner[t]===o.a)) : lineOf(o.a,o.d,false,undefined,o.isle), id=o.id, ok=standsFor(o.a,o.d);
+  if (!keep){ o.lineAt=W.tickN; o.lineSig=sig; }
   let Fd: Front | null=null;
   if (o.def.length){
-    if (W.tickN-o.safeAt>=20 || !o.Fd){ o.safeAt=W.tickN; const line=safeLine(o); o.Fd=line.length ? lineOf(o.a,o.d,false,line) : null; }
+    if (W.tickN-o.safeAt>=SAFE_EVERY || !o.Fd){ o.safeAt=W.tickN; const line=safeLine(o); o.Fd=line.length ? lineOf(o.a,o.d,false,line) : null; }
     Fd=o.Fd;
   } else o.Fd=null;
   if (!F.tiles.length){ o.k=0; return; }
@@ -1434,14 +1462,17 @@ export function updateWar(){
   const M=W.M, N=W.nations, H=W.humans;
   byId.clear(); camps.clear(); troops.clear();
   buildWalls();
+  for (const c of W.campaigns){ camps.set(c.id,c); troops.set(c.id,[]); }
+  const tick10=W.tickN%10;
   for (const h of H){
     byId.set(h.id,h);
+    if (h.war>=0){ const men=troops.get(h.war); if (men) men.push(h); else { h.war=-1; backToRoam(h); } }
     if (h.lead && h.war<0) unlead(h);
-    const max=maxHp(h);
-    if (h.hp<max) h.hp=Math.min(max,h.hp+REGEN);   // everyone heals, slowly
+    if (h.id%10===tick10){   // everyone heals, slowly (a tenth of the men each tick, ten times as much)
+      const max=maxHp(h);
+      if (h.hp<max) h.hp=Math.min(max,h.hp+REGEN*10);
+    }
   }
-  for (const c of W.campaigns){ camps.set(c.id,c); troops.set(c.id,[]); }
-  for (const h of H) if (h.war>=0){ const men=troops.get(h.war); if (men) men.push(h); else { h.war=-1; backToRoam(h); } }
   for (const c of [...W.campaigns]) if (camps.has(c.id)) runCampaign(c, troops.get(c.id)!);
   // kingdoms at war: a war between them (armies massed in a crisis aren't at war)
   W.atWar.fill(0);
@@ -1451,9 +1482,11 @@ export function updateWar(){
   for (let o=1;o<M;o++) if (!warring[o] && homeField[o]){ homeField[o]=undefined; homeFieldFor[o]=-1; }   // (at peace: no guard to lead)
   for (let i=0;i<W.offers.length;i++) if (W.offers[i] && (W.tickN-W.offers[i]>OFFER_TICKS || !W.atWar[i])) W.offers[i]=0;
   // who can be fought: soldiers out of doors, and villagers who took up arms
-  armies=N.map(() => []);
+  if (armies.length!==N.length) armies=N.map(() => []); else for (const a of armies) a.length=0;
   const now=W.tickN, own=owner, oc=occ, tw=TW, th=TH;
+  fighting.clear();
   for (const h of H){
+    if (h.foe>=0 && h.hp>0) fighting.set(h.foe,(fighting.get(h.foe) ?? 0)+1);
     if (h.hp<=0 || indoors(h)) continue;
     if (h.kind===H_SOLDIER){
       armies[h.o].push(h);
@@ -1465,8 +1498,6 @@ export function updateWar(){
       }
     } else if (h.brave>=1) armies[h.o].push(h);   // armed villagers, and the mob
   }
-  fighting.clear();
-  for (const h of H) if (h.foe>=0 && h.hp>0) fighting.set(h.foe,(fighting.get(h.foe) ?? 0)+1);
   if (W.tickN%20===7) returnIslands();
   stepInvasions();
   runOffensives();

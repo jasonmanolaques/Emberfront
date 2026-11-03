@@ -6,7 +6,7 @@
 import { PW, B_HOUSE } from '../core/constants';
 import { W, pType, pOwner, pBurn } from './state';
 import { on } from './events';
-import { atWar, raiseMob } from './war';
+import { atWar, raiseMob, armiesOf } from './war';
 import { H_SOLDIER, indoors } from './population';
 
 export interface Story {
@@ -34,14 +34,19 @@ const mob: Story = {
   id: 'mob', every: 10, cooldown: 900,
   check(o){
     const n=W.nations[o];
-    for (const h of W.humans){
-      if (h.kind!==H_SOLDIER || h.hp<=0 || indoors(h) || h.o===o || !atWar(o,h.o)) continue;
-      const nearCastle = n.capTile>=0 && (() => { const q=n.capPlot, x=(q%PW)*8+8, y=((q/PW)|0)*8+8; return (h.x-x)**2+(h.y-y)**2<MOB_NEAR_CASTLE**2; })();
-      const sacking = h.aim>=0 && pOwner[h.aim]===o && housesNear(o,h.aim,3)>=MOB_TOWN;
-      if (!nearCastle && !sacking) continue;
-      if (raiseMob(o,h.x,h.y,MOB_GATHER,true)<3) continue;   // too few people about to make a mob
-      raiseMob(o,h.x,h.y,MOB_GATHER);
-      return [h.x,h.y,h.o];
+    const [cx,cy]=n.capTile>=0 ? [(n.capPlot%PW)*8+8, ((n.capPlot/PW)|0)*8+8] : [0,0];
+    // (only the soldiers of kingdoms at war with o, out of doors: not everyone on the map)
+    for (let e=1;e<W.M;e++){
+      if (e===o || !atWar(o,e)) continue;
+      for (const h of armiesOf(e)){
+        if (h.kind!==H_SOLDIER || h.hp<=0 || indoors(h)) continue;
+        const nearCastle = n.capTile>=0 && (h.x-cx)**2+(h.y-cy)**2<MOB_NEAR_CASTLE**2;
+        const sacking = h.aim>=0 && pOwner[h.aim]===o && housesNear(o,h.aim,3)>=MOB_TOWN;
+        if (!nearCastle && !sacking) continue;
+        if (raiseMob(o,h.x,h.y,MOB_GATHER,true)<3) continue;   // too few people about to make a mob
+        raiseMob(o,h.x,h.y,MOB_GATHER);
+        return [h.x,h.y,h.o];
+      }
     }
     return null;
   },
