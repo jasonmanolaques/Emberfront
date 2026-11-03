@@ -1,6 +1,6 @@
 // Buildings a kingdom places, and the gold economy.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_FARM, B_BARRACKS, B_NAVAL, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, WAGE, WAGE_IDLE, GOLD_PER_TILE, TAX_PER_VILLAGER, LAND_TAX, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
+import { MINTER_BONUS, TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_FARM, B_BARRACKS, B_NAVAL, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, WAGE, WAGE_IDLE, GOLD_PER_TILE, TAX_PER_VILLAGER, LAND_TAX, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
 import { W, owner, isLand, pType, pCenter, pBuild, type Human } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick, incomeParts } from '../src/sim/sim';
 import { declare, escalate } from '../src/sim/war';
@@ -100,7 +100,7 @@ describe('building costs and placement', () => {
 });
 
 describe('what the buildings do', () => {
-  it('farms bring new humans 5% sooner each', () => {
+  it('farms bring new humans 3% sooner each', () => {
     start(12345, 0); run(10*E);
     expect(W.humanSeq).toBe(10);   // (born: the last may have no house yet, and some may end up beggars)
     start(12345, 0); expand(3);
@@ -108,11 +108,11 @@ describe('what the buildings do', () => {
     for (let k=0;k<4;k++) place(B_FARM, plots[k]);
     const before=mine().length, t0=W.tickN, p0=me().humanProg;
     run(10*E);
-    expect(mine().length-before).toBe(Math.floor((p0+10*E*1.2)/E) - Math.floor(p0/E));   // 4 farms: 20% faster
+    expect(mine().length-before).toBe(Math.floor((p0+10*E*1.12)/E) - Math.floor(p0/E));   // 4 farms: 12% faster
     expect(W.tickN-t0).toBe(10*E);
   });
 
-  it('earns only tax on its people and its land, and coin minters add 10% to it', () => {
+  it('earns only tax on its people and its land, and coin minters add 5% to it', () => {
     start(12345, 0);
     me().humanProg=-1e9;   // nobody arrives, so there is nobody to pay tax
     const g0=me().gold; run(100);
@@ -122,7 +122,7 @@ describe('what the buildings do', () => {
     expect(n.taxpayers).toBeGreaterThan(0);
     expect(n.income).toBeCloseTo(TAX_PER_VILLAGER*n.taxpayers+LAND_TAX*n.tiles, 9);
     place(B_MINTER, freePlots()[0]); place(B_MINTER, freePlots()[0]); tick();
-    expect(n.income).toBeCloseTo((TAX_PER_VILLAGER*n.taxpayers+LAND_TAX*n.tiles)*1.2, 9);
+    expect(n.income).toBeCloseTo((TAX_PER_VILLAGER*n.taxpayers+LAND_TAX*n.tiles)*1.1, 9);
   });
 
   it('keeps its army of 5 waiting at the barracks; soldiers with no room patrol the city', () => {
@@ -223,7 +223,7 @@ describe('gold and strength', () => {
     const p=incomeParts(n);
     expect(p.tax).toBeCloseTo(TAX_PER_VILLAGER*n.taxpayers, 9);
     expect(p.land).toBeCloseTo(LAND_TAX*n.tiles, 9);
-    expect(p.boost).toBeCloseTo((p.tax+p.land)*0.1*n.minters, 9);
+    expect(p.boost).toBeCloseTo((p.tax+p.land)*MINTER_BONUS*n.minters, 9);
     expect(p.soldiers).toBeCloseTo((n.soldiers-n.militia)*WAGE_IDLE, 9);
     expect(n.soldiers-n.militia).toBe(5);
     expect(p.militia).toBe(0);   // (militia are paid only while called up)

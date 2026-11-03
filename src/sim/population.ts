@@ -63,8 +63,8 @@ export const TASK_ROAM = 0,      // between jobs: villagers think or stroll betw
              TASK_REST_GO = 15,      // villagers with nothing to do: walking home to rest
              TASK_REST = 16,         // resting inside a house, out of sight
              TASK_BOAT = 17;         // a soldier of a naval invasion aboard a ship (out of sight), or on his way home by sea
-export const HUMAN_EVERY = 200;  // progress per new human: 200 ticks (20 s), each farm adds 5% speed
-export const FARM_BONUS = 0.05;
+export const HUMAN_EVERY = 200;  // progress per new human: 200 ticks (20 s), each farm adds 3% speed
+export const FARM_BONUS = 0.03;
 const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 s)
 const PATROL_R = 36;             // pixels around the capital door soldiers patrol when there is no barracks
 export const HOME_PACE = 1.15;   // soldiers on their own kingdom's land move 15% faster
@@ -499,7 +499,9 @@ function house(n: Nation, mine: Human[]){
       if (h.beggar){ h.beggar=false; h.sp=3+W.prand()*2; think(h); }   // a home at last: back to work
     } else if (h.kind===H_VILLAGER){
       ++h.homeless;
-      if (!h.beggar && h.homeless>=BEG_TICKS){
+      // (a villager on his way to build himself a home, or building it, is not turned beggar by the minute: in a big kingdom the walk alone takes that long; but not for ever)
+      const building=h.home>=0 && !h.beggar && h.homeless<BEG_TICKS*4;
+      if (!h.beggar && h.homeless>=BEG_TICKS && !building){
         // a minute without a roof: he gives up work, drops what he carries, and begs
         release(h); h.beggar=true; h.sp=1; h.task=TASK_ROAM; h.path=[]; roamTarget(h);
       } else if (h.beggar && h.homeless>=STARVE_TICKS) h.hp=0;   // half a minute more, and he dies where he stands

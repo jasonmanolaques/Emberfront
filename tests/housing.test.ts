@@ -135,7 +135,7 @@ describe('empty houses', () => {
 });
 
 describe('tax', () => {
-  it('adds 0.1 gold a second for each villager, nothing for soldiers, and minters add 10% on top', () => {
+  it('adds 0.1 gold a second for each villager, nothing for soldiers, and minters add 5% on top', () => {
     start(12345, 0); expand(6); run(1200);
     const n=me();
     expect(n.villagers).toBeGreaterThan(5);
@@ -144,7 +144,7 @@ describe('tax', () => {
     // two minters on top
     for (let k=0;k<2;k++){ let q=-1; for (let p=0;p<NP && q<0;p++) if (!plotProblem(n,p)) q=p; n.stock=[9,9,9]; build(n,q,B_MINTER); }   // (the second costs a tenth more)
     tick();
-    expect(n.income).toBeCloseTo((TAX_PER_VILLAGER*n.taxpayers+LAND_TAX*n.tiles)*1.2, 9);
+    expect(n.income).toBeCloseTo((TAX_PER_VILLAGER*n.taxpayers+LAND_TAX*n.tiles)*1.1, 9);
     void B_EMPTY;
   });
 });

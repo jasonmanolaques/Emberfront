@@ -7,6 +7,7 @@ export interface MapView {
   lat0: number; lat1: number;   // north and south edges
   proj: 'eq' | 'miller';        // plain latitude and longitude, or Miller's cylinder (the world)
   w: number; h: number;         // its size in tiles (bigger than a generated map's, so close capitals have room)
+  of?: string;                  // its ground is another map's, drawn again at this size
   dem?: boolean;                // its mountains and hills were drawn from real elevation, tile by tile (else from named ranges)
 }
 const RAD = Math.PI/180;
@@ -38,5 +39,7 @@ export const VIEWS: Record<string, MapView> = {
   // Europe and its neighbours, from Iceland to Azerbaijan (a little past Moscow) and from the Nile to the Arctic: room for 64
   // kingdoms and then some, at twice the scale of the other maps (a tile is about 3 km)
   europe: { lon0:-25, lon1:51, lat0:71.5, lat1:29, proj:'eq', w:1824, h:1488, dem:true },
+  // the same Europe at two thirds of the size in each direction (4/9 of the tiles), for testing: a tile is about 4.6 km
+  'europe-s': { lon0:-25, lon1:51, lat0:71.5, lat1:29, proj:'eq', w:1216, h:992, dem:true, of:'europe' },
   world: { lon0:-169, lon1:191, lat0:78, lat1:-56, proj:'miller', w:640, h:396 },   // cut through the Bering Strait
 };

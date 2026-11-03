@@ -13,7 +13,7 @@ import { buildBase, paintAll, paintRoad, paintTile, repaint, sizeTerrain } from 
 import { drawPlotAndNeighbours } from './render/sprites';
 import { addFlash, fireBurst, gatePuff, addShot, addHit, dustPuff, addCorpse, floats, resetEffects } from './render/effects';
 import { GOOD_NAME } from './sim/resources';
-import { PW } from './core/constants';
+import { PW, isEurope } from './core/constants';
 import { resetStyles } from './render/style';
 import { resetLabels, resetGhosts, noteBlow, noteSwing, noteArrow } from './render/render';
 import { onStory } from './ui/story';
@@ -164,6 +164,7 @@ export const MAPS: { name: string; map: string; seed?: number }[] = [
   { name:'Highmarch', map:'gen', seed:12345 },
   { name:'Balkans & Anatolia', map:'balkans' },
   { name:'Europe', map:'europe' },
+  { name:'Europe (small, for testing)', map:'europe-s' },
   { name:'The World', map:'world' },
 ];
 /** Starts afresh on the current map (MAPS), or with `seed`, on a map generated from it. */
@@ -197,7 +198,7 @@ export function step(){
 export function startGame(){
   $('intro').hidden=true; $('scrim').hidden=true;
   if (W.map==='gen'){ client.state='spawn'; ui.banner.hidden=false; return; }
-  if (W.map==='europe' && !handPicked()) client.rivals=randomRivals();   // (29 of the other countries, drawn afresh for each game)
+  if (isEurope(W.map) && !handPicked()) client.rivals=randomRivals();   // (29 of the other countries, drawn afresh for each game)
   const cap=available().find(a => a.country.code===client.me);
   client.state='spawn';
   if (cap) trySpawn(cap.tile);
@@ -206,7 +207,7 @@ export function startGame(){
 
 export function trySpawn(t: number){
   if (t<0) return;
-  if (!startMatch(t, client.rivals.length ? client.rivals : 9, client.me || undefined)){ toast('Pick open land away from water and mountains'); return; }
+  if (!startMatch(t, client.rivals.length ? client.rivals : 9, client.me || undefined, client.placement)){ toast('Pick open land away from water and mountains'); return; }
   const me=W.nations[PLAYER];
   $('meName').textContent=me.name; $('meCrest').style.cssText=flagCSS(me.code);
   client.state='play'; ui.banner.hidden=true; showHUD(true);

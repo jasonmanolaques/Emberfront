@@ -15,12 +15,26 @@ import { BALKANS, EUROPE, WORLD } from './maps';
 import { COUNTRIES, type Country } from '../core/countries';
 
 const C_BRIDGE=2, C_RANGE=3, C_HIGH=4, C_DESERT=5, C_PLATEAU=6, C_HILL=7;
-const DATA: Record<string, string> = { balkans: BALKANS, europe: EUROPE, world: WORLD };
+const DATA: Record<string, string> = { balkans: BALKANS, europe: EUROPE, 'europe-s': EUROPE, world: WORLD };
 export const REAL_MAPS = Object.keys(DATA);
 
 /** The stored grid of map `id`: the kind of ground on each tile. */
 function decode(id: string){
-  const code=new Uint8Array(NT), s=DATA[id]; let t=0;
+  const of=VIEWS[id].of;
+  if (of){   // a smaller drawing of another map: each tile takes the ground of the place it stands on (a coast or an island tile that is land anywhere in it stays land)
+    const big=decodeRaw(DATA[of],VIEWS[of].w*VIEWS[of].h), sw=VIEWS[of].w, sh=VIEWS[of].h, code=new Uint8Array(NT);
+    for (let y=0;y<TH;y++) for (let x=0;x<TW;x++){
+      const x0=Math.floor(x*sw/TW), x1=Math.max(x0,Math.ceil((x+1)*sw/TW)-1), y0=Math.floor(y*sh/TH), y1=Math.max(y0,Math.ceil((y+1)*sh/TH)-1);
+      const mx=(x0+x1)>>1, my=(y0+y1)>>1; let k=big[my*sw+mx];
+      if (!k){ let land=0; for (let yy=y0;yy<=y1;yy++) for (let xx=x0;xx<=x1;xx++) if (big[yy*sw+xx]) land++; if (land*2>(x1-x0+1)*(y1-y0+1)) k=big[my*sw+mx] || 1; }   // (mostly land: land)
+      code[y*TW+x]=k;
+    }
+    return code;
+  }
+  return decodeRaw(DATA[id],NT);
+}
+function decodeRaw(s: string, n0: number){
+  const code=new Uint8Array(n0); let t=0;
   for (const m of s.matchAll(/([A-H])([0-9a-z]+)/g)){ const k=m[1].charCodeAt(0)-65, n=parseInt(m[2],36); code.fill(k,t,t+n); t+=n; }
   return code;
 }

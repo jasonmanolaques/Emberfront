@@ -172,6 +172,10 @@ button.pick #pcName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;wh
 .nbar input{flex:1;min-width:0;font:inherit;font-size:15px;padding:7px 9px;background:var(--plate-2);color:var(--text);border:2px solid var(--edge)}
 .nquick{display:flex;flex-wrap:wrap;gap:6px}
 .nquick button{padding:5px 9px;font-size:13px;font-weight:600}
+#nPlace{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
+#nPlace button{padding:3px 8px;font-size:12px}
+#nPlace button[aria-pressed=true]{color:var(--gold);border-color:var(--gold)}
+#nPlace[hidden]{display:none}
 #nList{list-style:none;margin:0;padding:0;max-height:min(46vh,420px);overflow:auto;border:2px solid var(--edge);background:rgba(0,0,0,.18)}
 #nList li{display:flex;align-items:center;gap:8px;padding:3px 6px;border-bottom:1px solid rgba(255,255,255,.06)}
 #nList li.on{background:rgba(255,117,98,.12)}

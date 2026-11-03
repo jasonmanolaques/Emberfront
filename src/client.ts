@@ -14,6 +14,7 @@ export const client = {
   landing: null as null | { target: number; base: number; units: number[]; men: number },   // choosing the coast of `target` to land `units` (men of them) on from naval base `base`
   mapIndex: 0,           // which of MAPS (game.ts) is being played
   me: '',                // the country the player chose (core/countries.ts code)
+  placement: 'real' as 'real' | 'random' | 'near',   // where the rivals are founded on a real map: at their capitals, at random, or at random but near each other
   rivals: [] as string[],   // the countries chosen to play against
   choices: {} as Record<number, { me: string; rivals: string[]; hand?: boolean }>,   // what was chosen on each map (by MAPS index)          // the army (campaign id) the player has taken in hand with a right-click, or -1
 };

@@ -292,6 +292,19 @@ function drawSmithy(ox: number, oy: number, n: NationStyle){
   R(ox+12,oy+8,2,1,'#8d949b'); P(ox+12,oy+9,'#6c737a'); P(ox+13,oy+9,n.roof);               // a helm hung up, in the kingdom's colours
 }
 
+/** Blacksmiths joined side by side (2×1) or four together (2×2): the forges in a row, their roofs bridged over the seams. Looks only. */
+function drawSmithyBig(ox: number, oy: number, n: NationStyle, w: number, h: number){
+  for (let r=0;r<h;r++) for (let c=0;c<w;c++) drawSmithy(ox+c*16,oy+r*16,n);
+  for (let r=0;r<h-1;r++){   // a trodden yard between the rows of forges
+    const y=oy+r*16+14; R(ox+1,y,w*16-2,2,'#7d6a4a'); R(ox+1,y,w*16-2,1,'#8d7a58');
+    for (let x=2;x<w*16-2;x+=5) P(ox+x,y+1,'#6a5a3e');
+  }
+  for (let r=0;r<h;r++) for (let c=0;c<w-1;c++){
+    const x=ox+c*16+11, y=oy+r*16;
+    R(x,y+6,6,1,'#3b2a1e'); R(x,y+4,6,2,n.roofD); R(x+1,y+3,4,1,n.roof); R(x+2,y+2,2,1,n.roofL);   // the roof carried across
+  }
+}
+
 /* ---------- builders guild (2×1 plots): a workshop and its yard of timber and stone ---------- */
 function drawGuild(ox: number, oy: number, n: NationStyle){
   R(ox+1,oy+14,30,1,SH);
@@ -455,10 +468,11 @@ export function drawPlot(q: number){
   if (!only) ovPlot(q);   // (the overview shows towns too)
   const ox=(q%PW)*PS, oy=((q/PW)|0)*PS, ty=pType[q];
   if (ty===B_CPART){ const m=pMain[q]; if (pType[m]===B_CASTLE){ drawPlot(m); return; } }
-  if (ty===B_PART){ const m=pMain[q]; if (BIG[pType[m]] || pType[m]===B_NAVAL){ drawPlot(m); return; } clearAt(ox,oy,PS,PS); return; }
+  if (ty===B_PART){ const m=pMain[q]; if (BIG[pType[m]] || pType[m]===B_NAVAL || pType[m]===B_SMITHY){ drawPlot(m); return; } clearAt(ox,oy,PS,PS); return; }
   const n=styleOf(pOwner[q]);
   if (ty===B_NAVAL){ const [w,h]=dims(q); stamp(ox,oy,w*PS,h*PS,()=>drawNaval(0,0,n,w,h,q)); return; }
   if (BIG[ty]){ const [w,h]=dims(q); stamp(ox,oy,w*PS,h*PS,()=>drawBig(0,0,ty,n,w,h)); return; }
+  if (ty===B_SMITHY){ const [w,h]=dims(q); stamp(ox,oy,w*PS,h*PS,()=>drawSmithyBig(0,0,n,w,h)); return; }
   if (ty===B_CASTLE){
     // each country builds its capital in its own tradition (render/capitals.ts); the West, a keep
     const t=castleTier(pOwner[q]), w=wear(q), code=W.nations[pOwner[q]]?.code ?? '';
@@ -469,7 +483,6 @@ export function drawPlot(q: number){
   const v=pVar[q]%3;
   if (ty===B_HOUSE){ const t=pTier[q]; stamp(ox,oy,PS,PS,()=>drawHouse(0,0,n,t>=2 ? pVar[q] : v,!!pAband[q],t)); }
   else if (ty===B_RESEARCH) stamp(ox,oy,PS,PS,()=>drawResearch(0,0,n));
-  else if (ty===B_SMITHY) stamp(ox,oy,PS,PS,()=>drawSmithy(0,0,n));
   else if (ty===B_SITE) stamp(ox,oy,PS,PS,()=>drawSite(0,0,n));
   else if (ty===B_FARM){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawFarm(0,0,n,pOwner[q]%3,m)); }   // one crop per kingdom, so joined fields match
   else if (ty===B_TOWER){ const m=joins(q), t=towerTier(q), w=wear(q); stamp(ox,oy,PS,PS,()=>drawTower(0,0,n,m,t,w)); }

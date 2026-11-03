@@ -1,6 +1,6 @@
 /* ---------- simulation entry points: worlds, matches, commands, ticks ----------
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
-import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, kingdomLimit, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, LAND_TAX, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
+import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, kingdomLimit, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, LAND_TAX, MINTER_BONUS, WAGE, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../core/constants';
 import { mulberry32 } from '../core/rng';
 import { W, resizeGrid, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pIn, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
@@ -25,7 +25,7 @@ function blankNation(id: number, name: string, hex: string, isPlayer: boolean, c
   return { id, name, hex, isPlayer, code,
     gold:0, income:0, strength:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
     plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, navals:0, fleet:0, beds:0,
-    sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0, nextWave:0, mass:new Map(), waved:new Map(), hungry:0, x0:1e9, y0:1e9, x1:-1, y1:-1, wallR:0, nextWall:0, unpaid:0,
+    sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0, nextSea:0, nextWave:0, mass:new Map(), waved:new Map(), hungry:0, x0:1e9, y0:1e9, x1:-1, y1:-1, wallR:0, nextWall:0, unpaid:0,
     soldierShare:0, humanProg:0, villagers:0, soldiers:0, militia:0, called:0, wageS:0, wageM:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0,
     study:R_HOUSING, tier:[1,1,1,1,1,1], xp:[0,0,0,0,0,0], invest:0.5, gain:new Array(180).fill(0), spend:new Array(180).fill(0) };
 }
@@ -96,13 +96,15 @@ export function newWorld(seed: number, map='gen'){
     Every kingdom is a real country: the player's is `me` (by default, on a real-world map the one
     whose capital is nearest t, else one at random). On a real-world map the bots are founded at
     their countries' real capitals. */
-export function startMatch(t: number, rivals: number | string[], me?: string){
+/** Where the rivals of a game on a real map are founded: at their real capitals, at random places, or at random places that are never far from another kingdom. */
+export type Placement = 'real' | 'random' | 'near';
+export function startMatch(t: number, rivals: number | string[], me?: string, placement: Placement='real'){
   if (t<0) return false;
   const most=kingdomLimit(W.map)-1;
   if (Array.isArray(rivals)) rivals=rivals.slice(0,most); else rivals=Math.min(rivals,most);   // a full game is 64 (30 on Europe)
   const b=findBlock(t%TW,(t/TW)|0,W.map==='gen' ? 4 : 6);   // (a real capital may sit between sea and mountains)
   if (!b) return false;
-  if (W.map!=='gen') return startReal(b,rivals,me);
+  if (W.map!=='gen') return startReal(b,rivals,me,placement);
   const srand=W.srand, N=W.nations, taken: Country[]=[];
   const named=Array.isArray(rivals) ? rivals.map(c => countryByCode.get(c)).filter((k): k is Country => !!k && k.code!==me) : null;
   const add=(id: number, k: Country | undefined, player: boolean) => { k??=pickCountry(COUNTRIES,taken)!; taken.push(k); const n=makeNation(id,k,player); N.push(n); return n; };
@@ -139,12 +141,14 @@ function tellApart(N: Nation[]){
     for (const f of [0.72,1.3,0.55,1.5]){ const h=shade(N[i].hex,f); if (!clash(h)){ N[i].hex=h; break; } }
   }
 }
+/** A random place that keeps near: at most this share of the map's width from the nearest other kingdom. */
+const NEAR_FAR = 0.07;
 const shade = (hex: string, f: number) => '#'+[1,3,5].map(i => Math.max(0,Math.min(255,Math.round(parseInt(hex.slice(i,i+2),16)*f))).toString(16).padStart(2,'0')).join('');
 
 /** startMatch on a real-world map: the player founded at block b; the bots at their real capitals,
     either the countries named, or (a number of them) as far apart as the map allows, in colours
     that tell them apart. */
-function startReal(b: [number, number], rivals: number | string[], me?: string){
+function startReal(b: [number, number], rivals: number | string[], me?: string, placement: Placement='real'){
   const N=W.nations, caps=capitalsOn(W.map), cx=(b[0]+1)*4, cy=(b[1]+1)*4;
   const near=caps.slice().sort((p,q) => Math.hypot(p.tile%TW-cx,((p.tile/TW)|0)-cy)-Math.hypot(q.tile%TW-cx,((q.tile/TW)|0)-cy));
   const mine=(me ? countryByCode.get(me) : undefined) ?? near[0]?.country ?? pickCountry(COUNTRIES,[])!;
@@ -169,6 +173,26 @@ function startReal(b: [number, number], rivals: number | string[], me?: string){
         if (!findBlock(x,y,3)) continue;
         chosen.push(p); placed.push([x,y]); taken.push(p.country);
       }
+    }
+  }
+  // at random places instead of their capitals (each keeping its own country): anywhere on land with room, or never more than NEAR_FAR of the tiles from another kingdom
+  if (placement!=='real'){
+    const at: [number, number][]=[[cx,cy]], far=Math.round(TW*NEAR_FAR), minD=Math.max(18,Math.round(TW*0.012));
+    for (const c of chosen){
+      let spot=-1;
+      for (let tries=0;tries<4000 && spot<0;tries++){
+        let x: number, y: number;
+        if (placement==='near'){
+          const [px,py]=at[(W.srand()*at.length)|0], r=minD+W.srand()*(far*(1+tries/1500)-minD), a=W.srand()*Math.PI*2;
+          x=Math.round(px+Math.cos(a)*r); y=Math.round(py+Math.sin(a)*r);
+          if (x<0||y<0||x>=TW||y>=TH) continue;
+        } else { const lt=W.landTiles[(W.srand()*W.landTiles.length)|0]; x=lt%TW; y=(lt/TW)|0; }
+        if (!isLand[y*TW+x] || !findBlock(x,y,6)) continue;
+        let nearest=Infinity; for (const [px,py] of at) nearest=Math.min(nearest,Math.hypot(px-x,py-y));
+        if (nearest<minD || (placement==='near' && nearest>far*(1+tries/1500))) continue;
+        spot=y*TW+x; at.push([x,y]);
+      }
+      if (spot>=0) c.tile=spot;   // (no room found: it keeps its capital)
     }
   }
   chosen.forEach((c,i) => N.push(makeNation(i+2,c.country,false)));
@@ -257,7 +281,7 @@ export const paid = (n: Nation) => n.soldiers-n.militia+n.called;
     coin minters add to both, and what it pays its soldiers and its militia called up (a wage each). */
 export function incomeParts(n: Nation){
   let lost=0; for (let b=1;b<W.M;b++) lost+=W.occCount[n.id*W.M+b];   // (land the enemy occupies pays no tax)
-  const tax=TAX_PER_VILLAGER*n.tier[R_TAXES]*n.taxpayers, land=LAND_TAX*Math.max(0,n.tiles-lost), boost=(tax+land)*0.1*n.minters;
+  const tax=TAX_PER_VILLAGER*n.tier[R_TAXES]*n.taxpayers, land=LAND_TAX*Math.max(0,n.tiles-lost), boost=(tax+land)*MINTER_BONUS*n.minters;
   return { tax, land, boost, soldiers:n.wageS, militia:n.wageM };
 }
 export const grossIncome = (n: Nation) => { const p=incomeParts(n); return p.tax+p.land+p.boost; };

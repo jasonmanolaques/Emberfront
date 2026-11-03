@@ -20,6 +20,7 @@ export interface Nation {
   nextWar: number; nextOffer: number;   // bots: sim time before which they start no campaign, offer no peace
   mass: Map<number, { t: number; men: number }>;   // bots: the fronts they hold at the border to mass a second wave (by enemy): when, and the men left
   waved: Map<number, number>;        // bots: when the last second wave went in (by enemy)
+  nextSea: number;                   // bots: sim time before which they don't look to the sea again (sim/botsea.ts)
   nextWave: number;                  // bots: sim time before which they send no more armies to a war under way
   hungry: number;                    // bots: sim time their beggar problem began (0: none)
   x0: number; y0: number; x1: number; y1: number;   // a box round every tile it has ever held (so its borders are found without searching the whole map)
@@ -159,7 +160,7 @@ export type Command =
   | { type: 'peace'; nation: number; target: number }                 // accept the target's peace offer
   | { type: 'research'; nation: number; topic: number }               // study this topic next (R_* in research.ts)
   | { type: 'invest'; nation: number; share: number }                // city investment (0..1)
-  | { type: 'stance'; nation: number; target: number; stance: number }   // how the armies on the front against target fight: balanced, border capture, capital rush
+  | { type: 'stance'; nation: number; target: number; stance: number }   // how the armies on the front against target fight: balanced or capital rush
   | { type: 'offensive'; nation: number; target: number; go: boolean }   // attack along the front (in a crisis: go to war), or hold the front
   | { type: 'deescalate'; nation: number; target: number }            // call off the crisis our massed armies started: everyone goes home
   | { type: 'deploy'; nation: number; target: number; units?: number[]; militia?: number; isle?: number }   // put armies on the border in peace, ready for a crisis
@@ -222,7 +223,7 @@ export const W = {
   occCount: new Int32Array(1),       // [o*M+b] tiles of o's that b occupies
   lost: new Uint8Array(1),           // [o*M+b] b has occupied some of o's land in this war (cleared when o has it all back)
   ready: new Int32Array(1),          // [o*M+b] tick o's army took all its land back from b and stands ready to counter-attack (0 = not)
-  stance: new Uint8Array(1),         // [a*M+d] how a's armies fight d: balanced, border capture or capital rush (S_* in war.ts)
+  stance: new Uint8Array(1),         // [a*M+d] how a's armies fight d: balanced or capital rush (S_* in war.ts)
   offensive: new Uint8Array(1),      // [a*M+d] a's offensive against d: gathering at the border, ready, attacking or holding (F_* in war.ts)
   kills: new Int32Array(1),          // [a*M+b] people of b's that a has killed in their war (since it began)
   stall: new Int32Array(1),          // [a*M+b] ticks their war has gone without the border between them moving much (both ways)

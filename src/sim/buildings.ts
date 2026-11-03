@@ -114,13 +114,15 @@ const rect = (q: number, [w,h]: number[]) => { const out: number[]=[]; for (let 
 // plantations, quarries and copper mines: their size (pSpan) is their tier
 export const GATHERERS = [B_PLANTATION, B_QUARRY, B_COPPERMINE];
 export const isGatherer = (ty: number) => ty===B_PLANTATION || ty===B_QUARRY || ty===B_COPPERMINE;
+/** Buildings that join up with their own kind (the gatherers as far as research allows, and blacksmiths always, for looks alone). */
+const joinsUp = (ty: number) => isGatherer(ty) || ty===B_SMITHY;
 const SPANS = [[1,1],[2,1],[2,2]];
 /** [width, height] in plots of the building whose main plot is q. */
 export function dims(q: number): [number, number] {
   const ty=pType[q];
   if (ty===B_CASTLE) return [2,2];
   if (ty===B_NAVAL) return pSpan[q]===1 ? [2,4] : [4,2];
-  if (isGatherer(ty)){ const [w,h]=SPANS[pSpan[q]]; return [w,h]; }
+  if (joinsUp(ty)){ const [w,h]=SPANS[pSpan[q]]; return [w,h]; }
   return SIZE[ty] ?? [1,1];
 }
 /** The plots the building whose main plot is q covers. */
@@ -131,10 +133,10 @@ export const gatherTier = (q: number) => pSpan[q]+1;
 export const PRODUCE_TICKS = 300;   // 30 s
 export const PRODUCES: Record<number, [number, number[]]> = { [B_PLANTATION]: [0,[0,2,5,15]], [B_QUARRY]: [1,[0,2,5,15]], [B_COPPERMINE]: [2,[0,1,3,10]] };
 export const STRUCTURES: Structure[] = [
-  { type: B_FARM,     name: 'Farm',        cost: [5,2,0], info: 'Each farm brings new villagers 5% sooner, and makes the next farm 5% dearer.' },
+  { type: B_FARM,     name: 'Farm',        cost: [5,2,0], info: 'Each farm brings new villagers 3% sooner, and makes the next farm 5% dearer.' },
   { type: B_BARRACKS, name: 'Barracks',    cost: [5,5,0], info: 'Trains soldiers and houses an army of 5, with 5 armour racks. Barracks side by side join into one bigger army: four together march as one army of 20. Soldiers without room patrol the city and only defend. Click a barracks to see its army.' },
   { type: B_TOWER,    name: 'Watchtower',  cost: [2,5,1], info: 'While you are at war, shoots enemy soldiers that come near, and their villagers. Click a placed tower to call up to 5 soldiers to guard it.' },
-  { type: B_MINTER,   name: 'Coin minter', cost: [5,5,5], info: 'Raises your gold income by 10%. Each coin minter you own makes the next 10% dearer.' },
+  { type: B_MINTER,   name: 'Coin minter', cost: [5,5,5], info: 'Raises your gold income by 5%. Each coin minter you own makes the next 10% dearer.' },
   { type: B_PLANTATION, name: 'Plantation', cost: [10,0,0], info: 'Saplings growing into trees: +2 wood every 30 seconds. With resource gathering research, two side by side join (+5), then four in a square (+15). Each plantation you own makes the next 10% dearer.' },
   { type: B_QUARRY,     name: 'Stone quarry', cost: [5,10,0], info: 'A pit with a pulley hauling stone up: +2 stone every 30 seconds. With resource gathering research, two side by side join (+5), then four in a square (+15). Each quarry you own makes the next 10% dearer.' },
   { type: B_COPPERMINE, name: 'Copper mine', cost: [10,10,0], info: 'A shaft into the rock with the furnace glowing inside: +1 copper every 30 seconds. With resource gathering research, two side by side join (+3), then four in a square (+10). Each copper mine you own makes the next 10% dearer.' },
@@ -146,18 +148,19 @@ export const STRUCTURES: Structure[] = [
 export const structureOf = (type: number) => STRUCTURES.find(s => s.type===type);
 const countOf = (n: Nation, ty: number) => ty===B_PLANTATION ? n.plantations : ty===B_QUARRY ? n.quarries : n.copperMines;
 /** How much dearer each building of a kind its kingdom already has makes the next one (a share of the base price). */
-export const RISE: Record<number, number> = { [B_FARM]: 0.05, [B_MINTER]: 0.1, [B_GUILD]: 0.1, [B_PLANTATION]: 0.1, [B_QUARRY]: 0.1, [B_COPPERMINE]: 0.1 };
+export const RISE: Record<number, number> = { [B_FARM]: 0.05, [B_TOWER]: 0.05, [B_MINTER]: 0.1, [B_GUILD]: 0.1, [B_PLANTATION]: 0.1, [B_QUARRY]: 0.1, [B_COPPERMINE]: 0.1 };
 /** How many of kingdom n's buildings of `type` there are for pricing: gathering buildings count by the plots they cover (four joined are four). */
 function ownedFor(n: Nation, type: number){
   if (type===B_FARM) return n.farms;
   if (type===B_MINTER) return n.minters;
+  if (type===B_TOWER) return n.towers;
   if (type===B_GUILD) return n.guilds;
   let k=0; for (const q of n.blds) if (pType[q]===type) k+=[1,2,4][pSpan[q]] ?? 1;
   return Math.max(k,countOf(n,type));
 }
 /** What a structure costs kingdom n: the first plantation, quarry and copper mine it builds are
     free (the map has nothing to gather, so they start its stockpile), and each building of a kind it
-    owns makes the next one dearer (RISE: 5% of the base price for farms, 10% for the others). */
+    owns makes the next one dearer (RISE: 5% of the base price for farms and watchtowers, 10% for the others). */
 export function costFor(n: Nation, s: Structure): number[] {
   if (isGatherer(s.type) && countOf(n,s.type)===0) return [0,0,0];
   const rise=RISE[s.type];
@@ -259,7 +262,7 @@ export function build(n: Nation, q: number, type: number, over: Over='none'){
   if (type===B_NAVAL) pSpan[q]=orient;
   // count it right away rather than at the next census, so its effect starts now
   countUp(n,type);
-  if (isGatherer(type)) joinGatherers(n);
+  if (joinsUp(type)) joinGatherers(n);
   return true;
 }
 function countDown(n: Nation, type: number){
@@ -292,9 +295,9 @@ export function produce(){
     tier 2 two single ones of a kind side by side become one. The joined building keeps the most
     advanced of its parts' work in progress. */
 export function joinGatherers(n: Nation){
-  const top=n.tier[R_GATHER]; if (top<2) return;
   const id=n.id, mainOf=(k: number) => pType[k]===B_PART ? pMain[k] : k;
-  const kind=(k: number) => { const m=mainOf(k); return pOwner[m]===id && pBurn[m]<=0 && isGatherer(pType[m]) ? pType[m] : -1; };
+  const topFor=(ty: number) => ty===B_SMITHY ? 3 : n.tier[R_GATHER];   // (blacksmiths join up whatever is researched: they are only prettier for it)
+  const kind=(k: number) => { const m=mainOf(k); return pOwner[m]===id && pBurn[m]<=0 && joinsUp(pType[m]) ? pType[m] : -1; };
   const join=(q: number, span: number, ty: number) => {
     const cells=rect(q,SPANS[span]); let timer=0, hp=0;
     for (const k of cells){ const m=mainOf(k); timer=Math.max(timer,pTimer[m]); hp=Math.max(hp,pHp[m]); }
@@ -302,16 +305,17 @@ export function joinGatherers(n: Nation){
     pType[q]=ty; pSpan[q]=span; pTimer[q]=timer; pHp[q]=hp;
     for (const k of cells) on.plotChanged(k);
   };
+  if (n.tier[R_GATHER]<2 && !n.smithies) return;
   const plots=n.blds.slice().sort((a,b) => a-b);   // main plots, top-left first
-  if (top>=3) for (let i=0;i<plots.length;i++){
-    const q=plots[i], ty=pType[q]; if (!isGatherer(ty) || pOwner[q]!==id || pSpan[q]===2 || mainOf(q)!==q) continue;
+  for (let i=0;i<plots.length;i++){
+    const q=plots[i], ty=pType[q]; if (!joinsUp(ty) || topFor(ty)<3 || pOwner[q]!==id || pSpan[q]===2 || mainOf(q)!==q) continue;
     if (q%PW+1>=PW || ((q/PW)|0)+1>=PH) continue;
     const sq=rect(q,[2,2]);
     if (!sq.every(k => kind(k)===ty && cover(mainOf(k)).every(c => sq.includes(c)))) continue;
     join(q,2,ty);
   }
   for (let i=0;i<plots.length;i++){
-    const q=plots[i], ty=pType[q]; if (!isGatherer(ty) || pOwner[q]!==id || pSpan[q]!==0 || mainOf(q)!==q || q%PW+1>=PW) continue;
+    const q=plots[i], ty=pType[q]; if (!joinsUp(ty) || topFor(ty)<2 || pOwner[q]!==id || pSpan[q]!==0 || mainOf(q)!==q || q%PW+1>=PW) continue;
     const r=q+1; if (pType[r]!==ty || pOwner[r]!==id || pSpan[r]!==0 || pBurn[r]>0) continue;
     join(q,1,ty);
   }

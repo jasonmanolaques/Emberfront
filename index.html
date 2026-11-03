@@ -35,7 +35,7 @@
     <dl class="stats income" aria-label="Income">
       <div title="Villager tax: each housed villager pays 0.1 gold a second (0.2 and 0.3 with taxation research)"><dt>Tax</dt><dd id="meTax">+0</dd></div>
       <div title="Land you hold pays 0.0004 gold a second a tile"><dt>Land tax</dt><dd id="meLandTax">+0</dd></div>
-      <div id="meBoostRow" title="Coin minters add 10% each to the taxes" hidden><dt>Minters</dt><dd id="meBoost">+0</dd></div>
+      <div id="meBoostRow" title="Coin minters add 5% each to the taxes" hidden><dt>Minters</dt><dd id="meBoost">+0</dd></div>
       <div title="Each soldier draws 0.3 gold a second"><dt>Soldiers</dt><dd id="meSoldCost">−0</dd></div>
       <div id="meMilCostRow" title="Militia are paid 0.3 gold a second each only while called up to a front" hidden><dt>Militia</dt><dd id="meMilCost">−0</dd></div>
     </dl>
@@ -225,6 +225,7 @@
     <div class="dhead"><h2>Countries</h2><button id="nClose" class="x" aria-label="Close">×</button></div>
     <p class="dnote" id="nHint"></p>
     <div class="nbar"><input id="nSearch" type="search" placeholder="Search countries" aria-label="Search countries"><span class="tag" id="nCount"></span></div>
+    <div class="nplace" id="nPlace" role="group" aria-label="Where the rivals are founded"><span>Rivals start</span><button data-p="real" title="Each rival is founded at its real capital">At their capitals</button><button data-p="random" title="Each rival is founded at a random place on the map">Random places</button><button data-p="near" title="Each rival is founded at a random place, but never far from another kingdom, so everyone has neighbours">Random, close together</button></div>
     <div class="nquick"><button data-k="5">Nearest 5</button><button data-k="10">Nearest 10</button><button data-k="20">Nearest 20</button><button data-q="full" title="You and the rest of a full game, at random if more countries could play">Full game · 64</button><button data-q="none">None</button></div>
     <ul id="nList"></ul>
     <button id="nDone" class="primary">Done</button>

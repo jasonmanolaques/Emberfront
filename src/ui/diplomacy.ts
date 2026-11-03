@@ -9,7 +9,7 @@ import { W, pType, pOwner, pBurn } from '../sim/state';
 import { client } from '../client';
 import { basesOf, dockTile, shipById, SHIP_CAP, SHIP_WAIT } from '../sim/naval';
 import { queueCommand } from '../sim/sim';
-import { S_BALANCED, S_BORDER, S_RUSH, allied, atWar, available, callable, callableCount, allyProblem, warProblem, navalPlan, navalOf, defendProblem, reservesOf, reservesProblem, inCrisis, crisisWait, attacks, hasArmies, OFFER_TICKS, PRESENT, F_GATHER, F_READY, F_PUSH } from '../sim/war';
+import { S_BALANCED, S_RUSH, allied, atWar, available, callable, callableCount, allyProblem, warProblem, navalPlan, navalOf, defendProblem, reservesOf, reservesProblem, inCrisis, crisisWait, attacks, hasArmies, OFFER_TICKS, PRESENT, F_GATHER, F_READY, F_PUSH } from '../sim/war';
 import type { Campaign, Human } from '../sim/state';
 import { toast, ui } from './hud';
 import { ArmyPicker, armyName, baseName } from './armies';
@@ -282,7 +282,7 @@ function word(o: number, byId: Map<number, Human>){
     const nm=esc(W.nations[o].name);
     const inv=navalOf(PLAYER,o);   // a landing from the sea whose ships are not yet in
     const wait=inCrisis(PLAYER,o) ? crisisWait(PLAYER,o) : 0, secs=Math.ceil(wait/10/GAME_SPEED);
-    if (inv){
+    if (inv && !W.wars[key]){
       const lined=inv.ships.filter(id => shipById(id)?.mode===SHIP_WAIT).length;
       if (inv.stage===0) return `<button class="fword" disabled title="Your ships are sailing to a line off their coast, the armies aboard">⚓ Sailing to ${nm} · ${lined}/${inv.ships.length} ships in line</button>`;
       if (inCrisis(PLAYER,o)){
@@ -297,7 +297,7 @@ function word(o: number, byId: Map<number, Human>){
     }
     if (!W.wars[key]) return '';
     // at war: the word for every army at once; each can be set apart on the armies list
-    const all=mine.filter(c => c.front && c.naval<0).length, atk=armiesAttacking(o);
+    const all=mine.filter(c => c.front).length, atk=armiesAttacking(o);
     if (!all) return '';
     return `<div class="fwords"><button class="fword go" data-o="${o}" data-go="1" ${atk===all ? 'disabled' : ''} title="Every army on this war attacks">⚔ Attack all</button><button class="fword hold" data-o="${o}" data-go="" ${atk===0 ? 'disabled' : ''} title="Every army falls back to the closest ground of yours that no enemy tower reaches, and defends there">🛡 Defend all</button></div>`;
   }
@@ -309,18 +309,17 @@ function word(o: number, byId: Map<number, Human>){
   return '';
 }
 /** How many of our armies on the war with o attack (rather than defend). */
-const armiesAttacking = (o: number) => W.campaigns.filter(c => c.front && c.a===PLAYER && c.d===o && c.phase<2 && c.naval<0 && attacks(c)).length;
+const armiesAttacking = (o: number) => W.campaigns.filter(c => c.front && c.a===PLAYER && c.d===o && c.phase<2 && attacks(c)).length;
 const STANCE_TIPS = [
   'Balanced: the armies take the border all along the front, and bring down watchtowers as they meet them',
-  'Border capture: the armies take as much ground as they can and keep out of reach of crowded watchtowers, to lose fewer men',
   'Capital rush: the armies push straight for their capital, and bring down only the watchtowers by the way, to end the war quickly',
 ];
 /** The stance buttons under the chip, while our armies stand on the front against o: how they fight. */
 function stances(o: number){
   if (!W.campaigns.some(c => c.a===PLAYER && c.d===o && c.front && c.phase<2 && c.hostile)) return '';
   const cur=W.stance[PLAYER*W.M+o];
-  const names=['Balanced','Border capture','Capital rush'];
-  return `<div class="fstances" role="group" aria-label="How your armies fight">${[S_BALANCED,S_BORDER,S_RUSH].map(s => `<button class="fst" data-o="${o}" data-st="${s}" aria-pressed="${cur===s}" title="${esc(STANCE_TIPS[s])}">${names[s]}</button>`).join('')}</div>`;
+  const names=['Balanced','Capital rush'];
+  return `<div class="fstances" role="group" aria-label="How your armies fight">${[S_BALANCED,S_RUSH].map(s => `<button class="fst" data-o="${o}" data-st="${s}" aria-pressed="${cur===s}" title="${esc(STANCE_TIPS[s])}">${names[s]}</button>`).join('')}</div>`;
 }
 /** The militia on the war with o: call up those at home (all of them, or the rest of them when some
     went with the attack), or send them home. */

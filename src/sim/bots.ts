@@ -7,7 +7,7 @@ import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, TOPICS, M
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, togglePriority, anyWithin, isEnemyLand, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, guardsOpening, standingTower, WALL_MAX } from './fort';
-import { allied, atWar, ready, available, declare, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, frontIds, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD, setStance, S_BORDER, S_RUSH, S_BALANCED } from './war';
+import { allied, atWar, ready, available, declare, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, frontIds, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD, setStance, S_RUSH, S_BALANCED } from './war';
 
 const WALL = -1;   // a tower of the town wall, in a wishlist
 const STALE = 1800;   // ticks a war's border may stand still (3 minutes) before a bot thinks of ending it
@@ -330,13 +330,11 @@ function botWar(n: Nation){
   const want=armyShare(n), d=want-n.soldierShare;
   n.soldierShare=Math.min(1,Math.max(0,n.soldierShare+Math.max(-0.04,Math.min(0.1,d))));
   const dug=outnumbered(n);
-  // how its armies fight a front: a rush on the capital when it is far the stronger, a border capture
-  // against a land bristling with watchtowers (until it gets nowhere: then it brings them down), else balanced
+  // how its armies fight a front: a rush on the capital when it is far the stronger, else balanced
   if (W.tickN%100===id%100) for (let o=1;o<M;o++){
     if (o===id || !W.nations[o].alive || !(W.wars[id*M+o] || W.aggr[id*M+o])) continue;
     const D=W.nations[o];
-    setStance(id,o, D.towers>=8 && stalled(id,o)<STUCK ? S_BORDER :   // (a border capture that has made no headway for a minute breaks the towers instead of sitting in their fire)
-       menOn(id,o)>=defence(D)*2.2 && n.attackAt>0.6 ? S_RUSH : S_BALANCED);
+    setStance(id,o, menOn(id,o)>=defence(D)*2.2 && n.attackAt>0.6 ? S_RUSH : S_BALANCED);
   }
   for (let o=1;o<M;o++){
     if (!W.offers[o*M+id]) continue;
@@ -432,12 +430,13 @@ function botWar(n: Nation){
     const s=pool/defence(D)*(atWar(id,o) ? 1.4 : 1)*(0.8+srand()*0.4);   // an old enemy first
     if (s>bs){ bs=s; best=o; }
   }
-  if (!best) return;
+  if (!best){ if (navalAttack(n,pool,need,o => defence(W.nations[o]))) n.nextWave=W.simTime+waveGap(n); return; }   // (nobody to attack by land: a landing from the sea, if its ships can)
   // the biggest army goes first; the rest follow in waves
   const army=biggest(n); if (army<0) return;
   declare(id,best,[army]); n.nextWave=W.simTime+waveGap(n);
 }
 
+import { botSea, navalAttack } from './botsea';
 export function botThink(n: Nation){
   const srand=W.srand, M=W.M, contact=W.contact;
   n.nextThink=W.simTime+1.1+srand()*2.4;
@@ -447,6 +446,7 @@ export function botThink(n: Nation){
   if (!hungry) n.hungry=0; else if (!n.hungry) n.hungry=W.simTime;
   botBuild(n,exposed);
   botWar(n);
+  botSea(n);
   let active=0; for (const A of W.attacks) if (!A.done && A.att===n.id) active++;
   if (active>=2) return;
   // personality: how much gold it lets pile up before settling more land (little, with beggars to find room for)

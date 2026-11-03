@@ -13,8 +13,8 @@ function start(seed: number, rivals: number){
   }
   throw new Error('no spawn spot');
 }
-/** Pockets of unclaimed land (up to 400 tiles) with one kingdom's land all round them. */
-function pockets(){
+/** Pockets of unclaimed land (up to 400 tiles) with one kingdom's land all round them (`of`: only that kingdom's). */
+function pockets(of=0){
   const seen=new Uint8Array(NT), found: number[]=[];
   for (let t=0;t<NT;t++){
     if (!isLand[t] || owner[t] || seen[t]) continue;
@@ -28,7 +28,7 @@ function pockets(){
         else if (who<0) who=owner[n]; else if (who!==owner[n]) closed=false;
       }
     }
-    if (closed && who>0 && q.length<=400) found.push(q.length);
+    if (closed && who>0 && q.length<=400 && (!of || who===of)) found.push(q.length);
   }
   return found;
 }
@@ -41,7 +41,9 @@ describe('the border spreading', () => {
       const me=W.nations[1], before=me.tiles;
       for (let i=0;i<8;i++){ me.gold=300; launch(1,0,300); for (let k=0;k<400;k++) tick(); }
       expect(me.tiles).toBeGreaterThan(before+500);   // (it did spread)
-      expect(pockets().reduce((a,b) => a+b,0)).toBeLessThanOrEqual(5);   // (the front prefers ground the border has wound round, so holes fill as it goes; the odd tile may be left where the gold ran out)
+      expect(pockets(1).reduce((a,b) => a+b,0)).toBeLessThanOrEqual(3);   // (the kingdom whose border we spread)
+      expect(pockets().reduce((a,b) => a+b,0)).toBeLessThanOrEqual(30);   // (and the bots', which spread by their own moods and gold: a few holes now and then, never a lot)
+      //   (the front prefers ground the border has wound round, so holes fill as it goes; the odd tile may be left where the gold ran out)
     }
   });
 });

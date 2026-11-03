@@ -3,7 +3,7 @@
    capital is on it). Click one to play it; tick the ones you will face. On a real-world map
    everyone, you included, is founded at their real capital. Quick picks choose the nearest
    capitals to yours (at random on a generated map), all of them, or none. */
-import { TW, kingdomLimit } from '../core/constants';
+import { TW, kingdomLimit, isEurope } from '../core/constants';
 import { COUNTRIES, MAJOR, countryByCode } from '../core/countries';
 import { W } from '../sim/state';
 import { capitalsOn } from '../sim/realmap';
@@ -50,7 +50,7 @@ export function fitChoice(){
     client.me=pool[(Math.random()*pool.length)|0].country.code;
   }
   client.rivals=client.rivals.filter(c => codes.has(c) && c!==client.me);
-  if (!saved) client.rivals = W.map==='europe' ? quick('full') : quick('near',9);
+  if (!saved) client.rivals = isEurope(W.map) ? quick('full') : quick('near',9);
   keep();
   summary();
 }
@@ -86,10 +86,12 @@ function render(){
   $('nHint').textContent = real()
     ? 'Click a country to play it: you start at its real capital. Tick the countries you will face: each is founded at its own capital.'
     : 'Click a country to play it: you choose where to found it. Tick the countries you will face: they are founded around the map.';
+  $('nPlace').hidden=!real();
+  for (const b of $('nPlace').querySelectorAll<HTMLButtonElement>('button')) b.setAttribute('aria-pressed',String(b.dataset.p===client.placement));
   for (const b of win.querySelectorAll<HTMLButtonElement>('.nquick button[data-k]')) b.textContent=`${real() ? 'Nearest' : 'Random'} ${b.dataset.k}`;
   const full=win.querySelector<HTMLButtonElement>('.nquick button[data-q="full"]')!, n=Math.min(maxKingdoms(), available().length);
-  full.textContent = W.map==='europe' ? `Random ${n-1}` : n<maxKingdoms() ? `All · ${n}` : `Full game · ${maxKingdoms()}`;
-  full.title = W.map==='europe' ? `${n} kingdoms: you and ${n-1} rivals drawn at random from the other countries; a fresh draw for each game unless you choose your own` : `${maxKingdoms()} kingdoms: you and ${maxKingdoms()-1} rivals, at random if more countries could play`;
+  full.textContent = isEurope(W.map) ? `Random ${n-1}` : n<maxKingdoms() ? `All · ${n}` : `Full game · ${maxKingdoms()}`;
+  full.title = isEurope(W.map) ? `${n} kingdoms: you and ${n-1} rivals drawn at random from the other countries; a fresh draw for each game unless you choose your own` : `${maxKingdoms()} kingdoms: you and ${maxKingdoms()-1} rivals, at random if more countries could play`;
 }
 
 list.addEventListener('click', e => {
@@ -110,6 +112,7 @@ win.querySelector('.nquick')!.addEventListener('click', e => {
   keep(!!b.dataset.k);   // (a random draw stays a random draw: it is made afresh for each game)
   render();
 });
+$('nPlace').addEventListener('click', e => { const b=(e.target as HTMLElement).closest('button') as HTMLButtonElement | null; if (!b) return; client.placement=b.dataset.p as typeof client.placement; render(); });
 $('nDone').addEventListener('click', closeNations);
 $('nClose').addEventListener('click', closeNations);
 $('pickCountry').addEventListener('click', openNations);

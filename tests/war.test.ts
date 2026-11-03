@@ -11,11 +11,12 @@ import { build, plotProblem, structureOf, costFor, togglePriority, finishHouse }
 import { indoors, H_SOLDIER, H_VILLAGER, TASK_REST, TASK_TO_TRAIN, TASK_INSIDE, MILITIA_HP, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, frontOf, switching, pace, maxHp } from '../src/sim/population';
 import { UNIT_SIZE, buildUnits, station, unitAt, SOLDIER_DMG } from '../src/sim/army';
 import { wallOf, walledFor, buildWalls } from '../src/sim/defense';
-import { callable, partner, S_BALANCED, S_BORDER, S_RUSH, setStance, allied, atWar, available, ready, declare, warProblem, mayStand, endWar, makePeace, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
+import { callable, partner, S_BALANCED, S_RUSH, setStance, allied, atWar, available, ready, declare, warProblem, mayStand, endWar, makePeace, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
   RANKS, rankFor, CRISIS_TICKS, frontKey, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, defendProblem, reservesOf, reservesProblem, menOn, deployArmies, armyOrder, armyFront, armyRecall, frontIsles, occOn, attacks, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, frontLines, marchPace, INVADE_SLOW, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
 import { navalPlan, declareNaval, navalOf, landingOn } from '../src/sim/war';
+import { botSea, navalAttack, seaDrive } from '../src/sim/botsea';
 import { basesOf, labelWorld, allocIsles, landingZone, SHIP_CAP, SHIP_FRONT, INV_SAIL, INV_READY, INV_LAND, INV_DONE, shipById } from '../src/sim/naval';
-import { navalSite } from '../src/sim/buildings';
+import { navalSite, cover } from '../src/sim/buildings';
 import { sea } from '../src/sim/state';
 import { MIN_GAP, RANK_GAP, A_OFF, holds, freeOf, underCastle, lineOf, castleCutOff } from '../src/sim/front';
 import { beggarProblem, stuck, warChest, botThink } from '../src/sim/bots';
@@ -1116,23 +1117,6 @@ describe('stances', () => {
     expect(rush.near).toBeLessThan(bal.near-10);       // closer to the capital
     expect(rush.took.length).toBeLessThan(bal.took.length);   // for less ground
   });
-  it('border capture: keeps out of the reach of massed watchtowers, and still takes ground where there are none', () => {
-    const mass=(far: boolean) => () => {   // four watchtowers together, on the ground of theirs nearest our capital (or the farthest from it)
-      const c=N(1).capTile, d=(q: number) => (((q%PW)*4+2-c%TW)**2+(((q/PW)|0)*4+2-((c/TW)|0))**2)*(far ? -1 : 1);
-      for (let k=0;k<4;k++){
-        const q=Array.from({ length: NP }, (_, i) => i).filter(i => !plotProblem(N(2),i)).sort((a,b) => d(a)-d(b))[0];
-        N(2).stock=[50,50,50]; build(N(2),q,B_TOWER); TQ.push(q);
-      }
-    };
-    const TQ: number[]=[];   // (the towers as they were placed: a balanced front brings them down)
-    const inReach=(t: number) => TQ.some(q => Math.hypot((t%TW)-((q%PW)*8+4)/2, ((t/TW)|0)-(((q/PW)|0)*8+4)/2)<=20);
-    const bal=fight(S_BALANCED,mass(false),500); const balIn=bal.took.filter(inReach).length;
-    TQ.length=0; const bor=fight(S_BORDER,mass(false),500);
-    expect(balIn).toBeGreaterThan(0);                              // a balanced front goes straight in
-    expect(bor.took.filter(inReach).length).toBe(0);               // a border capture won't
-    const away=fight(S_BORDER,mass(true),500);
-    expect(away.took.length).toBeGreaterThan(50);                  // with the towers elsewhere, it takes the border as ever
-  });
 });
 
 describe('bots going to war', () => {
@@ -1464,6 +1448,35 @@ describe('naval invasions', () => {
   const aboard = () => W.humans.filter(h => h.o===1 && h.boat>=0);
   const seaOf = (s: { x: number; y: number }) => isLand[((s.y/2)|0)*TW+((s.x/2)|0)];
 
+  it('a bot with no room left on the mainland builds a harbour and ships, and sends a landing at a kingdom it has no border with, giving the word itself', () => {
+    const { base }=seaWorld(20,5);
+    const n=N(1); n.isPlayer=false; n.expandAt=0.8; n.attackAt=0.8; n.fleet=0;
+    // (its harbour stands already: it builds ships, and a landing, by its temper)
+    W.contact[1*W.M]=0;                                  // nothing unclaimed touches its land: the sea is all it has
+    expect(seaDrive(n)).toBeGreaterThan(0.6);
+    for (let i=0;i<60 && n.fleet+(W.docks.get(base)?.queued ?? 0)<3;i++){ n.nextSea=0; n.homeless=0; botSea(n); }
+    expect(n.fleet+(W.docks.get(base)?.queued ?? 0)).toBeGreaterThanOrEqual(2);   // ships ordered
+    n.fleet=6;
+    W.contact[1*W.M+2]=W.contact[2*W.M+1]=0;
+    expect(navalAttack(n,20,0.5,() => 5)).toBe(true);   // a landing, as it is stronger than what stands against it
+    expect(W.invasions).toHaveLength(1);
+    until(() => W.wars[1*W.M+2]>0, 6000);                // the word, after the crisis's thirty seconds: given by the bot
+    run(30);
+    expect(W.invasions.length===0 || W.invasions[0].stage>=INV_LAND).toBe(true);
+  });
+
+  it('a bot builds a naval base of its own when the sea is all the room it has left', () => {
+    seaWorld(10,5);
+    const n=N(1); n.isPlayer=false; n.expandAt=0.8; n.attackAt=0.8; n.stock=[200,200,200];
+    for (const q of basesOf(n)) for (const k of cover(q)){ pType[k]=0; pOwner[k]=0; }
+    place(n,B_FARM); census();
+    expect(basesOf(n)).toHaveLength(0);
+    W.contact[1*W.M]=0;
+    n.stock=[200,200,200];
+    for (let i=0;i<200 && !basesOf(n).length;i++){ n.nextSea=0; n.homeless=0; botSea(n); }
+    expect(basesOf(n).length).toBeGreaterThan(0);
+  });
+
   it('plans a landing a tile a man along the coast, the ships in rows of as many as the coast holds, 5 men a ship', () => {
     const { base, coast }=seaWorld(20);
     const plan=navalPlan(1,2,10,base,coast);
@@ -1735,7 +1748,7 @@ describe('army orders', () => {
 describe('two fronts', () => {
   /** 1 and 2 meet on the mainland (west and east of a line) and on an island in a sea off 1's west coast (the island's west half is 1's, its
       east half 2's). 1 has a naval base on that coast, a fleet of 3, and two barracks of 5 on the mainland. */
-  function twoFronts(){
+  function twoFronts(bridge=false){
     world(1); quiet(); paintDisc(N(1),14);
     const [ax,ay]=[N(1).capTile%TW,(N(1).capTile/TW)|0], [bx,by]=[N(2).capTile%TW,(N(2).capTile/TW)|0];
     const mx=(ax+bx)/2, my=(ay+by)/2, x0=Math.round(mx-100), x1=Math.round(mx+100), y0=Math.round(my-60), y1=Math.round(my+60);
@@ -1743,6 +1756,10 @@ describe('two fronts', () => {
     const yA=y0+40, yB=yA+22, X1=x0-30, X0=X1-30;   // the island: 30 by 22 tiles
     for (let y=yA-6;y<yB+6;y++) for (let x=X0-6;x<x0+6;x++){ const t=y*TW+x; isLand[t]=0; terr[t]=T_WATER; if (owner[t]) setOwner(t,0); }
     for (let y=yA;y<yB;y++) for (let x=X0;x<X1;x++){ const t=y*TW+x; isLand[t]=1; terr[t]=T_GRASS; setOwner(t, x<X0+15 ? 1 : 2); }
+    if (bridge){   // a thin land bridge round the north of the sea: the island is joined to the mainland, the long way
+      for (let x=X0+2;x<x0+6;x++){ const t=(yA-6)*TW+x; isLand[t]=1; terr[t]=T_GRASS; }
+      for (let y=yA-6;y<yA;y++){ const t=y*TW+X0+2; isLand[t]=1; terr[t]=T_GRASS; }
+    }
     for (let q=0;q<NP;q++){ const c=(((q/PW)|0)*4+2)*TW+(q%PW)*4+2; pBuild[q]=isLand[c] ? 1 : 0; }
     labelWorld(); census(); allocIsles();
     let base=-1, bd=Infinity;
@@ -1797,6 +1814,63 @@ describe('two fronts', () => {
     expect(ci.phase).toBe(2);
     expect(ci.why).toBe('done');
     expect(cm.phase).toBe(1);                                       // the other front is still being fought
+  });
+
+  it('a landing from the sea waits for the order to attack and holds nothing else up: the army pushing by land goes on while the ships sail', () => {
+    const { a, b, main, island, base }=twoFronts();
+    expect(declare(1,2,[a],0,main)).toBe(true);
+    until(() => W.offensive[1*W.M+2]===F_READY, 3000);
+    W.crisisAt[1*W.M+2]-=CRISIS_TICKS; expect(escalate(1,2)).toBe(true); run(3);
+    // the coast of theirs on the island
+    const wet=(t: number) => !isLand[t-1] || !isLand[t+1] || !isLand[t-TW] || !isLand[t+TW];
+    const coast=Array.from({ length: NT }, (_, t) => t).find(t => owner[t]===2 && isle[t]===island && isLand[t] && wet(t))!;
+    expect(declareNaval(1,2,[b],base,coast)).toBe(true);
+    const camp=W.campaigns.find(c => c.naval>=0)!;
+    expect(armyOrder(1,camp.id,false)).toBe(true);           // told to defend: it will wait off the coast
+    const taken=() => W.occCount[2*W.M+1];
+    const at0=taken();
+    until(() => W.invasions.every(i => i.stage>=INV_READY), 3000);
+    const atReady=taken();
+    expect(atReady).toBeGreaterThan(at0);                      // the land army went on pushing while the ships sailed
+    run(300);
+    expect(W.invasions[0].stage).toBe(INV_READY);              // told to defend, the ships stay off the coast
+    expect(taken()).toBeGreaterThan(atReady);                  // ...though the other army is at it
+    expect(armyOrder(1,camp.id,true)).toBe(true);
+    run(5);
+    expect(W.invasions.length===0 || W.invasions[0].stage>=INV_LAND).toBe(true);   // told to attack, it lands at once
+  });
+
+  it('an army with a long way to march takes the base\'s boat when the sea is quicker: no ship of the fleet, and it arrives sooner', () => {
+    const { b, island, X0 }=twoFronts(true);
+    for (let t=0;t<NT;t++) if (owner[t]===2 && (t%TW)>X0+40) setOwner(t,0);   // (all of theirs but the island: the only border is across the sea)
+    census(); run(25);
+    const fleet=N(1).fleet;
+    expect(deployArmies(1,2,[b],0,island)).toBe(1);
+    const [c]=W.campaigns;
+    let boat=0, arrived=-1;
+    for (let i=0;i<4000 && arrived<0;i++){
+      tick();
+      if (W.ships.some(sh => sh.convoy===c.id && !sh.fleet)) boat++;
+      const men=c.members.map(id => W.humans.find(h => h.id===id)!);
+      if (men.every(h => h.fk>=0 && Math.hypot(h.x-h.fx,h.y-h.fy)<=PRESENT*3)) arrived=i;
+    }
+    expect(boat).toBeGreaterThan(0);                 // a boat of the base took them
+    expect(N(1).fleet).toBe(fleet);                  // the fleet was not touched
+    expect(arrived).toBeGreaterThan(0);
+    // on foot only, with no base to sail from, the same march takes much longer
+    const withBoat=arrived;
+    const { b: b2, island: i2, base, X0: x02 }=twoFronts(true);
+    for (let t=0;t<NT;t++) if (owner[t]===2 && (t%TW)>x02+40) setOwner(t,0);
+    run(25);
+    pType[base]=0; pOwner[base]=0; census();         // (no naval base)
+    expect(deployArmies(1,2,[b2],0,i2)).toBe(1);
+    const [c2]=W.campaigns; let foot=-1;
+    for (let i=0;i<8000 && foot<0;i++){
+      tick();
+      const men=c2.members.map(id => W.humans.find(h => h.id===id)!);
+      if (men.every(h => h.fk>=0 && Math.hypot(h.x-h.fx,h.y-h.fy)<=PRESENT*3)) foot=i;
+    }
+    expect(foot).toBeGreaterThan(withBoat*1.2);
   });
 
   it('the army on the island is reinforced by new soldiers sailing out: a ship leaves only when it holds 5', () => {
@@ -1905,6 +1979,61 @@ describe('what armies cost, and where they stand', () => {
   });
 });
 
+describe('marching to a border before war', () => {
+  it('an army on its way to the border of a kingdom (in a crisis, or deployed in peace) never sets foot on that kingdom\'s land', () => {
+    split(25);
+    soldiers(N(1),30); noDraft(); noDraft(2);
+    expect(declare(1,2,30)).toBe(true);
+    let onTheirs=0;
+    for (let i=0;i<900;i++){
+      tick();
+      for (const h of W.humans) if (h.o===1 && h.war>=0 && h.kind===H_SOLDIER){ const t=((h.y/2)|0)*TW+((h.x/2)|0); if (owner[t]===2 && !occ[t]) onTheirs++; }
+    }
+    expect(W.wars[1*W.M+2]).toBe(0);                 // (still no war: only a crisis)
+    expect(onTheirs).toBe(0);
+  });
+  it('a villager on his way to build himself a home is not turned beggar by the minute', () => {
+    world(1); quiet(); paintDisc(N(1),14);
+    const v=W.humans.find(h => h.o===1 && h.kind===H_VILLAGER) ?? makeHuman(N(1),H_VILLAGER,N(1).capTile%TW*2,((N(1).capTile/TW)|0)*2);
+    if (!W.humans.includes(v)) W.humans.push(v);
+    N(1).beds=0; N(1).houses=0;
+    v.home=5; v.housed=false; v.homeless=800;   // (on his way to a site: a minute and more homeless)
+    tick();
+    expect(v.beggar).toBe(false);
+    v.home=-1; v.homeless=800; v.beggar=false; N(1).beds=0;
+    tick();
+    expect(v.beggar).toBe(true);     // with no home to build, the minute counts
+  });
+});
+
+describe('occupation leaves no pockets', () => {
+  it('a defender who gets in behind the occupied zone frees nothing round him: ground is freed only from the edge in', () => {
+    world(1); quiet(); paintDisc(N(2),24);
+    W.contact[1*W.M+2]=W.contact[2*W.M+1]=1;
+    const men=soldiers(N(2),3); noDraft(); noDraft(2); run(1);
+    expect(declare(2,1,3)).toBe(true);
+    const cx=N(2).capTile%TW, cy=(N(2).capTile/TW)|0, R=10;
+    const ring=(t: number) => Math.hypot((t%TW)-cx,((t/TW)|0)-cy)<=R && !underCastle(2,t);
+    for (let t=0;t<NT;t++) if (owner[t]===2 && ring(t)) occupyHack(t,1);
+    const before=W.occCount[2*W.M+1];
+    // the men stand in the middle of the zone (put back each tick: they would march off)
+    for (let i=0;i<60;i++){ for (const h of men){ h.x=(cx+6)*2; h.y=cy*2; } tick(); }
+    // pockets: free ground of theirs in the zone joined neither to the castle's ground nor to the free land outside it
+    const free=(t: number) => owner[t]===2 && !occ[t], seenP=new Set<number>(); let pockets=0;
+    for (let t0=0;t0<NT;t0++){
+      if (!free(t0) || seenP.has(t0) || Math.hypot((t0%TW)-cx,((t0/TW)|0)-cy)>R+3) continue;
+      const comp=[t0]; seenP.add(t0); let linked=false;
+      for (let i=0;i<comp.length;i++){
+        const t=comp[i]; if (underCastle(2,t) || Math.hypot((t%TW)-cx,((t/TW)|0)-cy)>R+1) linked=true;
+        for (const n of [t-1,t+1,t-TW,t+TW]) if (free(n) && !seenP.has(n)){ seenP.add(n); comp.push(n); }
+      }
+      if (!linked) pockets++;
+    }
+    expect(pockets).toBe(0);
+    expect(W.occCount[2*W.M+1]).toBeLessThanOrEqual(before);
+  });
+});
+
 describe('shortcuts that keep the late game fast', () => {
   it('a front\'s line is kept while nothing changes, and worked out again at once when land is occupied', () => {
     world(1); quiet(); paintDisc(N(2),40); paintToward(1,2); place(N(2),B_FARM);
@@ -1932,3 +2061,5 @@ describe('shortcuts that keep the late game fast', () => {
     run(20); expect(N(1).farms).toBeGreaterThan(0);            // (left to the ticks, it is counted within a pass or two)
   });
 });
+
+

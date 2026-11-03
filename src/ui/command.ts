@@ -7,7 +7,7 @@
 import { K, PLAYER, TW, GAME_SPEED } from '../core/constants';
 import { W, type Campaign } from '../sim/state';
 import { queueCommand } from '../sim/sim';
-import { F_GATHER, freeArmy, attacks, inCrisis, crisisWait, navalOf, frontInfo, occOn, callable, callableCount, allied, warProblem } from '../sim/war';
+import { F_GATHER, freeArmy, attacks, inCrisis, crisisWait, aboardOf, frontInfo, occOn, callable, callableCount, allied, warProblem } from '../sim/war';
 import { units, unitAt } from '../sim/army';
 import { client } from '../client';
 import { cam } from '../render/camera';
@@ -62,7 +62,10 @@ function status(key: number){
     const u=unitAt(key); return u ? `At home · ${u.home}/${u.cap}` : '';
   }
   const foe=nm(c.d), M=W.M, pair=c.a*M+c.d, men=c.members.length;
-  if (c.naval>=0 && navalOf(c.a,c.d)) return `${men} men · sailing to ${foe}`;
+  if (aboardOf(c)){
+    if (W.wars[pair]) return `${men} men · ${attacks(c) ? 'landing on' : 'off the coast of'} ${foe}${attacks(c) ? '' : ', waiting for the order to attack'}`;
+    return `${men} men · sailing to ${foe}`;
+  }
   if (W.wars[pair]){
     if (attacks(c)) return `${men} men · ${occOn(c.a,c.d,c.isle)>0 ? 'retaking your land' : 'attacking '+foe}`;
     return `${men} men · defending against ${foe}`;

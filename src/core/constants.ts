@@ -35,6 +35,7 @@ export const isStructure = (ty: number) => ty===B_HOUSE || ty===B_FARM || ty===B
 /* ---------- economy ---------- */
 export const GOLD_START = 250;            // gold each kingdom starts with
 export const GOODS_START = [10, 10, 10];  // wood, stone and copper each kingdom starts with
+export const MINTER_BONUS = 0.05;         // each coin minter adds this share to the taxes
 export const WAGE = 0.3;                  // gold a second each soldier is paid on a border (deployed in peace, or defending at war)
 export const WAGE_IDLE = 0.22;            // ...idle in his barracks or about the town (a low-maintenance rate)
 export const WAGE_ATTACK = 0.4;           // ...on the offensive
@@ -51,7 +52,10 @@ export const STR_TILE = 1, STR_VILLAGER = 50, STR_SOLDIER = 100, STR_GOLD = 3;
 
 export const PLAYER = 1;                  // nation id of the local player
 export const MAX_KINGDOMS = 64;           // kingdoms in one game at most, the player's included (a full game)
-export const EUROPE_KINGDOMS = 30;        // ...on the Europe map: you and 29 rivals picked at random from the other countries, a size the late game runs smoothly at
+export const EUROPE_KINGDOMS = 24;        // ...on the Europe map: you and 23 rivals picked at random from the other countries, a size the late game runs smoothly at
 /** The most kingdoms a game on that map holds. */
-export const kingdomLimit = (map: string | null | undefined) => map==='europe' ? EUROPE_KINGDOMS : MAX_KINGDOMS;
+export const EUROPE_S_KINGDOMS = 16;      // ...and on the small Europe (two thirds the size in each direction)
+export const kingdomLimit = (map: string | null | undefined) => map==='europe' ? EUROPE_KINGDOMS : map==='europe-s' ? EUROPE_S_KINGDOMS : MAX_KINGDOMS;
+/** Is this one of the Europe maps (their rivals are drawn at random, a limited number of them)? */
+export const isEurope = (map: string | null | undefined) => map==='europe' || map==='europe-s';
 export const PLAYER_COL = '#ffd23f';     // the player's highlight (kingdoms take their colours from their flags: core/countries.ts)

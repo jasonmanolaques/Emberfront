@@ -1,6 +1,6 @@
 // Goods: nothing lies on the map to gather, the gathering buildings make it all, the first of each free.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_FARM, B_MINTER, B_GUILD } from '../src/core/constants';
+import { TW, TH, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_FARM, B_TOWER, B_MINTER, B_GUILD } from '../src/core/constants';
 import { W, pType } from '../src/sim/state';
 import { newWorld, startMatch, tick } from '../src/sim/sim';
 import { build, placeProblem, structureOf, costFor, canAfford, RISE } from '../src/sim/buildings';
@@ -61,5 +61,7 @@ describe('goods with nothing on the map to gather', () => {
     me().minters=5; me().guilds=3;
     expect(costFor(me(),structureOf(B_MINTER)!)).toEqual(structureOf(B_MINTER)!.cost.map(c => Math.ceil(c*1.5-1e-9)));
     expect(costFor(me(),structureOf(B_GUILD)!)).toEqual(structureOf(B_GUILD)!.cost.map(c => Math.ceil(c*1.3-1e-9)));
+    me().towers=0; expect(costFor(me(),structureOf(B_TOWER)!)).toEqual(structureOf(B_TOWER)!.cost);   // each watchtower makes the next 5% dearer
+    me().towers=10; expect(costFor(me(),structureOf(B_TOWER)!)).toEqual(structureOf(B_TOWER)!.cost.map(c => c ? Math.ceil(c*1.5-1e-9) : 0));
   });
 });
