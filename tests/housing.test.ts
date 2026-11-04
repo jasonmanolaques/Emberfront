@@ -3,8 +3,8 @@ import { describe, it, expect } from 'vitest';
 import { TW, TH, NT, NP, PW, B_HOUSE, B_SITE, B_EMPTY, B_MINTER, TAX_PER_VILLAGER, LAND_TAX } from '../src/core/constants';
 import { W, owner, isLand, pType, pOwner, pAband, pCenter, pBuild } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
-import { build, plotProblem } from '../src/sim/buildings';
-import { H_VILLAGER, H_SOLDIER, TASK_ROAM, TASK_HOME_GO, TASK_HOME_BUILD, BUILD_TICKS, ABANDON_TICKS, BEG_TICKS, STARVE_TICKS } from '../src/sim/population';
+import { build, plotProblem, cancelSite } from '../src/sim/buildings';
+import { humanRate, HOUSE_BONUS, FARM_BONUS, HUMAN_EVERY, H_VILLAGER, H_SOLDIER, TASK_ROAM, TASK_HOME_GO, TASK_HOME_BUILD, BUILD_TICKS, ABANDON_TICKS, BEG_TICKS, STARVE_TICKS } from '../src/sim/population';
 import { listen } from '../src/sim/events';
 import { B_BARRACKS } from '../src/core/constants';
 
@@ -65,6 +65,7 @@ describe('building homes', () => {
 
   it('keeps one house per person as the kingdom grows', () => {
     start(987654321, 0); expand(12); run(6000);
+    until(() => me().houses+building().length===mine().length, 600);   // (a newcomer takes a moment to choose his site)
     const people=mine().length, b=building().length, n=me();
     expect(people).toBeGreaterThan(25);
     expect(n.houses + b).toBe(people);
@@ -89,6 +90,7 @@ describe('building homes', () => {
   it('counts soldiers as people who need a home too', () => {
     start(12345, 0); expand(6);
     run(1200);
+    until(() => me().houses+building().length===mine().length, 600);
     expect(me().houses + building().length).toBe(mine().length);
     void H_SOLDIER;
   });
@@ -160,7 +162,8 @@ describe('homeless people and beggars', () => {
     const hs=houses(); for (const q of hs.slice(-2)){ pType[q]=B_EMPTY; pOwner[q]=0; }
     me().houses-=2; me().beds-=2;
     for (const h of mine()) h.homeless=0;   // (the newest may have waited a while for a house already)
-    tick();
+    for (const h of mine()) if (h.home>=0){ cancelSite(h.home); h.home=-1; h.task=TASK_ROAM; }   // (nobody is still on his way to a site)
+    tick(); tick();
   }
 
   it('leaves the newest arrivals homeless, and they pay no tax', () => {
@@ -224,5 +227,26 @@ describe('homeless people and beggars', () => {
     expect(b.housed).toBe(true);
     expect(b.beggar).toBe(false);
     expect(b.sp).toBeGreaterThan(1);
+  });
+});
+
+describe('houses speed up the raising of people', () => {
+  it('raises humans 1% faster for each bed the houses hold, on top of the farms: a kingdom that lost many people recovers quickly', () => {
+    start(12345, 0);
+    expect(HOUSE_BONUS).toBe(0.01);
+    me().farms=0; me().beds=0; expect(humanRate(me())).toBe(1);
+    me().beds=40; expect(humanRate(me())).toBeCloseTo(1.4,9);
+    me().farms=10; expect(humanRate(me())).toBeCloseTo(1+FARM_BONUS*10+0.4,9);
+    // in play: a bigger house count means the next human comes sooner
+    const next = (beds: number) => { start(12345,0); me().beds=beds; me().farms=0; me().humanProg=0; let t=0; while (me().humanProg<HUMAN_EVERY && t<5000){ me().beds=beds; const was=me().humanProg; me().humanProg=was; tick(); t++; if (me().humanProg<was) break; } return t; };
+    expect(next(100)).toBeLessThan(next(0)*0.7);
+  });
+
+  it('counts the capacity of every house standing, empty ones too, and a better house adds to it (the builders guild)', () => {
+    start(12345, 0); expand(8); run(3000);
+    const hs=houses(); expect(hs.length).toBeGreaterThan(0);
+    const beds=me().beds;
+    expect(beds).toBeGreaterThanOrEqual(hs.length);
+    expect(humanRate(me())).toBeGreaterThan(1+HOUSE_BONUS*(beds-1));
   });
 });

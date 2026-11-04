@@ -65,6 +65,9 @@ export const TASK_ROAM = 0,      // between jobs: villagers think or stroll betw
              TASK_BOAT = 17;         // a soldier of a naval invasion aboard a ship (out of sight), or on his way home by sea
 export const HUMAN_EVERY = 200;  // progress per new human: 200 ticks (20 s), each farm adds 3% speed
 export const FARM_BONUS = 0.03;
+export const HOUSE_BONUS = 0.01;   // villager generation 1% faster for each bed the kingdom's houses hold: a kingdom that has lost many people recovers quickly
+/** How fast kingdom n's capital raises humans: 1 a tick, and a bonus for each farm and for each bed in its houses. */
+export const humanRate = (n: Nation) => 1+FARM_BONUS*n.farms+HOUSE_BONUS*n.beds;
 const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 s)
 const PATROL_R = 36;             // pixels around the capital door soldiers patrol when there is no barracks
 export const HOME_PACE = 1.15;   // soldiers on their own kingdom's land move 15% faster
@@ -790,7 +793,7 @@ export function updatePopulation(){
     if (W.tickN%10===3) upkeepHouses(n, mine.length);
     house(n, mine);
     const barracks=barracksOf(n);
-    if (n.capTile>=0 && (n.humanProg+=1+FARM_BONUS*n.farms)>=HUMAN_EVERY){
+    if (n.capTile>=0 && (n.humanProg+=humanRate(n))>=HUMAN_EVERY){
       n.humanProg-=HUMAN_EVERY;
       // newcomers fill the ranks first while the kingdom is short of soldiers (if it has a barracks):
       // a soldier while a barracks has room the militia aren't taking, else (or with no barracks) a militiaman

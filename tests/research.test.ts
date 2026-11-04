@@ -144,7 +144,8 @@ describe('house tiers and the builders guild', () => {
     const b=mine().find(h => h.work===g)!; b.hp=0; run(1);
     expect(pTimer[g]).toBeGreaterThan(0);
     run(REHIRE_TICKS-5); expect(mine().filter(h => h.work===g)).toHaveLength(0);
-    run(10); expect(mine().filter(h => h.work===g)).toHaveLength(1);
+    until(() => mine().filter(h => h.work===g).length===1, 2000);   // (as soon as a villager is free to take it)
+    expect(mine().filter(h => h.work===g)).toHaveLength(1);
   });
 });
 

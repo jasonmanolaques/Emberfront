@@ -7,7 +7,7 @@ import { declare, escalate } from '../src/sim/war';
 import { listen } from '../src/sim/events';
 import { setOwner, tileCost } from '../src/sim/territory';
 import { STRUCTURES, structureOf, costFor, build, buildBlock, blockPlan, blockPlots, plotProblem, placeProblem } from '../src/sim/buildings';
-import { HUMAN_EVERY as E, H_SOLDIER, H_VILLAGER, SOLDIER_HP, frontOf, doorOf, switching, makeHuman } from '../src/sim/population';
+import { humanRate, HUMAN_EVERY as E, H_SOLDIER, H_VILLAGER, SOLDIER_HP, frontOf, doorOf, switching, makeHuman } from '../src/sim/population';
 
 const me = () => W.nations[1];
 const mine = () => W.humans.filter(h => h.o === 1);
@@ -136,9 +136,10 @@ describe('what the buildings do', () => {
     start(12345, 0); expand(3);
     const plots=freePlots();
     for (let k=0;k<4;k++) place(B_FARM, plots[k]);
-    const before=mine().length, t0=W.tickN, p0=me().humanProg;
+    const before=mine().length, t0=W.tickN, p0=me().humanProg, rate=humanRate(me());   // (4 farms: 12% faster, and 1% for each bed)
+    expect(rate).toBeCloseTo(1.12+0.01*me().beds,9);
     run(10*E);
-    expect(mine().length-before).toBe(Math.floor((p0+10*E*1.12)/E) - Math.floor(p0/E));   // 4 farms: 12% faster
+    expect(Math.abs((mine().length-before) - (Math.floor((p0+10*E*rate)/E) - Math.floor(p0/E)))).toBeLessThanOrEqual(1);   // (houses finished meanwhile speed it up a little)
     expect(W.tickN-t0).toBe(10*E);
   });
 
