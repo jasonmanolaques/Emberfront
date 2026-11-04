@@ -3,7 +3,8 @@ import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION
 import type { Nation } from '../sim/state';
 import { W, owner, pType, pOwner, pPrio, pMain } from '../sim/state';
 import { R_HOUSING, R_INFANTRY } from '../sim/research';
-import { TASK_FORGE } from '../sim/population';
+import { TASK_FORGE, improvements } from '../sim/population';
+import { units, armorWanted } from '../sim/army';
 import { openResearch } from './research';
 import { openArmy } from './army';
 import { openNaval, closeNaval } from './naval';
@@ -154,13 +155,15 @@ export function clickOwnBuilding(t: number){
     const b=W.humans.find(h => h.work===q);
     toast(!b ? 'The blacksmith waits for a villager to take up the hammer' : me.tier[R_INFANTRY]<2 ? 'Your smith waits: research infantry to forge armour'
       : b.load>=2 ? 'Your smith carries armour to the barracks' : b.load===1 || b.task===TASK_FORGE ? 'Your smith is forging armour'
-      : me.stock[2]<1 ? 'Your smith needs copper from the castle' : b.make ? 'Your smith fetches copper from the castle' : 'Every armour rack is filled');
+      : me.stock[2]<1 ? 'Your smith needs copper from the castle' : b.make ? 'Your smith fetches copper from the castle'
+      : (units[PLAYER] ?? []).some(u => armorWanted(me,u,[0,0,0,0])) ? 'Your smith waits: no way over your own land to a barracks that wants armour' : 'Every armour rack is filled');
     return true;
   }
   if (pType[q]===B_GUILD){
     const b=W.humans.find(h => h.work===q);
     toast(!b ? 'The guild waits for a villager to take up the tools' : me.tier[R_HOUSING]<2 ? 'Your builder waits: research housing to build better homes'
-      : b.fix>=0 ? 'Your builder is improving a house' : me.stock[0]<3 || me.stock[1]<3 ? 'Your builder needs 3 wood and 3 stone for each house' : 'Your builder has no house left to improve');
+      : b.fix>=0 ? 'Your builder is improving a house' : me.stock[0]<3 || me.stock[1]<3 ? 'Your builder needs 3 wood and 3 stone for each house'
+      : improvements(me).length ? 'Your builder waits: the city investment does not allow it yet, or there is no way over your own land to what is left' : 'Your builder has no house left to improve');
     return true;
   }
   if (pType[q]!==B_TOWER) return false;

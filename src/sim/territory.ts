@@ -1,9 +1,10 @@
 /* ---------- territory & combat ---------- */
-import { TW, TH, NT, PW, PH, TMULT, B_TOWER, B_CASTLE, B_CPART, GOLD_PER_TILE, isStructure } from '../core/constants';
+import { GAME_SPEED, TW, TH, NT, PW, PH, TMULT, B_TOWER, B_CASTLE, B_CPART, GOLD_PER_TILE, isStructure } from '../core/constants';
 import { W, owner, occ, terr, isLand, isle, frontMark, pType, pOwner, pBurn, type Attack } from './state';
 import { on } from './events';
-import { ignite } from './buildings';
+import { ignite, captureBuilding } from './buildings';
 
+const SIEGE_LOCK_TICKS = 30*GAME_SPEED*10;   // (SIEGE_LOCK in sim/war.ts)
 export function touches(t: number, a: number){ const x=t%TW; return (x>0&&owner[t-1]===a)||(x<TW-1&&owner[t+1]===a)||(t>=TW&&owner[t-TW]===a)||(t<NT-TW&&owner[t+TW]===a); }
 function nCount(t: number, a: number){ const x=t%TW; return +(x>0&&owner[t-1]===a)+ +(x<TW-1&&owner[t+1]===a)+ +(t>=TW&&owner[t-TW]===a)+ +(t<NT-TW&&owner[t+TW]===a); }
 
@@ -40,7 +41,8 @@ export function occIsleAdd(t: number, o: number, b: number, n: number){
   const k=(isle[t]*W.M+o)*W.M+b, v=(W.occIsle.get(k) ?? 0)+n;
   if (v>0) W.occIsle.set(k,v); else W.occIsle.delete(k);
 }
-export function setOwner(t: number, o: number){
+/** Tile t becomes o's. A building on it burns, unless `keep` (the ground is ceded in a peace deal): then it stays, and is o's. */
+export function setOwner(t: number, o: number, keep=false){
   const prev=owner[t]; if (prev===o) return;
   if (occ[t]){ W.occCount[prev*W.M+occ[t]]--; occIsleAdd(t,prev,occ[t],-1); occ[t]=0; }   // changing hands ends any occupation
   recountEdges(t,prev,o);
@@ -52,7 +54,7 @@ export function setOwner(t: number, o: number){
   on.tileChanged(t,o);
   if ((x&3)===2 && (y&3)===2){
     const q=(y>>2)*PW+(x>>2), ty=pType[q];
-    if (isStructure(ty) && pOwner[q]!==o && pBurn[q]<=0) ignite(q);
+    if (isStructure(ty) && pOwner[q]!==o && pBurn[q]<=0){ if (keep && o) captureBuilding(q,o); else ignite(q); }
   }
   if (prev){ const Pn=W.nations[prev]; if (t===Pn.capTile) capitalFalls(prev,o); if (Pn.tiles<=0 && Pn.alive) eliminate(prev,o); }
 }
@@ -72,6 +74,7 @@ function pushF(A: Attack, t: number){ if (owner[t]===A.def && isLand[t] && front
 
 export function stepAttack(A: Attack){
   if (!W.nations[A.att].alive){ A.done=true; return; }
+  if (W.siege[A.att]>0 && W.tickN-W.siege[A.att]<SIEGE_LOCK_TICKS) return;   // (a capital newly besieged cannot expand its border: the attack waits)
   if (A.def && !W.nations[A.def].alive){ finishAttack(A); return; }
   const F=A.front, srand=W.srand;
   let tries=Math.ceil(2+F.length*0.07);

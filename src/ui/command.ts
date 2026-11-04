@@ -7,12 +7,13 @@
 import { K, PLAYER, GAME_SPEED } from '../core/constants';
 import { W, type Campaign } from '../sim/state';
 import { queueCommand } from '../sim/sim';
-import { F_GATHER, attacks, inCrisis, crisisWait, aboardOf, occOn, callableCount } from '../sim/war';
+import { F_GATHER, besieged, attacks, inCrisis, crisisWait, aboardOf, occOn, callableCount } from '../sim/war';
 import { units, unitAt } from '../sim/army';
 import { client } from '../client';
 import { cam } from '../render/camera';
 import { armyName, renameArmy } from './armies';
-import { startAssign } from './assign';
+import { startAssign, placeName } from './assign';
+import { SEC_SIEGE, SECTOR_NAMES } from '../sim/front';
 import { toast } from './hud';
 import { $ } from './dom';
 
@@ -51,20 +52,21 @@ function status(key: number){
     const u=unitAt(key); return u ? `At home · ${u.home}/${u.cap}` : '';
   }
   const foe=nm(c.d), M=W.M, pair=c.a*M+c.d, men=c.members.length;
+  const part=c.sec===SEC_SIEGE ? `the capital of ${foe}` : c.sec ? `${foe}'s ${SECTOR_NAMES[c.sec]} sector` : foe;   // (what it fights along: all the border, a part of it, or the siege)
   if (aboardOf(c)){
     if (W.wars[pair]) return `${men} men · ${attacks(c) ? 'landing on' : 'off the coast of'} ${foe}${attacks(c) ? '' : ', waiting for the order to attack'}`;
     return `${men} men · sailing to ${foe}`;
   }
   if (W.wars[pair]){
-    if (attacks(c)) return `${men} men · ${occOn(c.a,c.d,c.isle)>0 ? 'retaking your land' : 'attacking '+foe}`;
-    return `${men} men · defending against ${foe}`;
+    if (attacks(c)) return `${men} men · ${occOn(c.a,c.d,c.isle)>0 ? 'retaking your land' : c.sec===SEC_SIEGE ? (besieged(c.d) ? 'besieging '+part : 'marching on '+part) : 'attacking '+part}`;
+    return `${men} men · defending against ${part}`;
   }
   if (inCrisis(c.a,c.d)){
     const w=crisisWait(c.a,c.d);
     return `${men} men · crisis with ${foe}${w>0 ? ` · war may begin in ${secs(w)} s` : ' · ready for the word'}`;
   }
   if (W.aggr[c.d*M+c.a]) return `${men} men · holding against ${foe}`;
-  return `${men} men · ${W.offensive[pair]===F_GATHER ? 'gathering on' : 'deployed on'} the border of ${foe}`;
+  return `${men} men · ${W.offensive[pair]===F_GATHER ? 'gathering on' : 'deployed on'} the border of ${part}`;
 }
 const btn = (act: string, label: string, attrs: string, opts: { on?: boolean; off?: boolean; title?: string; cls?: string }={}) =>
   `<button class="ao ${opts.cls ?? ''}" data-act="${act}" ${attrs} ${opts.off ? 'disabled' : ''} aria-pressed="${!!opts.on}" ${opts.title ? `title="${esc(opts.title)}"` : ''}>${label}</button>`;
@@ -126,7 +128,7 @@ list.addEventListener('click', e => {
   if (act==='assign'){ startAssign(+b.dataset.k!); return; }
   const camp=+b.dataset.camp!;
   if (act==='order') queueCommand({ type:'order', nation:PLAYER, camp, go:!!b.dataset.go });
-  else if (act==='stance'){ const c=campById(camp); if (c) queueCommand({ type:'assign', nation:PLAYER, army:+b.dataset.k!, target:c.d, isle:c.isle, go:!!b.dataset.go }); }
+  else if (act==='stance'){ const c=campById(camp); if (c) queueCommand({ type:'assign', nation:PLAYER, army:+b.dataset.k!, target:c.d, isle:c.isle, sec:c.sec, go:!!b.dataset.go }); }
   else if (act==='recall') queueCommand({ type:'recall', nation:PLAYER, camp });
   html='';
 });

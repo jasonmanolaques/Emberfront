@@ -36,7 +36,7 @@ import { census } from './census';
 import { BLD_HP, bldHp, wear, towerTier, castleTier, TOWER_RELOADS, TOWER_DMGS, CASTLE_MEND, wallOf, wallTower, walledFor, buildWalls, resetWalls } from './defense';
 import { SOLDIER_DMG, MILITIA_HIT, units, unitAt, type Unit } from './army';
 import { Field } from './field';
-import { lineOf, deploy, placeAt, indexAt, holds, enemyOf, underCastle, castleCutOff, type Front } from './front';
+import { lineOf, deploy, placeAt, indexAt, holds, enemyOf, underCastle, castleCutOff, partOf, sectorOf, originOf, SEC_SIEGE, SIEGE_WIDTH, SIEGE_NEAR, type Front } from './front';
 import { landingZone, offshore, landingTile, seaPaths, seaNearest, dockTile, shipById, launchShip, recall, navalHooks, basesOf, baseWater, SHIP_SP, SHIP_CAP, INV_SAIL, INV_READY, INV_LAND, INV_DONE, SHIP_WAIT, SHIP_BACK } from './naval';
 import { H_SOLDIER, TASK_ROAM, TASK_BOAT, TOWER_RANGE, maxHp, REGEN, pace, onCastle, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf, homeMilitia } from './population';
 
@@ -117,6 +117,7 @@ let came = new Int32Array(NT);                 // ...and the tile it came from
 interface Offensive {
   id: number; key: number; a: number; d: number;   // id: this front (the pair's key and the landmass); key: the pair a*M+d, which the war arrays are indexed by
   isle: number;                   // the landmass of d's land this front is on (0: the whole border between them)
+  sec: number;                    // the part of that border it fights along (SEC_*: 0 all of it, 1-8 a compass sector, 9 the siege of the capital)
   st: number;                     // its state: gathering, ready, attacking or holding (F_*): attacking while an army of its attacks
   F: Front | null;                // the front, worked out every REFRONT ticks
   walk: Field;                    // steps to the men's places, over ground they may cross
@@ -135,12 +136,12 @@ interface Offensive {
   men: Human[]; atk: Human[]; def: Human[]; camps: Campaign[];   // its men (leaders aside), those of its attacking and of its defending armies, and its armies, this tick
 }
 const offensives = new Map<number, Offensive>();   // by id
-const ofId = (pair: number, isle: number) => pair*65536+isle;
-const ABOARD = 1<<30;   // added to the front id of an army still aboard ship, off a coast: it is not on the land front its landmass has until it lands
+const ofId = (pair: number, isle: number, sec=0) => (pair*16+sec)*65536+isle;
+const ABOARD = 2**40;   // added to the front id of an army still aboard ship, off a coast: it is not on the land front its landmass has until it lands
 /** The landing army c is part of, while its ships have not put it ashore. */
 export const aboardOf = (c: Campaign) => c.naval>=0 ? W.invasions.find(i => i.id===c.naval && i.stage<INV_LAND) : undefined;
 /** The id of the front army c is on: its stretch of border, or (aboard ship) a front of its own. */
-const fidOf = (c: Campaign) => ofId(c.a*W.M+c.d,c.isle)+(aboardOf(c) ? ABOARD : 0);
+const fidOf = (c: Campaign) => ofId(c.a*W.M+c.d,c.isle,c.sec)+(aboardOf(c) ? ABOARD : 0);
 /** The fronts a's offensive against d has (one for each landmass its armies are sent to). */
 const frontsOf = (pair: number) => { const out: Offensive[]=[]; for (const o of offensives.values()) if (o.key===pair) out.push(o); return out; };
 /** The id (a man's h.fk) of a's front against d on its biggest landmass: the one with most men, else the biggest stretch of border. */
@@ -161,6 +162,7 @@ export function wageOf(h: Human){
 }
 /** The landmass of the pixel (x,y). */
 const tileIsle = (x: number, y: number) => isle[tileOf(x,y)];
+const isle_ = (t: number) => isle[t];
 /** The ids (men's h.fk) of all the fronts of a's offensive against d. */
 export const frontIds = (a: number, d: number) => frontsOf(a*W.M+d).map(o => o.id);
 const frontOfC = (c: Campaign) => offensives.get(fidOf(c));
@@ -199,7 +201,7 @@ const DIRS8 = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
 export function resetWar(M: number){
   W.campaigns=[]; W.campSeq=0;
   W.ally=new Uint8Array(M*M); W.atWar=new Uint8Array(M*M); W.offers=new Int32Array(M*M); W.grudge=new Int32Array(M*M).fill(-1e9);
-  W.wars=new Uint8Array(M*M); W.aggr=new Uint8Array(M*M); W.warSince=new Int32Array(M*M); W.occCount=new Int32Array(M*M); W.lost=new Uint8Array(M*M); W.ready=new Int32Array(M*M); W.offensive=new Uint8Array(M*M); W.stance=new Uint8Array(M*M); W.kills=new Int32Array(M*M); W.stall=new Int32Array(M*M); W.lastNet=new Int32Array(M*M);
+  W.wars=new Uint8Array(M*M); W.aggr=new Uint8Array(M*M); W.warSince=new Int32Array(M*M); W.occCount=new Int32Array(M*M); W.lost=new Uint8Array(M*M); W.ready=new Int32Array(M*M); W.offensive=new Uint8Array(M*M); W.siege=new Int32Array(M); W.siegeBy=new Uint8Array(M); W.kills=new Int32Array(M*M); W.stall=new Int32Array(M*M); W.lastNet=new Int32Array(M*M);
   if (queue.length!==NT){ heldAt=new Int32Array(NT); heldBy=new Uint8Array(NT); queue=new Int32Array(NT); want=new Int32Array(NT); wantSeq=0; seen=new Int32Array(NT); seenSeq=0; came=new Int32Array(NT); }   // the map changed size
   byId.clear(); camps.clear(); troops.clear(); armies=[]; posts=[]; warring=new Uint8Array(M); rallies=[]; homeField=[]; homeFieldFor=[]; heldAt.fill(0); resetWalls();
   offensives.clear(); cuts.clear(); cutsAt.clear(); seaQ.clear(); seaBound.clear(); defended=new Uint8Array(M); borderCache.clear(); W.occIsle=new Map(); W.crisisAt=new Int32Array(M*M);
@@ -801,19 +803,20 @@ export function callReserves(n: number, o: number, call: boolean){
   on.reserves(n,o,men.length,true);
   return true;
 }
+let nextSec=0;   // the part of the border the next army made is to fight along (set by assignArmy)
 function newCampaign(a: number, d: number, size: number, tiles: number, unit: number, isle=0): Campaign {
   if (!isle) isle=frontIsles(a,d)[0] ?? 0;   // (the biggest stretch of border they share)
   return { id:++W.campSeq, a, d, hostile:true, front:true, militia:false, all:false, members:[], phase:0, bx:0, by:0, dx:1, dy:0, rx:0, ry:0, goal:-1,
-    field:offensiveOf(a,d,isle).walk, fieldAt:W.tickN, started:W.tickN, startSoldiers:size, startTiles:tiles, stall:0, why:'', unit, inspired:false, leader:-1, rank:0,
-    mode:W.offensive[a*W.M+d], naval:-1, isle, attack:true, ordered:false, deployed:false, placed:0, waiting:[], hitAt:-1e9 };
+    field:offensiveOf(a,d,isle,false,nextSec).walk, fieldAt:W.tickN, started:W.tickN, startSoldiers:size, startTiles:tiles, stall:0, why:'', unit, inspired:false, leader:-1, rank:0,
+    mode:W.offensive[a*W.M+d], naval:-1, isle, sec:nextSec, attack:true, ordered:false, deployed:false, placed:0, waiting:[], hitAt:-1e9 };
 }
 /** The offensive of a against d on landmass `isle` (0: the whole border), begun (gathering at the border) if there was none. */
-function offensiveOf(a: number, d: number, isle=0, aboard=false){
-  const key=a*W.M+d, id=ofId(key,isle)+(aboard ? ABOARD : 0);
+function offensiveOf(a: number, d: number, isle=0, aboard=false, sec=0){
+  const key=a*W.M+d, id=ofId(key,isle,sec)+(aboard ? ABOARD : 0);
   let o=offensives.get(id);
   if (!o){
     if (!frontsOf(key).length) W.offensive[key]=F_GATHER;
-    o={ id, key, a, d, isle, st:W.offensive[key], F:null, walk:new Field(), k:0, progress:0, strips:0, depth:null, since:W.tickN, noFront:0, liberating:false, Fd:null, safeAt:-1e9, lineAt:-1e9, lineSig:-1, towers:[], men:[], atk:[], def:[], camps:[] };
+    o={ id, key, a, d, isle, sec, st:W.offensive[key], F:null, walk:new Field(), k:0, progress:0, strips:0, depth:null, since:W.tickN, noFront:0, liberating:false, Fd:null, safeAt:-1e9, lineAt:-1e9, lineSig:-1, towers:[], men:[], atk:[], def:[], camps:[] };
     offensives.set(id,o);
   }
   return o;
@@ -906,7 +909,7 @@ function cede(o: number, d: number){
     const t=Q[head++], x=t%tw;
     for (const n of [x>0 ? t-1 : -1, x<tw-1 ? t+1 : -1, t>=tw ? t-tw : -1, t<nt-tw ? t+tw : -1]) if (n>=0 && !keep[n] && held(n)){ keep[n]=1; Q[tail++]=n; }
   }
-  for (let t=0;t<nt;t++) if (held(t)){ if (keep[t]) setOwner(t,o); else liberate(t); }
+  for (let t=0;t<nt;t++) if (held(t)){ if (keep[t]) setOwner(t,o,true); else liberate(t); }
 }
 /** n wants the fighting with t to end: a war gets a peace offer. */
 export function endWar(n: number, t: number){
@@ -1088,10 +1091,10 @@ export function armyOrder(a: number, id: number, go: boolean){
   return true;
 }
 /** Sends army `id` of a to the border with its enemy on landmass `isle` (one of frontIsles). */
-export function armyFront(a: number, id: number, isle: number){
+export function armyFront(a: number, id: number, isle: number, sec=0){
   const c=camps.get(id);
-  if (!c || c.a!==a || !c.front || c.phase===2 || c.naval>=0 || c.isle===isle || !frontIsles(a,c.d).includes(isle)) return false;
-  c.isle=isle; c.field=offensiveOf(c.a,c.d,isle).walk; c.fieldAt=W.tickN; c.placed=0;
+  if (!c || c.a!==a || !c.front || c.phase===2 || c.naval>=0 || (c.isle===isle && c.sec===sec) || !(frontIsles(a,c.d).includes(isle) || (sec===SEC_SIEGE && W.nations[c.d]?.capTile>=0 && isle_(W.nations[c.d].capTile)===isle))) return false;
+  c.isle=isle; c.sec=sec; c.field=offensiveOf(c.a,c.d,isle,false,sec).walk; c.fieldAt=W.tickN; c.placed=0;
   for (const id2 of c.members){ const h=byId.get(id2); if (h){ h.fk=-1; h.line=-1; h.slot=-1; } }
   return true;
 }
@@ -1121,14 +1124,16 @@ export function armyRecall(a: number, id: number){
   return true;
 }
 
-/** A stretch of border the player can station an army on: kingdom d's ground that touches a's, on one landmass (the tiles, for the map). */
-export interface Border { d: number; isle: number; tiles: number[]; }
+/** A part of the border the player can station an army on: kingdom d's ground that touches a's, on one landmass, in one compass sector of it (sec 1-8),
+    or the whole stretch (0), or the siege of d's capital (SEC_SIEGE: the tiles drawn are a ring round the castle). */
+export interface Border { d: number; isle: number; sec: number; tiles: number[]; }
+const MIN_SECTOR = 8;   // tiles a sector of a border needs to be offered by itself
 let bordersAt=-1e9, bordersFor=0, bordersList: Border[]=[];
-/** Every stretch of border a has with a kingdom it is not allied with, a landmass at a time, longest first. Worked out only when asked (the army
-    assignment screen), and kept for a second. */
+/** Every part of the border a has with a kingdom it is not allied with, a landmass and a compass sector at a time, longest first, with the sieges of their
+    capitals first of all. Worked out only when asked (the army assignment screen), and kept for a second. */
 export function bordersOf(a: number): Border[] {
   if (bordersFor===a && W.tickN>=bordersAt && W.tickN-bordersAt<10) return bordersList;
-  const out: Border[]=[], tw=TW, th=TH;
+  const out: Border[]=[], sieges: Border[]=[], tw=TW, th=TH;
   for (let d=1;d<W.M;d++){
     const D=W.nations[d]; if (d===a || !D?.alive || !W.contact[a*W.M+d] || allied(a,d)) continue;
     const by=new Map<number, number[]>();
@@ -1138,15 +1143,34 @@ export function bordersOf(a: number): Border[] {
         const i=isle[t]; let l=by.get(i); if (!l){ l=[]; by.set(i,l); } l.push(t);
       }
     }
-    for (const [i,tiles] of by) out.push({ d, isle:i, tiles });
+    for (const [i,tiles] of by){
+      const secs=new Map<number, number[]>(); for (const t of tiles){ const k=sectorOf(d,t); let l=secs.get(k); if (!l){ l=[]; secs.set(k,l); } l.push(t); }
+      const big=[...secs].filter(([,l]) => l.length>=MIN_SECTOR);
+      if (big.length<2){ out.push({ d, isle:i, sec:0, tiles }); continue; }   // (one stretch: no parts to choose between)
+      const groups=new Map<number, number[]>(big.map(([k,l]) => [k,l.slice()]));
+      for (const [k,l] of secs) if (!groups.has(k)){   // (a small part goes with the nearest big one by bearing)
+        let best=big[0][0], bd=9; for (const [j] of big){ const e=Math.min(Math.abs(j-k),8-Math.abs(j-k)); if (e<bd){ bd=e; best=j; } }
+        groups.get(best)!.push(...l);
+      }
+      for (const [k,l] of groups) out.push({ d, isle:i, sec:k, tiles:l });
+    }
+    // the siege of the capital: offered where the capital lies on a landmass of the border (the ring is what is drawn)
+    if (D.capTile>=0 && [...by.keys()].includes(isle[D.capTile])){
+      const [cx,cy]=originOf(d), ring: number[]=[];
+      for (let k=0;k<48;k++){ const x=Math.round(cx+Math.cos(k/48*Math.PI*2)*SIEGE_RING), y=Math.round(cy+Math.sin(k/48*Math.PI*2)*SIEGE_RING); if (x>=0&&y>=0&&x<tw&&y<th) ring.push(y*tw+x); }
+      sieges.push({ d, isle:isle[D.capTile], sec:SEC_SIEGE, tiles:ring });
+    }
   }
-  out.sort((p,q) => q.tiles.length-p.tiles.length || p.d-q.d || p.isle-q.isle);
-  bordersAt=W.tickN; bordersFor=a; bordersList=out;
-  return out;
+  out.sort((p,q) => q.tiles.length-p.tiles.length || p.d-q.d || p.isle-q.isle || p.sec-q.sec);
+  const all=[...sieges,...out];
+  bordersAt=W.tickN; bordersFor=a; bordersList=all;
+  return all;
 }
+export const SIEGE_RING = 9;   // tiles from the castle's middle: the ring drawn for the siege
 /** Why army `key` of a (a barracks' key, or -2 for the militia) can't be stationed on the border with d, or null. */
-export function assignProblem(a: number, key: number, d: number): string | null {
+export function assignProblem(a: number, key: number, d: number, sec=0): string | null {
   const why=warProblem(a,d); if (why) return why;
+  if (sec===SEC_SIEGE && !(W.nations[d].capTile>=0)) return 'They have no capital';
   const mil=key===-2;
   const c=W.campaigns.find(k => k.a===a && k.front && k.phase<2 && (mil ? k.militia : k.unit===key && !k.militia));
   if (c && c.naval>=0) return 'It is at sea, on an invasion';
@@ -1156,16 +1180,22 @@ export function assignProblem(a: number, key: number, d: number): string | null 
 /** The HOI4 way: army `key` of a (a barracks' key, or -2 for the militia) is stationed on the border with d on landmass `isle`, wherever it stands now
     (at home, on another border, or in the middle of a war), and all its men set off for it. In peace it is a precaution, at war it attacks or defends
     as it was ordered (`go`: true to attack, false to defend, left out: as it stood, or as the war stands). Returns true if anything changed. */
-export function assignArmy(a: number, key: number, d: number, isle=0, go?: boolean){
-  if (assignProblem(a,key,d)) return false;
+export function assignArmy(a: number, key: number, d: number, isle=0, go?: boolean, sec=0){
+  if (assignProblem(a,key,d,sec)) return false;
   const M=W.M, mil=key===-2;
-  isle=isle || (frontIsles(a,d)[0] ?? 0);
+  if (sec===SEC_SIEGE) isle=isle_(W.nations[d].capTile);
+  else isle=isle || (frontIsles(a,d)[0] ?? 0);
+  nextSec=sec;
+  try { return assignInner(a,key,d,isle,go,sec,mil); } finally { nextSec=0; }
+}
+function assignInner(a: number, key: number, d: number, isle: number, go: boolean | undefined, sec: number, mil: boolean){
+  const M=W.M;
   const find = () => W.campaigns.find(k => k.a===a && k.d===d && k.front && k.phase<2 && k.naval<0 && (mil ? k.militia : k.unit===key && !k.militia));
   const c=W.campaigns.find(k => k.a===a && k.front && k.phase<2 && (mil ? k.militia : k.unit===key && !k.militia));
   let done=false;
   if (c){
     if (c.d===d){
-      if (c.isle!==isle) done=armyFront(a,c.id,isle);
+      if (c.isle!==isle || c.sec!==sec) done=armyFront(a,c.id,isle,sec);
     } else {
       const men=c.members.map(k => byId.get(k)).filter((h): h is Human => !!h && h.hp>0);
       if (!men.length) return false;
@@ -1223,10 +1253,11 @@ function runOffensives(){
   const M=W.M, now=W.tickN, live=new Map<number, Campaign[]>();
   for (const c of W.campaigns) if (c.front && c.phase<2){ const k=fidOf(c); let L=live.get(k); if (!L){ L=[]; live.set(k,L); } L.push(c); }
   for (const [id,o] of [...offensives]) if (!live.has(id)) endOffensive(o);
+  siegeStep();
   const pairs=new Map<number, number>();   // each pair's fronts, together: pushing, holding, or (before the word) the least ready
   const note = (key: number, war: boolean, st: number) => { const was=pairs.get(key); pairs.set(key,was===undefined ? st : war ? (was===F_PUSH || st===F_PUSH ? F_PUSH : F_HOLD) : Math.min(was,st)); };
   for (const [id,cs] of live){
-    const o=offensiveOf(cs[0].a,cs[0].d,cs[0].isle,id>=ABOARD), key=o.key, war=!!W.wars[key]; o.camps=cs; o.men=[]; o.atk=[]; o.def=[];
+    const o=offensiveOf(cs[0].a,cs[0].d,cs[0].isle,id>=ABOARD,cs[0].sec), key=o.key, war=!!W.wars[key]; o.camps=cs; o.men=[]; o.atk=[]; o.def=[];
     for (const c of cs){
       c.field=o.walk;
       const hold=war && !attacks(c);
@@ -1276,7 +1307,7 @@ function runOffensives(){
     note(key,war,o.st);
     if (o.st===F_PUSH && o.atk.length){
       if (!o.depth) o.depth=depths(o);
-      if ((now+id)%(W.stance[key]===S_RUSH ? ADVANCE_TICKS/RUSH_PACE : ADVANCE_TICKS)===0){   // (a rush's strips come twice as often)
+      if ((now+id)%(o.sec===SEC_SIEGE ? ADVANCE_TICKS/SIEGE_PACE : ADVANCE_TICKS)===0){   // (a siege's strips come twice as often: its men are all on the one way)
         if (o.lineAt<now){ o.F=null; redeploy(o); }   // (each strip goes from the line as the map stands)
         push(o);
       }
@@ -1292,34 +1323,48 @@ function botCrisis(o: Offensive){
   const mine=menOn(o.a,o.d), theirs=menOn(o.d,o.a)+0.5*W.humans.filter(h => h.o===o.d && h.kind===H_SOLDIER && !h.militia && h.war<0).length;
   if (theirs>mine*(OUTMATCHED+W.nations[o.a].attackAt)) deescalate(o.a,o.d); else escalate(o.a,o.d);
 }
-/* ---------- stances: how the armies on a front fight ---------- */
-export const S_BALANCED = 0, S_RUSH = 1;
-export const STANCES = ['Balanced', 'Capital rush'];
-const RUSH_WIDTH = 14;        // tiles either side of the way to the capital a rush keeps to
-const RUSH_PACE = 2;          // a rush's strips come twice as often: its men are all on the one way
-const RUSH_TOWER = 20;        // pixels from the way to the capital a watchtower still counts as in it
-/** Sets how a's armies fight on the front against d. */
-export function setStance(a: number, d: number, st: number){
-  if (!W.nations[a]?.alive || !W.nations[d]?.alive || !(st>=0 && st<STANCES.length)) return false;
-  W.stance[a*W.M+d]=st; return true;
+/* ---------- the siege of a capital ----------
+   When every tile round a castle is occupied by the enemy at war with it (castleCutOff) the capital is under siege: both kingdoms are told, the besieged one
+   cannot expand its border for SIEGE_LOCK ticks (30 s), and the defenders it raises while the siege lasts fight on to the bitter end: a quarter more hit points and damage. */
+export const SIEGE_LOCK = 30*GAME_SPEED*10;
+export const FURY = 1.25;
+/** Is d's capital under siege? */
+export const besieged = (d: number) => W.siege[d]>0;
+/** Is d's capital under siege, and newly so: its border cannot be expanded yet? */
+export const siegeLocked = (d: number) => W.siege[d]>0 && W.tickN-W.siege[d]<SIEGE_LOCK;
+/** Once a second: capitals that have come under siege, and those that no longer are. */
+function siegeStep(){
+  if (W.tickN%10!==7) return;
+  const M=W.M;
+  for (let d=1;d<M;d++){
+    const D=W.nations[d]; let by=0;
+    if (D.alive && D.capTile>=0 && warring[d]){
+      if (castleCutOff(d)){   // (everything round the castle taken: by whom?)
+        const q=D.capPlot, x0=(q%PW)*4, y0=((q/PW)|0)*4;
+        for (let y=y0-1;y<=y0+8 && !by;y++) for (let x=x0-1;x<=x0+8;x++){ if (x<0||y<0||x>=TW||y>=TH) continue; const t=y*TW+x; if (owner[t]===d && occ[t] && W.wars[occ[t]*M+d]){ by=occ[t]; break; } }
+      }
+    }
+    if (by && !W.siege[d]){ W.siege[d]=W.tickN || 1; W.siegeBy[d]=by; on.siege(by,d,true); }
+    else if (!by && W.siege[d]){
+      const was=W.siegeBy[d]; W.siege[d]=0; W.siegeBy[d]=0;
+      for (const h of W.humans) if (h.o===d && h.fury){ h.fury=false; h.hp=Math.min(h.hp,maxHp(h)); }
+      on.siege(was,d,false);
+    }
+  }
 }
-const stanceOf = (a: number, d: number) => W.stance[a*W.M+d];
+/* ---------- an army assigned to the siege keeps to the way to the castle ---------- */
+const SIEGE_PACE = 2;
+const RUSH_TOWER = 20;        // pixels from the way to the capital a watchtower still counts as in it
 /** Is watchtower q close to the way c's army takes to d's capital (or by the capital)? */
 function inRushWay(q: number, c: Campaign){
   const D=W.nations[c.d]; if (D.capTile<0) return true;
   const [gx,gy]=doorOf(D), x=(q%PW)*8+4, y=((q/PW)|0)*8+4;
-  return toSegment(x,y,c.bx,c.by,gx,gy)<=RUSH_TOWER || Math.hypot(x-gx,y-gy)<=RUSH_WIDTH*3;
+  return toSegment(x,y,c.bx,c.by,gx,gy)<=RUSH_TOWER || Math.hypot(x-gx,y-gy)<=SIEGE_WIDTH*3;
 }
 /** Distance in pixels from point (x,y) to the segment (ax,ay)-(bx,by). */
 function toSegment(x: number, y: number, ax: number, ay: number, bx: number, by: number){
   const dx=bx-ax, dy=by-ay, L=dx*dx+dy*dy, u=L ? clamp(((x-ax)*dx+(y-ay)*dy)/L,0,1) : 0;
   return Math.hypot(x-(ax+u*dx), y-(ay+u*dy));
-}
-/** Where a rush against d heads: d's gate, and from where (the middle of a's front). */
-function rushWay(o: Offensive): [number, number, number, number] | null {
-  const D=W.nations[o.d]; if (D.capTile<0 || !o.camps.length) return null;
-  let x=0, y=0, k=0; for (const c of o.camps){ x+=c.bx; y+=c.by; k++; }
-  const [gx,gy]=doorOf(D); return [x/k, y/k, gx, gy];
 }
 /** a's offensive against d, as it stands: the front of its biggest landmass (null before it is first worked out) and how many men hold its front rank. */
 export function offensiveFront(a: number, d: number): { F: Front | null; k: number } | undefined {
@@ -1373,7 +1418,7 @@ function redeploy(o: Offensive){
   const coming=W.invasions.find(i => i.a===o.d && i.d===o.a && i.stage<INV_LAND && !i.safe);   // (a landing coming at us from the sea: our front is the coast it will land on)
   // (the line is worked out from the map only now and then, or when something calls for it: o.F set to null; the men's places are laid out on it every REFRONT ticks)
   const sig=occSig(o.a,o.d), keep=!coming && !!o.F && W.tickN-o.lineAt<LINE_EVERY && sig===o.lineSig;
-  const F=o.F=keep ? o.F! : coming ? lineOf(o.a,o.d,false,coming.coast.filter(t => owner[t]===o.a)) : lineOf(o.a,o.d,false,undefined,o.isle), id=o.id, ok=standsFor(o.a,o.d);
+  const F=o.F=keep ? o.F! : coming ? lineOf(o.a,o.d,false,coming.coast.filter(t => owner[t]===o.a)) : lineOf(o.a,o.d,false,undefined,o.isle,o.sec), id=o.id, ok=standsFor(o.a,o.d);
   if (!keep){ o.lineAt=W.tickN; o.lineSig=sig; o.towers=towersNear(o,F); }
   let Fd: Front | null=null;
   if (o.def.length){
@@ -1419,17 +1464,11 @@ function redeploy(o: Offensive){
 function push(o: Offensive){
   const F=o.F; if (!F || !F.tiles.length || !o.k) return;
   const gap=F.len/o.k;
-  const stance=stanceOf(o.a,o.d);
   o.progress+=Math.min(1,DENSE/gap); if (o.progress<1) return;
   o.progress-=1;
-  // what the stance leaves alone: a rush keeps to the way to the capital, and the ground about the capital
-  let allowed: ((t: number) => boolean) | null=null;
+  // (a kingdom retaking its land takes only that)
   const lib=o.liberating;
-  if (lib) allowed=t => owner[t]===o.a;   // only its own land, taken back
-  else if (stance===S_RUSH){
-    const way=rushWay(o);
-    if (way){ const [ax,ay,bx,by]=way; allowed=t => { const x=(t%TW)*2+1, y=((t/TW)|0)*2+1; return toSegment(x,y,ax,ay,bx,by)<=RUSH_WIDTH*2 || Math.hypot(x-bx,y-by)<=RUSH_WIDTH*3; }; }
-  }
+  const allowed: ((t: number) => boolean) | null=lib ? (t => owner[t]===o.a) : null;
   const takeIt=(t: number, a: number, d: number) => (!allowed || allowed(t)) && takeTile(t,a,d);
   const T=F.tiles, take=new Uint8Array(T.length), a=o.a, d=o.d, tw=TW, R2=(PRESENT*2+gap)**2;   // (pixels: a little more room for a thin line, whose men have further to go when it closes up)
   for (const h of o.atk){
@@ -1804,7 +1843,7 @@ export function frontLines(): { a: number; d: number; tiles: number[]; state: nu
 }
 /** A soldier on his kingdom's occupied land takes it back around him, unless the occupier holds it. */
 function reclaim(h: Human){
-  if ((h.id+W.tickN)%CAPTURE_EVERY) return;
+  if ((h.id+W.tickN)%CAPTURE_EVERY || siegeLocked(h.o)) return;   // (a capital newly besieged cannot break out)
   const cx=(h.x/2)|0, cy=(h.y/2)|0, now=W.tickN, o=h.o, tw=TW;
   // only from the edge of the occupied zone inwards, a ring at a time: ground deep inside the zone is not freed round a man
   // who has got in behind it, so no pocket of free land is left in the enemy's hands, nor pocket of occupied land cut off from them
@@ -1882,7 +1921,7 @@ function strike(h: Human, e: Human){
   on.swing(h.id,e.id);
   if (W.prand()<HIT_CHANCE){
     const was=e.hp;
-    e.hp-=(h.kind!==H_SOLDIER ? MILITIA_DMG : h.militia ? MILITIA_HIT : HIT_DMG[h.tier])*(revenge(h) ? REVENGE_DMG : 1); underFire(e);
+    e.hp-=(h.kind!==H_SOLDIER ? MILITIA_DMG : h.militia ? MILITIA_HIT : HIT_DMG[h.tier])*(revenge(h) ? REVENGE_DMG : 1)*(h.fury ? FURY : 1); underFire(e);
     if (was>0 && e.hp<=0) W.kills[h.o*W.M+e.o]++;
     on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id);
   }
@@ -1944,7 +1983,7 @@ function targetable(q: number, c: Campaign){
   if (ty===B_CASTLE) return true;
   if (!isStructure(ty) || ty===B_PART) return false;
   if (c.front){   // the stance: a rush goes for watchtowers in its way only
-    if (stanceOf(c.a,c.d)===S_RUSH) return ty===B_TOWER && inRushWay(q,c);
+    if (c.sec===SEC_SIEGE) return ty===B_TOWER && inRushWay(q,c);
   }
   return (ty===B_TOWER || occ[pCenter[q]]===c.a || (ty===B_HOUSE && pIn[q]>0));   // (a house with people resting inside draws them in)
 }

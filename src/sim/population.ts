@@ -358,13 +358,14 @@ function goRest(h: Human, at=-1){
 export function makeHuman(n: Nation, kind: number, x: number, y: number): Human {
   return { id:++W.humanSeq, o:n.id, kind, militia:false, to:0, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+W.prand()*2,
     hp:kind===H_SOLDIER?SOLDIER_HP[1]:VILLAGER_HP, post:-1, site:-1, home:-1, rest:-1, duel:-1, housed:false, homeless:0, beggar:false,
-    war:-1, boat:-1, foe:-1, aim:-1, cool:0, slot:0, brave:-1, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
+    war:-1, boat:-1, foe:-1, aim:-1, cool:0, slot:0, brave:-1, fury:false, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
     tier:kind===H_SOLDIER?1:0, base:-1, load:0, make:0, dest:-1 };
 }
 /** A new villager or militiaman walks out of the capital; a new soldier out of the barracks nearest the capital. */
 function spawnHuman(n: Nation, kind: number, barracks: number[], militia=false){
   const [cx,cy]=doorOf(n), [x,y] = kind===H_SOLDIER && !militia ? frontOf(nearestPlot(barracks,cx,cy)) : [cx,cy];
   const h=makeHuman(n,kind,x,y);
+  if (W.siege[n.id]>0){ h.fury=true; h.hp=maxHp(h); }   // (born in a besieged capital: they fight to the bitter end)
   if (militia){ h.militia=true; h.hp=MILITIA_HP; h.sp-=SPEED_UP[T_SOLDIER]-SPEED_UP[T_MILITIA]; }
   W.humans.push(h);
   if (housing[n.id]) housing[n.id].people++;   // counts himself before deciding whether he needs a home
@@ -578,14 +579,15 @@ export function improvements(n: Nation){
 function goImprove(h: Human){
   const n=W.nations[h.o];
   const taken=new Set<number>(); for (const o of W.humans) if (o.o===h.o && o.fix>=0) taken.add(o.fix);
-  let tries=0;
+  const f=walkOf(n).f; let looked=0;
   for (const q of improvements(n)){
+    if (++looked>80) break;
     if (taken.has(q)) continue;
     const cost=upgradeCost(q);
     if (!cost.every((c,g) => n.stock[g]>=c) || !mayInvest(n,cost)) continue;
     const [x,y]=frontOf(q); h.tx=x; h.ty=y; h.task=TASK_FIX_GO;
-    if (route(h,true) || routeField(h,x,y)){ h.fix=q; h.wait=0; return true; }   // (round by the field where the straight way is shut: a coast, a cove)
-    if (++tries>=3) break;
+    // a building he cannot walk to (across the water, behind the enemy's lines) is passed over for the next, not given up on for good
+    if (route(h,true) || (f.at(tileOf(x,y))>=0 && routeField(h,x,y))){ h.fix=q; h.wait=0; return true; }   // (round by the field where the straight way is shut: a coast, a cove)
   }
   h.task=TASK_ROAM;
   return false;
@@ -668,12 +670,15 @@ function goForge(h: Human){
     const [x,y]=frontOf(h.dest); h.tx=x; h.ty=y; h.task=TASK_SMITH_DELIVER; walkTo(h,x,y); h.wait=0; return true;
   }
   if (n.capTile<0 || n.stock[2]<ARMOR_COPPER) return false;
-  // the barracks nearest the smithy that still wants armour
-  const made=forging(n), [sx,sy]=frontOf(h.work);
+  // the barracks nearest the smithy that still wants armour, and that he can walk to (one across the water or behind the enemy's lines is passed over)
+  const made=forging(n), [sx,sy]=frontOf(h.work), f=walkOf(n).f;
   let best: Unit | undefined, tier=0, bd=Infinity;
   for (const u of units[h.o] ?? []){
     const t=armorWanted(n,u,made.get(u) ?? [0,0,0,0]); if (!t) continue;
-    const d=(u.x-sx)**2+(u.y-sy)**2; if (d<bd){ bd=d; best=u; tier=t; }
+    const d=(u.x-sx)**2+(u.y-sy)**2; if (d>=bd) continue;
+    const [bx,by]=frontOf(nearestPlot(u.plots,sx,sy));
+    if (f.at(tileOf(bx,by))<0 && !safeWalk(h.o,sx,sy,bx,by)) continue;
+    bd=d; best=u; tier=t;
   }
   if (!best) return false;
   h.make=tier; h.dest=nearestPlot(best.plots,sx,sy);

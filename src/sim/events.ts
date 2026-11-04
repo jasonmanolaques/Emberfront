@@ -15,6 +15,7 @@ export interface SimEvents {
   warBegan(a: number, d: number): void;                        // a sent an army against d (more armies to a war)
   crisis(a: number, d: number): void;                          // a massed its armies on d's border: a crisis, not yet a war
   escalated(a: number, d: number): void;                       // a gave the word on its crisis with d: it is war
+  siege(a: number, d: number, on: boolean): void;              // a's armies have encircled d's capital (on), or the siege is over
   deescalated(a: number, d: number): void;                     // a called its crisis with d off: everyone goes home
   defending(o: number, enemy: number, soldiers: number): void; // o sent soldiers to hold its border with enemy
   reserves(o: number, enemy: number, militia: number, call: boolean): void;   // o called its militia up to its front with enemy (call), or sent them home
@@ -52,7 +53,7 @@ export const on: SimEvents = {
   tileChanged: noop, plotChanged: noop, roadBuilt: noop, plotIgnited: noop,
   buildingPlaced: noop, capitalFell: noop, eliminated: noop, roleChanged: noop,
   towerShot: noop, produced: noop,
-  warBegan: noop, crisis: noop, escalated: noop, deescalated: noop, defending: noop, reserves: noop, armyHome: noop, armyGone: noop, peaceOffered: noop, peaceRefused: noop, peaceMade: noop,
+  warBegan: noop, crisis: noop, escalated: noop, siege: noop, deescalated: noop, defending: noop, reserves: noop, armyHome: noop, armyGone: noop, peaceOffered: noop, peaceRefused: noop, peaceMade: noop,
   allied: noop, allyRefused: noop, allianceBroken: noop, annexed: noop, hit: noop, bldHit: noop,
   died: noop, occupied: noop, counterReady: noop, swing: noop, story: noop, researched: noop, upgraded: noop, builderHired: noop, invasionSails: noop, shipBuilt: noop, colonyBound: noop, colonyFounded: noop, forged: noop, armored: noop, deserted: noop, order: noop,
 };

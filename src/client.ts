@@ -12,7 +12,7 @@ export const client = {
   placing: 0,            // building type being placed from the buildings panel, 0 when not placing
   selected: -1,
   settling: 0,           // a naval settlement is chosen (1; 0 when not choosing): the next click on land picks where the ship lands
-  assigning: null as null | { key: number; hot: null | { d: number; isle: number; tiles: number[] } },   // choosing the border to station an army on (a barracks' key, or -2 for the militia); `hot` is the stretch lit under the pointer
+  assigning: null as null | { key: number; hot: null | { d: number; isle: number; sec: number; tiles: number[] } },   // choosing the border to station an army on (a barracks' key, or -2 for the militia); `hot` is the stretch lit under the pointer
   landing: null as null | { target: number; base: number; units: number[]; men: number },   // choosing the coast of `target` to land `units` (men of them) on from naval base `base`
   mapIndex: 0,           // which of MAPS (game.ts) is being played
   me: '',                // the country the player chose (core/countries.ts code)

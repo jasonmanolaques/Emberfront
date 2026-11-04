@@ -50,10 +50,37 @@ export function castleCutOff(d: number){
   return true;
 }
 
-/** Works out the front of a's attack on d (`only`: just the border on that landmass, else all of it). The castle can't be taken, only broken: the line runs
+/* ---------- parts of a border ----------
+   A border can be fought along as a whole, or a part of it at a time: the border is cut into compass sectors by the bearing of its tiles from the
+   defender's castle (1 east, 2 south-east … 8 north-east), and there is the siege of the capital, which is the stretch of border in the way to the castle. */
+export const SEC_ALL = 0, SEC_SIEGE = 9;
+export const SECTOR_NAMES = ['', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+export const SIEGE_WIDTH = 14;   // tiles either side of the way to the castle the siege keeps to
+export const SIEGE_NEAR = 20;    // tiles round the castle that are the siege's whole
+/** The compass sector (1-8) tile t lies in, as seen from d's castle. */
+export function sectorOf(d: number, t: number){
+  const [ox,oy]=originOf(d);
+  return ((Math.round(Math.atan2((t/TW|0)+0.5-oy, t%TW+0.5-ox)/(Math.PI/4))+8)%8)+1;
+}
+/** The tiles of border `all` that belong to part `sec` of it. The siege's are those within SIEGE_WIDTH of the way from the border tile nearest the castle to the castle,
+    and any within SIEGE_NEAR of it: all of them once the castle stands cut off. */
+export function partOf(d: number, all: number[], sec: number){
+  if (!sec) return all;
+  if (sec!==SEC_SIEGE) return all.filter(t => sectorOf(d,t)===sec);
+  if (!all.length || castleCutOff(d)) return all;
+  const [ox,oy]=originOf(d); let p=all[0], pd=Infinity;
+  for (const t of all){ const e=Math.hypot(t%TW+0.5-ox,((t/TW)|0)+0.5-oy); if (e<pd){ pd=e; p=t; } }
+  const ax=p%TW+0.5, ay=((p/TW)|0)+0.5, dx=ox-ax, dy=oy-ay, L=dx*dx+dy*dy;
+  return all.filter(t => {
+    const x=t%TW+0.5, y=((t/TW)|0)+0.5, u=L ? Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/L)) : 0;
+    return Math.hypot(x-(ax+u*dx),y-(ay+u*dy))<=SIEGE_WIDTH || Math.hypot(x-ox,y-oy)<=SIEGE_NEAR;
+  });
+}
+
+/** Works out the front of a's attack on d (`only`: just the border on that landmass, else all of it; `sec`: just that part of it). The castle can't be taken, only broken: the line runs
     round it, until the castle stands cut off with no free ground of its own beside it (or is all that
     is left), and then its walls are part of the front too, ringed by men who break it. */
-export function lineOf(a: number, d: number, original=false, preset?: number[], only=0): Front {
+export function lineOf(a: number, d: number, original=false, preset?: number[], only=0, sec=0): Front {
   const D=W.nations[d], A=W.nations[a], tw=TW, th=TH, own=owner, oc=occ, all: number[]=[];
   const pset=preset ? new Set(preset) : null;   // (a line given: tiles of a's (its own, or d's it occupies), with its ground inland of them)
   // (the original border: only a's own land counts as held, however much of d's it occupies; d's ground, occupied or not, is the line's)
@@ -86,6 +113,7 @@ export function lineOf(a: number, d: number, original=false, preset?: number[], 
   if (!pset && !all.length && mates.length){ slices=false; scan(D, t => own[t]===d && !oc[t]); }
   if (!original && !pset && W.occCount[a*W.M+d]>0) scan(A, t => own[t]===a && oc[t]===d);
   if (only){ let k=0; for (const t of all) if (isle[t]===only) all[k++]=t; all.length=k; }   // (only the border on that landmass)
+  if (sec && !pset){ const part=partOf(d,all,sec); all.length=0; all.push(...part); }   // (and only that part of it)
   const open=all.filter(t => !underCastle(d,t)), walls=all.filter(t => underCastle(d,t));
   // The castle surrounded: nothing of theirs left beside it. The armies stop pushing the border and only break the castle.
   const island=walls.length>0 && castleCutOff(d);

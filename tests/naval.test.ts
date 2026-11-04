@@ -1,12 +1,12 @@
 // The sea: naval bases, ships, colonies, naval invasions.
 import { describe, it, expect } from 'vitest';
 import { TW, TH, NT, NP, PW, T_GRASS, T_WATER, B_NAVAL, B_HOUSE } from '../src/core/constants';
-import { W, owner, occ, isLand, isle, terr, pBuild, pType, pSpan, ferry } from '../src/sim/state';
+import { W, owner, occ, isLand, isle, sea, terr, pBuild, pType, pSpan, ferry } from '../src/sim/state';
 import { newWorld, startMatch, tick, queueCommand } from '../src/sim/sim';
 import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
 import { build, navalSite, navalProblem, plotProblem, costFor, structureOf } from '../src/sim/buildings';
-import { labelWorld, allocIsles, basesOf, dockTile, settlePlan, SHIP_TICKS, hasLandOn } from '../src/sim/naval';
+import { labelWorld, allocIsles, seaPaths, waypoints, basesOf, dockTile, settlePlan, SHIP_TICKS, hasLandOn } from '../src/sim/naval';
 
 const N = (i: number) => W.nations[i];
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
@@ -180,3 +180,24 @@ describe('villagers cross by boat', () => {
   });
 });
 
+
+describe('ships keep to the water', () => {
+  it('no stretch of any ship\'s course crosses land, on a real map with coves, peninsulas and islands', () => {
+    newWorld(5,'europe-s');
+    const water: number[]=[]; for (let t=0;t<NT;t+=37) if (!isLand[t] && sea[t]>0) water.push(t);
+    let checked=0, bad=0, rng=12345; const rnd=() => (rng=(Math.imul(rng,1103515245)+12345)>>>0)/4294967296;
+    for (let k=0;k<400 && checked<60;k++){
+      const s=water[(rnd()*water.length)|0], g=water[(rnd()*water.length)|0];
+      if (s===g || sea[s]!==sea[g]) continue;
+      const path=seaPaths(s,[g]).get(g); if (!path) continue;
+      const wp=waypoints(path), pts: number[]=[(s%TW)*2+1,((s/TW)|0)*2+1,...wp];
+      for (let i=0;i+3<pts.length;i+=2){
+        const ax=pts[i]/2, ay=pts[i+1]/2, bx=pts[i+2]/2, by=pts[i+3]/2, n=Math.max(1,Math.ceil(Math.hypot(bx-ax,by-ay)*10));
+        for (let j=0;j<=n;j++){ const x=ax+(bx-ax)*j/n, y=ay+(by-ay)*j/n; if (isLand[Math.floor(y)*TW+Math.floor(x)]){ bad++; break; } }
+      }
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(20);
+    expect(bad).toBe(0);
+  });
+});

@@ -1,13 +1,14 @@
 /* ---------- bots ---------- */
 import { B_EMPTY, B_RUINS, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOUSE, PW, PH, NP, WAGE } from '../core/constants';
-import { W, pType, pOwner, pPrio, pAband, type Nation } from './state';
+import { W, isle, pType, pOwner, pPrio, pAband, type Nation } from './state';
 import { launch } from './territory';
 import { grossIncome } from './sim';
 import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, TOPICS, MAX_TIER, setStudy, maxed } from './research';
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, togglePriority, anyWithin, isEnemyLand, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, guardsOpening, standingTower, WALL_MAX } from './fort';
-import { allied, atWar, assignArmy, ready, available, declare, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, frontIds, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD, setStance, S_RUSH, S_BALANCED } from './war';
+import { SEC_SIEGE } from './front';
+import { allied, atWar, assignArmy, ready, available, declare, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, frontIds, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD } from './war';
 
 const WALL = -1;   // a tower of the town wall, in a wishlist
 const STALE = 1800;   // ticks a war's border may stand still (3 minutes) before a bot thinks of ending it
@@ -330,11 +331,15 @@ function botWar(n: Nation){
   const want=armyShare(n), d=want-n.soldierShare;
   n.soldierShare=Math.min(1,Math.max(0,n.soldierShare+Math.max(-0.04,Math.min(0.1,d))));
   const dug=outnumbered(n);
-  // how its armies fight a front: a rush on the capital when it is far the stronger, else balanced
+  // a siege of the capital when it is far the stronger (and bold): the armies on the capital's landmass all go for it, except those whose stretch of border
+  // the enemy still holds in strength (enough stay to match the enemy soldiers there, the biggest army going first)
   if (W.tickN%100===id%100) for (let o=1;o<M;o++){
-    if (o===id || !W.nations[o].alive || !(W.wars[id*M+o] || W.aggr[id*M+o])) continue;
+    if (o===id || !W.nations[o].alive || !W.wars[id*M+o]) continue;
     const D=W.nations[o];
-    setStance(id,o, menOn(id,o)>=defence(D)*2.2 && n.attackAt>0.6 ? S_RUSH : S_BALANCED);
+    if (D.capTile<0 || menOn(id,o)<defence(D)*2.2 || n.attackAt<=0.6) continue;
+    const cap=isle[D.capTile], mine=W.campaigns.filter(c => c.a===id && c.d===o && c.front && c.phase<2 && c.naval<0 && !c.militia && c.unit>=0 && c.sec!==SEC_SIEGE).sort((x,y) => y.members.length-x.members.length);
+    let left=facing(id,o)*0.5;   // (the enemy soldiers that may be met on the way: half of them stay behind)
+    for (const c of mine){ if (c.isle!==cap) continue; if (left>0){ left-=c.members.length; continue; } assignArmy(id,c.unit,o,0,true,SEC_SIEGE); }
   }
   for (let o=1;o<M;o++){
     if (!W.offers[o*M+id]) continue;

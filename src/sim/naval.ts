@@ -153,12 +153,15 @@ export function seaPaths(start: number, goals: number[]): Map<number, number[]> 
   for (const g of found) out.set(g,wayBack(g));
   return out;
 }
-/** Is the straight line a→b (tile coordinates) all water? */
+/** Is the straight line a→b (tile coordinates) all water, with a margin (a ship has a hull, and a line must not clip a corner of the land)? */
 function clearSea(ax: number, ay: number, bx: number, by: number){
-  const d=Math.hypot(bx-ax,by-ay), n=Math.max(1,Math.ceil(d*2));
-  for (let i=1;i<n;i++){
+  const d=Math.hypot(bx-ax,by-ay), n=Math.max(1,Math.ceil(d*4)), M=0.45;
+  for (let i=0;i<=n;i++){
     const x=ax+(bx-ax)*i/n, y=ay+(by-ay)*i/n;
-    if (isLand[Math.floor(y)*TW+Math.floor(x)] || isLand[Math.floor(ay+(by-ay)*(i-0.5)/n)*TW+Math.floor(ax+(bx-ax)*(i-0.5)/n)]) return false;
+    for (const [ox,oy] of [[0,0],[M,0],[-M,0],[0,M],[0,-M]]){
+      const tx=Math.floor(x+ox), ty=Math.floor(y+oy);
+      if (tx<0 || ty<0 || tx>=TW || ty>=TH || isLand[ty*TW+tx]) return false;
+    }
   }
   return true;
 }
@@ -196,9 +199,11 @@ export function launchShip(o: number, q: number, tiles: number[], extra: Partial
 /** Sends ship s home by the way it came. */
 export function recall(s: Ship){
   if (s.mode===SHIP_BACK) return;
-  s.mode=SHIP_BACK; s.path=s.back.slice(); s.pi=0;
-  // from where it is: the first waypoints of the way back may be behind it
-  s.path.unshift(s.x,s.y);
+  // home by the way it came: back over the waypoints it has passed, newest first, and into its dock (never straight across to the ones it has not reached)
+  const passed=s.path.slice(0,Math.min(s.pi,s.path.length)), back: number[]=[];
+  for (let i=passed.length-2;i>=0;i-=2) back.push(passed[i],passed[i+1]);
+  back.push(s.back[s.back.length-2],s.back[s.back.length-1]);
+  s.mode=SHIP_BACK; s.path=back; s.pi=0;
 }
 const shipById = (id: number) => W.ships.find(s => s.id===id);
 export { shipById };

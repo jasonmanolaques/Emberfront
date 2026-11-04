@@ -278,8 +278,9 @@ function drawAssign(now: number, vx0: number, vy0: number, vx1: number, vy1: num
     for (const t of tiles){ const x=(t%TW)*RS, y=((t/TW)|0)*RS; if (x<vx0-RS||y<vy0-RS||x>vx1||y>vy1) continue; ctx.fillRect(x,y,RS,RS); }
     ctx.globalAlpha=1;
   };
-  for (const b of bordersOf(PLAYER)) if (b!==A.hot && !(A.hot && b.d===A.hot.d && b.isle===A.hot.isle)) paint(b.tiles,'rgba(14,10,8,0.35)','#ffffff',0.35);
-  const h=A.hot ? bordersOf(PLAYER).find(b => b.d===A.hot!.d && b.isle===A.hot!.isle) : undefined;
+  const same = (b: { d: number; isle: number; sec: number }) => !!A.hot && b.d===A.hot.d && b.isle===A.hot.isle && b.sec===A.hot.sec;
+  for (const b of bordersOf(PLAYER)) if (!same(b)) paint(b.tiles,'rgba(14,10,8,0.35)','#ffffff',0.35);
+  const h=bordersOf(PLAYER).find(same);
   if (h) paint(h.tiles,'rgba(14,10,8,0.7)','#ffd23f',0.65+0.3*pulse);
 }
 

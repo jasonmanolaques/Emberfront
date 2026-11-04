@@ -81,6 +81,14 @@ listen({
     else if (d===PLAYER){ log(`${nm(a)} attacks: it is war!`,'bad'); toast(`${nm(a)} attacks: war!`); }
     else log(`${nm(a)} goes to war with ${nm(d)}`);
   },
+  siege: (a,d,start) => {
+    if (start){
+      if (d===PLAYER){ log(`Your capital is under siege! ${nm(a)} has encircled it: your defenders fight to the bitter end`,'bad'); toast('Your capital is under siege'); }
+      else if (a===PLAYER){ log(`The capital of ${nm(d)} is under siege! Its defenders are fighting to the bitter end`,'good'); toast(`${nm(d)}'s capital is under siege`); }
+      else log(`The capital of ${nm(d)} is under siege by ${nm(a)}`);
+    } else if (d===PLAYER) log('The siege of your capital is over','good');
+    else if (a===PLAYER) log(`The siege of ${nm(d)}'s capital is over`);
+  },
   deescalated: (a,d) => {
     if (a===PLAYER) log(`You call the crisis with ${nm(d)} off: your armies head home`);
     else if (d===PLAYER){ log(`${nm(a)} backs down: its armies leave your border`,'good'); toast(`${nm(a)} backs down`); }

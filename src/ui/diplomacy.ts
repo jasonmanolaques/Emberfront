@@ -9,7 +9,7 @@ import { W, pType, pOwner, pBurn } from '../sim/state';
 import { client } from '../client';
 import { basesOf, dockTile, shipById, SHIP_CAP, SHIP_WAIT } from '../sim/naval';
 import { queueCommand } from '../sim/sim';
-import { S_BALANCED, S_RUSH, allied, atWar, available, callable, callableCount, allyProblem, warProblem, navalPlan, navalOf, defendProblem, reservesOf, reservesProblem, inCrisis, crisisWait, attacks, hasArmies, OFFER_TICKS, PRESENT, F_GATHER, F_READY, F_PUSH } from '../sim/war';
+import { allied, atWar, available, callable, callableCount, allyProblem, warProblem, navalPlan, navalOf, defendProblem, reservesOf, reservesProblem, inCrisis, crisisWait, attacks, hasArmies, OFFER_TICKS, PRESENT, F_GATHER, F_READY, F_PUSH } from '../sim/war';
 import type { Campaign, Human } from '../sim/state';
 import { toast, ui } from './hud';
 import { ArmyPicker, armyName, baseName } from './armies';
@@ -261,7 +261,7 @@ export function updateWarChips(){
     const massed=f.incoming.reduce((k,c)=>k+c.members.length,0);
     const men=(massed ? ` · ${massed} ${f.a===PLAYER ? 'holding their border' : 'on your border'}` : '')+(f.men>0 ? ` · ${f.men} out` : '');
     const chip=`<button class="chip war${f.theyOffer||f.ready?' offer':''}${open?' threat':''}" data-o="${f.o}" data-act="${act}" ${off||!act?'disabled':''}><i class="flag" style="${flagCSS(W.nations[f.a].code)}"></i>${esc(nameOf(f.a))} – ${esc(nameOf(f.d))} · ${kind}${men}<b>${label}</b></button>`;
-    return `<div class="front" data-o="${f.o}"><div class="fhead">${chip}<button class="x fclose" data-o="${f.o}" aria-label="Close this war bar" title="Close this bar (it comes back with the next war or crisis)">×</button></div>${word(f.o,byId)}${stances(f.o)}${powerBar(f,track(f.o,byId),byId)}${reserves(f.o)}</div>`;
+    return `<div class="front" data-o="${f.o}"><div class="fhead">${chip}<button class="x fclose" data-o="${f.o}" aria-label="Close this war bar" title="Close this bar (it comes back with the next war or crisis)">×</button></div>${word(f.o,byId)}${powerBar(f,track(f.o,byId),byId)}${reserves(f.o)}</div>`;
   }).join('');
   if (html!==lastChips){ lastChips=html; wars.innerHTML=html; placePop(); }
   if (!pop.hidden){
@@ -313,17 +313,6 @@ function word(o: number, byId: Map<number, Human>){
 }
 /** How many of our armies on the war with o attack (rather than defend). */
 const armiesAttacking = (o: number) => W.campaigns.filter(c => c.front && c.a===PLAYER && c.d===o && c.phase<2 && attacks(c)).length;
-const STANCE_TIPS = [
-  'Balanced: the armies take the border all along the front, and bring down watchtowers as they meet them',
-  'Capital rush: the armies push straight for their capital, and bring down only the watchtowers by the way, to end the war quickly',
-];
-/** The stance buttons under the chip, while our armies stand on the front against o: how they fight. */
-function stances(o: number){
-  if (!W.campaigns.some(c => c.a===PLAYER && c.d===o && c.front && c.phase<2 && c.hostile)) return '';
-  const cur=W.stance[PLAYER*W.M+o];
-  const names=['Balanced','Capital rush'];
-  return `<div class="fstances" role="group" aria-label="How your armies fight">${[S_BALANCED,S_RUSH].map(s => `<button class="fst" data-o="${o}" data-st="${s}" aria-pressed="${cur===s}" title="${esc(STANCE_TIPS[s])}">${names[s]}</button>`).join('')}</div>`;
-}
 /** The militia on the war with o: call up those at home (all of them, or the rest of them when some
     went with the attack), or send them home. */
 function reserves(o: number){
@@ -399,8 +388,6 @@ export function setupDiplomacy(){
     if (x){ const o=+x.dataset.o!; dismissed.add(o); if (popFor===o) closePop(); lastChips='\0'; updateWarChips(); return; }
     const w=(e.target as HTMLElement).closest('button.fword') as HTMLButtonElement | null;
     if (w){ if (!w.disabled){ queueCommand({ type:'offensive', nation:PLAYER, target:+w.dataset.o!, go:!!w.dataset.go }); lastChips=''; w.disabled=true; } return; }
-    const st=(e.target as HTMLElement).closest('button.fst') as HTMLButtonElement | null;
-    if (st){ queueCommand({ type:'stance', nation:PLAYER, target:+st.dataset.o!, stance:+st.dataset.st! }); lastChips=''; return; }
     const r=(e.target as HTMLElement).closest('button.fres') as HTMLButtonElement | null;
     if (r){ if (!r.disabled){ queueCommand({ type:'reserves', nation:PLAYER, target:+r.dataset.o!, call:!!r.dataset.call }); lastChips=''; r.disabled=true; } return; }
     const b=(e.target as HTMLElement).closest('button.chip') as HTMLButtonElement | null; if (!b || b.disabled) return;

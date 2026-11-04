@@ -13,7 +13,7 @@ import { toRuins, build, buildBlock, togglePriority, produce, resetHomes } from 
 import { scanContacts, census, censusStep } from './census';
 import { botThink } from './bots';
 import { updatePopulation, resetWalks, resetRooms } from './population';
-import { resetWar, declare, declareNaval, proposeAlliance, endWar, makePeace, setOffensive, armyOrder, armyFront, armyRecall, armyRedirect, assignArmy, deployArmies, setStance, deescalate, defend, callReserves } from './war';
+import { resetWar, declare, declareNaval, proposeAlliance, endWar, makePeace, setOffensive, armyOrder, armyFront, armyRecall, armyRedirect, assignArmy, deployArmies, deescalate, defend, callReserves } from './war';
 import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
 import { turnLedger, resetLedger } from './ledger';
@@ -251,11 +251,9 @@ function applyCommand(c: Command){
   } else if (c.type==='redirect'){
     armyRedirect(c.nation,c.camp,c.target,c.isle ?? 0);
   } else if (c.type==='assign'){
-    assignArmy(c.nation,c.army,c.target,c.isle ?? 0,c.go);
+    assignArmy(c.nation,c.army,c.target,c.isle ?? 0,c.go,c.sec ?? 0);
   } else if (c.type==='recall'){
     armyRecall(c.nation,c.camp);
-  } else if (c.type==='stance'){
-    setStance(c.nation,c.target,c.stance);
   } else if (c.type==='offensive'){
     setOffensive(c.nation,c.target,c.go);
   } else if (c.type==='deescalate'){

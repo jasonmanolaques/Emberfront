@@ -55,7 +55,7 @@ function endPointer(e: PointerEvent){
       else if (client.state==='play'){
         const o=t>=0 ? owner[t] : 0;
         const wasOpen=expandOpen(); closeExpand();
-        if (client.assigning) assignClick();
+        if (client.assigning) assignClick(e.shiftKey);
         else if (client.settling){ if (t>=0) navalSettleAt(t,e.clientX,e.clientY); }
         else if (client.landing){ if (t>=0) chooseCoast(t); }
         else if (client.placing) placeAt(t);

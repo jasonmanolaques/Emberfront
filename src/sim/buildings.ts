@@ -6,7 +6,7 @@
    more than its parts did apart. ---------- */
 import { plannedWall } from './fort';
 import { TW, PW, PH, NP, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_NAVAL, TH, isStructure } from '../core/constants';
-import { W, owner, occ, terr, isLand, isle, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, pMain, pHp, pTier, pSpan, pArmor, type Nation } from './state';
+import { W, owner, occ, terr, isLand, isle, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, pMain, pHp, pTier, pSpan, pArmor, pIn, type Nation } from './state';
 import { R_GATHER } from './research';
 import { on } from './events';
 import { gained } from './ledger';
@@ -16,6 +16,16 @@ function igniteOne(q: number){ if (pBurn[q]>0) return; pBurn[q]=2.5+W.srand()*2.
 export function ignite(q: number){
   const main = pType[q]===B_PART ? pMain[q] : q;
   for (const k of cover(main)) igniteOne(k);
+}
+/** A building of the ground ceded in a peace deal goes with it to its new owner, as it stands (a house with nobody resting in it, a tower with no guard):
+    the whole building, whichever of its plots the border ran across. */
+export function captureBuilding(q: number, o: number){
+  const main=pType[q]===B_PART ? pMain[q] : q, prev=pOwner[main]; if (prev===o || !prev) return;
+  const P=W.nations[prev], N=W.nations[o];
+  for (const k of cover(main)){ pOwner[k]=o; pPrio[k]=0; pIn[k]=0; on.plotChanged(k); }
+  const i=P.blds.indexOf(main); if (i>=0) P.blds.splice(i,1);
+  if (!N.blds.includes(main)) N.blds.push(main);
+  for (const h of W.humans) if (h.o===prev){ if (h.rest===main) h.rest=-1; if (h.home===main) h.home=-1; if (h.work===main) h.work=-1; if (h.site===main) h.site=-1; if (h.post===main) h.post=-1; }
 }
 export function toRuins(q: number){ pSpan[q]=0; pType[q]=B_RUINS; pOwner[q]=0; pVar[q]=(W.srand()*8)|0; pBurn[q]=0; pTimer[q]=35+W.srand()*30; pPrio[q]=0; pAband[q]=0; pHp[q]=0; pTier[q]=0; pArmor[2][q]=pArmor[3][q]=0; on.plotChanged(q); }
 

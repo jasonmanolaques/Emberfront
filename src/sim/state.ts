@@ -66,6 +66,7 @@ export interface Human {
   aim: number;                       // soldiers: plot of the enemy building they are attacking, or -1
   cool: number;                      // ticks until they can strike again
   slot: number;                      // place in the campaign's formation, or the home guard's line
+  fury: boolean;                     // spawned in a siege, in the besieged capital: 25% more hit points and damage until the siege is over
   brave: number;                     // villagers with enemies near: -1 not yet decided, 0 running away, 1 fighting
   calm: number;                      // ticks since an enemy was last near
   work: number;                      // builders and blacksmiths: plot of the builders guild or smithy they work at, or -1
@@ -106,6 +107,7 @@ export interface Campaign {
   mode: number;                      // its offensive's state (F_* in war.ts)
   naval: number;                     // an army put ashore from ships: the invasion it belongs to, else -1
   isle: number;                      // the landmass of the enemy's land it is on the front of (a landmass id: sim/naval.ts), or 0: the whole border
+  sec: number;                       // which part of that border: 0 all of it, 1-8 the compass sector (by bearing from their castle), 9 the siege of their capital (SEC_SIEGE in sim/front.ts)
   attack: boolean;                   // its order at war: attack (true) or defend (false: fall back out of reach of the enemy's towers and hold the line there)
   ordered: boolean;                  // the order was given by someone (not the default for the side it fights on)
   placed: number;                    // the line its men were last placed on: 0 none yet, 1 the attack line, 2 the line of the defence
@@ -160,14 +162,13 @@ export type Command =
   | { type: 'peace'; nation: number; target: number }                 // accept the target's peace offer
   | { type: 'research'; nation: number; topic: number }               // study this topic next (R_* in research.ts)
   | { type: 'invest'; nation: number; share: number }                // city investment (0..1)
-  | { type: 'stance'; nation: number; target: number; stance: number }   // how the armies on the front against target fight: balanced or capital rush
   | { type: 'offensive'; nation: number; target: number; go: boolean }   // attack along the front (in a crisis: go to war), or hold the front
   | { type: 'deescalate'; nation: number; target: number }            // call off the crisis our massed armies started: everyone goes home
   | { type: 'deploy'; nation: number; target: number; units?: number[]; militia?: number; isle?: number }   // put armies on the border in peace, ready for a crisis
   | { type: 'order'; nation: number; camp: number; go: boolean }   // an army at war attacks (go) or defends
   | { type: 'front'; nation: number; camp: number; isle: number }   // an army goes to the border on that landmass
   | { type: 'redirect'; nation: number; camp: number; target: number; isle?: number }   // an army out on a border, not committed, goes to another kingdom's border
-  | { type: 'assign'; nation: number; army: number; target: number; isle?: number; go?: boolean }   // station an army (a barracks' key, or -2 for the militia) on the border with a kingdom, wherever it is now
+  | { type: 'assign'; nation: number; army: number; target: number; isle?: number; sec?: number; go?: boolean }   // station an army (a barracks' key, or -2 for the militia) on the border with a kingdom, wherever it is now
   | { type: 'recall'; nation: number; camp: number }   // an army at the border in peace or crisis goes home
   | { type: 'defend'; nation: number; target: number; units: number[]; isle?: number }   // send armies to stand on our side of the border with target
   | { type: 'reserves'; nation: number; target: number; call: boolean };  // call the militia up to the front against target, or send them home
@@ -224,7 +225,8 @@ export const W = {
   occCount: new Int32Array(1),       // [o*M+b] tiles of o's that b occupies
   lost: new Uint8Array(1),           // [o*M+b] b has occupied some of o's land in this war (cleared when o has it all back)
   ready: new Int32Array(1),          // [o*M+b] tick o's army took all its land back from b and stands ready to counter-attack (0 = not)
-  stance: new Uint8Array(1),         // [a*M+d] how a's armies fight d: balanced or capital rush (S_* in war.ts)
+  siege: new Int32Array(1),          // [d] the tick d's capital was encircled (the siege is on), or 0
+  siegeBy: new Uint8Array(1),        // [d] the kingdom that besieges it
   offensive: new Uint8Array(1),      // [a*M+d] a's offensive against d: gathering at the border, ready, attacking or holding (F_* in war.ts)
   kills: new Int32Array(1),          // [a*M+b] people of b's that a has killed in their war (since it began)
   stall: new Int32Array(1),          // [a*M+b] ticks their war has gone without the border between them moving much (both ways)
