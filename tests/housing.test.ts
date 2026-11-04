@@ -4,7 +4,7 @@ import { TW, TH, NT, NP, PW, B_HOUSE, B_SITE, B_EMPTY, B_MINTER, TAX_PER_VILLAGE
 import { W, owner, isLand, pType, pOwner, pAband, pCenter, pBuild } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { build, plotProblem, cancelSite } from '../src/sim/buildings';
-import { humanRate, HOUSE_BONUS, FARM_BONUS, HUMAN_EVERY, H_VILLAGER, H_SOLDIER, TASK_ROAM, TASK_HOME_GO, TASK_HOME_BUILD, BUILD_TICKS, ABANDON_TICKS, BEG_TICKS, STARVE_TICKS } from '../src/sim/population';
+import { humanRate, spareBeds, HOUSE_BONUS, FARM_BONUS, H_VILLAGER, H_SOLDIER, TASK_ROAM, TASK_HOME_GO, TASK_HOME_BUILD, BUILD_TICKS, ABANDON_TICKS, BEG_TICKS, STARVE_TICKS } from '../src/sim/population';
 import { listen } from '../src/sim/events';
 import { B_BARRACKS } from '../src/core/constants';
 
@@ -230,23 +230,20 @@ describe('homeless people and beggars', () => {
   });
 });
 
-describe('houses speed up the raising of people', () => {
-  it('raises humans 1% faster for each bed the houses hold, on top of the farms: a kingdom that lost many people recovers quickly', () => {
+describe('empty houses speed up the raising of people', () => {
+  it('raises humans 1% faster for each bed nobody needs, on top of the farms: none when everyone fills a house, 6% with 6 more beds than people', () => {
     start(12345, 0);
     expect(HOUSE_BONUS).toBe(0.01);
-    me().farms=0; me().beds=0; expect(humanRate(me())).toBe(1);
-    me().beds=40; expect(humanRate(me())).toBeCloseTo(1.4,9);
-    me().farms=10; expect(humanRate(me())).toBeCloseTo(1+FARM_BONUS*10+0.4,9);
-    // in play: a bigger house count means the next human comes sooner
-    const next = (beds: number) => { start(12345,0); me().beds=beds; me().farms=0; me().humanProg=0; let t=0; while (me().humanProg<HUMAN_EVERY && t<5000){ me().beds=beds; const was=me().humanProg; me().humanProg=was; tick(); t++; if (me().humanProg<was) break; } return t; };
-    expect(next(100)).toBeLessThan(next(0)*0.7);
+    me().farms=0; me().beds=12;
+    expect(spareBeds(me(),12)).toBe(0); expect(humanRate(me(),12)).toBe(1);      // 12 people, 12 beds: no bonus
+    expect(spareBeds(me(),6)).toBe(6); expect(humanRate(me(),6)).toBeCloseTo(1.06,9);   // 6 people: 6 spare beds, 6%
+    expect(humanRate(me(),20)).toBe(1);                                          // (more people than beds: none, never a penalty)
+    me().farms=10; expect(humanRate(me(),6)).toBeCloseTo(1+FARM_BONUS*10+0.06,9);
   });
 
-  it('counts the capacity of every house standing, empty ones too, and a better house adds to it (the builders guild)', () => {
-    start(12345, 0); expand(8); run(3000);
-    const hs=houses(); expect(hs.length).toBeGreaterThan(0);
-    const beds=me().beds;
-    expect(beds).toBeGreaterThanOrEqual(hs.length);
-    expect(humanRate(me())).toBeGreaterThan(1+HOUSE_BONUS*(beds-1));
+  it('in play, a kingdom with houses to spare raises its people sooner, and an upgraded house (more beds) adds to the bonus', () => {
+    const next = (beds: number) => { start(12345,0); me().farms=0; me().humanProg=0; let t=0, was=0;
+      while (t<5000){ me().beds=beds; was=me().humanProg; tick(); t++; if (me().humanProg<was) break; } return t; };
+    expect(next(100)).toBeLessThan(next(0)*0.7);
   });
 });

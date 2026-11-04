@@ -1,7 +1,7 @@
 /* ---------- HUD: kingdom card, leaderboard, attack chips, log, toasts, end card ---------- */
 import { PLAYER, TICK, UNPAID_TICKS, GAME_SPEED } from '../core/constants';
 import { fmt, fmtTime } from '../core/util';
-import { HUMAN_EVERY, FARM_BONUS, HOUSE_BONUS, humanRate } from '../sim/population';
+import { HUMAN_EVERY, FARM_BONUS, HOUSE_BONUS, humanRate, spareBeds } from '../sim/population';
 import { W } from '../sim/state';
 import { allied, atWar } from '../sim/war';
 import { client } from '../client';
@@ -45,8 +45,8 @@ export function updateHUD(now: number){
   ui.meHomeless.textContent=`${me.homeless} homeless${me.beggars?` · ${me.beggars} begging`:''} · homeless villagers pay no tax`;
   ui.meVillagers.textContent=String(me.villagers); ui.meSoldiers.textContent=String(me.soldiers-me.militia);
   ui.meMilitia.textContent=me.called ? `${me.militia} (${me.called} called up)` : String(me.militia); ui.meMilitiaRow.hidden=!me.militia; ui.meTraining.textContent=String(me.training);
-  const perTick=humanRate(me);
-  ui.meNext.textContent = me.alive && me.capTile>=0 ? `Next human in ${Math.max(0,Math.ceil((HUMAN_EVERY-me.humanProg)/perTick*TICK/GAME_SPEED))}s${me.farms?` · farms +${Math.round(FARM_BONUS*me.farms*100)}%`:''}${me.beds?` · homes +${Math.round(HOUSE_BONUS*me.beds*100)}%`:''}` : 'No capital: no new humans';
+  const people=me.villagers+me.soldiers+me.beggars, spare=spareBeds(me,people), perTick=humanRate(me,people);
+  ui.meNext.textContent = me.alive && me.capTile>=0 ? `Next human in ${Math.max(0,Math.ceil((HUMAN_EVERY-me.humanProg)/perTick*TICK/GAME_SPEED))}s${me.farms?` · farms +${Math.round(FARM_BONUS*me.farms*100)}%`:''}${spare?` · empty homes +${Math.round(HOUSE_BONUS*spare*100)}%`:''}` : 'No capital: no new humans';
   // without a barracks, everyone under arms trains at the castle as militia
   ui.soldiers.disabled=!me.alive; ui.soldiersHint.hidden=!me.alive || me.barracks>0;
   // city investment opens up with the first builders guild; beside it, the goods of the last minute

@@ -136,8 +136,8 @@ describe('what the buildings do', () => {
     start(12345, 0); expand(3);
     const plots=freePlots();
     for (let k=0;k<4;k++) place(B_FARM, plots[k]);
-    const before=mine().length, t0=W.tickN, p0=me().humanProg, rate=humanRate(me());   // (4 farms: 12% faster, and 1% for each bed)
-    expect(rate).toBeCloseTo(1.12+0.01*me().beds,9);
+    const before=mine().length, t0=W.tickN, p0=me().humanProg, rate=humanRate(me(),mine().length);   // (4 farms: 12% faster, and 1% for each bed nobody needs)
+    expect(rate).toBeCloseTo(1.12+0.01*Math.max(0,me().beds-mine().length),9);
     run(10*E);
     expect(Math.abs((mine().length-before) - (Math.floor((p0+10*E*rate)/E) - Math.floor(p0/E)))).toBeLessThanOrEqual(1);   // (houses finished meanwhile speed it up a little)
     expect(W.tickN-t0).toBe(10*E);
