@@ -9,6 +9,7 @@ import { genRealMap, capitalsOn, REAL_MAPS } from './realmap';
 import { VIEWS } from './mapview';
 import { COUNTRIES, MAJOR, countryByCode, colourGap, type Country } from '../core/countries';
 import { setOwner, stepAttack, launch, touches } from './territory';
+import { mergeArmies, unmergeArmies } from './army';
 import { toRuins, build, buildBlock, togglePriority, produce, resetHomes } from './buildings';
 import { scanContacts, census, censusStep } from './census';
 import { botThink } from './bots';
@@ -250,6 +251,10 @@ function applyCommand(c: Command){
     armyFront(c.nation,c.camp,c.isle);
   } else if (c.type==='redirect'){
     armyRedirect(c.nation,c.camp,c.target,c.isle ?? 0);
+  } else if (c.type==='merge'){
+    mergeArmies(c.nation,c.a,c.b);
+  } else if (c.type==='unmerge'){
+    unmergeArmies(c.nation,c.key);
   } else if (c.type==='assign'){
     assignArmy(c.nation,c.army,c.target,c.isle ?? 0,c.go,c.sec ?? 0);
   } else if (c.type==='recall'){

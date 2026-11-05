@@ -47,7 +47,7 @@ listen({
   roleChanged: gatePuff,
   towerShot: (x0,y0,x1,y1,kill,victim) => { addShot(x0,y0,x1,y1,kill); noteArrow(victim,x0,y0,x1,y1); },
   // "+5 wood" over your own plantations, quarries and mines when they deliver
-  produced: (q,id,good,amount) => { if (id===PLAYER) floats.push({ x:(q%PW)*8+8, y:((q/PW)|0)*8-1, text:`+${amount} ${GOOD_NAME[good]}`, t0:performance.now(), c:GOOD_COL[good] }); },
+  produced: (q,id,good,amount) => { if (id===PLAYER) floats.push({ x:(q%PW)*8+8, y:((q/PW)|0)*8-1, text:`+${amount}`, t0:performance.now(), c:GOOD_COL[good] }); },
   // war
   hit: (x,y,kill,victim,attacker) => { addHit(x,y,kill); noteBlow(victim,attacker); },
   swing: noteSwing,

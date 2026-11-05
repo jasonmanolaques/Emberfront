@@ -25,6 +25,10 @@ export const TIER_NAME = ['', 'I', 'II', 'III'];
 const H_SOLDIER = 1;                                // (population.ts; repeated here to keep this module standalone)
 const RACK_R = 14;                                  // pixels from a barracks door a soldier picks up armour
 
+/* ---------- order groups: armies merged under one name, like the armies of a field marshal ----------
+   Merged armies stay what they are (each barracks keeps its own soldiers and recruits its own): they are only given orders together. A group has up to a lead and
+   MAX_MERGES others. */
+export const MAX_MERGES = 5;
 /** One barracks (joined modules) and its army. */
 export interface Unit {
   key: number;           // its first plot: names it while its modules stay the same
@@ -38,7 +42,7 @@ export interface Unit {
 export let units: Unit[][] = [];                    // per kingdom, rebuilt every tick
 const unitOf = new Map<number, Unit>();             // barracks plot -> its unit
 export const unitAt = (q: number) => unitOf.get(q);
-export const maxHp = (h: Human) => (h.kind!==H_SOLDIER ? VILLAGER_HP : h.militia ? MILITIA_HP : SOLDIER_HP[h.tier]*2**h.lead)*(h.fury ? 1.25 : 1);   // an army's leader: doubled for each rank; one spawned in a siege, a quarter more
+export const maxHp = (h: Human) => (h.kind!==H_SOLDIER ? VILLAGER_HP : h.militia ? MILITIA_HP : SOLDIER_HP[h.tier]*2**h.lead)*(h.fury ? 1.25 : 1)*(h.dug ? 1.15 : 1);   // an army's leader: doubled for each rank; one spawned in a siege, a quarter more
 const frontOf = (q: number): [number, number] => [(q%PW)*8+4, ((q/PW)|0)*8+7.5];
 const standing = (q: number, o: number) => pType[q]===B_BARRACKS && pOwner[q]===o && pBurn[q]<=0;
 
@@ -68,6 +72,45 @@ export function buildUnits(){
       for (const k of u.plots){ u.stored[2]+=pArmor[2][k]; u.stored[3]+=pArmor[3][k]; }
       units[n.id].push(u);
     }
+  }
+  tidyGroups();
+}
+
+/** The unit keys of the order group army `key` of kingdom o belongs to, the lead first; just [key] if it has none. */
+export function groupKeys(o: number, key: number): number[] {
+  const u=unitOf.get(key); if (!u) return [key];
+  for (const g of W.groups){
+    if (g.o!==o || !g.members.some(m => m.some(q => u.plots.includes(q)))) continue;
+    const keys: number[]=[]; for (const m of g.members){ const k=m.map(q => unitOf.get(q)).find(x => x && x.o===o); if (k && !keys.includes(k.key)) keys.push(k.key); }
+    return keys.length ? keys : [key];
+  }
+  return [key];
+}
+/** The lead of army `key`'s group: the key of the army that carries its name. */
+export const groupLead = (o: number, key: number) => groupKeys(o,key)[0];
+/** Joins army b to army a's group (a leads, or a's group's lead does): false if either is gone, they are one group already, b is in another, or the group is full. */
+export function mergeArmies(o: number, a: number, b: number){
+  const ua=unitOf.get(a), ub=unitOf.get(b); if (!ua || !ub || ua.o!==o || ub.o!==o || ua===ub) return false;
+  const ka=groupKeys(o,a), kb=groupKeys(o,b);
+  if (kb.length>1 || ka.includes(ub.key) || ka.length>MAX_MERGES) return false;
+  let g=W.groups.find(g => g.o===o && g.members.some(m => m.some(q => ua.plots.includes(q))));
+  if (!g){ g={ o, members:[ua.plots.slice()] }; W.groups.push(g); }
+  g.members.push(ub.plots.slice());
+  return true;
+}
+/** Dissolves the order group army `key` belongs to: every army in it is on its own again. */
+export function unmergeArmies(o: number, key: number){
+  const u=unitOf.get(key); if (!u) return false;
+  const i=W.groups.findIndex(g => g.o===o && g.members.some(m => m.some(q => u.plots.includes(q))));
+  if (i<0) return false;
+  W.groups.splice(i,1); return true;
+}
+/** Groups follow their armies: a member is found again by any of its plots (barracks modules come and go); one whose barracks is gone leaves; a group of one is no group. */
+function tidyGroups(){
+  for (let i=W.groups.length-1;i>=0;i--){
+    const g=W.groups[i], seen=new Set<Unit>(), members: number[][]=[];
+    for (const m of g.members){ const u=m.map(q => unitOf.get(q)).find(x => x && x.o===g.o); if (u && !seen.has(u)){ seen.add(u); members.push(u.plots.slice()); } }
+    if (members.length<2) W.groups.splice(i,1); else g.members=members;
   }
 }
 

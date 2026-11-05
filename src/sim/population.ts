@@ -37,7 +37,7 @@ import { W, owner, occ, isLand, ferry, pType, pOwner, pBurn, pPrio, pAband, pIn,
 import { homeScore, startSite, cancelSite, finishHouse, plotProblem } from './buildings';
 import { on } from './events';
 import { Field } from './field';
-import { updateWar, wageOf, reinforce, marchStep, guardStep, alarmStep, mayStand, spread, warringNow } from './war';
+import { updateWar, borderPoints, wageOf, reinforce, marchStep, guardStep, alarmStep, mayStand, spread, warringNow } from './war';
 import { FERRY_PACE, laneBox } from './naval';
 import { HOUSE_BEDS, R_HOUSING, R_TOWERS, MAX_TIER } from './research';
 import { gained, spent, mayInvest } from './ledger';
@@ -358,12 +358,24 @@ function goRest(h: Human, at=-1){
 export function makeHuman(n: Nation, kind: number, x: number, y: number): Human {
   return { id:++W.humanSeq, o:n.id, kind, militia:false, to:0, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+W.prand()*2,
     hp:kind===H_SOLDIER?SOLDIER_HP[1]:VILLAGER_HP, post:-1, site:-1, home:-1, rest:-1, duel:-1, housed:false, homeless:0, beggar:false,
-    war:-1, boat:-1, foe:-1, aim:-1, cool:0, slot:0, brave:-1, fury:false, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
+    war:-1, boat:-1, foe:-1, aim:-1, cool:0, slot:0, brave:-1, fury:false, dug:false, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
     tier:kind===H_SOLDIER?1:0, base:-1, load:0, make:0, dest:-1 };
 }
 /** A new villager or militiaman walks out of the capital; a new soldier out of the barracks nearest the capital. */
+/** The barracks a new soldier of n comes out of: not one the enemy occupies, and of those the nearest the border where the fighting is (else the nearest the
+    castle); -1, the capital, when every one is occupied, or while the capital is under siege. */
+function spawnPlot(n: Nation, barracks: number[]){
+  if (W.siege[n.id]>0) return -1;
+  const free=barracks.filter(q => !occ[pCenter[q]]);
+  if (!free.length) return -1;
+  const pts=borderPoints(n.id);
+  if (!pts.length){ const [cx,cy]=doorOf(n); return nearestPlot(free,cx,cy); }
+  let best=free[0], bd=Infinity;
+  for (const q of free){ const x=(q%PW)*4+2, y=((q/PW)|0)*4+2; let d=Infinity; for (const t of pts) d=Math.min(d,(t%TW-x)**2+((t/TW|0)-y)**2); if (d<bd || (d===bd && q<best)){ bd=d; best=q; } }
+  return best;
+}
 function spawnHuman(n: Nation, kind: number, barracks: number[], militia=false){
-  const [cx,cy]=doorOf(n), [x,y] = kind===H_SOLDIER && !militia ? frontOf(nearestPlot(barracks,cx,cy)) : [cx,cy];
+  const [cx,cy]=doorOf(n), q=kind===H_SOLDIER && !militia ? spawnPlot(n,barracks) : -1, [x,y] = q>=0 ? frontOf(q) : [cx,cy];
   const h=makeHuman(n,kind,x,y);
   if (W.siege[n.id]>0){ h.fury=true; h.hp=maxHp(h); }   // (born in a besieged capital: they fight to the bitter end)
   if (militia){ h.militia=true; h.hp=MILITIA_HP; h.sp-=SPEED_UP[T_SOLDIER]-SPEED_UP[T_MILITIA]; }

@@ -66,6 +66,7 @@ export interface Human {
   aim: number;                       // soldiers: plot of the enemy building they are attacking, or -1
   cool: number;                      // ticks until they can strike again
   slot: number;                      // place in the campaign's formation, or the home guard's line
+  dug: boolean;                      // entrenched: an army holding its border for 10 seconds hits 15% harder and has 15% more health until it is told to attack
   fury: boolean;                     // spawned in a siege, in the besieged capital: 25% more hit points and damage until the siege is over
   brave: number;                     // villagers with enemies near: -1 not yet decided, 0 running away, 1 fighting
   calm: number;                      // ticks since an enemy was last near
@@ -84,6 +85,8 @@ export interface Human {
 }
 /** An army in the field: an attack (holding its part of a front, and pushing it on when the offensive
     is on), or an army defending a border. */
+/** A field marshal's command: armies merged into one order group. Each member is the barracks plots of one army as last seen; the first is the lead, whose name the group takes. */
+export interface Group { o: number; members: number[][]; }
 export interface Campaign {
   id: number; a: number; d: number;  // attacker, defender
   hostile: boolean;                  // still fighting: false once peace is made and the army walks home
@@ -107,6 +110,8 @@ export interface Campaign {
   mode: number;                      // its offensive's state (F_* in war.ts)
   naval: number;                     // an army put ashore from ships: the invasion it belongs to, else -1
   isle: number;                      // the landmass of the enemy's land it is on the front of (a landmass id: sim/naval.ts), or 0: the whole border
+  dig: number;                       // ticks the army has held its place on defence, counting toward entrenching (DIG_TICKS)
+  dug: boolean;                      // the army is entrenched: its men are too
   sec: number;                       // which part of that border: 0 all of it, 1-8 the compass sector (by bearing from their castle), 9 the siege of their capital (SEC_SIEGE in sim/front.ts)
   attack: boolean;                   // its order at war: attack (true) or defend (false: fall back out of reach of the enemy's towers and hold the line there)
   ordered: boolean;                  // the order was given by someone (not the default for the side it fights on)
@@ -168,6 +173,8 @@ export type Command =
   | { type: 'order'; nation: number; camp: number; go: boolean }   // an army at war attacks (go) or defends
   | { type: 'front'; nation: number; camp: number; isle: number }   // an army goes to the border on that landmass
   | { type: 'redirect'; nation: number; camp: number; target: number; isle?: number }   // an army out on a border, not committed, goes to another kingdom's border
+  | { type: 'merge'; nation: number; a: number; b: number }   // army b (a barracks' key) joins army a's order group; a leads and gives it its name
+  | { type: 'unmerge'; nation: number; key: number }          // army key's order group is dissolved
   | { type: 'assign'; nation: number; army: number; target: number; isle?: number; sec?: number; go?: boolean }   // station an army (a barracks' key, or -2 for the militia) on the border with a kingdom, wherever it is now
   | { type: 'recall'; nation: number; camp: number }   // an army at the border in peace or crisis goes home
   | { type: 'defend'; nation: number; target: number; units: number[]; isle?: number }   // send armies to stand on our side of the border with target
@@ -236,6 +243,7 @@ export const W = {
   ships: [] as Ship[], shipSeq: 0,   // ships at sea
   docks: new Map<number, Dock>(),    // naval base (main plot) → its yard
   invasions: [] as Invasion[], invSeq: 0,
+  groups: [] as Group[],             // armies merged into order groups (sim/army.ts)
   isleOwn: new Int32Array(0),        // [isle*M+o] tiles of o's on that island (and every landmass: sim/naval.ts)
   isleCount: 0,
 };

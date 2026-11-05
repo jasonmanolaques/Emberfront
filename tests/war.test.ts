@@ -10,10 +10,10 @@ import { census } from '../src/sim/census';
 import { build, plotProblem, structureOf, costFor, togglePriority, finishHouse } from '../src/sim/buildings';
 import { resetRooms } from '../src/sim/population';
 import { indoors, TASK_ROAM, TASK_HOME_GO, H_SOLDIER, H_VILLAGER, TASK_REST, TASK_TO_TRAIN, TASK_INSIDE, MILITIA_HP, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, frontOf, switching, pace, maxHp } from '../src/sim/population';
-import { UNIT_SIZE, buildUnits, station, unitAt, SOLDIER_DMG } from '../src/sim/army';
+import { UNIT_SIZE, buildUnits, station, unitAt, units, groupKeys, mergeArmies, SOLDIER_DMG } from '../src/sim/army';
 import { wallOf, walledFor, buildWalls } from '../src/sim/defense';
 import { callable, partner, warringNow, besieged, siegeLocked, allied, atWar, available, ready, declare, warProblem, mayStand, endWar, makePeace, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
-  RANKS, rankFor, invadeSpeed, INVADE_EMPTY, assignArmy, assignProblem, bordersOf, freeArmy, CRISIS_TICKS, frontKey, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, defendProblem, reservesOf, reservesProblem, menOn, deployArmies, armyOrder, armyFront, armyRecall, frontIsles, occOn, attacks, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, frontLines, marchPace, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
+  RANKS, rankFor, DIG_TICKS, invadeSpeed, INVADE_EMPTY, assignArmy, assignProblem, bordersOf, freeArmy, CRISIS_TICKS, frontKey, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, defendProblem, reservesOf, reservesProblem, menOn, deployArmies, armyOrder, armyFront, armyRecall, frontIsles, occOn, attacks, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, frontLines, marchPace, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
 import { navalPlan, declareNaval, navalOf, landingOn } from '../src/sim/war';
 import { botSea, navalAttack, seaDrive } from '../src/sim/botsea';
 import { basesOf, dockTile, labelWorld, allocIsles, landingZone, SHIP_CAP, SHIP_FRONT, INV_SAIL, INV_READY, INV_LAND, INV_DONE, shipById } from '../src/sim/naval';
@@ -2250,6 +2250,86 @@ describe('soldiers keep off third kingdoms\' ground', () => {
     tick();
     expect(W.humans.includes(h)).toBe(true);
     expect(owner[((h.y/2)|0)*TW+((h.x/2)|0)]).toBe(1);
+  });
+});
+
+describe('where new soldiers come out, entrenching, and order groups', () => {
+  /** Two barracks of 5, a near the castle and b far from it (nobody of 1's but the soldiers), a war with 2. */
+  function two(){
+    world(1); labelWorld(); allocIsles(); quiet(); paintDisc(N(1),24); paintDisc(N(2),40); paintToward(1,2); noDraft(2);
+    const a=place(N(1),B_BARRACKS), b=place(N(1),B_BARRACKS,pCenter[a]);
+    soldiers(N(1),0,false); noDraft(); N(1).soldierShare=1; N(1).gold=1e6; run(3);
+    return { a, b };
+  }
+  /** The kingdom raises one soldier now: where he stands. */
+  function raise(){
+    const before=new Set(W.humans.filter(h => h.o===1).map(h => h.id));
+    N(1).humanProg=1e9; N(1).soldierShare=1; tick();
+    const h=W.humans.find(k => k.o===1 && !before.has(k.id))!;
+    return h;
+  }
+  const near = (h: { x: number; y: number }, q: number) => Math.hypot(h.x-((q%PW)*8+4),h.y-(((q/PW)|0)*8+7.5))<6;
+  it('a new soldier comes out of a barracks the enemy does not hold, not the capital\'s nearest; of all of them occupied, out of the castle; and in a siege always out of the castle', () => {
+    const { a, b }=two();
+    expect(near(raise(),a)).toBe(true);                              // (no war: the barracks nearest the castle, as ever)
+    const [dx,dy]=doorOf(N(1));
+    // a is held by the enemy: b
+    for (let y=0;y<4;y++) for (let x=0;x<4;x++) occupyHack(((((a/PW)|0)*4+y)*TW)+(a%PW)*4+x,2);
+    expect(near(raise(),b)).toBe(true);
+    for (let y=0;y<4;y++) for (let x=0;x<4;x++) occupyHack(((((b/PW)|0)*4+y)*TW)+(b%PW)*4+x,2);
+    const h=raise(); expect(Math.hypot(h.x-dx,h.y-dy)).toBeLessThan(6);   // all held: the castle
+    // a siege: always the castle
+    for (let y=0;y<4;y++) for (let x=0;x<4;x++){ freeHack(((((a/PW)|0)*4+y)*TW)+(a%PW)*4+x); freeHack(((((b/PW)|0)*4+y)*TW)+(b%PW)*4+x); }
+    while (W.tickN%10!==0) tick();   // (the siege is looked at on the seventh tick of ten: this one is held by hand)
+    W.siege[1]=W.tickN||1;
+    const g=raise();
+    expect(Math.hypot(g.x-dx,g.y-dy)).toBeLessThan(6);
+    expect(g.fury).toBe(true);
+  });
+
+  it('an army holding its place on defence digs in after 10 seconds: 15% harder and 15% more health, until it is told to attack', () => {
+    world(1); labelWorld(); allocIsles(); quiet(); paintDisc(N(2),40); paintToward(1,2); noDraft(2);
+    soldiers(N(1),10); noDraft(); run(2);
+    const keys=available(N(1)).map(a => a.unit.key);
+    for (const k of keys) expect(assignArmy(1,k,2)).toBe(true);
+    const c=W.campaigns.find(k => k.a===1)!;
+    expect(c.dug).toBe(false);
+    until(() => c.dug, 4000);
+    const men=c.members.map(id => W.humans.find(h => h.id===id)!);
+    until(() => men.every(h => h.dug), 600);
+    expect(DIG_TICKS).toBe(200);
+    expect(maxHp(men.find(h => !h.lead)!)).toBeCloseTo(SOLDIER_HP[1]*1.15,9);
+    const h=men.find(k => !k.lead)!; expect(h.hp).toBeCloseTo(SOLDIER_HP[1]*1.15,6);
+    // the order to attack ends it
+    expect(assignArmy(1,keys[0],2,0,true)).toBe(true);
+    run(2);
+    expect(c.dug).toBe(false); expect(men.every(k => !k.dug)).toBe(true);
+    expect(h.hp).toBeLessThanOrEqual(SOLDIER_HP[1]+1e-9);
+  });
+
+  it('armies merge into one order group: orders go to all of them, they stay separate armies, up to five can join, and it can be undone', () => {
+    world(1); labelWorld(); allocIsles(); quiet(); paintDisc(N(1),30); paintDisc(N(2),60); place(N(2),B_FARM); paintToward(1,2);
+    const free=Array.from({ length: NP }, (_, q) => q).filter(q => !plotProblem(N(1),q)).sort((x,y) => x-y), bs: number[]=[];
+    for (const q of free){ if (bs.length>=7) break; if (bs.every(b => Math.abs(b%PW-q%PW)>=3 || Math.abs(((b/PW)|0)-((q/PW)|0))>=3)){ N(1).stock=[100,100,100]; if (build(N(1),q,B_BARRACKS)) bs.push(q); } }
+    expect(bs.length).toBe(7); census(); buildUnits();
+    soldiers(N(1),35,false); N(1).soldierShare=1; noDraft(); noDraft(2); run(3);
+    const U=units[1].map(u => u.key), uniq=[...new Set(U)];
+    expect(uniq.length).toBeGreaterThanOrEqual(7);
+    const [k0,k1,k2,k3,k4,k5,k6]=uniq;
+    expect(groupKeys(1,k0)).toEqual([k0]);
+    queueCommand({ type:'merge', nation:1, a:k0, b:k1 }); tick();
+    expect(groupKeys(1,k0)).toEqual([k0,k1]); expect(groupKeys(1,k1)).toEqual([k0,k1]);
+    expect(mergeArmies(1,k1,k0)).toBe(false);                        // already one group
+    expect(mergeArmies(1,k0,k2)).toBe(true); expect(mergeArmies(1,k0,k3)).toBe(true); expect(mergeArmies(1,k0,k4)).toBe(true); expect(mergeArmies(1,k0,k5)).toBe(true);
+    expect(groupKeys(1,k0)).toHaveLength(6);
+    expect(mergeArmies(1,k0,k6)).toBe(false);                        // five merges at most
+    // one order sends them all
+    expect(assignArmy(1,k2,2)).toBe(true);
+    expect(W.campaigns.filter(c => c.a===1 && c.d===2).map(c => c.unit).sort()).toEqual([k0,k1,k2,k3,k4,k5].sort());
+    expect(W.campaigns.filter(c => c.a===1).length).toBe(6);         // six armies, still
+    // and an unmerge on any makes them separate again
+    queueCommand({ type:'unmerge', nation:1, key:k3 }); tick();
+    expect(groupKeys(1,k0)).toEqual([k0]); expect(groupKeys(1,k3)).toEqual([k3]);
   });
 });
 

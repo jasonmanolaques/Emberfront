@@ -34,7 +34,7 @@ import { setOwner, occIsleAdd } from './territory';
 import { ignite, dims } from './buildings';
 import { census } from './census';
 import { BLD_HP, bldHp, wear, towerTier, castleTier, TOWER_RELOADS, TOWER_DMGS, CASTLE_MEND, wallOf, wallTower, walledFor, buildWalls, resetWalls } from './defense';
-import { SOLDIER_DMG, MILITIA_HIT, units, unitAt, type Unit } from './army';
+import { SOLDIER_DMG, MILITIA_HIT, units, unitAt, groupKeys, type Unit } from './army';
 import { Field } from './field';
 import { lineOf, deploy, placeAt, indexAt, holds, enemyOf, underCastle, castleCutOff, partOf, sectorOf, originOf, SEC_SIEGE, SIEGE_WIDTH, SIEGE_NEAR, type Front } from './front';
 import { landingZone, offshore, landingTile, seaPaths, seaNearest, dockTile, shipById, launchShip, recall, navalHooks, basesOf, baseWater, SHIP_SP, SHIP_CAP, INV_SAIL, INV_READY, INV_LAND, INV_DONE, SHIP_WAIT, SHIP_BACK } from './naval';
@@ -213,7 +213,7 @@ const DIRS8 = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
 export function resetWar(M: number){
   W.campaigns=[]; W.campSeq=0;
   W.ally=new Uint8Array(M*M); W.atWar=new Uint8Array(M*M); W.offers=new Int32Array(M*M); W.grudge=new Int32Array(M*M).fill(-1e9);
-  W.wars=new Uint8Array(M*M); W.aggr=new Uint8Array(M*M); W.warSince=new Int32Array(M*M); W.occCount=new Int32Array(M*M); W.lost=new Uint8Array(M*M); W.ready=new Int32Array(M*M); W.offensive=new Uint8Array(M*M); W.siege=new Int32Array(M); W.siegeBy=new Uint8Array(M); W.kills=new Int32Array(M*M); W.stall=new Int32Array(M*M); W.lastNet=new Int32Array(M*M);
+  W.wars=new Uint8Array(M*M); W.aggr=new Uint8Array(M*M); W.warSince=new Int32Array(M*M); W.occCount=new Int32Array(M*M); W.lost=new Uint8Array(M*M); W.ready=new Int32Array(M*M); W.groups=[]; W.offensive=new Uint8Array(M*M); W.siege=new Int32Array(M); W.siegeBy=new Uint8Array(M); W.kills=new Int32Array(M*M); W.stall=new Int32Array(M*M); W.lastNet=new Int32Array(M*M);
   if (queue.length!==NT){ heldAt=new Int32Array(NT); heldBy=new Uint8Array(NT); queue=new Int32Array(NT); want=new Int32Array(NT); wantSeq=0; seen=new Int32Array(NT); seenSeq=0; came=new Int32Array(NT); }   // the map changed size
   byId.clear(); camps.clear(); troops.clear(); armies=[]; posts=[]; warring=new Uint8Array(M); rallies=[]; homeField=[]; homeFieldFor=[]; heldAt.fill(0); resetWalls();
   offensives.clear(); cuts.clear(); cutsAt.clear(); seaQ.clear(); seaBound.clear(); defended=new Uint8Array(M); borderCache.clear(); W.occIsle=new Map(); W.crisisAt=new Int32Array(M*M);
@@ -349,7 +349,7 @@ export function available(n: Nation, free=false){
 export const ready = (n: Nation) => available(n).reduce((k,a) => k+a.men.length, 0);
 /** An army taken off its border: its men are free, where they stand (to be sent somewhere else at once). */
 function unhitch(c: Campaign){
-  for (const id of c.members){ const h=byId.get(id) ?? W.humans.find(k => k.id===id); if (h){ h.war=-1; h.foe=-1; h.aim=-1; h.fk=-1; h.line=-1; unlead(h); } }
+  for (const id of c.members){ const h=byId.get(id) ?? W.humans.find(k => k.id===id); if (h){ h.war=-1; h.foe=-1; h.aim=-1; h.fk=-1; h.line=-1; unlead(h); if (h.dug){ h.dug=false; h.hp=Math.min(h.hp,maxHp(h)); } } }
   const i=W.campaigns.indexOf(c); if (i>=0) W.campaigns.splice(i,1);
   camps.delete(c.id); troops.delete(c.id);
 }
@@ -820,7 +820,7 @@ function newCampaign(a: number, d: number, size: number, tiles: number, unit: nu
   if (!isle) isle=frontIsles(a,d)[0] ?? 0;   // (the biggest stretch of border they share)
   return { id:++W.campSeq, a, d, hostile:true, front:true, militia:false, all:false, members:[], phase:0, bx:0, by:0, dx:1, dy:0, rx:0, ry:0, goal:-1,
     field:offensiveOf(a,d,isle,false,nextSec).walk, fieldAt:W.tickN, started:W.tickN, startSoldiers:size, startTiles:tiles, stall:0, why:'', unit, inspired:false, leader:-1, rank:0,
-    mode:W.offensive[a*W.M+d], naval:-1, isle, sec:nextSec, attack:true, ordered:false, deployed:false, placed:0, waiting:[], hitAt:-1e9 };
+    mode:W.offensive[a*W.M+d], naval:-1, isle, dig:0, dug:false, sec:nextSec, attack:true, ordered:false, deployed:false, placed:0, waiting:[], hitAt:-1e9 };
 }
 /** The offensive of a against d on landmass `isle` (0: the whole border), begun (gathering at the border) if there was none. */
 function offensiveOf(a: number, d: number, isle=0, aboard=false, sec=0){
@@ -1098,8 +1098,9 @@ export function armyProblem(a: number, id: number, go: boolean): string | null {
 /** Orders army `id` of a to attack (take the ground before it, or its kingdom's land back) or to defend (fall back to the line no tower reaches). */
 export function armyOrder(a: number, id: number, go: boolean){
   if (armyProblem(a,id,go)) return false;
-  const c=camps.get(id)!; c.ordered=true; c.attack=go;
-  regroup(c.a,c.d);
+  const c=camps.get(id)!, keys=c.unit>=0 && !c.militia ? groupKeys(a,c.unit) : [];
+  c.ordered=true; c.attack=go; regroup(c.a,c.d);
+  for (const k of keys) for (const m of W.campaigns) if (m!==c && m.a===a && m.unit===k && !m.militia && m.front && m.phase<2 && !armyProblem(a,m.id,go)){ m.ordered=true; m.attack=go; regroup(m.a,m.d); }   // (and the others of its group)
   return true;
 }
 /** Sends army `id` of a to the border with its enemy on landmass `isle` (one of frontIsles). */
@@ -1133,6 +1134,7 @@ export function armyRecall(a: number, id: number){
   const c=camps.get(id);
   if (!c || c.a!==a || !c.front || c.phase===2 || c.naval>=0 || W.wars[c.a*W.M+c.d] || (W.aggr[c.a*W.M+c.d] && !c.deployed)) return false;
   sendHome(c,'calm',false);
+  if (c.unit>=0 && !c.militia) for (const k of groupKeys(a,c.unit)) for (const m of W.campaigns) if (m!==c && m.a===a && m.unit===k && m.front && m.phase<2 && m.naval<0 && !W.wars[m.a*W.M+m.d] && !(W.aggr[m.a*W.M+m.d] && !m.deployed)) sendHome(m,'calm',false);   // (and the others of its group)
   return true;
 }
 
@@ -1202,6 +1204,12 @@ export function assignProblem(a: number, key: number, d: number, sec=0): string 
     (at home, on another border, or in the middle of a war), and all its men set off for it. In peace it is a precaution, at war it attacks or defends
     as it was ordered (`go`: true to attack, false to defend, left out: as it stood, or as the war stands). Returns true if anything changed. */
 export function assignArmy(a: number, key: number, d: number, isle=0, go?: boolean, sec=0){
+  // (an army in an order group takes its orders with the others of it)
+  const keys=key===-2 ? [key] : groupKeys(a,key); let any=false;
+  for (const k of keys) any=assignOne(a,k,d,isle,go,sec) || any;
+  return any;
+}
+function assignOne(a: number, key: number, d: number, isle: number, go: boolean | undefined, sec: number){
   if (assignProblem(a,key,d,sec)) return false;
   const M=W.M, mil=key===-2;
   if (sec===SEC_SIEGE) isle=isle_(W.nations[d].capTile);
@@ -1282,6 +1290,7 @@ function runOffensives(){
   for (const c of W.campaigns) if (c.front && c.phase<2){ const k=fidOf(c); let L=live.get(k); if (!L){ L=[]; live.set(k,L); } L.push(c); }
   for (const [id,o] of [...offensives]) if (!live.has(id)) endOffensive(o);
   siegeStep();
+  for (const c of W.campaigns) if (c.front) entrench(c);
   const pairs=new Map<number, number>();   // each pair's fronts, together: pushing, holding, or (before the word) the least ready
   const note = (key: number, war: boolean, st: number) => { const was=pairs.get(key); pairs.set(key,was===undefined ? st : war ? (was===F_PUSH || st===F_PUSH ? F_PUSH : F_HOLD) : Math.min(was,st)); };
   for (const [id,cs] of live){
@@ -1353,6 +1362,26 @@ function runOffensives(){
 function botCrisis(o: Offensive){
   const mine=menOn(o.a,o.d), theirs=menOn(o.d,o.a)+0.5*W.humans.filter(h => h.o===o.d && h.kind===H_SOLDIER && !h.militia && h.war<0).length;
   if (theirs>mine*(OUTMATCHED+W.nations[o.a].attackAt)) deescalate(o.a,o.d); else escalate(o.a,o.d);
+}
+/* ---------- entrenching ----------
+   An army that holds its place on the border on defence (the order, or the default in peace and for a defender) for 10 seconds entrenches: its men hit 15% harder
+   and have 15% more health. Men who come up later (reserves) are entrenched the moment they reach their places. An order to attack ends it. */
+export const DIG_TICKS = 10*GAME_SPEED*10;
+export const DIG_BONUS = 1.15;
+function entrench(c: Campaign){
+  const hold=c.front && c.phase===1 && c.naval<0 && !aboardOf(c) && !attacks(c);
+  if (!hold){
+    if (c.dug || c.dig){ c.dug=false; c.dig=0; for (const id of c.members){ const h=byId.get(id); if (h?.dug){ h.dug=false; h.hp=Math.min(h.hp,maxHp(h)); } } }
+    return;
+  }
+  const place=(h: Human) => h.fk>=0 && (h.x-h.fx)**2+(h.y-h.fy)**2<=PRESENT*PRESENT;
+  if (!c.dug){
+    let there=0, all=0; for (const id of c.members){ const h=byId.get(id); if (h){ all++; if (place(h)) there++; } }
+    if (all && there>=all*0.5 && ++c.dig>=DIG_TICKS) c.dug=true;
+    else if (!all || there<all*0.5) c.dig=Math.max(0,c.dig-1);
+    if (!c.dug) return;
+  }
+  for (const id of c.members){ const h=byId.get(id); if (h && !h.dug && h.hp>0 && place(h)){ h.dug=true; h.hp=Math.min(maxHp(h),h.hp*DIG_BONUS); } }
 }
 /* ---------- the siege of a capital ----------
    When every tile round a castle is occupied by the enemy at war with it (castleCutOff) the capital is under siege: both kingdoms are told, the besieged one
@@ -1435,6 +1464,12 @@ function towersNear(o: Offensive, F: Front): number[] {
     if (best<=TOWER_SEEK) out.push({ q, d:best });
   }
   return out.sort((a,b) => a.d-b.d || a.q-b.q).map(e => e.q);
+}
+/** A handful of tiles along the fronts fought against kingdom d (where its land is under attack), or none. */
+export function borderPoints(d: number): number[] {
+  const out: number[]=[];
+  for (const o of offensives.values()) if (o.d===d && o.F && o.F.tiles.length){ const T=o.F.tiles, step=Math.max(1,T.length>>4); for (let i=0;i<T.length;i+=step) out.push(T[i]); }
+  return out;
 }
 /** All the land of a's and of d's that anyone occupies, as one number: it changes whenever a front's line may have. */
 function occSig(a: number, d: number){
@@ -1954,7 +1989,7 @@ function strike(h: Human, e: Human){
   on.swing(h.id,e.id);
   if (W.prand()<HIT_CHANCE){
     const was=e.hp;
-    e.hp-=(h.kind!==H_SOLDIER ? MILITIA_DMG : h.militia ? MILITIA_HIT : HIT_DMG[h.tier])*(revenge(h) ? REVENGE_DMG : 1)*(h.fury ? FURY : 1); underFire(e);
+    e.hp-=(h.kind!==H_SOLDIER ? MILITIA_DMG : h.militia ? MILITIA_HIT : HIT_DMG[h.tier])*(revenge(h) ? REVENGE_DMG : 1)*(h.fury ? FURY : 1)*(h.dug ? DIG_BONUS : 1); underFire(e);
     if (was>0 && e.hp<=0) W.kills[h.o*W.M+e.o]++;
     on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id);
   }
