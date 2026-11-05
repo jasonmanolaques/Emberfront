@@ -2263,6 +2263,21 @@ describe('soldiers keep off third kingdoms\' ground', () => {
   });
 });
 
+describe('an army touching a third kingdom\'s land', () => {
+  it('is not lost: a man of an army standing on the ground of a kingdom that is neither enemy nor ally stays', () => {
+    world(2); labelWorld(); allocIsles(); quiet(); paintDisc(N(1),14); paintDisc(N(2),30); paintDisc(N(3),30); paintToward(1,2); noDraft(2); noDraft(3);
+    soldiers(N(1),10); noDraft(); run(2);
+    for (const a of available(N(1))) assignArmy(1,a.unit.key,2);
+    run(2);
+    const c=W.campaigns.find(k => k.a===1)!, h=W.humans.find(k => k.id===c.members[0])!;
+    const t=Array.from({ length: NT }, (_, k) => k).find(k => owner[k]===3)!;
+    h.x=(t%TW)*2+1; h.y=((t/TW)|0)*2+1;
+    run(3);
+    expect(W.humans.includes(h)).toBe(true);
+    expect(h.hp).toBeGreaterThan(0);
+  });
+});
+
 describe('where new soldiers come out, entrenching, and order groups', () => {
   /** Two barracks of 5, a near the castle and b far from it (nobody of 1's but the soldiers), a war with 2. */
   function two(){

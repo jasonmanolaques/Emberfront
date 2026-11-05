@@ -230,11 +230,11 @@ function rectOf(q: number): [number, number, number, number] {
 const clamp = (v: number, a: number, b: number) => v<a ? a : v>b ? b : v;
 
 /** May h stand on ground owned by o? People keep to their own land and unclaimed ground; an army
-    may also cross its enemy's and its allies' land, and anything at all on the way home. */
+    may go anywhere: its enemy's land, its allies', and a third kingdom's when it cannot go round
+    (the paths it is given keep off it where there is a way, but a man who touches it is never lost). */
 export function mayStand(h: Human, o: number){
   if (o===0 || o===h.o) return true;
-  const c = h.war>=0 ? camps.get(h.war) : undefined;
-  return !!c && (c.phase===2 || o===c.d || allied(c.a,o));
+  return h.war>=0 && camps.has(h.war);
 }
 
 /** Is kingdom o at war (or a party to one)? Its militia stand out of their houses while it is. */
