@@ -386,3 +386,6 @@ button.army[aria-pressed=true] .at{color:var(--gold)}
 #cmList .gm{display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:2px 0;border-bottom:1px dashed var(--edge)}
 #cmMerge{width:26px;height:26px}
 .bld.locked{filter:grayscale(1);opacity:.45}
+#crash{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:flex;gap:8px;align-items:center;max-width:min(720px,calc(100% - 32px));padding:6px 10px;font-size:13px;border-color:#b5483a;z-index:9}
+#crash button{padding:3px 8px;font-size:12px}
+#crash .x{width:24px;height:24px;padding:0}
