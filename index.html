@@ -91,18 +91,16 @@
       <p class="dnote" id="dNote"></p>
     </div>
     <div id="dWarView" hidden>
-      <label><span>Armies to send</span><b id="dCommitVal">0</b></label>
-      <div id="dArmies" class="armies"></div>
-      <button id="dMilOn" class="army" aria-pressed="false" title="Send militia from home too: they fight beside your armies, paid a soldier's wage while out, and die easily"><span class="an">Use militia</span><span class="at" id="dMilAt">none at home</span></button>
-      <div id="dMilBox" class="dmil" hidden><label><span>Militia to send</span><b id="dMilVal">0</b></label><input type="range" id="dMil" min="0" max="0" step="1" value="0" aria-label="Militia to send"></div>
       <div class="dsplit" id="dSplit"></div>
       <div id="dNavalBox" hidden>
+        <label><span>Armies to send by sea</span><b id="dCommitVal">0</b></label>
+        <div id="dArmies" class="armies"></div>
         <label><span>Naval bases</span><b id="dShips">0 ships ready</b></label>
         <div id="dBases" class="armies"></div>
         <div class="dsplit" id="dNavalInfo"></div>
         <button id="dCoast" class="danger" title="Then point at the stretch of their coast to land on">Choose the coastline…</button>
       </div>
-      <div class="drow"><button id="dAttack" class="danger" title="Take their land and march on their capital. Needs a shared border.">Attack</button><button id="dNaval" class="danger" title="Land an army from the sea. Needs a naval base with enough ships.">⚓ Naval invasion</button></div>
+      <div class="drow"><button id="dAttack" class="danger" title="Mass the armies you have assigned to their border: a crisis, then war when you give the word. Needs a shared border and an army on it.">Attack</button><button id="dNaval" class="danger" title="Land an army from the sea. Needs a naval base with enough ships.">⚓ Naval invasion</button></div>
       <p class="dnote" id="dWhy"></p>
       <button id="dBack" class="ghost">← Back</button>
     </div>
@@ -176,13 +174,8 @@
   </section>
   <section id="warPop" class="plate" hidden aria-label="Meet the army">
     <div class="dhead"><span class="tag" id="wpTitle">An army is coming</span><button id="wpClose" class="x" aria-label="Close">×</button></div>
-    <div id="wpMenu" class="drow"><button id="wpPeace" title="Offer them peace. They answer depending on how they think the war is going.">Request peace</button><button id="wpCounter" class="danger" title="Strike back with your armies: your troops are thirsty for revenge, and hit harder">Counter-attack…</button><button id="wpDefend" class="danger" title="Send armies to stand on your side of the border with them">Hold the border…</button></div>
-    <div id="wpSend" hidden>
-      <label><span>Armies to send</span><b id="wpVal">0</b></label>
-      <div id="wpArmies" class="armies"></div>
-      <div class="dsplit" id="wpSplit"></div>
-      <div class="drow"><button id="wpBack" class="ghost">← Back</button><button id="wpGo" class="danger">To the front</button></div>
-    </div>
+    <div id="wpMenu" class="drow"><button id="wpPeace" title="Offer them peace. They answer depending on how they think the war is going.">Request peace</button></div>
+    <p class="dnote" id="wpNote">Send your armies to the border from the Armies list: <b>Assign border</b>, then point at the part of it to hold (or at the occupied land, to take it back).</p>
   </section>
 
   <div id="expand" class="plate" hidden role="dialog" aria-label="Settle this land">
@@ -207,7 +200,7 @@
       <li>Open a building menu on the right (<b>urban development</b>, <b>military</b>, <b>resources</b>, <b>society</b>) to place farms, barracks, watchtowers and more. The same buildings side by side join up.</li>
       <li>The soldier slider raises <b>militia</b> at the castle: unpaid at home, they rest in your houses and come out when called, and can go to war with you. A <b>barracks</b> trains them into soldiers, who are paid wages. <b>Click a watchtower</b> to call 5 militia to guard it.</li>
       <li><b>Click another kingdom</b> for diplomacy. <b>Allies</b> open their land to your soldiers. Go to <b>war</b> with as many soldiers as you choose: an <b>attack</b> masses your armies on their border in a <b>crisis</b>; after <b>30 seconds</b> (time for both sides to react, or to call it off) <b>Begin offensive</b> makes it war, fought along the whole front. Break the castle and the whole kingdom is yours. A <b>naval base</b> lets you settle islands by ship (<b>⚓ Naval settlement</b> in the settle menu) and land armies from the sea (<b>⚓ Naval invasion</b>): ships, 5 men each, carry them to the coast you point at.</li>
-      <li>Only at war do soldiers fight, and watchtowers and your castle shoot at enemies on your land. Land an attack takes is only <b>occupied</b> (hatched) until peace: drive the enemy out and take it back, then counter-attack. Every army has its own orders in the <b>Armies</b> list (top right, in peace and in war): press <b>📍 Assign border</b>, then point at the border on the map (it lights up) and click: the army travels there from wherever it is, in peace (not a crisis) or at war, by boat between your naval bases where there is no way by land, and you can reassign it any time. Toggle <b>Attack</b> or <b>Defend</b>: a defending army falls back to the closest ground of yours that no enemy tower reaches and holds a line there. New soldiers join the army that lost the most; an army across the sea is carried over for free in the boats of your naval bases (5 men each); builders and smiths cross between bases too. Invaders go for the watchtowers that cover them first. Invading is slow.</li>
+      <li>Only at war do soldiers fight, and watchtowers and your castle shoot at enemies on your land. Land an attack takes is only <b>occupied</b> (hatched) until peace: drive the enemy out and take it back, then counter-attack. Every army has its own orders in the <b>Armies</b> list (top right, in peace and in war): press <b>📍 Assign border</b>, then point at the border on the map (it lights up: a part of it, or a capital to besiege it; shift-click for the whole stretch) and click: the army travels there from wherever it is, in peace (not a crisis) or at war, by boat between your naval bases where there is no way by land, and you can reassign it any time. Toggle <b>Attack</b> or <b>Defend</b>: a defending army falls back to the closest ground of yours that no enemy tower reaches and holds a line there. New soldiers join the army that lost the most; an army across the sea is carried over for free in the boats of your naval bases (5 men each); builders and smiths cross between bases too. Invaders go for the watchtowers that cover them first. Invading is slow.</li>
       <li>Each war has a button at the top: offer peace, or, when an army masses on your border, <b>respond</b> to it. The war bar clears the moment the war is over. Villagers caught near a fight either run or take up arms.</li>
     </ul>
     <div class="row">

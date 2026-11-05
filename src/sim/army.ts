@@ -42,10 +42,10 @@ export const maxHp = (h: Human) => (h.kind!==H_SOLDIER ? VILLAGER_HP : h.militia
 const frontOf = (q: number): [number, number] => [(q%PW)*8+4, ((q/PW)|0)*8+7.5];
 const standing = (q: number, o: number) => pType[q]===B_BARRACKS && pOwner[q]===o && pBurn[q]<=0;
 
-/** "4/5 · 3 I · 1 II · 1 III": soldiers at the barracks over its room, then the army by tier. */
+/** "4/5 · 3 I · 1 II · 1 III": the army's living soldiers (at home or away) over its room, then the army by tier. */
 export function unitLabel(u: Unit){
   const t=[1,2,3].filter(k => u.tiers[k]).map(k => `${u.tiers[k]} ${TIER_NAME[k]}`);
-  return [`${u.home}/${u.cap}`, ...t].join(' · ');
+  return [`${u.members.length}/${u.cap}`, ...t].join(' · ');
 }
 
 /** Joins every kingdom's standing barracks plots into barracks (4-neighbours). */

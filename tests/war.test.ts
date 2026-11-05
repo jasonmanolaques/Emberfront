@@ -13,7 +13,7 @@ import { indoors, TASK_ROAM, TASK_HOME_GO, H_SOLDIER, H_VILLAGER, TASK_REST, TAS
 import { UNIT_SIZE, buildUnits, station, unitAt, SOLDIER_DMG } from '../src/sim/army';
 import { wallOf, walledFor, buildWalls } from '../src/sim/defense';
 import { callable, partner, warringNow, besieged, siegeLocked, allied, atWar, available, ready, declare, warProblem, mayStand, endWar, makePeace, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
-  RANKS, rankFor, assignArmy, assignProblem, bordersOf, freeArmy, CRISIS_TICKS, frontKey, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, defendProblem, reservesOf, reservesProblem, menOn, deployArmies, armyOrder, armyFront, armyRecall, frontIsles, occOn, attacks, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, frontLines, marchPace, INVADE_SLOW, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
+  RANKS, rankFor, invadeSpeed, INVADE_EMPTY, assignArmy, assignProblem, bordersOf, freeArmy, CRISIS_TICKS, frontKey, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, defendProblem, reservesOf, reservesProblem, menOn, deployArmies, armyOrder, armyFront, armyRecall, frontIsles, occOn, attacks, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, frontLines, marchPace, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
 import { navalPlan, declareNaval, navalOf, landingOn } from '../src/sim/war';
 import { botSea, navalAttack, seaDrive } from '../src/sim/botsea';
 import { basesOf, dockTile, labelWorld, allocIsles, landingZone, SHIP_CAP, SHIP_FRONT, INV_SAIL, INV_READY, INV_LAND, INV_DONE, shipById } from '../src/sim/naval';
@@ -336,11 +336,11 @@ describe('bots at war', () => {
     outer: for (let r=0;r<60;r++) for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){ if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue; if (startMatch((TH/2+dy*3)*TW+TW/2+dx*3, 9)) break outer; }
     quiet();
     const began=collect('warBegan'), crises=collect('crisis'), wars=collect('escalated'), annexed=collect('annexed');
-    run(24000);   // armies big enough to break a castle take a while to raise (forty minutes, living on tax)
+    run(36000);   // armies big enough to break a castle take a while to raise (forty minutes, living on tax; the farms make the bots richer and slower to quarrel)
     expect(crises.length).toBeGreaterThan(0);    // attacks: massed on a border...
     expect(wars.length).toBeGreaterThan(0);      // ...and then war
     expect(annexed.length).toBeGreaterThan(0);
-  });
+  }, 400000);
 });
 
 describe('wounds and healing', () => {
@@ -691,8 +691,8 @@ describe('the front', () => {
     run(200);   // 20 s
     const now=lineAt(b), cos=Math.cos(deg*Math.PI/180);
     const advance=now.reduce((a,x,i) => a+(x-start[i]),0)/now.length*cos;   // along the normal
-    expect(advance).toBeGreaterThan(20*(10/ADVANCE_TICKS)*0.75);   // a tile a strip, a strip every ADVANCE_TICKS: 10 tiles in 20 seconds
-    expect(advance).toBeLessThan(20*(10/ADVANCE_TICKS)*1.4);
+    expect(advance).toBeGreaterThan(20*(10/ADVANCE_TICKS)*0.75*INVADE_EMPTY);   // a tile a strip, a strip every ADVANCE_TICKS (faster by INVADE_EMPTY: nobody of theirs stands there): 10 tiles in 20 seconds
+    expect(advance).toBeLessThan(20*(10/ADVANCE_TICKS)*1.4*INVADE_EMPTY);
     expect(crooked(now,b)).toBeLessThanOrEqual(3);
     expect(missed(b)).toBe(0);
   });
@@ -1041,15 +1041,24 @@ describe('holding the border, and the second wave', () => {
     expect(taken()).toBeGreaterThan(before);
   });
 
-  it('the invader marches half as fast on enemy ground it has not occupied yet, and at full pace over ground it has', () => {
+  it('how fast an invasion goes depends on the defender\'s soldiers on that landmass: 75% faster with none, 10% slower with a few, 40% slower with as many as the invaders, 50% at most', () => {
+    expect(invadeSpeed(40,0)).toBe(INVADE_EMPTY); expect(INVADE_EMPTY).toBe(1.75);
+    expect(invadeSpeed(100,1)).toBeCloseTo(0.9-0.003,3);         // one man: about 10% off
+    expect(invadeSpeed(40,40)).toBeCloseTo(0.6,9);               // as many: 40% off
+    expect(invadeSpeed(40,20)).toBeCloseTo(0.75,9);              // between
+    expect(invadeSpeed(40,80)).toBeCloseTo(0.5,9);               // twice as many: 50% off, no more
+    expect(invadeSpeed(40,400)).toBeCloseTo(0.5,9);
+  });
+
+  it('the invader marches slower on enemy ground it has not occupied yet (never faster than usual), and at full pace over ground it has', () => {
     started();
     const c=W.campaigns.find(k => k.a===1 && k.d===2 && k.front)!, h=crew(c)[0];
     const put=(t: number) => { h.x=(t%TW)*2+1; h.y=((t/TW)|0)*2+1; };
     const free=Array.from({ length: NT }, (_, t) => t).find(t => owner[t]===2 && !occ[t])!;
     const held=Array.from({ length: NT }, (_, t) => t).find(t => owner[t]===2 && occ[t]===1)!;
-    put(free); expect(marchPace(h,c)).toBeCloseTo(pace(h)*INVADE_SLOW*(c.inspired ? 1.15 : 1), 5);
+    put(free); const slow=marchPace(h,c)/(pace(h)*(c.inspired ? 1.15 : 1));
+    expect(slow).toBeGreaterThanOrEqual(0.5-1e-9); expect(slow).toBeLessThanOrEqual(1+1e-9);
     put(held); expect(marchPace(h,c)).toBeGreaterThan(pace(h)*0.99);
-    expect(INVADE_SLOW).toBe(0.5);
   });
 
   it('there is one front between two kingdoms at war, and a pocket cut off from the occupied ground goes back at once', () => {
@@ -2212,6 +2221,52 @@ describe('workers pass over what they cannot reach', () => {
     let fixing=-1; for (let i=0;i<1500 && fixing<0;i++){ tick(); const b=W.humans.find(h => h.o===1 && h.fix>=0); if (b) fixing=b.fix; }
     expect(fixing).toBeGreaterThanOrEqual(0);
     expect(sorted.slice(0,3)).not.toContain(fixing);
+  });
+});
+
+describe('the border as the war has made it', () => {
+  it('assigning offers the border where the front stands now: the enemy ground beside what the army has occupied, not the old border', () => {
+    world(1); labelWorld(); allocIsles(); quiet(); paintDisc(N(2),40); paintToward(1,2); noDraft(2);
+    const old: number[]=[]; for (let t=0;t<NT;t++) if (owner[t]===2 && [t-1,t+1,t-TW,t+TW].some(k => owner[k]===1)) old.push(t);
+    expect(old.length).toBeGreaterThan(0);
+    W.wars[1*W.M+2]=W.wars[2*W.M+1]=1; W.atWar[1*W.M+2]=W.atWar[2*W.M+1]=1;
+    const band=new Set<number>(old); for (let k=0;k<6;k++) for (const t of [...band]) for (const n of [t-1,t+1,t-TW,t+TW]) if (owner[n]===2) band.add(n);
+    for (const t of band) occupyHack(t,1);
+    W.tickN+=100;   // (the list is kept a second)
+    const tiles=bordersOf(1).filter(b => b.sec!==SEC_SIEGE).flatMap(b => b.tiles);
+    expect(tiles.length).toBeGreaterThan(0);
+    expect(tiles.every(t => owner[t]===2 && !occ[t])).toBe(true);   // free ground of theirs...
+    expect(tiles.every(t => [t-1,t+1,t-TW,t+TW].some(k => owner[k]===2 && occ[k]===1))).toBe(true);   // ...beside what the army holds
+    expect(tiles.some(t => old.includes(t))).toBe(false);
+  });
+});
+
+describe('soldiers keep off third kingdoms\' ground', () => {
+  it('a soldier found on the ground of a kingdom he is not at war with is set down on his own, not lost', () => {
+    world(1); labelWorld(); allocIsles(); quiet(); paintDisc(N(1),14); paintDisc(N(2),40); paintToward(1,2);
+    const men=soldiers(N(1),5,false); noDraft(); noDraft(2); run(2);
+    const h=men[0], t=Array.from({ length: NT }, (_, k) => k).find(k => owner[k]===2 && [k-1,k+1,k-TW,k+TW].some(j => owner[j]===1))!;
+    h.x=(t%TW)*2+1; h.y=((t/TW)|0)*2+1;
+    tick();
+    expect(W.humans.includes(h)).toBe(true);
+    expect(owner[((h.y/2)|0)*TW+((h.x/2)|0)]).toBe(1);
+  });
+});
+
+describe('bot garrisons', () => {
+  it('in peace a bot with two armies posts the smaller on its neighbour\'s border and keeps the other at home; a bot with one army keeps it at home', () => {
+    world(1); labelWorld(); allocIsles(); quiet(); paintDisc(N(1),14); paintDisc(N(2),60); place(N(2),B_FARM); paintToward(1,2);
+    const a=place(N(1),B_BARRACKS), b=place(N(1),B_BARRACKS,pCenter[a]);
+    soldiers(N(1),10,false); N(1).soldierShare=1; noDraft(); noDraft(2); N(2).soldierShare=0; N(2).humanProg=-1e9; run(3);
+    N(1).nextThink=1e9; N(1).soldiers=10;
+    W.tickN+=200-(W.tickN%200)+(1*13)%200;   // (the tick a bot looks to its borders)
+    botThink(N(1));
+    const out=W.campaigns.filter(c => c.a===1 && c.front && c.phase<2);
+    expect(out).toHaveLength(1);
+    expect([out[0].d,out[0].deployed]).toEqual([2,true]);
+    expect(available(N(1)).length).toBe(1);                         // the other army stays at home
+    // not a campaign: it does not keep the bot from going to war
+    expect(out[0].deployed).toBe(true);
   });
 });
 

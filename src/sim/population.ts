@@ -759,7 +759,7 @@ function step(h: Human){
   h.x=nx; h.y=ny;
 }
 
-/** A villager found standing on another kingdom's ground, which is not at war with his: he is set down on the nearest ground of his own, and thinks again.
+/** A man found standing on another kingdom's ground, which is not at war with his: he is set down on the nearest ground of his own, and thinks again.
     Returns true if he was moved. (People should never get there: their walks are checked tile by tile; but ground changes hands under a walker.) */
 function shelter(h: Human){
   const t=tileOf(h.x,h.y), o=owner[t];
@@ -770,7 +770,7 @@ function shelter(h: Human){
       if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
       const x=cx+dx, y=cy+dy; if (x<0||y<0||x>=TW||y>=TH) continue;
       const k=y*TW+x; if (owner[k]!==h.o || !isLand[k] || occ[k]) continue;
-      h.x=x*2+1; h.y=y*2+1; h.path=[]; h.wait=0; if (h.home>=0){ cancelSite(h.home); h.home=-1; } if (h.beggar) roamTarget(h); else think(h);
+      h.x=x*2+1; h.y=y*2+1; h.path=[]; h.wait=0; if (h.home>=0){ cancelSite(h.home); h.home=-1; } if (h.kind===H_SOLDIER){ h.foe=-1; h.aim=-1; } else if (h.beggar) roamTarget(h); else think(h);
       return true;
     }
   }
@@ -781,7 +781,7 @@ export function updatePopulation(){
   // people die when their kingdom falls, the ground under them is taken, or they fall in battle
   for (let i=H.length-1;i>=0;i--){
     const h=H[i];
-    if (h.hp>0 && N[h.o].alive && h.kind===H_VILLAGER && shelter(h)) continue;   // (a villager on ground that is another's, not at war: set back on his own, not lost)
+    if (h.hp>0 && N[h.o].alive && shelter(h)) continue;   // (a man on ground that is another's, not at war: set back on his own, not lost)
     if (!N[h.o].alive || !mayStand(h,owner[tileOf(h.x,h.y)]) || h.hp<=0){
       if (h.hp<=0 && N[h.o].alive) on.died(h.x,h.y,h.o,h.id,h.kind===H_SOLDIER ? 1 : h.beggar ? 2 : 0,h.militia ? 0 : h.tier,h.beggar && h.homeless>=STARVE_TICKS);   // they drop where they fell
       if (h.work>=0 && (pType[h.work]===B_GUILD || pType[h.work]===B_SMITHY)) pTimer[h.work]=REHIRE_TICKS+1;   // the workshop waits a while for a new hand

@@ -8,7 +8,7 @@ import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, togglePriority, anyWithin, isEnemyLand, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, guardsOpening, standingTower, WALL_MAX } from './fort';
 import { SEC_SIEGE } from './front';
-import { allied, atWar, assignArmy, ready, available, declare, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, frontIds, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD } from './war';
+import { allied, atWar, assignArmy, frontIsles, ready, available, declare, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, frontIds, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD } from './war';
 
 const WALL = -1;   // a tower of the town wall, in a wishlist
 const STALE = 1800;   // ticks a war's border may stand still (3 minutes) before a bot thinks of ending it
@@ -40,9 +40,15 @@ function groundwork(n: Nation){
   if (!n.labs && n.plantations+n.quarries+n.copperMines>=3 && n.tier[R_GATHER]<MAX_TIER) w.push(B_RESEARCH);
   return w;
 }
+/** Farms are the foundation: people to tax and to fight with. A bot keeps them in step with its gathering buildings (one farm for every four of those, and two
+    to start), up to what its land can feed, so that a surplus of goods is never bought at the cost of its population. */
+function earlyFarm(n: Nation){
+  if (beggarProblem(n) || n.capTile<0) return false;
+  return n.farms<Math.min(2+Math.ceil((n.plantations+n.quarries+n.copperMines)*0.25),3+(n.tiles/60|0));
+}
 /** What a bot would build next, most wanted first. */
 function wishlist(n: Nation, exposed: boolean){
-  const w: number[]=groundwork(n), hungry=beggarProblem(n);
+  const w: number[]=earlyFarm(n) ? [B_FARM, ...groundwork(n)] : groundwork(n), hungry=beggarProblem(n);
   // beggars in the streets: better houses before anything else (a guild's builders raise them, once
   // housing research allows it; a research station to get there)
   if (hungry){
@@ -235,7 +241,7 @@ function botBuild(n: Nation, exposed: boolean){
   garrisonGates(n);
   n.invest=beggarProblem(n) ? 1 : 0.4+n.expandAt*0.8;   // the builders may spend 58% to 78% of the goods coming in, by temper (all of it, with beggars to house)
   let saving=false;   // threatened and short of a wall tower: lesser works don't get its stone
-  const first=groundwork(n), hold=[false,false,false];   // (short of a gathering building: lesser works don't get the goods it needs)
+  const first=earlyFarm(n) ? [B_FARM, ...groundwork(n)] : groundwork(n), hold=[false,false,false];   // (short of a gathering building: lesser works don't get the goods it needs)
   for (const type of wishlist(n,exposed)){
     const s=STRUCTURES.find(s=>s.type===(type===WALL ? B_TOWER : type))!;
     if (saving && s.cost[1]>0) continue;
@@ -295,7 +301,8 @@ function wantedShare(n: Nation){
   for (const c of W.campaigns) if (c.d===id && c.hostile && c.phase<2) incoming+=c.members.length;
   if (!war){
     let worst=0; for (let o=1;o<M;o++) if (o!==id && W.contact[id*M+o] && !allied(id,o) && W.nations[o].alive) worst=Math.max(worst,W.nations[o].soldiers);
-    return worst>n.soldiers*1.5+5 ? Math.max(peace,0.35) : peace;
+    const rich=n.gold>warChest(n)*2 ? 0.1 : 0;   // (a treasury to spare: a bigger army in peace too)
+    return worst>n.soldiers*1.5+5 ? Math.max(peace+rich,0.35) : peace+rich;
   }
   const odds=(enemies+incoming)/(n.soldiers+2);
   return Math.min(0.85,0.45+0.2*Math.min(2,odds));
@@ -325,8 +332,26 @@ const facing = (a: number, d: number) => { let k=menOn(d,a); const ids=frontIds(
     end wars that go badly, and now and then send its free soldiers against the weakest kingdom in
     reach: an attack if it shares a border (a crisis first). Its personality
     (attackAt) sets how big an edge it wants. */
+/** In peace a bot with armies to spare posts the smallest of them on the border of the neighbour it fears most, and on a border it has on another landmass, as a
+    small garrison to slow an advance and show its strength there. One army always stays at home; the garrisons are the first taken for a crisis elsewhere. */
+function garrison(n: Nation){
+  const M=W.M, id=n.id;
+  if (W.tickN%200!==(id*13)%200 || n.soldiers<10) return;
+  for (let o=1;o<M;o++) if (W.wars[id*M+o] || W.aggr[id*M+o] || W.aggr[o*M+id]) return;
+  const home=available(n).filter(a => a.men.length>=3).sort((x,y) => x.men.length-y.men.length || x.unit.key-y.unit.key);
+  const out=W.campaigns.filter(c => c.a===id && c.front && c.phase<2 && c.naval<0 && !c.militia && c.unit>=0);
+  if (home.length<2 && !(home.length && out.length)) return;   // (one army stays at home)
+  const targets: { o: number; isle: number; threat: number }[]=[];
+  for (let o=1;o<M;o++){
+    const D=W.nations[o]; if (o===id || !D.alive || allied(id,o) || !W.contact[id*M+o]) continue;
+    for (const isle of frontIsles(id,o)) if (!out.some(c => c.d===o && c.isle===isle)) targets.push({ o, isle, threat:D.soldiers+2*D.towers });
+  }
+  targets.sort((a,b) => b.threat-a.threat || a.o-b.o || a.isle-b.isle);
+  for (const t of targets.slice(0,4)) if (assignArmy(id,home[0].unit.key,t.o,t.isle,false)) return;
+}
 function botWar(n: Nation){
   const srand=W.srand, M=W.M, id=n.id;
+  garrison(n);
   // raise or stand down the army as the times demand (quickly up, slowly down)
   const want=armyShare(n), d=want-n.soldierShare;
   n.soldierShare=Math.min(1,Math.max(0,n.soldierShare+Math.max(-0.04,Math.min(0.1,d))));
@@ -402,7 +427,7 @@ function botWar(n: Nation){
   }
   let busy=false;
   for (const c of W.campaigns){
-    if (c.a!==id || c.phase===2) continue;
+    if (c.a!==id || c.phase===2 || c.deployed) continue;   // (a garrison on a border is not a campaign)
     busy=true;
   }
   if (W.simTime>=n.nextOffer) for (let o=1;o<M;o++){

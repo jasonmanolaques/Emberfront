@@ -18,13 +18,12 @@ import { flagCSS } from '../render/flags';
 import { $ } from './dom';
 
 const panel=$('diplo'), talk=$('dTalk'), warView=$('dWarView'), wars=$('wars');
-const pop=$('warPop'), popMenu=$('wpMenu'), popSend=$('wpSend');
-const picker=new ArmyPicker($('dArmies'), () => refreshWar(false)), popPicker=new ArmyPicker($('wpArmies'), () => refreshPop());
+const pop=$('warPop'), popMenu=$('wpMenu');
+const picker=new ArmyPicker($('dArmies'), () => refreshWar(false));   // (the armies a naval invasion carries: on land an army is sent by assigning it to a border)
 let target=0;
 let basesHtml='';
 let navalOn=false, baseSel=-1;   // the war screen: planning a naval invasion, and from which naval base (a main plot)
-let milOn=false, milPick=-1;   // the war screen: send militia too, and how many (-1: all of them, until moved)
-let popFor=0, popCamp=-1;   // the enemy whose army the menu is about, and that army (-2: our border with them, to hold)
+let popFor=0;   // the enemy whose army the menu is about
 let popCounter=false;       // the menu is for our land being free again: counter-attack or peace
 
 const nameOf = (id: number) => id===PLAYER ? 'You' : W.nations[id].name;
@@ -44,7 +43,6 @@ function showWarView(){
   const me=W.nations[PLAYER]; if (!me) return;
   talk.hidden=true; warView.hidden=false;
   picker.reset(); navalOn=false; baseSel=-1;
-  milOn=!available(me).length && callable(PLAYER).length>0; milPick=-1;   // with no armies, the militia are all there is
   refreshDiplomacy(true);
 }
 
@@ -65,36 +63,23 @@ export function refreshDiplomacy(force=false){
   rel.className='drel'+(ally?' ally':war?' war':'');
   const allyBtn=$('dAlly') as HTMLButtonElement, no=allyProblem(PLAYER,target);
   allyBtn.disabled=!!no; allyBtn.title=no ?? 'Ask them to open borders to each other\'s soldiers';
-  ($('dWar') as HTMLButtonElement).textContent = ally ? 'Break alliance and go to war…' : war ? 'Send more soldiers…' : 'Declare war…';
+  ($('dWar') as HTMLButtonElement).textContent = ally ? 'Break alliance and go to war…' : war ? 'Land from the sea…' : 'Declare war…';
   $('dNote').textContent = no && no!=='You are already allies' ? no : '';
 }
 
-/** How many militia the war screen sends: none unless chosen, else the slider's (all of them to start with). */
-function milSent(){ const mil=callableCount(PLAYER); return milOn ? Math.min(mil, milPick<0 ? mil : milPick) : 0; }
 function refreshWar(force: boolean){
-  const me=W.nations[PLAYER], armies=available(me,true);
+  const me=W.nations[PLAYER];
   picker.refresh();
-  const soldiers=picker.count(), picked=picker.chosen().length;
+  const soldiers=picker.count(), war=!!W.wars[PLAYER*W.M+target], out=hasArmies(PLAYER,target);
   $('dCommitVal').textContent=`${soldiers} soldier${soldiers===1?'':'s'}`;
-  // the militia at home (not the watchtowers' guards): a toggle, then a slider for how many
-  const mil=callableCount(PLAYER), m=milSent(), slider=$('dMil') as HTMLInputElement, tog=$('dMilOn') as HTMLButtonElement;
-  if (!mil) milOn=false;
-  tog.disabled=!mil; tog.setAttribute('aria-pressed',String(milOn));
-  $('dMilAt').textContent=mil ? `${milOn ? m+' of ' : ''}${mil} at home` : 'none at home';
-  $('dMilBox').hidden=!milOn;
-  slider.max=String(mil); if (document.activeElement!==slider) slider.value=String(m);
-  slider.style.setProperty('--fill',(mil ? m/mil*100 : 0)+'%');
-  $('dMilVal').textContent=String(m);
-  const k=soldiers+m;
-  $('dSplit').textContent = (picked || m ? `${picked ? `${picked} arm${picked===1?'y':'ies'}` : ''}${picked && m ? ' and ' : ''}${m ? `${m} militia` : ''} chosen. ` : '')
-    + 'An attack masses them along the border (those already deployed there stay): a crisis, not yet a war. Both sides get 30 seconds to react before you can begin the offensive.'
-    + (mil && !milOn ? ` You have ${mil} militia at home: use them too, or call them up from the war bar later.` : '');
-  const attackWhy=warProblem(PLAYER,target);
-  const attack=$('dAttack') as HTMLButtonElement;
-  attack.disabled=!!attackWhy || (k<1 && !hasArmies(PLAYER,target));
+  const attackWhy=warProblem(PLAYER,target), attack=$('dAttack') as HTMLButtonElement;
+  attack.hidden=war; attack.disabled=!!attackWhy || !out;
+  $('dSplit').textContent = war ? 'You are at war: send armies to the front by assigning them to a border (the Armies list, then Assign border) and give them the order to attack or defend.'
+    : out ? 'The armies you have on their border mass there: a crisis, not yet a war. Both sides get 30 seconds to react before you can begin the offensive. Assign more armies to their border first if you want them in it.'
+    : 'Assign an army to their border first (the Armies list, then Assign border): an attack masses the armies you have there. Or invade from the sea.';
   const why: string[]=[];
-  if (k<1 && !hasArmies(PLAYER,target)) why.push(armies.length || mil ? 'Choose who to send' : 'No armies and no militia: raise some with the soldier slider');
-  if (attackWhy) why.push('Attack: '+attackWhy.toLowerCase());
+  if (!war && !out) why.push('Attack: no army of yours is on their border yet');
+  if (attackWhy && !war) why.push('Attack: '+attackWhy.toLowerCase());
   $('dWhy').textContent=why.join(' · ');
   // the naval invasion: the naval bases, the ships, and what the armies chosen need
   const bases=basesOf(me), nv=$('dNaval') as HTMLButtonElement, box=$('dNavalBox'), need=Math.ceil(soldiers/SHIP_CAP);
@@ -109,7 +94,7 @@ function refreshWar(force: boolean){
     if (html!==basesHtml){ basesHtml=html; $('dBases').innerHTML=html; }
     const short=me.fleet<need;
     $('dNavalInfo').textContent=(soldiers ? `${soldiers} soldier${soldiers===1 ? '' : 's'} need ${need} ship${need===1 ? '' : 's'} (5 men each); ${me.fleet} ready, from any harbour. ` : 'Choose the armies to send by sea. ')
-      +(m ? 'Militia cannot sail: only soldiers of barracks go. ' : '')
+      +'Militia cannot sail: only soldiers of barracks go. '
       +'The ships sail from the base you pick to a line off their coast; it is a crisis until you give the word, then they land and the ships sail home to be counted again. An army landed from ships is never reinforced.';
     const go=$('dCoast') as HTMLButtonElement;
     go.disabled=!soldiers || short || baseSel<0;
@@ -140,9 +125,9 @@ function startLanding(){
 }
 
 function send(){
-  const units=picker.chosen(), militia=milSent(); if (!target || (!units.length && !militia && !hasArmies(PLAYER,target))) return;
+  if (!target || !hasArmies(PLAYER,target)) return;
   if (allied(PLAYER,target)) toast(`Your alliance with ${W.nations[target].name} is over`);
-  queueCommand({ type:'war', nation:PLAYER, target, units, militia });
+  queueCommand({ type:'war', nation:PLAYER, target, units:[], militia:0 });
   closeDiplomacy();
 }
 
@@ -267,7 +252,7 @@ export function updateWarChips(){
   if (!pop.hidden){
     if (!popCounter && !list.some(f => f.o===popFor)) closePop();   // (the war is over: the menu goes with it)
     else if (popCounter){ if (!W.ready[PLAYER*W.M+popFor]) closePop(); }
-    else if (!canDefend(popFor)) closePop(); else if (!popSend.hidden) refreshPop();
+    else if (!canDefend(popFor)) closePop();
   }
 }
 /** Under the chip, the word for our armies against o: gathering on the border (and how many are in
@@ -336,42 +321,16 @@ function placePop(){
   pop.style.top=(r.bottom-g.top+6)/UI_SCALE+'px';
 }
 function openPop(o: number, counter=false){
-  popFor=o; popCamp=-1; popCounter=counter; pop.hidden=false; popMenu.hidden=false; popSend.hidden=true;
-  const war=!!W.wars[PLAYER*W.M+o], crisis=inCrisis(o,PLAYER) && !war, hold=!counter && canDefend(o);
+  popFor=o; popCounter=counter; pop.hidden=false; popMenu.hidden=false;
+  const war=!!W.wars[PLAYER*W.M+o], crisis=inCrisis(o,PLAYER) && !war;
   ($('wpTitle')).textContent = counter ? `Your land is free of ${W.nations[o].name}`
     : crisis ? `${W.nations[o].name} masses on your border` : `${W.nations[o].name}'s army is coming`;
   $('wpPeace').textContent = counter ? 'Offer peace' : 'Request peace';
-  $('wpCounter').hidden=!counter;
   $('wpPeace').hidden=!war;   // (a crisis isn't a war yet)
-  $('wpDefend').hidden=!hold;
-  $('wpDefend').textContent = crisis ? 'Hold the border…' : 'Send armies to the front…';
-  popMenu.classList.toggle('one',[$('wpPeace'),$('wpCounter'),$('wpDefend')].filter(b => !b.hidden).length<2);
+  popMenu.classList.add('one');
   placePop();
 }
-export function closePop(){ pop.hidden=true; popFor=0; popCamp=-1; popCounter=false; }
-/** The armies to send to our side of the border with popFor: all of them, to start with. */
-function showDefend(){
-  if (!canDefend(popFor)){ closePop(); return; }
-  popCamp=-2; popMenu.hidden=true; popSend.hidden=false;
-  popPicker.reset(Math.max(1,Math.ceil(massed(popFor)*1.2)));   // (about as many as they have: the rest stay free to answer another crisis)
-  $('wpGo').textContent=inCrisis(popFor,PLAYER) && !W.wars[PLAYER*W.M+popFor] ? 'Hold the border' : 'To the front';
-  refreshPop(); placePop();
-}
-/** Their men massed on (or fighting along) our border. */
-const massed = (o: number) => W.campaigns.reduce((k,c) => k+(c.front && c.a===o && c.d===PLAYER && c.phase<2 ? c.members.length : 0),0);
-function refreshPop(){
-  const me=W.nations[PLAYER]; if (!me){ closePop(); return; }
-  const ready=available(me,true).reduce((s,a) => s+a.men.length,0), mil=callableCount(PLAYER);
-  if (!canDefend(popFor)){ closePop(); return; }
-  const theirs=massed(popFor);
-  popPicker.refresh();
-  const k=popPicker.count();
-  $('wpVal').textContent=`${k} soldier${k===1?'':'s'}`;
-  $('wpSplit').textContent=`They have ${theirs} · you have ${ready} in your armies`+(mil ? `, and ${mil} militia in reserve` : '')+'. An army out on another border (not at war) can be taken from it.'
-    +(!W.wars[PLAYER*W.M+popFor] ? '. In a crisis they hold your side of the border and fight only if it comes to war.' : '');
-  ($('wpGo') as HTMLButtonElement).disabled=k<1;
-}
-
+export function closePop(){ pop.hidden=true; popFor=0; popCounter=false; }
 export function setupDiplomacy(){
   $('dClose').onclick=closeDiplomacy;
   $('dAlly').onclick=()=>{ if (target){ queueCommand({ type:'ally', nation:PLAYER, target }); } };
@@ -380,8 +339,6 @@ export function setupDiplomacy(){
   $('dNaval').onclick=()=>{ navalOn=!navalOn; refreshWar(false); };
   $('dBases').addEventListener('click',e => { const b=(e.target as HTMLElement).closest('button.army') as HTMLButtonElement | null; if (b){ baseSel=+b.dataset.q!; basesHtml=''; refreshWar(false); } });
   $('dCoast').onclick=startLanding;
-  $('dMilOn').onclick=()=>{ milOn=!milOn; refreshWar(false); };
-  $('dMil').oninput=e=>{ milPick=+(e.target as HTMLInputElement).value; refreshWar(false); };
   $('dAttack').onclick=()=>send();
   wars.addEventListener('click',e=>{
     const x=(e.target as HTMLElement).closest('button.fclose') as HTMLButtonElement | null;
@@ -400,14 +357,6 @@ export function setupDiplomacy(){
     lastChips=''; b.disabled=true;
   });
   $('wpPeace').onclick=()=>{ if (popFor){ queueCommand({ type:'endWar', nation:PLAYER, target:popFor }); toast(`You ask ${W.nations[popFor].name} for peace`); } closePop(); };
-  $('wpCounter').onclick=()=>{ const o=popFor; closePop(); openCounter(o); };
-  $('wpDefend').onclick=showDefend;
-  $('wpBack').onclick=()=>{ popCamp=-1; popMenu.hidden=false; popSend.hidden=true; placePop(); };
   $('wpClose').onclick=closePop;
-  $('wpGo').onclick=()=>{
-    const units=popPicker.chosen(); if (popCamp===-1 || !units.length) return;
-    queueCommand({ type:'defend', nation:PLAYER, target:popFor, units });
-    closePop();
-  };
 }
 export function resetDiplomacy(){ dismissed.clear(); closeDiplomacy(); closePop(); wars.innerHTML=''; lastChips=''; battles.clear(); }
