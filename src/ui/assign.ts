@@ -6,7 +6,7 @@ import { PLAYER, TW, RS } from '../core/constants';
 import { W, owner } from '../sim/state';
 import { queueCommand } from '../sim/sim';
 import { bordersOf, frontInfo, SIEGE_RING, type Border } from '../sim/war';
-import { originOf, SEC_SIEGE, SECTOR_NAMES } from '../sim/front';
+import { originOf, SEC_SIEGE, secName } from '../sim/front';
 import { unitAt } from '../sim/army';
 import { client } from '../client';
 import { cam, tileAt } from '../render/camera';
@@ -32,7 +32,7 @@ const armyLabel = (key: number) => { if (key===MIL) return 'Militia'; const u=un
 export function placeName(b: { d: number; isle: number; sec: number }){
   if (b.sec===SEC_SIEGE) return `${nm(b.d)} · siege of the capital`;
   const f=frontNames(b.d), parts=bordersOf(PLAYER).filter(x => x.d===b.d && x.sec!==SEC_SIEGE);
-  const where=[f.size>1 ? f.get(b.isle) : '', b.sec ? SECTOR_NAMES[b.sec]+' sector' : ''].filter(Boolean).join(', ');
+  const where=[f.size>1 ? f.get(b.isle) : '', b.sec ? secName(b.sec)+' side' : ''].filter(Boolean).join(', ');
   return parts.length>1 && where ? `${nm(b.d)} · ${where}` : nm(b.d);
 }
 const HINT='click to send it there · shift-click for the whole border · right-click or Esc to cancel';

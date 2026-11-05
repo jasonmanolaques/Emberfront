@@ -8,7 +8,8 @@ export interface Nation {
   id: number; name: string; hex: string; isPlayer: boolean;
   code: string;                      // the real country it is (core/countries.ts): its name, flag and colour
   gold: number; income: number;      // treasury and gold per second
-  strength: number;                  // tiles + people + gold, weighted (STR_* in constants)
+  strength: number;                  // military might: villagers and militia 100 each, soldiers 200 / 300 / 500 by tier (STR_* in constants)
+  might: number;                     // that, summed over its people once a tick (sim/population.ts)
   tiles: number; alive: boolean; capTile: number; capPlot: number;
   plots: number[]; blds: number[]; bCount: number;
   houses: number; farms: number; towers: number; mines: number; barracks: number; minters: number;
@@ -114,7 +115,7 @@ export interface Campaign {
   isle: number;                      // the landmass of the enemy's land it is on the front of (a landmass id: sim/naval.ts), or 0: the whole border
   dig: number;                       // ticks the army has held its place on defence, counting toward entrenching (DIG_TICKS)
   dug: boolean;                      // the army is entrenched: its men are too
-  sec: number;                       // which part of that border: 0 all of it, 1-8 the compass sector (by bearing from their castle), 9 the siege of their capital (SEC_SIEGE in sim/front.ts)
+  sec: number;                       // which part of that border: 0 all of it, a set of compass sectors (bits 0-7: by bearing from their castle), 256 the siege of their capital (SEC_SIEGE in sim/front.ts)
   attack: boolean;                   // its order at war: attack (true) or defend (false: fall back out of reach of the enemy's towers and hold the line there)
   ordered: boolean;                  // the order was given by someone (not the default for the side it fights on)
   placed: number;                    // the line its men were last placed on: 0 none yet, 1 the attack line, 2 the line of the defence

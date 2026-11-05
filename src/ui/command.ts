@@ -13,7 +13,7 @@ import { client } from '../client';
 import { cam } from '../render/camera';
 import { armyName, renameArmy } from './armies';
 import { startAssign, placeName } from './assign';
-import { SEC_SIEGE, SECTOR_NAMES } from '../sim/front';
+import { SEC_SIEGE, secName } from '../sim/front';
 import { toast } from './hud';
 import { $ } from './dom';
 
@@ -58,7 +58,7 @@ function status(key: number){
     const u=unitAt(key); return u ? `${ms.length>1 ? `${ms.reduce((k,m) => k+(unitAt(m)?.members.length ?? 0),0)} men${group} · at home` : `At home · ${u.home}/${u.cap}`}` : '';
   }
   const foe=nm(c.d), M=W.M, pair=c.a*M+c.d;
-  const part=c.sec===SEC_SIEGE ? `the capital of ${foe}` : c.sec ? `${foe}'s ${SECTOR_NAMES[c.sec]} sector` : foe;   // (what it fights along: all the border, a part of it, or the siege)
+  const part=c.sec===SEC_SIEGE ? `the capital of ${foe}` : c.sec ? `${foe}'s ${secName(c.sec)} sector` : foe;   // (what it fights along: all the border, a part of it, or the siege)
   const dug=c.dug ? ' · entrenched' : c.dig>0 && !attacks(c) ? ' · digging in' : '';
   if (aboardOf(c)){
     if (W.wars[pair]) return `${men} men${group} · ${attacks(c) ? 'landing on' : 'off the coast of'} ${foe}${attacks(c) ? '' : ', waiting for the order to attack'}`;

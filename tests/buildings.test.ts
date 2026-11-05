@@ -1,6 +1,6 @@
 // Buildings a kingdom places, and the gold economy.
 import { describe, it, expect } from 'vitest';
-import { MINTER_BONUS, TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_FARM, B_BARRACKS, B_NAVAL, B_HOSPITAL, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, WAGE, WAGE_IDLE, GOLD_PER_TILE, TAX_PER_VILLAGER, LAND_TAX, STR_TILE, STR_VILLAGER, STR_SOLDIER, STR_GOLD } from '../src/core/constants';
+import { MINTER_BONUS, TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_FARM, B_BARRACKS, B_NAVAL, B_HOSPITAL, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, WAGE, WAGE_IDLE, GOLD_PER_TILE, TAX_PER_VILLAGER, LAND_TAX, STR_VILLAGER, STR_MILITIA, STR_SOLDIER } from '../src/core/constants';
 import { W, owner, isLand, pType, pCenter, pBuild, type Human } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick, incomeParts } from '../src/sim/sim';
 import { declare, escalate } from '../src/sim/war';
@@ -236,14 +236,18 @@ describe('what the buildings do', () => {
 });
 
 describe('gold and strength', () => {
-  it('starts every kingdom with gold and adds it up in strength: land, villagers, soldiers and gold', () => {
+  it('starts every kingdom with gold, and counts its strength as military might alone: villagers and militia 100, soldiers 200, 300 or 500 by tier', () => {
     start(987654321, 9); run(1500);
     for (const n of W.nations.slice(1)){
       if (!n.alive) continue;
-      expect(n.strength).toBeCloseTo(n.tiles*STR_TILE + n.villagers*STR_VILLAGER + (n.soldiers-n.militia*0.5)*STR_SOLDIER + n.gold*STR_GOLD, 6);
+      const might=W.humans.filter(h => h.o===n.id && !h.beggar).reduce((k,h) => k+(h.kind===H_SOLDIER ? (h.militia ? STR_MILITIA : STR_SOLDIER[h.tier]) : STR_VILLAGER),0);
+      expect(n.strength).toBe(might);
     }
+    expect(STR_VILLAGER).toBe(100); expect(STR_MILITIA).toBe(100); expect(STR_SOLDIER).toEqual([0,200,300,500]);
     start(12345, 0);
     expect(me().gold).toBe(GOLD_START);
+    me().tiles+=1000; me().gold+=5000; run(2);   // (land and gold are no strength)
+    expect(me().strength).toBe(W.humans.filter(h => h.o===1 && h.kind===0 && !h.beggar).length*100);
   });
 
   it('shows its income as villager tax, land tax, minters, and the soldiers\' and militia\'s pay', () => {

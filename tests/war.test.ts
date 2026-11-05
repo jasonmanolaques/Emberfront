@@ -941,7 +941,7 @@ describe('crisis', () => {
     // all the while it takes its land back, and after it, its men keep to their own side: none out on the enemy's own ground
     let strays=0;
     for (let i=0;i<4000 && W.occCount[2*M()+1]>0;i++){ tick();
-      for (const h of W.humans) if (h.o===2 && h.war>=0 && h.kind===H_SOLDIER){ const t=((h.y/2)|0)*TW+((h.x/2)|0); if (owner[t]===1 && !occ[t]) strays++; }
+      for (const h of W.humans) if (h.o===2 && h.war>=0 && h.kind===H_SOLDIER){ const t=((h.y/2)|0)*TW+((h.x/2)|0); if (owner[t]===1 && !occ[t] && [t-1,t+1,t-TW,t+TW].every(k => owner[k]===1 && !occ[k])) strays++; }   // (on the line itself, a tile over it, does not count: deeper in does)
     }
     expect(strays).toBe(0);
     until(() => W.occCount[2*M()+1]===0, 4000);
@@ -1132,6 +1132,15 @@ describe('parts of a border, and the siege of a capital', () => {
     giveWord(1,2); run(1200);
     expect(fell.length+collect('eliminated').length+(N(2).alive ? 0 : 1)).toBeGreaterThan(0);
   });
+  it('one border that runs on unbroken is offered whole, however many compass sectors it crosses: no parts, so no gaps in the front', () => {
+    world(1); labelWorld(); allocIsles(); quiet(); paintDisc(N(1),14);
+    const [ax,ay]=[N(1).capTile%TW,(N(1).capTile/TW)|0], [bx,by]=[N(2).capTile%TW,(N(2).capTile/TW)|0], mx=(ax+bx)/2, my=(ay+by)/2;
+    for (let y=Math.round(my-60);y<Math.round(my+60);y++) for (let x=Math.round(mx-100);x<Math.round(mx+100);x++) setOwner(y*TW+x, x<mx ? 1 : 2);
+    census(); W.tickN+=100;
+    const parts=bordersOf(1).filter(b => b.sec!==SEC_SIEGE);
+    expect(parts).toHaveLength(1); expect(parts[0].sec).toBe(0);
+    expect(new Set(parts[0].tiles.map(t => sectorOf(2,t))).size).toBeGreaterThan(1);   // (it does cross several sectors)
+  });
   it('a compass sector: the armies take only the part of the border that lies that way from their castle', () => {
     world(1); labelWorld(); allocIsles(); quiet(); paintDisc(N(1),14);
     const [ax,ay]=[N(1).capTile%TW,(N(1).capTile/TW)|0], [bx,by]=[N(2).capTile%TW,(N(2).capTile/TW)|0], mx=(ax+bx)/2, my=(ay+by)/2;
@@ -1144,7 +1153,7 @@ describe('parts of a border, and the siege of a capital', () => {
     soldiers(N(1),40); noDraft(); noDraft(2); N(2).soldierShare=0; N(2).humanProg=-1e9; run(2);
     const keys=available(N(1)).map(a => a.unit.key); expect(keys.length).toBeGreaterThan(0);
     expect(declare(1,2,40)).toBe(true);
-    for (const k of keys) expect(assignArmy(1,k,2,0,undefined,sec)).toBe(true);
+    for (const k of keys) expect(assignArmy(1,k,2,0,undefined,1<<(sec-1))).toBe(true);   // (a set of sectors: this one)
     giveWord(1,2); run(480);
     const took: number[]=[]; for (let t=0;t<NT;t++) if (owner[t]===2 && occ[t]===1) took.push(t);
     expect(took.length).toBeGreaterThan(20);

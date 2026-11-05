@@ -32,7 +32,7 @@
    to the barracks that needs it most nearly (sim/army.ts says which armour each one wants).
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, until the kingdom sends them to war (sim/war.ts). */
-import { TW, TH, PW, PH, TICK, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY, B_HOSPITAL } from '../core/constants';
+import { STR_VILLAGER, STR_MILITIA, STR_SOLDIER, TW, TH, PW, PH, TICK, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY, B_HOSPITAL } from '../core/constants';
 import { W, owner, occ, isLand, ferry, pType, pOwner, pBurn, pPrio, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, type Human, type Nation } from './state';
 import { homeScore, startSite, cancelSite, finishHouse, plotProblem } from './buildings';
 import { on } from './events';
@@ -850,10 +850,10 @@ export function updatePopulation(){
   for (const h of H) if (h.war>=0) marchStep(h); else step(h);
   spread();   // fighters keep a little room between them
   // headcount after everyone has moved, so it matches what is on the map this tick
-  for (const n of N){ n.villagers=0; n.soldiers=0; n.militia=0; n.called=0; n.wageS=0; n.wageM=0; n.training=0; n.beggars=0; n.homeless=0; n.taxpayers=0; }
+  for (const n of N){ n.villagers=0; n.soldiers=0; n.militia=0; n.called=0; n.wageS=0; n.wageM=0; n.training=0; n.beggars=0; n.homeless=0; n.taxpayers=0; n.might=0; }
   for (const h of H){
     const n=N[h.o];
-    if (h.kind===H_SOLDIER){ n.soldiers++; if (h.militia){ n.militia++; if (h.war>=0) n.called++; n.wageM+=wageOf(h); } else n.wageS+=wageOf(h); } else if (h.beggar) n.beggars++; else { n.villagers++; if (h.housed) n.taxpayers++; }
+    if (h.kind===H_SOLDIER){ n.soldiers++; if (h.militia){ n.militia++; n.might+=STR_MILITIA; if (h.war>=0) n.called++; n.wageM+=wageOf(h); } else { n.wageS+=wageOf(h); n.might+=STR_SOLDIER[h.tier] ?? STR_SOLDIER[1]; } } else if (h.beggar) n.beggars++; else { n.villagers++; n.might+=STR_VILLAGER; if (h.housed) n.taxpayers++; }
     if (!h.housed && !(h.home>=0 && h.kind===H_VILLAGER && !h.beggar)) n.homeless++;   // (one on his way to build himself a home is not homeless yet)
     if (switching(h)) n.training++;
   }

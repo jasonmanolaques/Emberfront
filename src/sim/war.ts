@@ -148,7 +148,7 @@ interface Offensive {
   men: Human[]; atk: Human[]; def: Human[]; camps: Campaign[];   // its men (leaders aside), those of its attacking and of its defending armies, and its armies, this tick
 }
 const offensives = new Map<number, Offensive>();   // by id
-const ofId = (pair: number, isle: number, sec=0) => (pair*16+sec)*65536+isle;
+const ofId = (pair: number, isle: number, sec=0) => (pair*512+sec)*65536+isle;
 const ABOARD = 2**40;   // added to the front id of an army still aboard ship, off a coast: it is not on the land front its landmass has until it lands
 /** The landing army c is part of, while its ships have not put it ashore. */
 export const aboardOf = (c: Campaign) => c.naval>=0 ? W.invasions.find(i => i.id===c.naval && i.stage<INV_LAND) : undefined;
@@ -1167,15 +1167,29 @@ export function bordersOf(a: number): Border[] {
       }
     }
     for (const [i,tiles] of by){
-      const secs=new Map<number, number[]>(); for (const t of tiles){ const k=sectorOf(d,t); let l=secs.get(k); if (!l){ l=[]; secs.set(k,l); } l.push(t); }
-      const big=[...secs].filter(([,l]) => l.length>=MIN_SECTOR);
-      if (big.length<2){ out.push({ d, isle:i, sec:0, tiles }); continue; }   // (one stretch: no parts to choose between)
-      const groups=new Map<number, number[]>(big.map(([k,l]) => [k,l.slice()]));
-      for (const [k,l] of secs) if (!groups.has(k)){   // (a small part goes with the nearest big one by bearing)
-        let best=big[0][0], bd=9; for (const [j] of big){ const e=Math.min(Math.abs(j-k),8-Math.abs(j-k)); if (e<bd){ bd=e; best=j; } }
-        groups.get(best)!.push(...l);
+      // A border is one stretch wherever it runs on without a break: pieces of it that touch (a tile and the next, corners too) are one, and so are pieces
+      // that lie in the same compass sector (their men could not be told apart); tiny bits go with the biggest. A border in one piece is offered whole;
+      // the pieces left are each a set of compass sectors, which no other piece shares.
+      const idx=new Map<number, number>(); tiles.forEach((t,k) => idx.set(t,k));
+      const comp=new Int32Array(tiles.length).fill(-1), sizes: number[]=[];
+      for (let k0=0;k0<tiles.length;k0++){
+        if (comp[k0]>=0) continue;
+        const id=sizes.length, stack=[k0]; comp[k0]=id; let n=0;
+        while (stack.length){
+          const k=stack.pop()!, t=tiles[k], x=t%tw, y=(t/tw)|0; n++;
+          for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){ const xx=x+dx, yy=y+dy; if ((!dx && !dy) || xx<0 || yy<0 || xx>=tw || yy>=th) continue; const j=idx.get(yy*tw+xx); if (j!==undefined && comp[j]<0){ comp[j]=id; stack.push(j); } }
+        }
+        sizes.push(n);
       }
-      for (const [k,l] of groups) out.push({ d, isle:i, sec:k, tiles:l });
+      const big=sizes.reduce((b,n,k) => n>sizes[b] ? k : b,0), parent=sizes.map((_,k) => k);
+      const find = (k: number): number => parent[k]===k ? k : (parent[k]=find(parent[k]));
+      const bySec=new Map<number, number>();
+      sizes.forEach((n,k) => { if (n<MIN_SECTOR && k!==big) parent[find(k)]=find(big); });
+      tiles.forEach((t,j) => { const sc=sectorOf(d,t), k=comp[j], o=bySec.get(sc); if (o===undefined) bySec.set(sc,k); else parent[find(k)]=find(o); });
+      const groups=new Map<number, { tiles: number[]; mask: number }>();
+      tiles.forEach((t,j) => { const r=find(comp[j]); let g=groups.get(r); if (!g){ g={ tiles:[], mask:0 }; groups.set(r,g); } g.tiles.push(t); g.mask|=1<<(sectorOf(d,t)-1); });
+      if (groups.size<2){ out.push({ d, isle:i, sec:0, tiles }); continue; }
+      for (const g of groups.values()) out.push({ d, isle:i, sec:g.mask===255 ? 0 : g.mask, tiles:g.tiles });
     }
     // the siege of the capital: offered where the capital lies on a landmass of the border (the ring is what is drawn)
     if (D.capTile>=0 && [...by.keys()].includes(isle[D.capTile])){
@@ -1903,7 +1917,7 @@ export function frontLines(): { a: number; d: number; tiles: number[]; state: nu
   const list=[...offensives.values()].filter(o => o.F && o.F.tiles.length).sort((p,q) => (+!!W.aggr[q.key])-(+!!W.aggr[p.key]) || p.id-q.id);
   for (const o of list){
     // (one line for each part of a war's front, whichever side's army it is: the attacker's is the one drawn)
-    const key=((Math.min(o.a,o.d)*M+Math.max(o.a,o.d))*16+o.sec)*65536+o.isle; if (done.has(key)) continue;
+    const key=((Math.min(o.a,o.d)*M+Math.max(o.a,o.d))*512+o.sec)*65536+o.isle; if (done.has(key)) continue;
     done.add(key); out.push({ a:o.a, d:o.d, tiles:o.F!.tiles, state:W.offensive[o.key] });
   }
   return out;

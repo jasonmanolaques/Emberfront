@@ -53,8 +53,14 @@ export function castleCutOff(d: number){
 /* ---------- parts of a border ----------
    A border can be fought along as a whole, or a part of it at a time: the border is cut into compass sectors by the bearing of its tiles from the
    defender's castle (1 east, 2 south-east … 8 north-east), and there is the siege of the capital, which is the stretch of border in the way to the castle. */
-export const SEC_ALL = 0, SEC_SIEGE = 9;
+export const SEC_ALL = 0, SEC_SIEGE = 256;   // a part of a border is 0 (all of it), a set of compass sectors (bit k-1 for sector k, 1-8), or the siege
 export const SECTOR_NAMES = ['', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+/** The compass sectors of a set (bits), as words: "north-west", "west and north-west", "east to south". */
+export function secName(mask: number){
+  const ks: number[]=[]; for (let k=1;k<=8;k++) if (mask & (1<<(k-1))) ks.push(k);
+  if (!ks.length || ks.length===8) return 'whole border';
+  return ks.length===1 ? SECTOR_NAMES[ks[0]] : ks.length===2 ? `${SECTOR_NAMES[ks[0]]} and ${SECTOR_NAMES[ks[1]]}` : `${SECTOR_NAMES[ks[0]]} to ${SECTOR_NAMES[ks[ks.length-1]]}`;
+}
 export const SIEGE_WIDTH = 14;   // tiles either side of the way to the castle the siege keeps to
 export const SIEGE_NEAR = 20;    // tiles round the castle that are the siege's whole
 /** The compass sector (1-8) tile t lies in, as seen from d's castle. */
@@ -66,7 +72,7 @@ export function sectorOf(d: number, t: number){
     and any within SIEGE_NEAR of it: all of them once the castle stands cut off. */
 export function partOf(d: number, all: number[], sec: number){
   if (!sec) return all;
-  if (sec!==SEC_SIEGE) return all.filter(t => sectorOf(d,t)===sec);
+  if (sec!==SEC_SIEGE) return all.filter(t => (sec & (1<<(sectorOf(d,t)-1)))!==0);
   if (!all.length || castleCutOff(d)) return all;
   const [ox,oy]=originOf(d); let p=all[0], pd=Infinity;
   for (const t of all){ const e=Math.hypot(t%TW+0.5-ox,((t/TW)|0)+0.5-oy); if (e<pd){ pd=e; p=t; } }

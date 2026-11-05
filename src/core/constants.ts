@@ -49,7 +49,8 @@ export const TAX_PER_VILLAGER = 0.1;      // gold a second each villager pays pe
 export const LAND_TAX = 0.0004;           // gold a second a kingdom earns for each tile of land it holds (a flat boost for its size: 4 a second for 10,000 tiles)
 export const GOLD_PER_TILE = 0.5;         // cost of settling one unclaimed tile
 // kingdom strength: what the leaderboard and labels show, and what makes land costly to take
-export const STR_TILE = 1, STR_VILLAGER = 50, STR_SOLDIER = 100, STR_GOLD = 3;
+/* A kingdom's strength is its military might alone: each villager and each militiaman counts 100, a soldier 200, 300 or 500 by his armour tier (sim/population.ts). */
+export const STR_VILLAGER = 100, STR_MILITIA = 100, STR_SOLDIER = [0, 200, 300, 500];
 
 export const PLAYER = 1;                  // nation id of the local player
 export const UI_SCALE = 0.8;             // the interface is drawn at this share of its first size (CSS zoom on every panel: see --ui in style.css)
