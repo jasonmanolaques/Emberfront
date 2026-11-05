@@ -27,10 +27,11 @@ export const B_EMPTY=0,B_HOUSE=1,B_FARM=2,B_TOWER=3,B_MINE=4,B_CASTLE=5,B_CPART=
 // buildings bigger than one plot: the top-left plot holds the type, the others are B_PART pointing at it (pMain)
 export const B_PLANTATION=11, B_QUARRY=12, B_COPPERMINE=13, B_PART=14;
 export const B_RESEARCH=15, B_GUILD=16, B_SMITHY=17;   // research station, builders guild, blacksmith
+export const B_HOSPITAL=19;   // hospital: 2 plots; two doctors fetch the wounded (sim/medics.ts)
 export const B_NAVAL=18;   // naval base: 8 plots (4×2 or 2×4), at least a third of it on the water
 /** Anything standing on a plot that a kingdom owns and that burns when the ground is taken. */
 export const isStructure = (ty: number) => ty===B_HOUSE || ty===B_FARM || ty===B_TOWER || ty===B_MINE || ty===B_BARRACKS || ty===B_MINTER
-  || ty===B_PLANTATION || ty===B_QUARRY || ty===B_COPPERMINE || ty===B_PART || ty===B_RESEARCH || ty===B_GUILD || ty===B_SMITHY || ty===B_NAVAL;
+  || ty===B_PLANTATION || ty===B_QUARRY || ty===B_COPPERMINE || ty===B_PART || ty===B_RESEARCH || ty===B_GUILD || ty===B_SMITHY || ty===B_NAVAL || ty===B_HOSPITAL;
 
 /* ---------- economy ---------- */
 export const GOLD_START = 250;            // gold each kingdom starts with

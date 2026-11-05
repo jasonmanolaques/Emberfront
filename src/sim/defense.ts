@@ -10,7 +10,7 @@
    two thirds.
    Two watchtowers of a kingdom side by side are joined by a wall. While both stand, nobody but
    that kingdom and its allies gets across it: an army goes round, or knocks down a tower. */
-import { TW, NT, PW, PH, B_HOUSE, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_MINE, B_RESEARCH, B_GUILD, B_SMITHY, B_CASTLE, B_NAVAL } from '../core/constants';
+import { TW, NT, PW, PH, B_HOUSE, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_MINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CASTLE, B_NAVAL } from '../core/constants';
 import { W, pType, pOwner, pTier, pHp, pBurn } from './state';
 import { HOUSE_TOUGH, R_CASTLE } from './research';
 import { isGatherer, gatherTier } from './buildings';
@@ -25,7 +25,7 @@ export const HOUSE_HP = 10, GATHER_HP = 15;     // blows a hovel takes (a stone 
 
 /** Blows a building takes before it burns (the castle: before the kingdom falls). */
 export const BLD_HP: Record<number, number> = { [B_HOUSE]: HOUSE_HP, [B_FARM]: 15, [B_TOWER]: TOWER_HP[1], [B_BARRACKS]: 20, [B_MINTER]: 15,
-  [B_PLANTATION]: GATHER_HP, [B_QUARRY]: GATHER_HP, [B_COPPERMINE]: GATHER_HP, [B_MINE]: 10, [B_RESEARCH]: 15, [B_GUILD]: 15, [B_SMITHY]: 15, [B_NAVAL]: 25, [B_CASTLE]: CASTLE_HP[1] };
+  [B_PLANTATION]: GATHER_HP, [B_QUARRY]: GATHER_HP, [B_COPPERMINE]: GATHER_HP, [B_MINE]: 10, [B_RESEARCH]: 15, [B_GUILD]: 15, [B_SMITHY]: 15, [B_HOSPITAL]: 15, [B_NAVAL]: 25, [B_CASTLE]: CASTLE_HP[1] };
 
 /** The tier of the watchtower on plot q, and of kingdom o's castle. */
 export const towerTier = (q: number) => pTier[q] || 1;

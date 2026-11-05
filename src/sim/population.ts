@@ -32,11 +32,12 @@
    to the barracks that needs it most nearly (sim/army.ts says which armour each one wants).
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, until the kingdom sends them to war (sim/war.ts). */
-import { TW, TH, PW, PH, TICK, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY } from '../core/constants';
+import { TW, TH, PW, PH, TICK, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY, B_HOSPITAL } from '../core/constants';
 import { W, owner, occ, isLand, ferry, pType, pOwner, pBurn, pPrio, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, type Human, type Nation } from './state';
 import { homeScore, startSite, cancelSite, finishHouse, plotProblem } from './buildings';
 import { on } from './events';
 import { Field } from './field';
+import { medicStep, updateMedics, wound, isDoctorTask, hospitalStands, TASK_DOC_BACK, TASK_DOC_WAIT, TASK_DOC_HEAL } from './medics';
 import { updateWar, borderPoints, wageOf, reinforce, marchStep, guardStep, alarmStep, mayStand, spread, warringNow } from './war';
 import { FERRY_PACE, laneBox } from './naval';
 import { HOUSE_BEDS, R_HOUSING, R_TOWERS, MAX_TIER } from './research';
@@ -69,7 +70,7 @@ export const HOUSE_BONUS = 0.01;   // villager generation 1% faster for each bed
 /** Beds in n's houses that nobody needs: its capacity less its people (none when everyone is housed or more). */
 export const spareBeds = (n: Nation, people: number) => Math.max(0,n.beds-people);
 /** How fast kingdom n's capital raises humans: 1 a tick, and a bonus for each farm and for each spare bed, `people` being everyone it has. */
-export const humanRate = (n: Nation, people: number) => 1+FARM_BONUS*n.farms+HOUSE_BONUS*spareBeds(n,people);
+export const humanRate = (n: Nation, people: number) => (1+FARM_BONUS*n.farms+HOUSE_BONUS*spareBeds(n,people))*(W.siege[n.id]>0 ? 2 : 1);   // (a capital under siege raises people twice as fast, to have a chance)
 const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 s)
 const PATROL_R = 36;             // pixels around the capital door soldiers patrol when there is no barracks
 export const HOME_PACE = 1.15;   // soldiers on their own kingdom's land move 15% faster
@@ -93,7 +94,7 @@ const MANOR_SHARE = 0.4;         // with manors allowed, the innermost 40% of ho
 /** Switching role: walking to a barracks (or the castle) for it, or inside training. */
 export const switching = (h: Human) => h.task===TASK_TO_TRAIN || h.task===TASK_INSIDE;
 /** Out of sight inside the capital or a barracks. */
-export const indoors = (h: Human) => h.task===TASK_INSIDE || h.task===TASK_REST || h.task===TASK_BOAT;
+export const indoors = (h: Human) => h.task===TASK_INSIDE || h.task===TASK_REST || h.task===TASK_BOAT || h.task===TASK_DOC_WAIT || h.task===TASK_DOC_HEAL;
 
 /** Pixel position just outside the capital's door. */
 export function doorOf(n: Nation): [number, number] { const q=n.capPlot; return [(q%PW)*8+8, ((q/PW)|0)*8+15]; }
@@ -250,6 +251,7 @@ function think(h: Human){
   const n=W.nations[h.o], was=h.rest;
   release(h); h.task=TASK_ROAM;
   if (h.beggar){ roamTarget(h); return; }   // beggars just drift about town
+  if (h.work>=0 && h.kind===H_VILLAGER && pType[h.work]===B_HOSPITAL){ h.dest=-1; h.task=TASK_DOC_BACK; h.path=[]; h.wait=0; return; }   // a doctor: to the hospital, and inside
   if (h.work>=0 && h.kind===H_VILLAGER){ if (!(pType[h.work]===B_SMITHY ? goForge(h) : goImprove(h))) roamTarget(h); return; }   // builders and smiths work, or wait at their workshop
   if (h.kind===H_VILLAGER && needsHome(n) && goBuildHome(h)) return;
   if (h.kind!==H_VILLAGER){ roamTarget(h); return; }
@@ -615,27 +617,32 @@ function improve(n: Nation, q: number){
 }
 /** Every builders guild has one builder and every blacksmith one smith. A workshop without its
     worker takes the villager nearest it, straight away when it is new, a while after he fell. */
-const workshop = (q: number, id: number) => standing(q,B_GUILD,id) || standing(q,B_SMITHY,id);
+const workshop = (q: number, id: number) => standing(q,B_GUILD,id) || standing(q,B_SMITHY,id) || hospitalStands(q,id);
+const slots = (q: number) => pType[q]===B_HOSPITAL ? 2 : 1;   // a hospital has two doctors
 function staffGuilds(n: Nation, mine: Human[]){
-  const staffed=new Set<number>();
+  const staffed=new Map<number, number>();
   for (const h of mine){
     if (h.work<0) continue;
-    if (!workshop(h.work,n.id) || h.kind!==H_VILLAGER || h.beggar || staffed.has(h.work)){
-      const busy=h.fix>=0 || h.make>0 || h.load>0;
+    if (!workshop(h.work,n.id) || h.kind!==H_VILLAGER || h.beggar || (staffed.get(h.work) ?? 0)>=slots(h.work)){
+      const busy=h.fix>=0 || h.make>0 || h.load>0 || isDoctorTask(h.task);
       h.work=-1; h.load=0; h.make=0; h.dest=-1; if (busy) backToRoam(h); continue;   // whatever he carried is lost
     }
-    staffed.add(h.work);
+    staffed.set(h.work,(staffed.get(h.work) ?? 0)+1);
   }
-  if (staffed.size===n.guilds+n.smithies) return;
+  let filled=0; for (const k of staffed.values()) filled+=k;
+  if (filled===n.guilds+n.smithies+2*n.hospitals) return;
   let free: Human[] | null=null;
   for (const q of n.blds){
-    if (staffed.has(q) || !workshop(q,n.id)) continue;
+    if (!workshop(q,n.id)) continue;
+    let need=slots(q)-(staffed.get(q) ?? 0); if (need<=0) continue;
     if (pTimer[q]>1){ pTimer[q]--; continue; }   // his replacement is on the way
     free ??= mine.filter(h => h.kind===H_VILLAGER && h.work<0 && !h.beggar && !switching(h) && h.brave<0 && h.home<0);
-    const [x,y]=frontOf(q), h=nearest(free,x,y).shift(); if (!h) return;
     const replaced=pTimer[q]===1; pTimer[q]=0;
-    release(h); h.work=q; think(h); h.wait=0;
-    on.builderHired(q,n.id,replaced);
+    for (;need>0;need--){
+      const [x,y]=frontOf(q), h=nearest(free,x,y).shift(); if (!h) return;
+      release(h); h.work=q; think(h); h.wait=0;
+      on.builderHired(q,n.id,replaced);
+    }
   }
 }
 
@@ -708,6 +715,7 @@ function walkTo(h: Human, x: number, y: number){
 function step(h: Human){
   const n=W.nations[h.o];
   if (switching(h) && !siteStands(h)){ backToRoam(h); return; }   // the barracks was lost
+  if (isDoctorTask(h.task)){ medicStep(h); return; }   // a doctor: waits, runs out, carries, tends
   if (h.task===TASK_INSIDE){
     if (--h.wait<=0){
       const to=h.to, was=h.kind!==H_SOLDIER ? T_VILLAGER : h.militia ? T_MILITIA : T_SOLDIER;
@@ -788,18 +796,27 @@ function shelter(h: Human){
   }
   return false;
 }
+/** A healed soldier stands up at the hospital door and goes back to his duty (his barracks and army take him again). */
+function reviveWounded(h: Human, x: number, y: number){
+  h.x=x; h.y=y; h.fx=x; h.fy=y; h.path=[]; h.wait=0; h.war=-1; h.foe=-1; h.aim=-1; h.fk=-1; h.line=-1; h.slot=-1; h.post=-1; h.site=-1; h.duel=-1; h.cool=0; h.lead=0; h.fury=false; h.dug=false; h.calm=0;
+  h.hp=maxHp(h);
+  W.humans.push(h); backToRoam(h);
+}
 export function updatePopulation(){
   const N=W.nations, H=W.humans;
   // people die when their kingdom falls, the ground under them is taken, or they fall in battle
   for (let i=H.length-1;i>=0;i--){
     const h=H[i];
-    if (h.hp>0 && N[h.o].alive && shelter(h)) continue;   // (a man on ground that is another's, not at war: set back on his own, not lost)
-    if (!N[h.o].alive || !mayStand(h,owner[tileOf(h.x,h.y)]) || h.hp<=0){
-      if (h.hp<=0 && N[h.o].alive) on.died(h.x,h.y,h.o,h.id,h.kind===H_SOLDIER ? 1 : h.beggar ? 2 : 0,h.militia ? 0 : h.tier,h.beggar && h.homeless>=STARVE_TICKS);   // they drop where they fell
-      if (h.work>=0 && (pType[h.work]===B_GUILD || pType[h.work]===B_SMITHY)) pTimer[h.work]=REHIRE_TICKS+1;   // the workshop waits a while for a new hand
+    const doc=isDoctorTask(h.task);   // (a doctor out for a wounded man goes where the fighting is)
+    if (!doc && h.hp>0 && N[h.o].alive && shelter(h)) continue;   // (a man on ground that is another's, not at war: set back on his own, not lost)
+    if (!N[h.o].alive || (!doc && !mayStand(h,owner[tileOf(h.x,h.y)])) || h.hp<=0){
+      const hurt=h.hp<=0 && N[h.o].alive && wound(h);   // (with field medics, some who fall are only wounded: no blood, and a cross)
+      if (h.hp<=0 && N[h.o].alive && !hurt) on.died(h.x,h.y,h.o,h.id,h.kind===H_SOLDIER ? 1 : h.beggar ? 2 : 0,h.militia ? 0 : h.tier,h.beggar && h.homeless>=STARVE_TICKS);   // they drop where they fell
+      if (h.work>=0 && (pType[h.work]===B_GUILD || pType[h.work]===B_SMITHY || pType[h.work]===B_HOSPITAL)) pTimer[h.work]=REHIRE_TICKS+1;   // the workshop waits a while for a new hand
       release(h); H[i]=H[H.length-1]; H.pop();
     }
   }
+  updateMedics(reviveWounded);   // the wounded bleed, or heal in their beds
   buildUnits();  // which barracks stand, and their armies
   updateWar();   // armies, watchtowers and who is fighting whom
   const groups: Human[][]=N.map(()=>[]);

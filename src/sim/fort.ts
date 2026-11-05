@@ -12,11 +12,11 @@
    Towers at the end of a stretch of wall flank an opening (a gate, or a gap still to be built)
    and call for a garrison; a lone tower out on the border is an outpost and doesn't.
    The bots' side of it is in sim/bots.ts. */
-import { PW, PH, B_TOWER, B_HOUSE, B_BARRACKS, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY, B_SITE } from '../core/constants';
+import { PW, PH, B_TOWER, B_HOUSE, B_BARRACKS, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_SITE } from '../core/constants';
 import { pType, pOwner, pBurn, type Nation } from './state';
 
 export const WALL_MIN = 3, WALL_MAX = 8;   // the ring of a town wall, in plots out from the castle
-const CORE = [B_HOUSE, B_BARRACKS, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY, B_SITE];   // what a wall is built to enclose
+const CORE = [B_HOUSE, B_BARRACKS, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_SITE];   // what a wall is built to enclose
 
 /** Which ring round n's castle plot q lies on: 1 for the castle's own plots, 2 just outside it, and so on. */
 export function ringOf(n: Nation, q: number){

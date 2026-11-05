@@ -5,7 +5,7 @@
    Farms, barracks, watchtowers and coin minters are modular: each plot looks at its four
    neighbours, and plots of the same kind and owner join up, so fields merge into one farmland,
    barracks into one long hall, minters into one workshop, and towers link with walls. */
-import { PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_NAVAL, TW } from '../core/constants';
+import { PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_NAVAL, TW } from '../core/constants';
 import { W, isLand, pType, pOwner, pVar, pMain, pAband, pTier, pBurn } from '../sim/state';
 import { cultureOf, drawCapital, wearCapital } from './capitals';
 import { styleOf, type NationStyle } from './style';
@@ -306,6 +306,32 @@ function drawSmithyBig(ox: number, oy: number, n: NationStyle, w: number, h: num
 }
 
 /* ---------- builders guild (2×1 plots): a workshop and its yard of timber and stone ---------- */
+const woundedList = () => W.wounded;   // (drawWorking has a W of its own)
+/* ---------- the hospital (2×1 plots): a medieval infirmary with an open ward, two beds, and a red cross over the door ---------- */
+/** Where the two beds' heads lie in the 32×16 picture. */
+export const HOSPITAL_BEDS = [[7,10],[21,10]];
+function drawHospital(ox: number, oy: number, n: NationStyle){
+  R(ox+1,oy+14,30,1,SH);
+  // the hall: pale plaster with a timber frame, a steep tiled roof in the kingdom's colour and a little bell turret
+  R(ox+1,oy+6,30,8,'#efe6d0'); R(ox+1,oy+13,30,1,'#c9bd9f');
+  for (const x of [1,10,15,16,21,30]) R(ox+x,oy+6,1,8,'#5a3e28');
+  R(ox+1,oy+6,30,1,'#5a3e28');
+  R(ox,oy+4,32,2,n.roofD); R(ox+1,oy+3,30,1,n.roof); R(ox+3,oy+2,26,1,n.roof); R(ox+5,oy+1,22,1,n.roofL);
+  for (let x=2;x<30;x+=3) P(ox+x,oy+4,n.roof);
+  R(ox+14,oy-1,4,3,'#d8cdb0'); R(ox+15,oy,2,2,'#3b2a1e'); R(ox+15,oy-2,2,1,'#6b4a2c');   // the bell turret
+  // two open arched wards: a bed in each (a white sheet, a pillow, a wooden frame)
+  for (const [bx] of HOSPITAL_BEDS){
+    R(ox+bx-4,oy+7,9,6,'#3a2a1c'); R(ox+bx-3,oy+7,7,1,'#4a382a');       // the alcove
+    R(ox+bx-4,oy+11,9,1,C.woodL); R(ox+bx-4,oy+12,1,2,C.woodD); R(ox+bx+4,oy+12,1,2,C.woodD);   // the bed frame and its legs
+    R(ox+bx-3,oy+10,7,1,'#f4f1ea'); R(ox+bx-3,oy+9,3,1,'#fbfaf5');       // the sheet and the pillow
+    P(ox+bx-4,oy+7,'#5a3e28'); P(ox+bx+4,oy+7,'#5a3e28');
+  }
+  R(ox+13,oy+9,6,5,'#3a2a1c'); R(ox+16,oy+9,1,5,'#5a4030');            // the door between them
+  R(ox+13,oy+8,6,1,'#5a3e28');
+  // the red cross on a white board over the door
+  R(ox+13,oy+5,6,3,'#fbfaf5'); R(ox+15,oy+5,2,3,'#c0302a'); R(ox+14,oy+6,4,1,'#c0302a');
+  R(ox+29,oy,1,4,'#4a3a2a'); R(ox+30,oy,2,2,n.roof);                     // the pennant
+}
 function drawGuild(ox: number, oy: number, n: NationStyle){
   R(ox+1,oy+14,30,1,SH);
   // the workshop, half-timbered, with a wide door and the guild's hammer sign
@@ -518,7 +544,7 @@ export function drawIcon(ctx: CanvasRenderingContext2D, type: number, n: NationS
 /* ---------- production buildings: a static base here plus live work drawn each frame ----------
    Plantations, quarries and copper mines are drawn at their size: one plot (tier 1), two side by
    side (tier 2) or a 2×2 block (tier 3); the builders guild is always 2×1. */
-export const BIG: Record<number, [number, number]> = { [B_PLANTATION]: [1,1], [B_QUARRY]: [1,1], [B_COPPERMINE]: [1,1], [B_GUILD]: [2,1] };
+export const BIG: Record<number, [number, number]> = { [B_PLANTATION]: [1,1], [B_QUARRY]: [1,1], [B_COPPERMINE]: [1,1], [B_GUILD]: [2,1], [B_HOSPITAL]: [2,1] };
 /** Where the saplings stand in a plantation of w×h plots: one in each plot. */
 const slots = (w: number, h: number) => { const out: number[][]=[]; for (let y=0;y<h;y++) for (let x=0;x<w;x++) out.push([x*16+8, y*16+11]); return out; };
 /** A copper mine's shafts by size: [centre x, width]. */
@@ -526,6 +552,7 @@ const shafts = (w: number, h: number) => w===1 ? [[8,4]] : h===1 ? [[16,8]] : [[
 function drawBig(ox: number, oy: number, type: number, n: NationStyle, w=BIG[type][0], h=BIG[type][1]){
   const W=w*16, H=h*16;
   if (type===B_GUILD){ drawGuild(ox,oy,n); return; }
+  if (type===B_HOSPITAL){ drawHospital(ox,oy,n); return; }
   if (type===B_PLANTATION){
     R(ox,oy,W,H,'#7a5c36');                                        // turned earth
     for (let y=3;y<H;y+=4) R(ox+1,oy+y,W-2,1,'#8e6c40');
@@ -567,9 +594,16 @@ function drawBig(ox: number, oy: number, type: number, n: NationStyle, w=BIG[typ
 }
 /** The moving part of a production building, drawn over its base each frame. k = progress through
     the 30-second cycle (0..1), now = milliseconds for the looping bits. */
-export function drawWorking(ctx: CanvasRenderingContext2D, type: number, ox: number, oy: number, k: number, now: number, w=BIG[type][0], h=BIG[type][1]){
+export function drawWorking(ctx: CanvasRenderingContext2D, type: number, ox: number, oy: number, k: number, now: number, w=BIG[type][0], h=BIG[type][1], q=-1){
   const prev=G; G=ctx;
   const W=w*16, H=h*16;
+  if (type===B_HOSPITAL){   // a wounded soldier lies in each bed that has one: a head on the pillow, a blanket over him
+    if (q>=0) for (const wd of woundedList()) if (wd.hosp===q && wd.bed>=0){
+      const [bx]=HOSPITAL_BEDS[wd.bed];
+      R(ox+bx-3,oy+9,3,2,'#e0b894'); R(ox+bx-3,oy+8,3,1,'#6b4a2c');                      // head and hair
+      R(ox+bx,oy+10,4,1,styleOf(wd.o).roof); R(ox+bx,oy+9,3,1,styleOf(wd.o).roofL);       // the blanket, in his kingdom's colour
+    }
+  }
   if (type===B_PLANTATION){
     // each bed grows a tree from a sprout to a full tree over the cycle
     for (const [sx,sy] of slots(w,h)){

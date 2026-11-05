@@ -1,19 +1,19 @@
 // War: diplomacy, attacks, fighting, peace, and the fall of a kingdom.
 // Most of these play on a flat all-grass map, so distances and borders are predictable.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NT, NP, PW, WAGE, WAGE_IDLE, WAGE_ATTACK, MIL_WAGE, MIL_ATTACK, T_GRASS, T_WATER, B_NAVAL, B_HOUSE, B_FARM, B_TOWER, B_BARRACKS, B_RUINS, B_GUILD } from '../src/core/constants';
+import { TICK, TW, TH, NT, NP, PW, WAGE, WAGE_IDLE, WAGE_ATTACK, MIL_WAGE, MIL_ATTACK, T_GRASS, T_WATER, B_NAVAL, B_HOUSE, B_FARM, B_TOWER, B_BARRACKS, B_RUINS, B_GUILD, B_HOSPITAL } from '../src/core/constants';
 import { W, owner, occ, isLand, isle, terr, pBuild, pType, pOwner, pBurn, pCenter, pHp, pIn, type Human, type Nation } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick, grossIncome } from '../src/sim/sim';
 import { listen, on } from '../src/sim/events';
 import { setOwner, occIsleAdd } from '../src/sim/territory';
 import { census } from '../src/sim/census';
-import { build, plotProblem, structureOf, costFor, togglePriority, finishHouse } from '../src/sim/buildings';
+import { build, plotProblem, placeProblem, SIZE, structureOf, costFor, togglePriority, finishHouse } from '../src/sim/buildings';
 import { resetRooms } from '../src/sim/population';
-import { indoors, TASK_ROAM, TASK_HOME_GO, H_SOLDIER, H_VILLAGER, TASK_REST, TASK_TO_TRAIN, TASK_INSIDE, MILITIA_HP, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, frontOf, switching, pace, maxHp } from '../src/sim/population';
+import { humanRate, indoors, TASK_ROAM, TASK_HOME_GO, H_SOLDIER, H_VILLAGER, TASK_REST, TASK_TO_TRAIN, TASK_INSIDE, MILITIA_HP, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, frontOf, switching, pace, maxHp } from '../src/sim/population';
 import { UNIT_SIZE, buildUnits, station, unitAt, units, groupKeys, mergeArmies, SOLDIER_DMG } from '../src/sim/army';
 import { wallOf, walledFor, buildWalls } from '../src/sim/defense';
 import { callable, partner, warringNow, besieged, siegeLocked, allied, atWar, available, ready, declare, warProblem, mayStand, endWar, makePeace, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
-  RANKS, rankFor, DIG_TICKS, invadeSpeed, INVADE_EMPTY, assignArmy, assignProblem, bordersOf, freeArmy, CRISIS_TICKS, frontKey, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, defendProblem, reservesOf, reservesProblem, menOn, deployArmies, armyOrder, armyFront, armyRecall, frontIsles, occOn, attacks, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, frontLines, marchPace, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
+  RANKS, rankFor, PEACE_MARCH, DIG_TICKS, invadeSpeed, INVADE_EMPTY, assignArmy, assignProblem, bordersOf, freeArmy, CRISIS_TICKS, frontKey, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, defendProblem, reservesOf, reservesProblem, menOn, deployArmies, armyOrder, armyFront, armyRecall, frontIsles, occOn, attacks, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, frontLines, marchPace, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
 import { navalPlan, declareNaval, navalOf, landingOn } from '../src/sim/war';
 import { botSea, navalAttack, seaDrive } from '../src/sim/botsea';
 import { basesOf, dockTile, labelWorld, allocIsles, landingZone, SHIP_CAP, SHIP_FRONT, INV_SAIL, INV_READY, INV_LAND, INV_DONE, shipById } from '../src/sim/naval';
@@ -24,7 +24,8 @@ import { beggarProblem, stuck, warChest, botThink } from '../src/sim/bots';
 import { MILITIA_HIT } from '../src/sim/army';
 import { armyName, renameArmy, resetArmyNames } from '../src/ui/armies';
 import { incomeParts } from '../src/sim/sim';
-import { R_HOUSING } from '../src/sim/research';
+import { R_HOUSING, R_MEDICS, TIER_XP } from '../src/sim/research';
+import { BLEED_TICKS, HEAL_TICKS, MEDIC_SPEED, TASK_DOC_GO, TASK_DOC_HEAL, TASK_DOC_WAIT } from '../src/sim/medics';
 
 const N = (i: number) => W.nations[i];
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
@@ -1914,7 +1915,7 @@ describe('two fronts', () => {
     expect(W.invasions.length===0 || W.invasions[0].stage>=INV_LAND).toBe(true);   // told to attack, it lands at once
   });
 
-  it('an army with a long way to march takes the base\'s boat when the sea is quicker: no ship of the fleet, and it arrives sooner', () => {
+  it('an army with a long way to march takes the base\'s boat when the sea is quicker: no ship of the fleet, and it arrives no later', () => {
     const { b, island, X0 }=twoFronts(true);
     for (let t=0;t<NT;t++) if (owner[t]===2 && (t%TW)>X0+40) setOwner(t,0);   // (all of theirs but the island: the only border is across the sea)
     census(); run(25);
@@ -1944,7 +1945,7 @@ describe('two fronts', () => {
       const men=c2.members.map(id => W.humans.find(h => h.id===id)!);
       if (men.every(h => h.fk>=0 && Math.hypot(h.x-h.fx,h.y-h.fy)<=PRESENT*3)) foot=i;
     }
-    expect(foot).toBeGreaterThan(withBoat*1.2);
+    expect(foot).toBeGreaterThan(withBoat*0.95);   // (armies march 30% faster in peace now, so on this short detour the boat is no longer much quicker than the way round: it is taken only when the sea is clearly better, and is never slower)
   });
 
   it('the army on the island is reinforced by new soldiers sailing out: the base\'s boat takes up to 5, and leaves a few seconds after the first man, never using the fleet', () => {
@@ -2330,6 +2331,96 @@ describe('where new soldiers come out, entrenching, and order groups', () => {
     // and an unmerge on any makes them separate again
     queueCommand({ type:'unmerge', nation:1, key:k3 }); tick();
     expect(groupKeys(1,k0)).toEqual([k0]); expect(groupKeys(1,k3)).toEqual([k3]);
+  });
+});
+
+describe('field medics, the wounded and the hospital', () => {
+  /** A kingdom 1 with a hospital (field medics learned), two doctors and soldiers (a few to fall). */
+  function field(medics=true, hospital=true){
+    world(1); labelWorld(); allocIsles(); quiet(); paintDisc(N(1),24); noDraft(2); N(1).humanProg=-1e9;
+    if (medics) N(1).tier[R_MEDICS]=2;
+    let q=-1; if (hospital){ q=place(N(1),B_HOSPITAL); census(); }
+    const men=soldiers(N(1),40,false); noDraft();
+    if (hospital){ for (let k=0;k<3;k++){ const [x,y]=doorOf(N(1)); W.humans.push(makeHuman(N(1),H_VILLAGER,x+k,y)); } N(1).soldierShare=40/43; }   // (the soldiers stay soldiers, the three others are free to be doctors)
+    run(2);
+    return { q, men };
+  }
+  /** Soldiers fall until one is only wounded (or the kingdom has none left to try). */
+  function fall(men: Human[]){
+    for (const h of men){ h.hp=0; const before=W.wounded.length; tick(); if (W.wounded.length>before) return h; }
+    return undefined;
+  }
+  it('a hospital costs 15 wood, 25 stone and 10 copper, takes 2 plots, and needs field medics researched first', () => {
+    world(1); labelWorld(); allocIsles(); quiet(); paintDisc(N(1),24);
+    expect(structureOf(B_HOSPITAL)!.cost).toEqual([15,25,10]);
+    expect(SIZE[B_HOSPITAL]).toEqual([2,1]);
+    const q=Array.from({ length: NP }, (_, i) => i).find(i => !plotProblem(N(1),i) && !plotProblem(N(1),i+1) && i%PW<PW-1)!;
+    expect(placeProblem(N(1),q,B_HOSPITAL)).toMatch(/field medics/i);
+    N(1).tier[R_MEDICS]=2; N(1).stock=[15,25,10];
+    expect(placeProblem(N(1),q,B_HOSPITAL)).toBeNull();
+    expect(build(N(1),q,B_HOSPITAL)).toBe(true);
+    expect(N(1).stock).toEqual([0,0,0]); expect(pType[q]).toBe(B_HOSPITAL);
+  });
+  it('field medics is learned in one step of 400 points; before that nobody is wounded', () => {
+    expect(TIER_XP[R_MEDICS]).toEqual([0,400]);
+    const { men }=field(false,false);
+    for (const h of men) h.hp=0; run(3);
+    expect(W.wounded).toHaveLength(0);
+  });
+  it('some who fall are wounded, lie without blood, bleed out in 45 s with no hospital, and then die for good', () => {
+    const { men }=field(true,false);
+    const died=collect('died');
+    const h=fall(men)!; expect(h).toBeDefined();
+    const w=W.wounded[0]; const mourned=died.length;
+    expect(mourned).toBe(men.indexOf(h)>=0 ? died.length : mourned);   // (the wounded are not mourned)
+    expect(W.humans.includes(h)).toBe(false);
+    expect(BLEED_TICKS).toBe(900);
+    run(BLEED_TICKS-5); expect(W.wounded).toContain(w);
+    const before=died.length; run(10);
+    expect(W.wounded).not.toContain(w); expect(died.length).toBe(before+1);
+  });
+  it('two doctors staff the hospital; one runs out to the wounded man (green cross, the clock stopped), carries him to a bed and heals him in 7 s, and he goes back to his duty', () => {
+    const { q, men }=field();
+    run(100);
+    const docs=W.humans.filter(h => h.o===1 && h.work===q); expect(docs).toHaveLength(2);
+    const h=fall(men)!; expect(h).toBeDefined();
+    const w=W.wounded[0];
+    until(() => w.medic>=0, 200);
+    const left=w.left; run(20); expect(w.left).toBe(left);          // (a doctor is on his way: no bleeding)
+    const doc=docs.find(d => d.id===w.medic)!; expect(doc.task).toBe(TASK_DOC_GO);
+    until(() => w.carried, 3000);
+    until(() => w.bed>=0, 3000);
+    expect(w.heal).toBe(HEAL_TICKS-0);                                // 7 seconds in his bed
+    expect(HEAL_TICKS).toBe(140);
+    expect(doc.task).toBe(TASK_DOC_HEAL);                            // the doctor stays with him
+    until(() => !W.wounded.includes(w), 400);
+    expect(W.humans.includes(h)).toBe(true); expect(h.hp).toBeCloseTo(maxHp(h),6);
+    until(() => doc.task===TASK_DOC_WAIT, 400);
+  });
+  it('a doctor runs 50% faster on his way to a wounded man than a villager walks', () => {
+    expect(MEDIC_SPEED).toBe(1.5);
+    const { q, men }=field(); run(100);
+    const h=fall(men)!; const w=W.wounded[0];
+    until(() => w.medic>=0, 200);
+    const doc=W.humans.find(d => d.id===w.medic)!, x0=doc.x, y0=doc.y; run(10);
+    expect(Math.hypot(doc.x-x0,doc.y-y0)).toBeGreaterThan(doc.sp*TICK*10*1.4);
+    void h; void q;
+  });
+});
+
+describe('small changes of the medics batch', () => {
+  it('a capital under siege raises people twice as fast; an army marches 30% faster in peace than at war', () => {
+    world(1); labelWorld(); allocIsles(); quiet();
+    const base=humanRate(N(1),50); W.siege[1]=W.tickN||1;
+    expect(humanRate(N(1),50)).toBeCloseTo(base*2,9); W.siege[1]=0;
+    paintDisc(N(2),40); paintToward(1,2); soldiers(N(1),10); noDraft(); noDraft(2); run(2);
+    expect(assignArmy(1,available(N(1))[0].unit.key,2)).toBe(true);
+    const c=W.campaigns.find(k => k.a===1)!, h=W.humans.find(k => k.id===c.members[0])!;
+    const own=Array.from({ length: NT }, (_, t) => t).find(t => owner[t]===1 && !occ[t])!;
+    h.x=(own%TW)*2+1; h.y=((own/TW)|0)*2+1;
+    expect(marchPace(h,c)).toBeCloseTo(pace(h)*PEACE_MARCH*(c.inspired ? 1.15 : 1),9); expect(PEACE_MARCH).toBe(1.3);
+    W.wars[1*W.M+2]=W.wars[2*W.M+1]=1;
+    expect(marchPace(h,c)).toBeCloseTo(pace(h)*(c.inspired ? 1.15 : 1),9);
   });
 });
 

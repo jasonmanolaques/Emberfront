@@ -3,7 +3,7 @@
    is screen pixels per render pixel. Close in, the map is drawn from the tiles of its picture
    (render/tiles.ts), a few made each frame, those nearest the middle of the screen first; far
    out (a map tile under DETAIL_CSS screen pixels), from the overview, one pixel a map tile. */
-import { TW, TH, RW, RH, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY, B_NAVAL } from '../core/constants';
+import { TW, TH, RW, RH, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY, B_HOSPITAL, B_NAVAL } from '../core/constants';
 import { clamp, fmt } from '../core/util';
 import { W, owner, isLand, sea, pType, pPrio, pTimer, pBurn, type Human } from '../sim/state';
 import { findBlock } from '../sim/sim';
@@ -217,6 +217,12 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
       if (p.load===1){ box(bx,fy-10,3,2,'#d9823e'); ctx.fillStyle='#ffb06a'; ctx.fillRect(bx,fy-10,1,1); continue; }
       if (p.load>=2){ const steel=p.load===3 ? '#d4dbe1' : '#8d949b'; box(bx,fy-11,4,3,steel); ctx.fillStyle=styleOf(p.o).roof; ctx.fillRect(bx+1,fy-10,2,2); continue; }   // armour with the kingdom's colours
     }
+    // doctors wear a white coat with a red cross on the chest (and run, bent forward, to a wounded man)
+    if (p.work>=0 && pType[p.work]===B_HOSPITAL){
+      ctx.fillStyle='#f4f1ea'; ctx.fillRect(bx,fy-5,4,4); ctx.fillStyle='#d8d4c8'; ctx.fillRect(bx,fy-2,4,1);
+      ctx.fillStyle='#c0302a'; ctx.fillRect(bx+1,fy-4,2,1); ctx.fillRect(bx+(left ? 1 : 2),fy-5,1,3);
+      continue;
+    }
     // builders wear a leather cap; at work, a hammer rises and falls on the house
     if (p.work>=0 && pType[p.work]===B_GUILD){
       ctx.fillStyle=INK; ctx.fillRect(bx-1,fy-8,6,2);
@@ -243,6 +249,19 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
   lastX=nextX; lastY=nextY;
 }
 /** Pools of blood under the fallen and the drops the wounded left, then the bodies themselves. */
+/** Wounded soldiers: lying where they fell, no blood, and a cross over them: grey while nobody is coming, green once a doctor is on his way (the clock stops).
+    Those in a hospital bed are drawn on the building. */
+function drawWounded(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
+  for (const w of W.wounded){
+    if (w.bed>=0) continue;
+    const x=Math.round(w.x*K), y=Math.floor(w.y*K)+1; if (x<vx0-10||y<vy0-16||x>vx1+10||y>vy1+8) continue;
+    const look=((w.id*7)&3) | (((w.id*13)%4)<<2);
+    ctx.drawImage(corpseSprite(w.o,1,look,w.h.militia ? 0 : w.h.tier || 1,true),x-7,y-7);
+    const green=w.medic>=0 || w.carried, c=green ? '#46c260' : '#a4a9ad', bob=green && !reduceMotion ? (((now/300)|0)&1) : 0;
+    ctx.fillStyle=INK; ctx.fillRect(x-3,y-13-bob,7,3); ctx.fillRect(x-1,y-15-bob,3,7);
+    ctx.fillStyle=c; ctx.fillRect(x-2,y-12-bob,5,1); ctx.fillRect(x,y-14-bob,1,5);
+  }
+}
 function drawFallen(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
   while (drips.length && now-drips[0].t0>DRIP_MS) drips.shift();
   while (corpses.length && now-corpses[0].t0>CORPSE_MS) corpses.shift();
@@ -363,7 +382,7 @@ export function render(now: number, dt: number){
     const qx0=Math.max(0,Math.floor(vx0/PS)-1), qy0=Math.max(0,Math.floor(vy0/PS)-1), qx1=Math.min(PW-1,Math.floor(vx1/PS)), qy1=Math.min(PH-1,Math.floor(vy1/PS));
     for (let y=qy0;y<=qy1;y++) for (let x=qx0;x<=qx1;x++){
       const q=y*PW+x, ty=pType[q]; if (!BIG[ty] || pBurn[q]>0) continue;
-      const [bw,bh]=dims(q); drawWorking(ctx,ty,x*PS,y*PS,pTimer[q]/PRODUCE_TICKS,reduceMotion?0:now,bw,bh);
+      const [bw,bh]=dims(q); drawWorking(ctx,ty,x*PS,y*PS,pTimer[q]/PRODUCE_TICKS,reduceMotion?0:now,bw,bh,q);
     }
   }
 
@@ -373,7 +392,7 @@ export function render(now: number, dt: number){
 
   // people and armies, once close enough to tell them apart
   if (zs>=0.8) drawShips(now,vx0,vy0,vx1,vy1);
-  if (zs>=1.5){ drawFallen(now,vx0,vy0,vx1,vy1); drawSelection(now); drawPeople(now,vx0,vy0,vx1,vy1); }
+  if (zs>=1.5){ drawFallen(now,vx0,vy0,vx1,vy1); drawWounded(now,vx0,vy0,vx1,vy1); drawSelection(now); drawPeople(now,vx0,vy0,vx1,vy1); }
   else if (client.selected>=0) drawSelection(now);
 
   // particles

@@ -385,3 +385,4 @@ button.army[aria-pressed=true] .at{color:var(--gold)}
 #cmList .grp{font-style:normal;font-size:10px;color:var(--gold);border:1px solid var(--gold);padding:0 3px;margin-left:3px}
 #cmList .gm{display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:2px 0;border-bottom:1px dashed var(--edge)}
 #cmMerge{width:26px;height:26px}
+.bld.locked{filter:grayscale(1);opacity:.45}

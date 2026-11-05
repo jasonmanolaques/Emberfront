@@ -526,7 +526,7 @@ export const crossable = (a: number, from: number, to: number) => from===to || !
    by sea, goes to a naval base of his kingdom's on his landmass and waits at its door; the base's boat leaves as soon as five are there (or a few
    seconds after the first) for a base of the kingdom's nearer the front, and sails home empty. */
 const SHORTCUT_MIN = 50;      // steps from his place a man must be before the sea is thought of
-const SHORTCUT_GAIN = 0.75;   // the way by sea must take no more than this share of the time on foot
+const SHORTCUT_GAIN = 0.85;   // the way by sea must take no more than this share of the time on foot (armies are 30% quicker in peace, the boat is not)
 const SEA_WAIT = 40;          // ticks the first man waits for others at the base
 interface Cut { base: number; path: number[]; land: number; fLand: number; }
 const cuts = new Map<number, Cut | null>(), cutsAt = new Map<number, number>();   // by army and landmass of its men: the way by sea found, and when it was looked for
@@ -2000,10 +2000,12 @@ function strike(h: Human, e: Human){
 const revenge = (h: Human) => h.war>=0 && !!camps.get(h.war)?.inspired;
 /** How fast h marches with his army: a counter-attack's men a little faster. */
 /** Pace of h marching with c: a counter-attack a little faster, an army on enemy ground not yet occupied slower by what stands against its front (invadeSpeed; ground already occupied crosses at full pace). */
+export const PEACE_MARCH = 1.3;
 export function marchPace(h: Human, c: Campaign){
   const t=tileOf(h.x,h.y);
   const slow=c.front && owner[t]===c.d && !occ[t] ? Math.min(1,frontOfC(c)?.speed ?? 1) : 1;   // (no faster than usual even over empty land)
-  return pace(h)*(c.inspired ? REVENGE_PACE : 1)*slow;
+  const calm=c.front && !W.wars[c.a*W.M+c.d] ? PEACE_MARCH : 1;   // (in peace an army goes to its border 30% faster)
+  return pace(h)*(c.inspired ? REVENGE_PACE : 1)*slow*calm;
 }
 /** Steps toward (gx,gy): straight if the way is open, otherwise along the army's way. Going back to
     his place in the line (`toLine`), he heads for his own army's banner instead, and if he has got

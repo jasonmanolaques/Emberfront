@@ -1,8 +1,8 @@
 /* ---------- buildings panel: pick a building, then click your land to place it ---------- */
-import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_PART, B_NAVAL } from '../core/constants';
+import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_PART, B_NAVAL } from '../core/constants';
 import type { Nation } from '../sim/state';
 import { W, owner, pType, pOwner, pPrio, pMain } from '../sim/state';
-import { R_HOUSING, R_INFANTRY } from '../sim/research';
+import { R_HOUSING, R_INFANTRY, hasMedics } from '../sim/research';
 import { TASK_FORGE, improvements } from '../sim/population';
 import { units, armorWanted } from '../sim/army';
 import { openResearch } from './research';
@@ -20,7 +20,7 @@ import { $ } from './dom';
 const panel=$('buildPanel'), list=$('buildList'), tip=$('btip'), title=$('buildTitle');
 /** The building menus on the right: what each holds. */
 export const CATEGORIES = [
-  { id:'urban',     name:'Urban development',   types:[B_FARM, B_GUILD, B_MINTER] },
+  { id:'urban',     name:'Urban development',   types:[B_FARM, B_GUILD, B_MINTER, B_HOSPITAL] },
   { id:'military',  name:'Military',            types:[B_BARRACKS, B_TOWER, B_SMITHY, B_NAVAL] },
   { id:'resources', name:'Resource buildings',  types:[B_PLANTATION, B_QUARRY, B_COPPERMINE] },
   { id:'society',   name:'Society advancement', types:[B_RESEARCH] },
@@ -28,7 +28,7 @@ export const CATEGORIES = [
 let category='urban';   // the menu showing, or the last one opened
 const ICO=['wood','stone','copper'];
 const owned = (n: Nation, type: number) => type===B_FARM ? n.farms : type===B_BARRACKS ? n.barracks : type===B_TOWER ? n.towers : type===B_MINTER ? n.minters
-  : type===B_PLANTATION ? n.plantations : type===B_QUARRY ? n.quarries : type===B_COPPERMINE ? n.copperMines : type===B_RESEARCH ? n.labs : type===B_GUILD ? n.guilds : type===B_SMITHY ? n.smithies : type===B_NAVAL ? n.navals : 0;
+  : type===B_PLANTATION ? n.plantations : type===B_QUARRY ? n.quarries : type===B_COPPERMINE ? n.copperMines : type===B_RESEARCH ? n.labs : type===B_GUILD ? n.guilds : type===B_SMITHY ? n.smithies : type===B_HOSPITAL ? n.hospitals : type===B_NAVAL ? n.navals : 0;
 const rows=new Map<number, HTMLButtonElement>();   // by type; a block of four by type+BLOCK
 const BLOCK=1000;
 const blockCost = (n: Nation, type: number) => blockPlan(n,0,type).cost;   // (the cost does not depend on where)
@@ -66,7 +66,8 @@ export function refreshBuildPanel(){
   for (const [key,b] of rows){
     const four=key>=BLOCK, type=four ? key-BLOCK : key, s=structureOf(type)!;
     const price=four ? blockCost(me,type) : costFor(me,s), ok=me.alive && price.every((c,g) => me.stock[g]>=c);
-    b.setAttribute('aria-disabled', String(!ok));
+    const locked=type===B_HOSPITAL && !hasMedics(me);   // (grayed out until field medics is learned)
+    b.setAttribute('aria-disabled', String(!ok || locked)); b.classList.toggle('locked',locked);
     b.classList.toggle('on', client.placing===type && client.block===four);
     const k=owned(me,type);
     (b.querySelector('.bn i') as HTMLElement).textContent = k ? '×'+k : '';
@@ -91,6 +92,7 @@ function showTip(s: Structure, b: HTMLElement, four=false){
   const [t1,t2,t3,t4]=tip.children as unknown as HTMLElement[];
   t1.textContent=four ? s.name+' ×4' : s.name; t2.textContent=four ? `Four ${s.name.toLowerCase()}s in a square of 2 by 2 plots, placed as four one after the other: each makes the next dearer. All or none. ${s.info}` : s.info; t3.textContent='Costs '+cost;
   if (t4) t4.textContent='You need '+short;
+  if (s.type===B_HOSPITAL && me && !hasMedics(me)){ t3.textContent='Needs the field medics research (400 points)'; }
   tip.hidden=false;
   if (matchMedia('(max-width:640px)').matches){ tip.style.top=''; return; }
   tip.style.top=Math.max(0,b.offsetTop+b.offsetHeight/2-tip.offsetHeight/2)+'px';
@@ -100,6 +102,7 @@ function pick(s: Structure, four=false){
   const me=W.nations[PLAYER]; if (!me) return;
   if (client.placing===s.type && client.block===four){ stopPlacing(); return; }
   const price=four ? blockCost(me,s.type) : costFor(me,s);
+  if (s.type===B_HOSPITAL && !hasMedics(me)){ toast('Research field medics first (the research station)'); return; }
   if (!price.every((c,g) => me.stock[g]>=c)){ toast(`Not enough resources for ${four ? 'four ' : 'a '}${s.name.toLowerCase()}${four ? 's' : ''}`); return; }
   client.placing=s.type; client.block=four;
   ui.banner.textContent=`Placing ${four ? 'four '+s.name.toLowerCase()+'s (2 by 2)' : 'a '+s.name.toLowerCase()}: click your land (over a building, it replaces it) · Esc to stop`; ui.banner.hidden=false;
@@ -157,6 +160,11 @@ export function clickOwnBuilding(t: number){
       : b.load>=2 ? 'Your smith carries armour to the barracks' : b.load===1 || b.task===TASK_FORGE ? 'Your smith is forging armour'
       : me.stock[2]<1 ? 'Your smith needs copper from the castle' : b.make ? 'Your smith fetches copper from the castle'
       : (units[PLAYER] ?? []).some(u => armorWanted(me,u,[0,0,0,0])) ? 'Your smith waits: no way over your own land to a barracks that wants armour' : 'Every armour rack is filled');
+    return true;
+  }
+  if (pType[q]===B_HOSPITAL){
+    const docs=W.humans.filter(h => h.work===q).length, beds=W.wounded.filter(w => w.hosp===q && w.bed>=0).length, out=W.wounded.filter(w => w.o===PLAYER && w.bed<0).length;
+    toast(docs<2 ? `The hospital waits for ${2-docs} more villager${docs===1 ? '' : 's'} to become doctors` : beds ? `${beds} of 2 beds taken: the doctors tend ${beds===1 ? 'a wounded soldier' : 'two wounded soldiers'}` : out ? `Your doctors go out for ${out} wounded soldier${out===1 ? '' : 's'}` : 'Both beds are free: the doctors wait for the wounded');
     return true;
   }
   if (pType[q]===B_GUILD){

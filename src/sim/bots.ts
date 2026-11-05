@@ -1,9 +1,9 @@
 /* ---------- bots ---------- */
-import { B_EMPTY, B_RUINS, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOUSE, PW, PH, NP, WAGE } from '../core/constants';
+import { B_EMPTY, B_RUINS, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_HOUSE, PW, PH, NP, WAGE } from '../core/constants';
 import { W, isle, pType, pOwner, pPrio, pAband, type Nation } from './state';
 import { launch } from './territory';
 import { grossIncome } from './sim';
-import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, TOPICS, MAX_TIER, setStudy, maxed } from './research';
+import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, R_MEDICS, TOPICS, MAX_TIER, setStudy, maxed, hasMedics } from './research';
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, togglePriority, anyWithin, isEnemyLand, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, guardsOpening, standingTower, WALL_MAX } from './fort';
@@ -28,7 +28,7 @@ export const stuck = (n: Nation) => beggarProblem(n) && !W.contact[n.id*W.M] && 
 const spareHomes = (n: Nation) => !beggarProblem(n) && (n.abandoned>0 || n.beds>=n.villagers+n.soldiers+n.beggars+3);
 /** How many of n's plots stand empty. */
 const emptyPlots = (n: Nation) => { let k=0; for (const q of n.plots) if (pType[q]===B_EMPTY || pType[q]===B_RUINS) k++; return k; };
-const TOWN = [B_BARRACKS, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY];   // workshops: inside the wall
+const TOWN = [B_BARRACKS, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL];   // workshops: inside the wall
 /** What a bot builds before anything else, while it has too few: the stockpile only comes from the
     gathering buildings, so wood first (a plantation pays for itself in 2 and a half minutes), then
     stone and copper, and a research station to join them into bigger ones. It saves up for these. */
@@ -79,6 +79,8 @@ function wishlist(n: Nation, exposed: boolean){
   if (n.farms && n.tiles>=300 && !TOPICS.every(t => maxed(n,t)) && n.labs < 1+(n.tiles/2500|0)) w.push(B_RESEARCH);
   if (n.tier[R_HOUSING]>=2 && n.guilds < 1+(n.tiles/4000|0)) w.push(B_GUILD);
   if (n.tier[R_INFANTRY]>=2 && n.barracks && n.smithies < 1+(n.barracks/6|0)) w.push(B_SMITHY);
+  // a hospital (more with a bigger army and a bigger land) once field medics are learned: fewer soldiers lost for good
+  if (hasMedics(n) && n.soldiers>=10 && n.hospitals < Math.min(1+(n.soldiers/30|0),1+(n.tiles/800|0))) w.push(B_HOSPITAL);
   // a steady supply of whatever the land is poorest in
   const [wood,stone,copper]=n.stock, few=Math.min(wood,stone,copper);
   // one plot each, set side by side (pickPlot) so research can join them into bigger ones
@@ -231,6 +233,8 @@ function botStudy(n: Nation, exposed: boolean){
   if (beggarProblem(n) && !maxed(n,R_HOUSING)){ setStudy(n,R_HOUSING); return; }   // room for the beggars first
   // with two or more gathering buildings, joining them is the next thing to learn (but for towers, on the border)
   if (n.plantations+n.quarries+n.copperMines>=2 && n.tier[R_GATHER]<MAX_TIER && !(exposed && n.tier[R_TOWERS]<2)){ setStudy(n,R_GATHER); return; }
+  // a kingdom with an army and the means to spare learns field medics, to keep its soldiers alive
+  if (!hasMedics(n) && n.soldiers>=12 && n.gold>500 && n.tier[R_INFANTRY]>=2 && !beggarProblem(n)){ setStudy(n,R_MEDICS); return; }
   const order=exposed ? [R_TOWERS, R_GATHER, R_HOUSING, R_INFANTRY, R_CASTLE, R_TAXES] : [R_GATHER, R_HOUSING, R_INFANTRY, R_TOWERS, R_CASTLE, R_TAXES];
   let best=order[0]; for (const t of order) if (n.tier[t]<n.tier[best]) best=t;
   setStudy(n,best);

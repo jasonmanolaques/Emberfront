@@ -12,7 +12,7 @@ export interface Nation {
   tiles: number; alive: boolean; capTile: number; capPlot: number;
   plots: number[]; blds: number[]; bCount: number;
   houses: number; farms: number; towers: number; mines: number; barracks: number; minters: number;
-  plantations: number; quarries: number; copperMines: number; labs: number; guilds: number; smithies: number; navals: number;   // labs: research stations; navals: naval bases
+  plantations: number; quarries: number; copperMines: number; labs: number; guilds: number; smithies: number; hospitals: number; navals: number;   // labs: research stations; navals: naval bases
   fleet: number;                     // ships docked and ready (any naval base's: they are the kingdom's)
   beds: number;                      // people the houses can hold: a hovel 1, a stone house 2, a manor 3
   sumX: number; sumY: number; ltx: number; lty: number; peak: number;   // ltx/lty: where the kingdom's label sits
@@ -87,6 +87,8 @@ export interface Human {
     is on), or an army defending a border. */
 /** A field marshal's command: armies merged into one order group. Each member is the barracks plots of one army as last seen; the first is the lead, whose name the group takes. */
 export interface Group { o: number; members: number[][]; }
+/** A soldier who fell wounded, not dead: he lies where he fell until a doctor carries him to a hospital (sim/medics.ts), or he bleeds out. */
+export interface Wounded { id: number; o: number; h: Human; x: number; y: number; left: number; medic: number; carried: boolean; hosp: number; bed: number; heal: number; }
 export interface Campaign {
   id: number; a: number; d: number;  // attacker, defender
   hostile: boolean;                  // still fighting: false once peace is made and the army walks home
@@ -243,6 +245,7 @@ export const W = {
   ships: [] as Ship[], shipSeq: 0,   // ships at sea
   docks: new Map<number, Dock>(),    // naval base (main plot) → its yard
   invasions: [] as Invasion[], invSeq: 0,
+  wounded: [] as Wounded[],         // soldiers lying wounded, waiting for a doctor, carried, or healing in a bed
   groups: [] as Group[],             // armies merged into order groups (sim/army.ts)
   isleOwn: new Int32Array(0),        // [isle*M+o] tiles of o's on that island (and every landmass: sim/naval.ts)
   isleCount: 0,
