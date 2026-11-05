@@ -186,7 +186,7 @@ export function newGame(seed?: number){
   resetStyles(); resetLabels(); resetEffects(); resetGhosts(); resetPeople(); resetSpeech();
   toggleBuildPanel(false); resetDiplomacy(); resetArmyNames(); closeResearch(); closeArmy(); closeNaval(); deselect();
   client.overShown=false; client.lastVillageLog=-99; client.paused=false;
-  setSoldierShare(0); setInvest(0.5);
+  setSoldierShare(0);
   sizeTerrain();   // (the real-world maps are bigger: the picture's tiles are let go and made again as they come into view)
   buildBase(); paintAll();
   fitCam();
@@ -266,14 +266,6 @@ export function setSoldierShare(v: number){
   if (W.nations[PLAYER]) queueCommand({ type:'soldiers', nation:PLAYER, share:v });
 }
 const soldiersEl=$('soldiers') as HTMLInputElement;
-const investEl=$('invest') as HTMLInputElement;
-/** City investment: the share (0..1) of the goods coming in that the builders may spend; at 1, full
-    investment (the builders spend the whole stockpile). */
-export function setInvest(v: number){
-  v=clamp(v,0,1); investEl.value=String(Math.round(v*100)); $('investVal').textContent=v>=1 ? 'Full' : Math.round(v*100)+'%';
-  investEl.title=v>=1 ? 'Full investment: your builders improve buildings non-stop with everything in the stockpile' : 'The share of the goods coming in each minute your builders may spend'; investEl.style.setProperty('--fill',(v*100)+'%');
-  if (W.nations[PLAYER]) queueCommand({ type:'invest', nation:PLAYER, share:v });
-}
 
 export function centerHome(){ const me=W.nations[PLAYER]; if (!me) return; const t=me.capTile>=0?me.capTile:(me.lty*TW+me.ltx); focusOn(t,Math.max(cam.zoom,cam.fitZ*2.2)); }
 export function setPaused(p: boolean){ client.paused=p; $('pause').innerHTML = p ? '<svg viewBox="0 0 9 9"><path fill="currentColor" d="M2 1h1v1h1v1h1v1h1v1H5v1H4v1H3v1H2z"/></svg>' : '<svg viewBox="0 0 9 9"><path fill="currentColor" d="M2 1h2v7H2zM5 1h2v7H5z"/></svg>'; $('pause').setAttribute('aria-label',p?'Resume':'Pause'); if (p) toast('Paused'); }

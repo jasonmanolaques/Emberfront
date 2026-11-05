@@ -4,12 +4,10 @@ import { TW, TH, NT, NP, B_HOUSE, B_RESEARCH, B_GUILD, B_TOWER, TAX_PER_VILLAGER
 import { W, owner, isLand, pType, pOwner, pTier, pCenter, pTimer } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { build, placeProblem } from '../src/sim/buildings';
-import { H_VILLAGER, TASK_FIX, FIX_TICKS, REHIRE_TICKS, improvements, upgradeCost } from '../src/sim/population';
+import { H_VILLAGER, TASK_FIX, TASK_FIX_GO, FIX_TICKS, REHIRE_TICKS, improvements } from '../src/sim/population';
 import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, TIER_XP, HOUSE_BEDS } from '../src/sim/research';
-import { TOWER_COST } from '../src/sim/defense';
 import { bldHp } from '../src/sim/war';
 import { listen } from '../src/sim/events';
-import { gained, spent, perMinute, mayInvest } from '../src/sim/ledger';
 
 const me = () => W.nations[1];
 const mine = () => W.humans.filter(h => h.o === 1);
@@ -112,30 +110,50 @@ describe('house tiers and the builders guild', () => {
     expect(houses().every(q => pTier[q]===1)).toBe(true);
   });
 
-  it('turns hovels into stone houses from the castle outward, for 3 wood and 3 stone each', () => {
+  it('raises a house a tier for nothing: 20 seconds from tier 1 to 2, then 40 from 2 to 3', () => {
     start(12345); expand(6); until(() => houses().length>=10);
-    const g=place(B_GUILD); me().tier[R_HOUSING]=2; run(2);
-    gained(me(),0,60); gained(me(),1,60);   // goods coming in (from buildings), so the builders may spend
-    const b=mine().find(h => h.work===g)!, first=improvements(me())[0];
-    const nearest=Math.min(...houses().map(fromCapital));
-    expect(fromCapital(first)).toBeLessThanOrEqual(nearest*1.2+1e-9);   // the inner town first (a little ragged)
+    const g=place(B_GUILD); me().tier[R_HOUSING]=3; run(2);
+    const b=mine().find(h => h.work===g)!;
     until(() => b.task===TASK_FIX);
     const q=b.fix, before=[...me().stock];
-    until(() => pTier[q]===2, FIX_TICKS+5);
-    expect(me().stock[0]).toBe(before[0]-3);   // (nobody brings in goods meanwhile: only buildings make them)
-    expect(me().stock[1]).toBe(before[1]-3);
-    expect(me().beds).toBe(houses().reduce((k,q) => k+HOUSE_BEDS[pTier[q]],0));   // room for one more right away
+    expect(pTier[q]).toBe(1);
+    expect(FIX_TICKS(1)).toBe(400); expect(FIX_TICKS(2)).toBe(800);
+    run(FIX_TICKS(1)-5); expect(pTier[q]).toBe(1);
+    until(() => pTier[q]===2, 10);
+    expect(me().stock).toEqual(before);   // (nobody brings in goods meanwhile: only buildings make them) it costs nothing
+    expect(me().beds).toBe(houses().reduce((k,q) => k+HOUSE_BEDS[pTier[q]],0));   // room for more right away
   });
 
-  it('with manors allowed, puts the manors in the heart of town and stone houses further out', () => {
+  it('works on the lowest houses first, however far, and on a tier 2 one when only those are left', () => {
+    start(12345); expand(6); until(() => houses().length>=10);
+    me().tier[R_HOUSING]=3;
+    const g0=me().plots.find(q => !placeProblem(me(),q,B_GUILD))!, hs=houses().sort((a,b) => Math.abs(pCenter[a]-pCenter[g0])-Math.abs(pCenter[b]-pCenter[g0])), last=hs[0];
+    for (const q of hs) if (q!==last) pTier[q]=2;   // all but one already stone houses
+    const g=place(B_GUILD); run(2);
+    const b=mine().find(h => h.work===g)!;
+    until(() => b.task===TASK_FIX, 2000);
+    expect(pTier[b.fix]).toBe(1);   // the tier 1 house, not one of the stone houses
+  });
+
+  it('with only tier 2 houses left, raises one of those to a manor', () => {
+    start(12345); expand(6); until(() => houses().length>=10);
+    me().tier[R_HOUSING]=3;
+    for (const q of houses()) pTier[q]=2;
+    const g=place(B_GUILD); run(2);
+    const b=mine().find(h => h.work===g)!;
+    until(() => b.task===TASK_FIX, 2000);
+    const q=b.fix; expect(pTier[q]).toBe(2);
+    until(() => pTier[q]===3, FIX_TICKS(2)+5);
+  });
+
+  it('has every guild\'s builder at work non-stop, and the stone houses go on to manors', () => {
     start(12345); expand(8); until(() => houses().length>=12);
-    place(B_GUILD); place(B_GUILD); me().tier[R_HOUSING]=3;
-    until(() => { me().stock=[100,100,100]; gained(me(),0,1); gained(me(),1,1); return improvements(me()).length===0; }, 20000);   // goods keep coming in, so the builders may spend
-    const hs=houses().filter(q => pTier[q]>0).sort((a,b) => fromCapital(a)-fromCapital(b));
-    const manors=hs.filter(q => pTier[q]===3), stone=hs.filter(q => pTier[q]===2);
-    expect(manors.length).toBeGreaterThan(0); expect(stone.length).toBeGreaterThan(0);
-    const avg=(l: number[]) => l.reduce((s,q) => s+fromCapital(q),0)/l.length;
-    expect(avg(manors)).toBeLessThan(avg(stone));
+    const g1=place(B_GUILD), g2=place(B_GUILD); me().tier[R_HOUSING]=3; run(2);
+    const bs=[g1,g2].map(g => mine().find(h => h.work===g)!);
+    let idle=0;
+    for (let i=0;i<9000;i++){ tick(); if (i>600 && bs.some(b => b.fix<0 && b.task!==TASK_FIX_GO && b.task!==TASK_FIX)) idle++; }
+    expect(idle).toBeLessThan(100);   // (a few moments choosing)
+    expect(houses().filter(q => pTier[q]===3).length).toBeGreaterThan(1);
   });
 
   it('finds a new builder 5 seconds after the old one falls', () => {
@@ -150,39 +168,18 @@ describe('house tiers and the builders guild', () => {
 });
 
 describe('watchtowers rebuilt by the builders guild', () => {
-  it('rebuilds a watchtower a tier up for 10 stone and 4 wood, then 20 stone and 8 wood, towers before houses', () => {
+  it('rebuilds a watchtower a tier up for nothing: 20 seconds, then 40', () => {
     start(12345); expand(6); until(() => houses().length>=6);
-    const t=place(B_TOWER,true); place(B_GUILD,true);   // (beside the capital, where the builder can walk)
-    me().tier[R_TOWERS]=3; me().tier[R_HOUSING]=2; me().invest=1;
+    const t=place(B_TOWER,true); const g=place(B_GUILD,true);   // (beside the capital, where the builder can walk)
+    me().tier[R_TOWERS]=3; me().tier[R_HOUSING]=1; run(2);
+    const b=mine().find(h => h.work===g)!;
     expect(pTier[t]).toBe(1);
     expect(improvements(me())[0]).toBe(t);
-    expect([upgradeCost(t), TOWER_COST[2]]).toEqual([[4,10,0], [8,20,0]]);
-    until(() => { me().stock=[100,100,100]; gained(me(),0,2); gained(me(),1,2); return pTier[t]===3; }, 6000);
-    expect(bldHp(t)).toBe(40);
-  });
-});
-
-describe('city investment', () => {
-  it('lets the builders spend only that share of the goods coming in over the last minute', () => {
-    start(12345);
-    const n=me(); n.invest=0.5;
-    gained(n,0,30);                                      // 30 wood a minute coming in
-    expect(perMinute(n).gain).toEqual([30,0,0]);
-    expect(mayInvest(n,[3,0,0])).toBe(true);
-    spent(n,0,12); expect(mayInvest(n,[3,0,0])).toBe(true);   // 15 of 30 is the half allowed
-    spent(n,0,3);  expect(mayInvest(n,[3,0,0])).toBe(false);  // that would make 18
-    expect(mayInvest(n,[0,3,0])).toBe(false);            // nothing comes in of stone
-    n.invest=1; expect(mayInvest(n,[3,0,0])).toBe(true);
-    run(610);                                            // a minute later the ledger has moved on
-    expect(perMinute(n).spend[0]).toBe(0);
-  });
-
-  it('keeps a builder idle once the investment is spent, with the rest left in the stockpile', () => {
-    start(12345); expand(6); until(() => houses().length>=10);
-    const g=place(B_GUILD); me().tier[R_HOUSING]=2; me().invest=0; run(2);
-    const b=mine().find(h => h.work===g)!;
-    me().stock=[100,100,0]; run(300);
+    const before=[...me().stock];
+    until(() => pTier[t]===2, 3000);
+    until(() => pTier[t]===3, 3000);
+    expect(me().stock).toEqual(before);
     expect(b.fix).toBe(-1);
-    expect(houses().every(q => pTier[q]===1)).toBe(true);
+    expect(bldHp(t)).toBe(40);
   });
 });

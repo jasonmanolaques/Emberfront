@@ -50,14 +50,6 @@
   </section>
 
   <section id="bar" class="plate" hidden aria-label="Attack and army">
-    <label for="invest"><span>City investment</span><b id="investVal">50%</b></label>
-    <input type="range" id="invest" min="0" max="100" step="5" value="50">
-    <span class="hint" id="investHint">Build a builders guild to invest in the city</span>
-    <div class="flows" id="flows" aria-label="Goods a minute">
-      <span class="tag">per min</span><span class="tag"><i class="ico wood"></i>Wood</span><span class="tag"><i class="ico stone"></i>Stone</span><span class="tag"><i class="ico copper"></i>Copper</span>
-      <span class="tag">In</span><b class="in" id="inW">0</b><b class="in" id="inS">0</b><b class="in" id="inC">0</b>
-      <span class="tag">Spent</span><b class="out" id="outW">0</b><b class="out" id="outS">0</b><b class="out" id="outC">0</b>
-    </div>
     <label for="soldiers" class="split"><span>People serving as soldiers</span><b id="soldiersVal">0%</b></label>
     <input type="range" id="soldiers" min="0" max="100" step="5" value="0">
     <span class="hint" id="soldiersHint">No barracks: they train at the castle as militia</span>
@@ -199,7 +191,7 @@
     <h1>Emberfront</h1>
     <p class="sub">A fast territory war where every kingdom builds itself.</p>
     <ul class="how">
-      <li><b>Click</b> unclaimed land to push your border: settling costs <b>0.5 gold</b> a tile, and your land pays a small tax. A small menu asks how much of your gold the push spends: 25% to 100%.</li>
+      <li><b>Click</b> unclaimed land to push your border: settling costs <b>0.4 gold</b> a tile, and your land pays a small tax. A small menu asks how much of your gold the push spends: 25% to 100%.</li>
       <li>Your income is tax: <b>0.1 gold</b> a second from every housed villager (soldiers pay none), plus a little for every tile of land. Every 20 seconds a <b>human</b> walks out of your capital.</li>
       <li>Everyone needs a home: while you are short of houses, a newcomer first builds himself a hovel near the rest of town. Houses nobody needs for a while stand empty.</li>
       <li>Nothing lies on the map to gather: wood, stone and copper come from <b>plantations, quarries and copper mines</b> (your first of each is free). Research lets them join into bigger ones. Your villagers build homes and rest in them.</li>

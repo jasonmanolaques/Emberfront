@@ -1,7 +1,7 @@
 /* ---------- buildings panel: pick a building, then click your land to place it ---------- */
 import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_PART, B_NAVAL } from '../core/constants';
 import type { Nation } from '../sim/state';
-import { W, owner, pType, pOwner, pPrio, pMain } from '../sim/state';
+import { W, owner, pType, pTier, pOwner, pPrio, pMain } from '../sim/state';
 import { R_HOUSING, R_INFANTRY, hasMedics } from '../sim/research';
 import { TASK_FORGE, improvements } from '../sim/population';
 import { units, armorWanted } from '../sim/army';
@@ -169,9 +169,9 @@ export function clickOwnBuilding(t: number){
   }
   if (pType[q]===B_GUILD){
     const b=W.humans.find(h => h.work===q);
-    toast(!b ? 'The guild waits for a villager to take up the tools' : me.tier[R_HOUSING]<2 ? 'Your builder waits: research housing to build better homes'
-      : b.fix>=0 ? 'Your builder is improving a house' : me.stock[0]<3 || me.stock[1]<3 ? 'Your builder needs 3 wood and 3 stone for each house'
-      : improvements(me).length ? 'Your builder waits: the city investment does not allow it yet, or there is no way over your own land to what is left' : 'Your builder has no house left to improve');
+    toast(!b ? 'The guild waits for a villager to take up the tools' : me.tier[R_HOUSING]<2 && !improvements(me).length ? 'Your builder waits: research housing to build better homes'
+      : b.fix>=0 ? `Your builder is raising ${pType[b.fix]===B_TOWER ? 'a watchtower' : 'a house'} to tier ${pTier[b.fix]+1}`
+      : improvements(me).length ? 'Your builder waits: there is no way over your own land to what is left' : 'Your builder has nothing left to improve');
     return true;
   }
   if (pType[q]!==B_TOWER) return false;

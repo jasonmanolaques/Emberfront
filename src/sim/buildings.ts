@@ -9,7 +9,6 @@ import { TW, PW, PH, NP, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, 
 import { W, owner, occ, terr, isLand, isle, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, pMain, pHp, pTier, pSpan, pArmor, pIn, type Nation } from './state';
 import { R_GATHER, hasMedics } from './research';
 import { on } from './events';
-import { gained } from './ledger';
 
 function igniteOne(q: number){ if (pBurn[q]>0) return; pBurn[q]=2.5+W.srand()*2.5; W.burning.push(q); on.plotIgnited(q); }
 /** Sets plot q on fire; a building that covers several plots goes up in flames all together. */
@@ -151,7 +150,7 @@ export const STRUCTURES: Structure[] = [
   { type: B_QUARRY,     name: 'Stone quarry', cost: [5,10,0], info: 'A pit with a pulley hauling stone up: +2 stone every 30 seconds. With resource gathering research, two side by side join (+5), then four in a square (+15). Each quarry you own makes the next 10% dearer.' },
   { type: B_COPPERMINE, name: 'Copper mine', cost: [10,10,0], info: 'A shaft into the rock with the furnace glowing inside: +1 copper every 30 seconds. With resource gathering research, two side by side join (+3), then four in a square (+10). Each copper mine you own makes the next 10% dearer.' },
   { type: B_RESEARCH,   name: 'Research station', cost: [15,15,10], info: 'Scholars earn 1 research point a second; more stations, faster research. Click a placed station to choose what to study.' },
-  { type: B_GUILD,      name: 'Builders guild', cost: [10,20,5], info: 'One villager becomes its builder. As research allows, he rebuilds watchtowers (10 stone and 4 wood, then 20 and 8) and turns hovels into stone houses and manors (3 wood and 3 stone a tier), spending what the city investment slider lets him. Takes 2×1 plots. Each guild you own makes the next 10% dearer.' },
+  { type: B_GUILD,      name: 'Builders guild', cost: [10,50,10], info: 'The city\'s investment: one villager becomes its builder, and as research allows he raises houses and watchtowers a tier for free, non-stop: 20 seconds from tier 1 to 2, 40 from 2 to 3. He takes whichever job costs the least time, walk included, so the lowest buildings come first. More guilds, more builders. Takes 2×1 plots. Each guild you own makes the next 10% dearer.' },
   { type: B_NAVAL,      name: 'Naval base', cost: [15,5,0], info: 'A harbour on the coast: 8 plots (4×2 or 2×4), at least a third of them on the water. Click it to build ships (5 wood each). Settle islands from the settle menu: a ship takes your gold to the coast you point at and the border spreads from there; villagers cross by boat to build. Ships carry 5 soldiers each, for naval invasions.' },
   { type: B_SMITHY,     name: 'Blacksmith', cost: [10,15,5], info: 'One villager becomes its smith. With infantry research he fetches 5 copper from the castle, forges armour for 5 seconds and carries it to the barracks: reinforced armour for every rack, then heavy armour.' },
 ];
@@ -327,7 +326,7 @@ export function produce(){
     const n=N[i]; if (!n.alive) continue;
     for (const q of n.blds){
       const out=PRODUCES[pType[q]]; if (!out || pOwner[q]!==n.id || pBurn[q]>0 || occ[pCenter[q]]) continue;
-      if (++pTimer[q]>=PRODUCE_TICKS){ const k=out[1][gatherTier(q)]; pTimer[q]=0; n.stock[out[0]]+=k; gained(n,out[0],k); on.produced(q,n.id,out[0],k); }
+      if (++pTimer[q]>=PRODUCE_TICKS){ const k=out[1][gatherTier(q)]; pTimer[q]=0; n.stock[out[0]]+=k; on.produced(q,n.id,out[0],k); }
     }
   }
 }

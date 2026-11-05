@@ -32,7 +32,7 @@
    to the barracks that needs it most nearly (sim/army.ts says which armour each one wants).
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, until the kingdom sends them to war (sim/war.ts). */
-import { STR_VILLAGER, STR_MILITIA, STR_SOLDIER, TW, TH, PW, PH, TICK, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY, B_HOSPITAL } from '../core/constants';
+import { STR_VILLAGER, STR_MILITIA, STR_SOLDIER, TW, TH, PW, PH, TICK, GAME_SPEED, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY, B_HOSPITAL } from '../core/constants';
 import { W, owner, occ, isLand, ferry, pType, pOwner, pBurn, pPrio, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, type Human, type Nation } from './state';
 import { homeScore, startSite, cancelSite, finishHouse, plotProblem } from './buildings';
 import { on } from './events';
@@ -41,8 +41,6 @@ import { medicStep, updateMedics, wound, isDoctorTask, hospitalStands, TASK_DOC_
 import { updateWar, borderPoints, wageOf, reinforce, marchStep, guardStep, alarmStep, mayStand, spread, warringNow } from './war';
 import { FERRY_PACE, laneBox } from './naval';
 import { HOUSE_BEDS, R_HOUSING, R_TOWERS, MAX_TIER } from './research';
-import { gained, spent, mayInvest } from './ledger';
-import { TOWER_COST } from './defense';
 import { SOLDIER_HP, VILLAGER_HP, MILITIA_HP, maxHp, buildUnits, station, armUp, armorWanted, units, unitAt, type Unit } from './army';
 export { SOLDIER_HP, VILLAGER_HP, MILITIA_HP, maxHp };
 
@@ -84,12 +82,11 @@ export const BUILD_TICKS = 40;   // ticks to put up a house (4 s)
 export const BEG_TICKS = 600;    // ticks homeless before a villager turns beggar (60 s)
 export const STARVE_TICKS = 900; // ticks homeless before a beggar dies of want (90 s)
 export const ABANDON_TICKS = 200;// ticks with more houses than people before the extra ones stand empty (20 s)
-export const FIX_TICKS = 50;     // ticks a builder works to raise a house a tier (5 s)
-export const FIX_COST = [3,3,0]; // what each improvement costs: [wood, stone, copper]
+export const FIX_SECONDS = [0,20,40];   // seconds a builder works to raise a house or a watchtower from tier t to t+1 (nothing to pay: the guild itself is the investment)
+export const FIX_TICKS = (tier: number) => FIX_SECONDS[tier]*GAME_SPEED*10;
 export const REHIRE_TICKS = 50;  // ticks after a builder or smith falls before another villager takes his place (5 s)
 export const FORGE_TICKS = 50;   // ticks a smith works on a piece of armour (5 s)
 export const ARMOR_COPPER = 5;   // copper each piece takes
-const MANOR_SHARE = 0.4;         // with manors allowed, the innermost 40% of houses become manors
 
 /** Switching role: walking to a barracks (or the castle) for it, or inside training. */
 export const switching = (h: Human) => h.task===TASK_TO_TRAIN || h.task===TASK_INSIDE;
@@ -270,7 +267,7 @@ const walks=new Map<number, Walk>();
 export function resetWalks(){ walks.clear(); }
 let queue=new Int32Array(0);
 const NB: [number, number][]=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
-function walkOf(n: Nation){
+export function walkOf(n: Nation){
   let w=walks.get(n.id);
   if (!w){ w={ f:new Field(), at:-1e9 }; walks.set(n.id,w); }
   if (W.tickN<w.at || W.tickN-w.at>=WALK_EVERY) fillWalk(n,w);
@@ -281,20 +278,38 @@ function fillWalk(n: Nation, w: Walk){
   if (n.capTile<0 || n.x1<n.x0){ f.fit(0,0,-1,-1); return; }
   f.fit(n.x0-1,n.y0-1,n.x1+1,n.y1+1);
   const lane=laneBox.get(n.id); if (lane) f.fit(Math.min(n.x0,lane[0])-1,Math.min(n.y0,lane[1])-1,Math.max(n.x1,lane[2])+1,Math.max(n.y1,lane[3])+1);   // (the sea lanes may leave the box)
-  const open=(t: number) => (owner[t]===n.id || ferry[t]===n.id) && !occ[t] && !onCastle(n,(t%TW)*2+1,((t/TW)|0)*2+1);
+  const mine=(t: number) => (owner[t]===n.id || ferry[t]===n.id) && !occ[t];
+  const wall=(t: number) => onCastle(n,(t%TW)*2+1,((t/TW)|0)*2+1);
+  let through=false;   // (second round: the castle itself may be crossed)
+  const open=(t: number) => mine(t) && (through || !wall(t));
   const [dx,dy]=doorOf(n), s=((dy/2)|0)*TW+((dx/2)|0);
   if (!open(s)) return;
   if (queue.length<f.w*f.h) queue=new Int32Array(f.w*f.h);
   let head=0, tail=0; f.d[f.idx(s)]=0; queue[tail++]=s;
-  while (head<tail){
-    const t=queue[head++], x=t%TW, y=(t/TW)|0, d=f.d[f.idx(t)];
-    for (const [ox,oy] of NB){
-      const nx=x+ox, ny=y+oy; if (nx<0||ny<0||nx>=TW||ny>=TH) continue;
-      const k=ny*TW+nx, i=f.idx(k); if (i<0 || f.d[i]>=0 || !open(k)) continue;
-      if (ox && oy && !(open(y*TW+nx) && open(ny*TW+x))) continue;   // (no cutting a corner)
-      f.d[i]=d+1; queue[tail++]=k;
+  const flood=()=>{
+    while (head<tail){
+      const t=queue[head++], x=t%TW, y=(t/TW)|0, d=f.d[f.idx(t)];
+      for (const [ox,oy] of NB){
+        const nx=x+ox, ny=y+oy; if (nx<0||ny<0||nx>=TW||ny>=TH) continue;
+        const k=ny*TW+nx, i=f.idx(k); if (i<0 || f.d[i]>=0 || !open(k)) continue;
+        if (ox && oy && !(open(y*TW+nx) && open(ny*TW+x))) continue;   // (no cutting a corner)
+        f.d[i]=d+1; queue[tail++]=k;
+      }
     }
+  };
+  flood();
+  // a capital on a neck of land (sea either side of its walls) leaves its gate and the rest of the kingdom
+  // apart: then, and only for ground the first round could not reach, people pass through the castle
+  // (its back gate), rather than a smith or a builder being cut off from half the town
+  through=true;
+  const q=n.capPlot, cx0=((q%PW)*8/2|0)-1, cy0=(((q/PW)|0)*8/2|0)-1;
+  for (let ty=cy0;ty<=cy0+10;ty++) for (let tx=cx0;tx<=cx0+10;tx++){   // (the wall tiles with ground the first round reached beside them)
+    const k=ty*TW+tx, i=f.idx(k); if (i<0 || f.d[i]>=0 || !wall(k) || !mine(k)) continue;
+    let best=-1;
+    for (const [ox,oy] of NB){ const j=f.idx((ty+oy)*TW+tx+ox); if (j>=0 && f.d[j]>=0 && (best<0 || f.d[j]<best) && (!ox || !oy || (f.at(ty*TW+tx+ox)>=0 && f.at((ty+oy)*TW+tx)>=0))) best=f.d[j]; }
+    if (best>=0){ f.d[i]=best+1; queue[tail++]=k; }
   }
+  flood();
 }
 /** The tiles from t down the field to the gate, or null if the field doesn't reach t. */
 function descent(f: Field, t: number){
@@ -571,34 +586,24 @@ function improvable(n: Nation, q: number){
   if (standing(q,B_TOWER,n.id)) return pTier[q]<Math.min(n.tier[R_TOWERS],MAX_TIER);
   return false;
 }
-/** What rebuilding the house or watchtower on plot q a tier up costs: [wood, stone, copper]. */
-export const upgradeCost = (q: number) => pType[q]===B_TOWER ? TOWER_COST[pTier[q]] : FIX_COST;
-/** The buildings kingdom n's builders should improve, in order: its watchtowers first (the nearest
-    the castle first), then its houses. The town is rebuilt from the castle outward: with manors
-    allowed, the innermost houses (the edge a little ragged) are to become manors and the rest stone
-    houses; the nearest house short of what it should be comes first. */
+/** The buildings kingdom n's builders can still raise a tier: its watchtowers and houses short of
+    what its research allows. Nothing to pay: the builders guilds are the investment. */
 export function improvements(n: Nation){
-  const c = n.capTile>=0 ? n.capTile : n.lty*TW+n.ltx, cx=c%TW, cy=(c/TW)|0;
-  const dist=(q: number)=>Math.sqrt(((pCenter[q]%TW)-cx)**2+(((pCenter[q]/TW)|0)-cy)**2);
-  const towers=n.blds.filter(q => improvable(n,q) && pType[q]===B_TOWER).sort((a,b) => dist(a)-dist(b) || a-b);
-  const top=Math.min(n.tier[R_HOUSING],MAX_TIER); if (top<2) return towers;
-  const houses=n.blds.filter(q => standing(q,B_HOUSE,n.id) && !pAband[q] && !occ[pCenter[q]]);
-  const d=new Map(houses.map(q => [q,dist(q)*jitter(q)]));
-  houses.sort((a,b)=>d.get(a)!-d.get(b)! || a-b);
-  const manors = top>=3 ? Math.ceil(houses.length*(n.invest>=1 ? 1 : MANOR_SHARE)) : 0;   // (full investment: every house a manor in the end)
-  return [...towers, ...houses.filter((q,i) => pTier[q] < (i<manors ? 3 : 2))];
+  const top=Math.min(n.tier[R_HOUSING],MAX_TIER);
+  return n.blds.filter(q => improvable(n,q) && (pType[q]===B_TOWER || (top>=2 && !pAband[q])));
 }
-/** A builder sets off to improve the next building on the list that the kingdom can pay for, and
-    whose cost the city investment allows (sim/ledger.ts). */
+/** A builder takes the building that costs the kingdom the least time: the walk there and the work
+    itself (20 seconds from tier 1 to 2, 40 from 2 to 3). So he raises the lowest buildings first and
+    goes for a tier 2 only when the nearest tier 1 is far enough away to cost more time, or none is left. */
 function goImprove(h: Human){
   const n=W.nations[h.o];
   const taken=new Set<number>(); for (const o of W.humans) if (o.o===h.o && o.fix>=0) taken.add(o.fix);
-  const f=walkOf(n).f; let looked=0;
-  for (const q of improvements(n)){
+  const f=walkOf(n).f, sp=pace(h)*TICK;
+  const near=(q: number)=>{ const [x,y]=frontOf(q); return Math.hypot(x-h.x,y-h.y)/sp+FIX_TICKS(pTier[q]); };
+  const list=improvements(n).filter(q => !taken.has(q)).map(q => [near(q),q] as [number,number]).sort((a,b) => a[0]-b[0] || a[1]-b[1]);
+  let looked=0;
+  for (const [,q] of list){
     if (++looked>80) break;
-    if (taken.has(q)) continue;
-    const cost=upgradeCost(q);
-    if (!cost.every((c,g) => n.stock[g]>=c) || !mayInvest(n,cost)) continue;
     const [x,y]=frontOf(q); h.tx=x; h.ty=y; h.task=TASK_FIX_GO;
     // a building he cannot walk to (across the water, behind the enemy's lines) is passed over for the next, not given up on for good
     if (route(h,true) || (f.at(tileOf(x,y))>=0 && routeField(h,x,y))){ h.fix=q; h.wait=0; return true; }   // (round by the field where the straight way is shut: a coast, a cove)
@@ -606,11 +611,8 @@ function goImprove(h: Human){
   h.task=TASK_ROAM;
   return false;
 }
-/** The builder finishes: the building goes up a tier, as good as new, if the kingdom can still pay. */
+/** The builder finishes: the building goes up a tier, as good as new. */
 function improve(n: Nation, q: number){
-  const cost=upgradeCost(q);
-  if (!cost.every((c,g) => n.stock[g]>=c)) return;
-  cost.forEach((c,g) => { n.stock[g]-=c; if (c) spent(n,g,c); });
   pTier[q]++; pHp[q]=0;
   if (pType[q]===B_HOUSE) n.beds+=HOUSE_BEDS[pTier[q]]-HOUSE_BEDS[pTier[q]-1];
   on.plotChanged(q); on.upgraded(q,n.id,pTier[q]);
@@ -757,9 +759,9 @@ function step(h: Human){
     h.x=gx; h.y=gy;
     if (h.task===TASK_TO_TRAIN){ h.task=TASK_INSIDE; h.wait=TRAIN_TICKS; return; }
     if (h.task===TASK_HOME_GO){ h.task=TASK_HOME_BUILD; h.wait=BUILD_TICKS; return; }
-    if (h.task===TASK_FIX_GO){ h.task=TASK_FIX; h.wait=FIX_TICKS; return; }
+    if (h.task===TASK_FIX_GO){ h.task=TASK_FIX; h.wait=FIX_TICKS(pTier[h.fix]); return; }
     if (h.task===TASK_SMITH_FETCH){
-      if (n.stock[2]>=ARMOR_COPPER){ n.stock[2]-=ARMOR_COPPER; spent(n,2,ARMOR_COPPER); h.load=1; } else h.make=0;   // no copper in store: the job is off
+      if (n.stock[2]>=ARMOR_COPPER){ n.stock[2]-=ARMOR_COPPER; h.load=1; } else h.make=0;   // no copper in store: the job is off
       think(h); return;
     }
     if (h.task===TASK_SMITH_BACK){ h.task=TASK_FORGE; h.wait=FORGE_TICKS; return; }

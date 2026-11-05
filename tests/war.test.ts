@@ -24,7 +24,7 @@ import { beggarProblem, stuck, warChest, botThink } from '../src/sim/bots';
 import { MILITIA_HIT } from '../src/sim/army';
 import { armyName, renameArmy, resetArmyNames } from '../src/ui/armies';
 import { incomeParts } from '../src/sim/sim';
-import { R_HOUSING, R_MEDICS, TIER_XP } from '../src/sim/research';
+import { R_HOUSING, R_MEDICS, TIER_XP, TOPIC_MAX, woundChance } from '../src/sim/research';
 import { BLEED_TICKS, HEAL_TICKS, MEDIC_SPEED, TASK_DOC_GO, TASK_DOC_HEAL, TASK_DOC_WAIT } from '../src/sim/medics';
 
 const N = (i: number) => W.nations[i];
@@ -1387,12 +1387,12 @@ describe('beggars, militia and stalemates', () => {
     makePeace(1,2); run(1);
   });
 
-  it('a bot with a beggar problem studies housing, spends all its goods on its builders and builds no farms; with no way out it leans to war', () => {
+  it('a bot with a beggar problem studies housing, builds no farms; with no way out it leans to war', () => {
     world(1); const n=N(2);
     n.villagers=20; n.soldiers=4; n.beggars=3; n.homeless=6; n.tier[R_HOUSING]=1; n.nextThink=0;
     expect(beggarProblem(n)).toBe(true);
     tick();   // (it thinks before the headcount is taken again)
-    expect([n.study, n.invest]).toEqual([R_HOUSING, 1]);
+    expect(n.study).toBe(R_HOUSING);
     n.villagers=20; n.beggars=1; n.homeless=2;
     expect(beggarProblem(n)).toBe(false);
     n.villagers=20; n.soldiers=4; n.beggars=3; n.homeless=6; n.tier[R_HOUSING]=3; n.guilds=1;
@@ -2219,7 +2219,7 @@ describe('peace and the buildings on ceded ground', () => {
 describe('workers pass over what they cannot reach', () => {
   it('a builder whose nearest houses are out of reach (behind enemy-held ground) goes on to one he can reach, instead of standing idle', () => {
     world(1); labelWorld(); allocIsles(); quiet(); paintDisc(N(1),24); noDraft(2);
-    N(1).tier[R_HOUSING]=2; N(1).invest=1; N(1).humanProg=-1e9;
+    N(1).tier[R_HOUSING]=2; N(1).humanProg=-1e9;
     place(N(1),B_GUILD);
     const hs: number[]=[]; for (let k=0;k<6;k++) hs.push(place(N(1),B_HOUSE));
     N(1).stock=[200,200,200]; census();
@@ -2370,8 +2370,10 @@ describe('field medics, the wounded and the hospital', () => {
     expect(build(N(1),q,B_HOSPITAL)).toBe(true);
     expect(N(1).stock).toEqual([0,0,0]); expect(pType[q]).toBe(B_HOSPITAL);
   });
-  it('field medics is learned in one step of 400 points; before that nobody is wounded', () => {
-    expect(TIER_XP[R_MEDICS]).toEqual([0,400]);
+  it('field medics is learned for 400 points (8% wounded), then 600 more (12%) and 800 more (20%); before that nobody is wounded', () => {
+    world(1); expect(TIER_XP[R_MEDICS]).toEqual([0,400,600,800]);
+    expect([1,2,3,4].map(t => { N(1).tier[R_MEDICS]=t; return woundChance(N(1)); })).toEqual([0,0.08,0.12,0.20]);
+    expect(TOPIC_MAX[R_MEDICS]).toBe(4);
     const { men }=field(false,false);
     for (const h of men) h.hp=0; run(3);
     expect(W.wounded).toHaveLength(0);

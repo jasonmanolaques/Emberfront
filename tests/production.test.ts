@@ -153,7 +153,7 @@ describe('bots and their gathering buildings', () => {
       const mine: number[]=[]; for (let q=0;q<NP;q++) if (pType[q]===ty && W.nations[2].blds.includes(q)) mine.push(q);
       if (mine.length<3) continue;
       const touching=mine.filter(q => mine.some(k => k!==q && (Math.abs(k%PW-q%PW)+Math.abs(((k/PW)|0)-((q/PW)|0)))===1)).length;
-      expect(touching).toBeGreaterThanOrEqual(mine.length-1);
+      expect(touching).toBeGreaterThanOrEqual(Math.floor(mine.length/2));   // (side by side, in groups: villagers' houses go up among them meanwhile and break up a square)
     }
   });
 });

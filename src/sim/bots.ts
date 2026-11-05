@@ -6,7 +6,7 @@ import { grossIncome } from './sim';
 import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, R_MEDICS, TOPICS, MAX_TIER, setStudy, maxed, hasMedics } from './research';
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, togglePriority, anyWithin, isEnemyLand, type Over } from './buildings';
-import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, guardsOpening, standingTower, WALL_MAX } from './fort';
+import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, guardsOpening, standingTower, WALL_MIN, WALL_MAX } from './fort';
 import { SEC_SIEGE } from './front';
 import { allied, atWar, assignArmy, frontIsles, ready, available, declare, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, frontIds, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD } from './war';
 
@@ -33,22 +33,31 @@ const TOWN = [B_BARRACKS, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL]; 
     gathering buildings, so wood first (a plantation pays for itself in 2 and a half minutes), then
     stone and copper, and a research station to join them into bigger ones. It saves up for these. */
 function groundwork(n: Nation){
-  const w: number[]=[];
-  if (n.plantations < 4+(n.tiles/700|0)) w.push(B_PLANTATION);
-  if (n.quarries < 3+(n.tiles/500|0)) w.push(B_QUARRY);
-  if (n.copperMines < 1+(n.tiles/1400|0)) w.push(B_COPPERMINE);
+  // the gatherers still short of their goal, the one whose good the stockpile is lowest in first (wood is what most is built of), so that
+  // none is left for ever behind the others by the goods they take
+  const want: [number, number, number, number][]=[[B_PLANTATION, n.plantations, 5+(n.tiles/900|0), n.stock[0]*0.5], [B_QUARRY, n.quarries, 3+(n.tiles/700|0), n.stock[1]*0.25], [B_COPPERMINE, n.copperMines, 1+(n.tiles/1400|0), n.stock[2]]];
+  // (one that stands in an unfinished square of four goes on with it: they are built side by side, so research can join them)
+  const w: number[]=want.filter(([,have,goal]) => have<goal).sort((a,b) => (a[1]%4===0 ? 1 : 0)-(b[1]%4===0 ? 1 : 0) || a[3]-b[3] || a[0]-b[0]).map(k => k[0]);
   if (!n.labs && n.plantations+n.quarries+n.copperMines>=3 && n.tier[R_GATHER]<MAX_TIER) w.push(B_RESEARCH);
   return w;
 }
-/** Farms are the foundation: people to tax and to fight with. A bot keeps them in step with its gathering buildings (one farm for every four of those, and two
-    to start), up to what its land can feed, so that a surplus of goods is never bought at the cost of its population. */
+/** Has the kingdom the footing to build towers: a few plantations and quarries bringing in wood and stone? (At war it builds them regardless.) */
+const footing = (n: Nation) => n.plantations>=3 && n.quarries>=2;
+/** What comes before everything else, in order: the first plantation and the first quarry (wood and stone are what everything is built of, and nothing brings
+    them in without one: a kingdom that spends its starting goods on farms first sits for ever with the rest too dear), then a farm while one is wanted, then
+    the other gatherers. */
+function foundations(n: Nation){
+  const g=groundwork(n), must=g.filter(t => (t===B_PLANTATION && n.plantations<1) || (t===B_QUARRY && n.quarries<1)), rest=g.filter(t => !must.includes(t));
+  if (!earlyFarm(n)) return [...must, ...rest];
+  return [...must, B_FARM, ...rest];
+}
 function earlyFarm(n: Nation){
   if (beggarProblem(n) || n.capTile<0) return false;
   return n.farms<Math.min(2+Math.ceil((n.plantations+n.quarries+n.copperMines)*0.25),3+(n.tiles/60|0));
 }
 /** What a bot would build next, most wanted first. */
 function wishlist(n: Nation, exposed: boolean){
-  const w: number[]=earlyFarm(n) ? [B_FARM, ...groundwork(n)] : groundwork(n), hungry=beggarProblem(n);
+  const w: number[]=foundations(n), hungry=beggarProblem(n);
   // beggars in the streets: better houses before anything else (a guild's builders raise them, once
   // housing research allows it; a research station to get there)
   if (hungry){
@@ -62,18 +71,19 @@ function wishlist(n: Nation, exposed: boolean){
   if (!n.barracks && n.soldierShare>0) w.push(B_BARRACKS);
   // room in the barracks for the army it keeps (new modules join the old, making one bigger army)
   else if (n.soldiers-guards>n.barracks*UNIT_SIZE-2 && n.barracks<2+(n.tiles/400|0)) w.push(B_BARRACKS);
-  // lone towers out on the border facing its neighbours: outposts
-  if (exposed && outposts < 1+(n.tiles/900|0)) w.push(B_TOWER);
+  // the capital is the heart of a kingdom: its wall of watchtowers comes first, and only once that
+  // stands (adequately) does a bot spread towers to its borders, as lone outposts facing its neighbours
+  if (wallDue(n,exposed) && (footing(n) || danger(n,exposed)>=2)){
+    // a wall is built of stone: quarries to feed it first
+    if (n.quarries<3+(n.tiles/1000|0) && n.stock[1]<20) w.push(B_QUARRY);
+    w.push(WALL);
+  }
+  if (exposed && capitalSafe(n) && footing(n) && outposts < 1+(n.tiles/900|0)) w.push(B_TOWER);
   // farms bring people faster: none while beggars crowd the streets; with land lying empty, more,
   // grown together into one big farmland
   // (farms are the foundation: more people, more taxes. Each is 5% dearer than the last, so the want is a steady one)
   if (!hungry && n.farms < 3+(n.tiles/250|0)) w.push(B_FARM);
   else if (!n.homeless && n.beds>=n.villagers+n.soldiers && n.plots.length>=12 && n.farms<3+(n.tiles/120|0) && emptyPlots(n)>n.plots.length*0.3) w.push(B_FARM);   // (only while everyone has a home)
-  if (wallDue(n,exposed)){
-    // a wall is built of stone: quarries to feed it first
-    if (n.quarries<3+(n.tiles/1000|0) && n.stock[1]<20) w.push(B_QUARRY);
-    w.push(WALL);
-  }
   if (n.minters < 1+(n.tiles/1500|0)) w.push(B_MINTER);
   // learning once the kingdom has found its feet, and a guild to build on what it learns
   if (n.farms && n.tiles>=300 && !TOPICS.every(t => maxed(n,t)) && n.labs < 1+(n.tiles/2500|0)) w.push(B_RESEARCH);
@@ -96,6 +106,15 @@ function wishlist(n: Nation, exposed: boolean){
 function danger(n: Nation, exposed: boolean){
   let war=false; for (let o=1;o<W.M;o++) if (o!==n.id && atWar(n.id,o)){ war=true; break; }
   return war ? (outnumbered(n) ? 3 : 2) : exposed ? 1 : 0;
+}
+/** Is the capital adequately guarded: its town wall planned and at least 70% of it standing? */
+export function capitalSafe(n: Nation){
+  if (!n.wallR || n.capTile<0) return false;
+  for (let R=WALL_MIN;R<=n.wallR;R++){   // (a ring the town has outgrown, standing as an inner wall, counts)
+    const ring=wallPlots(n,R); if (!ring.length) continue;
+    if (ring.filter(q => standingTower(q,n.id)).length >= ring.length*0.7) return true;
+  }
+  return false;
 }
 const WALL_GAP = [45, 24, 10, 6];   // seconds between towers of the wall, by danger
 /** Is it time for another tower of the town wall? Planning it first, once the town is worth guarding. */
@@ -235,6 +254,7 @@ function botStudy(n: Nation, exposed: boolean){
   if (n.plantations+n.quarries+n.copperMines>=2 && n.tier[R_GATHER]<MAX_TIER && !(exposed && n.tier[R_TOWERS]<2)){ setStudy(n,R_GATHER); return; }
   // a kingdom with an army and the means to spare learns field medics, to keep its soldiers alive
   if (!hasMedics(n) && n.soldiers>=12 && n.gold>500 && n.tier[R_INFANTRY]>=2 && !beggarProblem(n)){ setStudy(n,R_MEDICS); return; }
+  if (hasMedics(n) && !maxed(n,R_MEDICS) && n.hospitals>0 && n.soldiers>=20 && n.gold>800 && !beggarProblem(n)){ setStudy(n,R_MEDICS); return; }   // better care, once the hospitals stand and the army is big
   const order=exposed ? [R_TOWERS, R_GATHER, R_HOUSING, R_INFANTRY, R_CASTLE, R_TAXES] : [R_GATHER, R_HOUSING, R_INFANTRY, R_TOWERS, R_CASTLE, R_TAXES];
   let best=order[0]; for (const t of order) if (n.tier[t]<n.tier[best]) best=t;
   setStudy(n,best);
@@ -243,13 +263,12 @@ function botStudy(n: Nation, exposed: boolean){
 function botBuild(n: Nation, exposed: boolean){
   botStudy(n,exposed);
   garrisonGates(n);
-  n.invest=beggarProblem(n) ? 1 : 0.4+n.expandAt*0.8;   // the builders may spend 58% to 78% of the goods coming in, by temper (all of it, with beggars to house)
   let saving=false;   // threatened and short of a wall tower: lesser works don't get its stone
-  const first=earlyFarm(n) ? [B_FARM, ...groundwork(n)] : groundwork(n), hold=[false,false,false];   // (short of a gathering building: lesser works don't get the goods it needs)
+  const first=foundations(n), hold=[false,false,false];   // (short of a gathering building: lesser works don't get the goods it needs)
   for (const type of wishlist(n,exposed)){
     const s=STRUCTURES.find(s=>s.type===(type===WALL ? B_TOWER : type))!;
     if (saving && s.cost[1]>0) continue;
-    if (!first.includes(type) && s.cost.some((c,g) => c>0 && hold[g])) continue;
+    if (type!==B_BARRACKS && type!==WALL && s.cost.some((c,g) => c>0 && hold[g])) continue;   // (barracks and the capital's wall are never put off for the gatherers: they are cheap; any gatherer waits for the one before it)
     if (!canAfford(n,s)){
       if (type===WALL && danger(n,exposed)) saving=true;
       if (first.includes(type)) costFor(n,s).forEach((c,g) => { if (c>0) hold[g]=true; });
@@ -392,14 +411,22 @@ function botWar(n: Nation){
       if (assignArmy(id,c.unit,o)) got+=men;
     }
   }
+  // our land occupied by an enemy with none of ours there (a landing from the sea, say, far from our border): an army at home goes to take it back
+  for (let o=1;o<M;o++){
+    if (o===id || !W.wars[id*M+o] || !W.nations[o].alive || W.occCount[id*M+o]<=0 || menOn(id,o)>0 || defendProblem(id,o)) continue;
+    const pool=available(n).sort((x,y) => y.men.length-x.men.length || x.unit.key-y.unit.key);
+    if (pool.length) defend(id,o,[pool[0].unit.key]);
+  }
   // the militia, called up only when our armies on a front are badly outnumbered (they pay no tax and
   // die easily, and called up they are paid); home again once the front is safe
   const out=reservesOf(id);
   for (let o=1;o<M;o++){
     if (o===id || !(W.wars[id*M+o] || W.aggr[id*M+o] || W.aggr[o*M+id])) continue;
     const theirs=facing(id,o), mine=menOn(id,o)-(out && out.d===o ? out.members.length : 0);
-    const need = W.wars[id*M+o] ? theirs>mine*1.3 && (W.occCount[id*M+o]>0 || theirs>mine*2) : !!W.aggr[o*M+id] && theirs>(mine+ready(n))*1.5;
-    if (!out && need && !reservesProblem(id,o,true)){ callReserves(id,o,true); break; }
+    // (our land taken and none of our soldiers on that front, whatever the enemy has there: the militia are called too, if no army is left to send)
+    const taken=W.wars[id*M+o] && W.occCount[id*M+o]>0 && mine<=0 && !available(n).length;
+    const need = W.wars[id*M+o] ? (theirs>mine*1.3 && (W.occCount[id*M+o]>0 || theirs>mine*2)) || taken : !!W.aggr[o*M+id] && theirs>(mine+ready(n))*1.5;
+    if (!out && need && W.simTime>=n.nextCall && !reservesProblem(id,o,true)){ callReserves(id,o,true); n.nextCall=W.simTime+60; break; }   // (once a minute at most)
     if (out && out.d===o && mine>=theirs*1.2 && !W.occCount[id*M+o]) callReserves(id,o,false);
   }
   // our land is back: strike back while the enemy is weak, or make peace
@@ -473,7 +500,7 @@ function botWar(n: Nation){
     const s=pool/defence(D)*(atWar(id,o) ? 1.4 : 1)*(0.8+srand()*0.4);   // an old enemy first
     if (s>bs){ bs=s; best=o; }
   }
-  if (!best){ if (navalAttack(n,pool,need,o => defence(W.nations[o]))) n.nextWave=W.simTime+waveGap(n); return; }   // (nobody to attack by land: a landing from the sea, if its ships can)
+  if (!best){ if (navalAttack(n,pool,need,o => defence(W.nations[o]))) n.nextWave=W.simTime+waveGap(n); else n.nextWar=W.simTime+60+srand()*60; return; }   // (nobody worth attacking: it settles with its gold for a while, and looks again later)   // (nobody to attack by land: a landing from the sea, if its ships can)
   // the biggest army goes first; the rest follow in waves
   const army=biggest(n); if (army<0) return;
   declare(id,best,[army]); n.nextWave=W.simTime+waveGap(n);

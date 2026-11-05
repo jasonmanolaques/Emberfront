@@ -12,13 +12,12 @@ import { refreshNaval } from './naval';
 import { refreshCommand } from './command';
 import { flagCSS } from '../render/flags';
 import { $ } from './dom';
-import { perMinute } from '../sim/ledger';
 import { paid, incomeParts } from '../sim/sim';
 
 export const ui={ meGold:$('meGold'), meRate:$('meRate'), meLand:$('meLand'), meHouses:$('meHouses'), meStrength:$('meStrength'),
   meWood:$('meWood'), meStone:$('meStone'), meCopper:$('meCopper'),
   meVillagers:$('meVillagers'), meTax:$('meTax'), meLandTax:$('meLandTax'), meBoost:$('meBoost'), meBoostRow:$('meBoostRow'), meSoldCost:$('meSoldCost'), meMilCost:$('meMilCost'), meMilCostRow:$('meMilCostRow'), meWages:$('meWages'), meHomeless:$('meHomeless'), meSoldiers:$('meSoldiers'), meMilitia:$('meMilitia'), meMilitiaRow:$('meMilitiaRow'), meTraining:$('meTraining'), meNext:$('meNext'),
-  soldiers:$('soldiers') as HTMLInputElement, soldiersHint:$('soldiersHint'), invest:$('invest') as HTMLInputElement, investHint:$('investHint'),
+  soldiers:$('soldiers') as HTMLInputElement, soldiersHint:$('soldiersHint'),
   clock:$('clock'), boardList:$('boardList'), attacks:$('attacks'), log:$('log'), toast:$('toast'), tip:$('tip'), banner:$('banner') };
 
 let lastBoard=0;
@@ -49,12 +48,6 @@ export function updateHUD(now: number){
   ui.meNext.textContent = me.alive && me.capTile>=0 ? `Next human in ${Math.max(0,(HUMAN_EVERY-me.humanProg)/perTick*TICK/GAME_SPEED).toFixed(1)}s${me.farms?` · farms +${Math.round(FARM_BONUS*me.farms*100)}%`:''}${spare?` · empty homes +${Math.round(HOUSE_BONUS*spare*100)}%`:''}` : 'No capital: no new humans';
   // without a barracks, everyone under arms trains at the castle as militia
   ui.soldiers.disabled=!me.alive; ui.soldiersHint.hidden=!me.alive || me.barracks>0;
-  // city investment opens up with the first builders guild; beside it, the goods of the last minute
-  const canInvest=me.alive && me.guilds>0;
-  ui.invest.disabled=!canInvest; ui.investHint.hidden=canInvest;
-  const { gain, spend }=perMinute(me);
-  ['inW','inS','inC'].forEach((id,g) => { $(id).textContent='+'+Math.round(gain[g]*GAME_SPEED); });
-  ['outW','outS','outC'].forEach((id,g) => { $(id).textContent='−'+Math.round(spend[g]*GAME_SPEED); });
   ui.clock.textContent=fmtTime(W.simTime/GAME_SPEED);
   if (now-lastBoard>450){
     lastBoard=now;

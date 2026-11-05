@@ -18,6 +18,7 @@ export interface Nation {
   beds: number;                      // people the houses can hold: a hovel 1, a stone house 2, a manor 3
   sumX: number; sumY: number; ltx: number; lty: number; peak: number;   // ltx/lty: where the kingdom's label sits
   expandAt: number; attackAt: number; ratio: number; nextThink: number;  // bot personality
+  nextCall: number;                  // bots: sim time before which they don't call up their militia again (so that a call is no spam)
   nextWar: number; nextOffer: number;   // bots: sim time before which they start no campaign, offer no peace
   mass: Map<number, { t: number; men: number }>;   // bots: the fronts they hold at the border to mass a second wave (by enemy): when, and the men left
   waved: Map<number, number>;        // bots: when the last second wave went in (by enemy)
@@ -27,8 +28,6 @@ export interface Nation {
   x0: number; y0: number; x1: number; y1: number;   // a box round every tile it has ever held (so its borders are found without searching the whole map)
   wallR: number; nextWall: number;   // bots: the ring of their town wall, in plots from the castle (0: none planned yet), and sim time of its next tower (sim/fort.ts)
   unpaid: number;                    // ticks the treasury has been below zero, soldiers unpaid
-  invest: number;                    // city investment: share of the goods coming in (0..1) the builders may spend
-  gain: number[]; spend: number[];   // goods in and goods spent by the builders and smiths, per second for the last minute: [second*3+good]
   soldierShare: number;              // share of the population the kingdom wants as soldiers (0..1)
   humanProg: number;                 // progress toward the next human; one arrives at HUMAN_EVERY (farms speed it up)
   villagers: number; soldiers: number; training: number;   // headcount, updated every tick; soldiers: everyone under arms (militia too); training = switching role
@@ -169,7 +168,6 @@ export type Command =
   | { type: 'endWar'; nation: number; target: number }                // offer peace
   | { type: 'peace'; nation: number; target: number }                 // accept the target's peace offer
   | { type: 'research'; nation: number; topic: number }               // study this topic next (R_* in research.ts)
-  | { type: 'invest'; nation: number; share: number }                // city investment (0..1)
   | { type: 'offensive'; nation: number; target: number; go: boolean }   // attack along the front (in a crisis: go to war), or hold the front
   | { type: 'deescalate'; nation: number; target: number }            // call off the crisis our massed armies started: everyone goes home
   | { type: 'deploy'; nation: number; target: number; units?: number[]; militia?: number; isle?: number }   // put armies on the border in peace, ready for a crisis

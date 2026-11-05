@@ -24,6 +24,7 @@ export const SHIP_COST = [5,0,0];                  // [wood, stone, copper] a sh
 export const SHIP_TICKS = 15*GAME_SPEED*10;        // ticks to build one: 15 seconds on the clock
 export const SHIP_CAP = 5;                         // soldiers a ship carries
 export const SHIP_FRONT = 2*SHIP_CAP;              // tiles of coast a ship's men take: a man every 2 tiles, as on any front
+export const CONVOY_SPEED = 2;                    // the boats that ferry soldiers between naval bases sail twice as fast
 export const SHIP_SP = 0.6;                        // pixels a tick a ship sails (6 a second: 3 tiles)
 export const FERRY_PACE = 4;                       // a villager in a boat goes this much faster than on foot
 export const ROW_GAP = 3;                          // tiles between one row of ships and the next
@@ -224,7 +225,7 @@ export function updateNaval(){
   for (let i=W.ships.length-1;i>=0;i--){
     const s=W.ships[i];
     if (s.mode===SHIP_WAIT) continue;
-    let left=SHIP_SP;
+    let left=s.convoy>=0 ? SHIP_SP*CONVOY_SPEED : SHIP_SP;   // (a boat carrying an army to the front is in a hurry)
     while (left>0 && s.pi<s.path.length){
       const gx=s.path[s.pi], gy=s.path[s.pi+1], dx=gx-s.x, dy=gy-s.y, d=Math.hypot(dx,dy);
       if (d<1e-6){ s.pi+=2; continue; }

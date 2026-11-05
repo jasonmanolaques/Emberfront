@@ -17,7 +17,6 @@ import { updatePopulation, resetWalks, resetRooms } from './population';
 import { resetWar, declare, declareNaval, proposeAlliance, endWar, makePeace, setOffensive, armyOrder, armyFront, armyRecall, armyRedirect, assignArmy, deployArmies, deescalate, defend, callReserves } from './war';
 import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
-import { turnLedger, resetLedger } from './ledger';
 import { labelWorld, allocIsles, resetNaval, updateNaval, queueShip, colonize } from './naval';
 
 
@@ -26,9 +25,9 @@ function blankNation(id: number, name: string, hex: string, isPlayer: boolean, c
   return { id, name, hex, isPlayer, code,
     gold:0, income:0, strength:0, might:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
     plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, hospitals:0, navals:0, fleet:0, beds:0,
-    sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextWar:0, nextOffer:0, nextSea:0, nextWave:0, mass:new Map(), waved:new Map(), hungry:0, x0:1e9, y0:1e9, x1:-1, y1:-1, wallR:0, nextWall:0, unpaid:0,
+    sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextCall:0, nextWar:0, nextOffer:0, nextSea:0, nextWave:0, mass:new Map(), waved:new Map(), hungry:0, x0:1e9, y0:1e9, x1:-1, y1:-1, wallR:0, nextWall:0, unpaid:0,
     soldierShare:0, humanProg:0, villagers:0, soldiers:0, militia:0, called:0, wageS:0, wageM:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0,
-    study:R_HOUSING, tier:[1,1,1,1,1,1,1], xp:[0,0,0,0,0,0,0], invest:0.5, gain:new Array(180).fill(0), spend:new Array(180).fill(0) };
+    study:R_HOUSING, tier:[1,1,1,1,1,1,1], xp:[0,0,0,0,0,0,0] };
 }
 function makeNation(id: number, k: Country, isPlayer: boolean): Nation {
   const srand=W.srand;
@@ -89,7 +88,7 @@ export function newWorld(seed: number, map='gen'){
   W.M=1; W.contact=new Int32Array(1);
   W.simTime=0; W.tickN=0;
   W.humans=[]; W.humanSeq=0;
-  resetWar(1); resetStories(1); resetLedger(); resetWalks(); labelWorld(); resetNaval(); resetHomes(); resetRooms();
+  resetWar(1); resetStories(1); resetWalks(); labelWorld(); resetNaval(); resetHomes(); resetRooms();
 }
 
 /** Founds the player's capital near tile t and places the bot kingdoms: `rivals` of them, countries
@@ -271,8 +270,6 @@ function applyCommand(c: Command){
     endWar(c.nation,c.target);
   } else if (c.type==='peace'){
     const M=W.M; if (c.target>0 && c.target<M && W.offers[c.target*M+c.nation]) makePeace(c.nation,c.target);
-  } else if (c.type==='invest'){
-    const n=W.nations[c.nation]; if (n && n.alive) n.invest=Math.min(1,Math.max(0,c.share));
   } else if (c.type==='research'){
     const n=W.nations[c.nation]; if (n && n.alive) setStudy(n,c.topic);
   }
@@ -293,7 +290,6 @@ export const grossIncome = (n: Nation) => { const p=incomeParts(n); return p.tax
 export function tick(){
   if (W.commands.length){ for (const c of W.commands) applyCommand(c); W.commands.length=0; }
   W.simTime+=TICK; W.tickN++;
-  turnLedger();
   const N=W.nations;
   // each villager's tax (more with taxation research) and a small tax on the land, each coin minter adding
   // 10% to them, less the soldiers' wages (militia are paid only while called up); the treasury can go below zero

@@ -6,10 +6,9 @@
    then, and goes out again afterwards. */
 import { PW, TW, GAME_SPEED, TICK, B_HOSPITAL } from '../core/constants';
 import { W, isle, pType, pOwner, pBurn, type Human, type Wounded } from './state';
-import { hasMedics } from './research';
+import { hasMedics, woundChance } from './research';
 import { on } from './events';
 
-export const WOUND_CHANCE = 0.08;                 // of the soldiers who fall, once field medics are learned
 export const BLEED_TICKS = 45*GAME_SPEED*10;      // a wounded man with no doctor on his way bleeds out in 45 seconds
 export const HEAL_TICKS = 7*GAME_SPEED*10;        // and one in a hospital bed is on his feet again after 7
 export const MEDIC_SPEED = 1.5;                   // a doctor on his way to a wounded man runs 50% faster
@@ -26,7 +25,7 @@ export const hospitalDoor = (q: number): [number, number] => [(q%PW)*8+8, ((q/PW
 /** A soldier of a kingdom that has learned field medics has fallen: he may be wounded, not dead (returns true: he is on the list, and is not mourned). */
 export function wound(h: Human): boolean {
   const n=W.nations[h.o];
-  if (!n?.alive || h.kind!==1 || !hasMedics(n) || W.prand()>=WOUND_CHANCE) return false;
+  if (!n?.alive || h.kind!==1 || !hasMedics(n) || W.prand()>=woundChance(n)) return false;
   W.wounded.push({ id:h.id, o:h.o, h, x:h.x, y:h.y, left:BLEED_TICKS, medic:-1, carried:false, hosp:-1, bed:-1, heal:0 });
   return true;
 }

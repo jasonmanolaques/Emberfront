@@ -19,7 +19,7 @@ const NEXT = [
   ['', '', 'Builders can rebuild watchtowers to shoot every 3.5 s for 3 damage and take 30 blows (10 stone, 4 wood).', 'Builders can rebuild them to shoot every 3 s for 4 damage and take 40 blows (20 stone, 8 wood).'],
   ['', '', 'The castle shoots twice every 3.5 s for 3 damage and takes 400 blows.', 'The castle shoots twice every 3 s for 4 damage and takes 600 blows.'],
   ['', '', 'Plantations, quarries and copper mines side by side join in pairs: +5 wood, +3 stone, +3 copper.', 'Four in a square join into one: +15 wood, +10 stone, +10 copper.'],
-  ['', '', 'Hospitals (urban development): 8% of the soldiers who fall are only wounded, and doctors carry them to a bed and heal them.'],
+  ['', '', 'Hospitals (urban development): 8% of the soldiers who fall are only wounded, and doctors carry them to a bed and heal them.', 'Better care: 12% of the soldiers who fall are only wounded.', 'Best care: 20% of the soldiers who fall are only wounded.'],
 ];
 const ROWS: Record<number, string> = { [R_HOUSING]:'rHousing', [R_INFANTRY]:'rInfantry', [R_TOWERS]:'rTowers', [R_CASTLE]:'rCastle', [R_GATHER]:'rGather', [R_TAXES]:'rTaxes', [R_MEDICS]:'rMedics' };
 const topics=[R_HOUSING, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, R_TAXES, R_MEDICS].map(t => {
@@ -50,9 +50,10 @@ export function refreshResearch(){
     o.root.classList.toggle('on', on); o.root.classList.toggle('done', done);
     o.button.setAttribute('aria-pressed', String(on)); o.button.disabled=done;
     o.button.querySelector('.tname')!.textContent=TOPIC_NAME[o.t];
-    o.tier.textContent = o.t===R_MEDICS ? (done ? 'Learned' : on ? 'Studying' : 'Not learned') : 'Tier '+me.tier[o.t]+(done ? ' · complete' : on ? ' · studying' : '');
+    const med=o.t===R_MEDICS, step=me.tier[o.t]-1;   // (field medics counts from its first step: tier 2 is its tier 1)
+    o.tier.textContent = med ? (step<1 ? (on ? 'Studying' : 'Not learned') : 'Tier '+step+(done ? ' · complete' : on ? ' · studying' : '')) : 'Tier '+me.tier[o.t]+(done ? ' · complete' : on ? ' · studying' : '');
     o.bar.style.width=(done ? 100 : Math.min(100,have/need*100))+'%';
-    o.count.textContent = done ? (o.t===R_MEDICS ? 'Learned' : `Tier ${TOPIC_MAX[o.t]} reached`) : `${Math.floor(have)} / ${need}`;
-    o.note.textContent = done ? (o.t===R_MEDICS ? 'Wounded soldiers and the hospital are open to you.' : 'Fully researched.') : `${o.t===R_MEDICS ? 'Brings' : 'Next'}: ${NEXT[o.t][me.tier[o.t]+1]}`;
+    o.count.textContent = done ? `Tier ${med ? TOPIC_MAX[o.t]-1 : TOPIC_MAX[o.t]} reached` : `${Math.floor(have)} / ${need}`;
+    o.note.textContent = done ? 'Fully researched.' : `${med ? 'Brings' : 'Next'}: ${NEXT[o.t][me.tier[o.t]+1]}`;
   }
 }

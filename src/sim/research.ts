@@ -18,8 +18,8 @@ export const R_HOUSING = 0, R_TAXES = 1, R_INFANTRY = 2, R_TOWERS = 3, R_CASTLE 
 export const TOPICS = [R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, R_MEDICS];
 export const TOPIC_NAME = ['Housing', 'Taxation', 'Infantry', 'Watchtowers', 'Castle', 'Resource gathering', 'Field medics'];
 export const MAX_TIER = 3;
-export const TOPIC_MAX = [3, 3, 3, 3, 3, 3, 2];   // the top tier of each topic: field medics is learned in one step (tier 2)
-export const TIER_XP = [[0, 200, 400], [0, 200, 400], [0, 400, 600], [0, 400, 800], [0, 400, 800], [0, 400, 800], [0, 400]];   // by topic: points to go from tier t to t+1, by t (twice what they were)
+export const TOPIC_MAX = [3, 3, 3, 3, 3, 3, 4];   // the top tier of each topic: field medics has three steps (tiers 2 to 4: learned, better, best)
+export const TIER_XP = [[0, 200, 400], [0, 200, 400], [0, 400, 600], [0, 400, 800], [0, 400, 800], [0, 400, 800], [0, 400, 600, 800]];   // by topic: points to go from tier t to t+1, by t (twice what they were)
 export const XP_PER_STATION = 1;      // points a second each research station earns
 /** People a house of each tier holds, and how many blows it takes compared with a hovel. */
 export const HOUSE_BEDS = [1, 1, 2, 3], HOUSE_TOUGH = [1, 1, 3, 6];
@@ -27,6 +27,9 @@ export const HOUSE_BEDS = [1, 1, 2, 3], HOUSE_TOUGH = [1, 1, 3, 6];
 export const maxed = (n: Nation, topic: number) => n.tier[topic]>=TOPIC_MAX[topic];
 /** Has kingdom n learned field medics: its fallen soldiers may be wounded, and it may build hospitals? */
 export const hasMedics = (n: Nation) => n.tier[R_MEDICS]>=2;
+/** Of the soldiers who fall, the share that are only wounded: 8% with field medics, 12% with the second step, 20% with the third. */
+export const woundChance = (n: Nation) => WOUND_BY_TIER[n.tier[R_MEDICS]] ?? 0;
+const WOUND_BY_TIER = [0, 0, 0.08, 0.12, 0.20];
 /** Points still needed for the topic's next tier (0 once it is at the top). */
 export const xpNeeded = (n: Nation, topic: number) => maxed(n,topic) ? 0 : TIER_XP[topic][n.tier[topic]];
 

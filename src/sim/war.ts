@@ -37,7 +37,7 @@ import { BLD_HP, bldHp, wear, towerTier, castleTier, TOWER_RELOADS, TOWER_DMGS, 
 import { SOLDIER_DMG, MILITIA_HIT, units, unitAt, groupKeys, type Unit } from './army';
 import { Field } from './field';
 import { lineOf, deploy, placeAt, indexAt, holds, enemyOf, underCastle, castleCutOff, partOf, sectorOf, originOf, SEC_SIEGE, SIEGE_WIDTH, SIEGE_NEAR, type Front } from './front';
-import { landingZone, offshore, landingTile, seaPaths, seaNearest, dockTile, shipById, launchShip, recall, navalHooks, basesOf, baseWater, SHIP_SP, SHIP_CAP, INV_SAIL, INV_READY, INV_LAND, INV_DONE, SHIP_WAIT, SHIP_BACK } from './naval';
+import { landingZone, offshore, landingTile, seaPaths, seaNearest, dockTile, shipById, launchShip, recall, navalHooks, basesOf, baseWater, SHIP_SP, CONVOY_SPEED, SHIP_CAP, INV_SAIL, INV_READY, INV_LAND, INV_DONE, SHIP_WAIT, SHIP_BACK } from './naval';
 import { H_SOLDIER, TASK_ROAM, TASK_BOAT, TOWER_RANGE, maxHp, REGEN, pace, onCastle, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf, homeMilitia } from './population';
 
 export const MELEE_R = 2.6;           // pixels: close enough to strike
@@ -525,8 +525,8 @@ export const crossable = (a: number, from: number, to: number) => from===to || !
    A man who has no way on foot to the front (across the sea, or with another kingdom's land between), or whose way is long and clearly quicker
    by sea, goes to a naval base of his kingdom's on his landmass and waits at its door; the base's boat leaves as soon as five are there (or a few
    seconds after the first) for a base of the kingdom's nearer the front, and sails home empty. */
-const SHORTCUT_MIN = 50;      // steps from his place a man must be before the sea is thought of
-const SHORTCUT_GAIN = 0.85;   // the way by sea must take no more than this share of the time on foot (armies are 30% quicker in peace, the boat is not)
+const SHORTCUT_MIN = 30;      // steps from his place a man must be before the sea is thought of
+const SHORTCUT_GAIN = 1;   // the way by sea must take no more than this share of the time on foot (armies are 30% quicker in peace, the boat is not)
 const SEA_WAIT = 40;          // ticks the first man waits for others at the base
 interface Cut { base: number; path: number[]; land: number; fLand: number; }
 const cuts = new Map<number, Cut | null>(), cutsAt = new Map<number, number>();   // by army and landmass of its men: the way by sea found, and when it was looked for
@@ -579,7 +579,7 @@ function seaMan(h: Human, c: Campaign){
     if (here>=0){   // (there is a way on foot: the sea has to be clearly quicker)
       if (here<SHORTCUT_MIN) return false;
       const spot=baseSpot(cut.base), p=Math.max(0.1,marchPace(h,c)*TICK);
-      const via=Math.hypot(h.x-spot.x,h.y-spot.y)/p+cut.path.length*2/SHIP_SP+cut.fLand*2/p, walk=here*2/p;
+      const via=Math.hypot(h.x-spot.x,h.y-spot.y)/p+cut.path.length*2/(SHIP_SP*CONVOY_SPEED)+cut.fLand*2/p, walk=here*2/p;
       if (via>walk*SHORTCUT_GAIN) return false;
     }
     seaBound.set(h.id,cut.base);

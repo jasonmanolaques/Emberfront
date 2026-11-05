@@ -367,13 +367,6 @@ button.army .at{font-size:12px;color:var(--muted);white-space:nowrap}
 button.army[aria-pressed=true]{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-d),2px 2px 0 var(--ink)}
 button.army[aria-pressed=true] .at{color:var(--gold)}
 
-/* City investment: goods coming in and spent a minute */
-.flows{display:grid;grid-template-columns:auto repeat(3,1fr);gap:2px 10px;align-items:baseline;font-size:13px;padding-top:4px;border-top:2px solid var(--edge)}
-.flows .tag{font-size:9px}
-.flows b{font-weight:600;text-align:right}
-.flows b.in{color:var(--good)}
-.flows b.out{color:var(--bad)}
-#investHint[hidden]{display:none}
 /* Settling land: a small menu where you clicked */
 #expand{position:absolute;padding:6px 8px 8px;display:grid;gap:5px;z-index:6}
 #expand .exrow{display:flex;gap:5px}

@@ -1,5 +1,5 @@
 // Villagers resting at home when there is nothing to do, the counts kept as the map changes, builders
-// round a wall, and full investment.
+// round a wall.
 import { describe, it, expect } from 'vitest';
 import { TW, TH, NP, B_HOUSE, B_GUILD } from '../src/core/constants';
 import { build, plotProblem, finishHouse } from '../src/sim/buildings';
@@ -9,7 +9,6 @@ import { newWorld, startMatch, tick } from '../src/sim/sim';
 import { setOwner } from '../src/sim/territory';
 import { scanContacts } from '../src/sim/census';
 import { HOUSE_BEDS } from '../src/sim/research';
-import { mayInvest } from '../src/sim/ledger';
 import { HUMAN_EVERY as E, H_VILLAGER, TASK_REST, indoors, frontOf } from '../src/sim/population';
 
 const me = () => W.nations[1];
@@ -69,18 +68,9 @@ describe('builders and smiths round a wall', () => {
     const far: number[]=[];
     for (let q=0;q<NP && far.length<3;q++){ const t=pCenter[q]; if (t%TW>=cx+20 && Math.abs(((t/TW)|0)-cy)<8 && !plotProblem(me(),q)){ finishHouse(q,1); far.push(q); } }
     expect(far).toHaveLength(3);
-    me().stock=[100,100,100]; me().tier[R_HOUSING]=2; me().invest=1;
+    me().stock=[100,100,100]; me().tier[R_HOUSING]=2;
     for (let q=0;q<NP;q++) if (!plotProblem(me(),q) && (pCenter[q]%TW)<cx+8){ expect(build(me(),q,B_GUILD)).toBe(true); break; }
     for (let k=0;k<20 && far.some(q => pTier[q]<2);k++){ me().stock=[100,100,100]; run(300); }
     expect(far.map(q => pTier[q])).toEqual([2,2,2]);   // stone houses
-  });
-});
-
-describe('full investment', () => {
-  it('at 100% the builders may spend whatever is in the stockpile, whatever comes in', () => {
-    start(12345, 0);
-    const n = me(); n.gain.fill(0); n.spend.fill(0);
-    n.invest = 0.95; expect(mayInvest(n, [3,3,0])).toBe(false);   // nothing came in this past minute
-    n.invest = 1;    expect(mayInvest(n, [3,3,0])).toBe(true);
   });
 });

@@ -47,7 +47,7 @@ export const DESERT_TICKS = 30;           // then one deserts every 3 s, the lea
 export const SCRAP_GOLD = 30;             // gold back per tier of a deserter's armour, scrapped
 export const TAX_PER_VILLAGER = 0.1;      // gold a second each villager pays per taxation tier (soldiers pay none); each coin minter adds 10% to the taxes
 export const LAND_TAX = 0.0004;           // gold a second a kingdom earns for each tile of land it holds (a flat boost for its size: 4 a second for 10,000 tiles)
-export const GOLD_PER_TILE = 0.5;         // cost of settling one unclaimed tile
+export const GOLD_PER_TILE = 0.4;         // cost of settling one unclaimed tile
 // kingdom strength: what the leaderboard and labels show, and what makes land costly to take
 /* A kingdom's strength is its military might alone: each villager and each militiaman counts 100, a soldier 200, 300 or 500 by his armour tier (sim/population.ts). */
 export const STR_VILLAGER = 100, STR_MILITIA = 100, STR_SOLDIER = [0, 200, 300, 500];
