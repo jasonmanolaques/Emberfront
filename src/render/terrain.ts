@@ -28,6 +28,11 @@ export let ovBuf = new Uint32Array(ovImg.data.buffer);
 let ovBase = new Uint32Array(NT);      // its ground, before the territory
 let ox0=TW, oy0=TH, ox1=-1, oy1=-1;    // the part of it still to upload
 const dirtyTiles = new Set<Tile>();    // tiles of the picture whose ground is still to upload
+/** The browser lost the drawing surface (a graphics reset: the canvases came back blank): the tiles are let go, to be painted again from the map, and the whole overview is uploaded again. */
+export function recoverTerrain(){
+  resetTiles(); dirtyTiles.clear();
+  ox0=0; oy0=0; ox1=TW-1; oy1=TH-1;
+}
 /** A new map: lets the picture's tiles go, and fits the overview to the map's size. */
 export function sizeTerrain(){
   resetTiles(); dirtyTiles.clear();

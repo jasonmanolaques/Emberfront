@@ -5,9 +5,10 @@ import { findBlock, queueCommand } from './sim/sim';
 import { plotProblem, navalSite } from './sim/buildings';
 import { client } from './client';
 import { view, resize, cam } from './render/camera';
-import { ovBuf } from './render/terrain';
+import { ovBuf, recoverTerrain } from './render/terrain';
 import { drawPlotAndNeighbours } from './render/sprites';
-import { render } from './render/render';
+import { render, resetGhosts } from './render/render';
+import { resetPeople } from './render/people';
 import { shots } from './render/effects';
 import { updateHUD } from './ui/hud';
 import { bindInput } from './ui/input';
@@ -50,6 +51,11 @@ function frame(now: number){
   if (now>hudAt && client.state==='play'){ try { updateHUD(now); refreshBuildPanel(); } catch (e){ fault('panels',e); } hudAt=now+200; }
 }
 
+/* The browser may take the drawing surface away (a graphics process reset: the page goes on, but every canvas comes back blank, and a map drawn once would stay
+   blank). When it gives it back, everything drawn is thrown away and drawn again from the game's state. */
+function recoverCanvases(){ recoverTerrain(); resetPeople(); resetGhosts(); resize(); }
+view.addEventListener('contextlost',e => { e.preventDefault(); });
+view.addEventListener('contextrestored',recoverCanvases);
 bindInput();
 new ResizeObserver(resize).observe(view);
 resize();
