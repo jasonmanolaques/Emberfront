@@ -12,7 +12,7 @@
    racks that beats what he wears, and his old armour is thrown away. Reinforced armour comes
    first, for every rack of the barracks; only then heavy armour, which replaces it. */
 import { PW, PH, B_BARRACKS } from '../core/constants';
-import { W, pType, pOwner, pBurn, pArmor, type Human, type Nation } from './state';
+import { W, occ, pType, pOwner, pBurn, pCenter, pArmor, type Human, type Nation } from './state';
 import { on } from './events';
 import { R_INFANTRY } from './research';
 
@@ -44,7 +44,8 @@ const unitOf = new Map<number, Unit>();             // barracks plot -> its unit
 export const unitAt = (q: number) => unitOf.get(q);
 export const maxHp = (h: Human) => (h.kind!==H_SOLDIER ? VILLAGER_HP : h.militia ? MILITIA_HP : SOLDIER_HP[h.tier]*2**h.lead)*(h.fury ? 1.25 : 1)*(h.dug ? 1.15 : 1);   // an army's leader: doubled for each rank; one spawned in a siege, a quarter more
 const frontOf = (q: number): [number, number] => [(q%PW)*8+4, ((q/PW)|0)*8+7.5];
-const standing = (q: number, o: number) => pType[q]===B_BARRACKS && pOwner[q]===o && pBurn[q]<=0;
+/** Does o's barracks q stand and work: not burning, and not on ground the enemy occupies (it raises no soldiers and trains none there). */
+const standing = (q: number, o: number) => pType[q]===B_BARRACKS && pOwner[q]===o && pBurn[q]<=0 && !occ[pCenter[q]];
 
 /** "4/5 · 3 I · 1 II · 1 III": the army's living soldiers (at home or away) over its room, then the army by tier. */
 export function unitLabel(u: Unit){

@@ -1,9 +1,15 @@
 // Trades and the soldier slider: the price of a first building, the limit set by the professionals, and the lock.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { TW, TH, NP, PW, B_FARM, B_TOWER, B_RESEARCH, B_CARPENTER, RUSH_TICKS, GAME_SPEED } from '../src/core/constants';
+import { B_BARRACKS, TW, TH, NP, PW, B_FARM, B_TOWER, B_RESEARCH, B_CARPENTER, RUSH_TICKS, GAME_SPEED } from '../src/core/constants';
 import { plotProblem, build } from '../src/sim/buildings';
 import { taxRate } from '../src/sim/sim';
-import { TIER_XP, TOPICS, R_TAXES } from '../src/sim/research';
+import { TIER_XP, TOPICS, R_TAXES, R_HOUSING } from '../src/sim/research';
+import { LAND_TAX } from '../src/core/constants';
+import { occ, pCenter } from '../src/sim/state';
+import { barracksOf } from '../src/sim/population';
+import { units, buildUnits } from '../src/sim/army';
+import { strike } from '../src/sim/war';
+import { makeHuman, doorOf } from '../src/sim/population';
 import { tileCost } from '../src/sim/territory';
 import { BUILD_TICKS, CARPENT_TICKS, TASK_SUPPLY, TASK_HOME_BUILD, HUMAN_EVERY } from '../src/sim/population';
 import { W } from '../src/sim/state';
@@ -148,5 +154,42 @@ describe('scholars and the call-up', () => {
     void rest;
     expect(sawBuild).toBe(true);
     expect(sawSupply).toBe(true);
+  });
+});
+
+describe('v70', () => {
+  it('the land rush lasts two minutes, and the land tax is twice what it was', () => {
+    expect(RUSH_TICKS).toBe(120*GAME_SPEED*10);
+    expect(LAND_TAX).toBeCloseTo(0.0008,9);
+  });
+
+  it('a research station earns nothing until its scholar stands at its door', () => {
+    roomy();
+    const n=me(); n.stock=[50,50,50]; const [q]=near(); expect(build(n,q,B_RESEARCH)).toBe(true);
+    run(60); expect(n.studying).toBe(0); expect(n.xp[R_HOUSING]).toBe(0);   // (nobody has come yet)
+    for (let i=0;i<8000 && n.studying<1;i++) tick();
+    expect(n.studying).toBe(1);
+    const before=n.xp[R_HOUSING]; run(100);
+    expect(n.xp[R_HOUSING]-before).toBe(100);   // (10 points in 10 s)
+  });
+
+  it('a barracks on ground the enemy occupies raises and trains no one: it is no barracks until the ground is free', () => {
+    roomy();
+    const n=me(); n.stock=[50,50,50]; const [q]=near(); expect(build(n,q,B_BARRACKS)).toBe(true);
+    buildUnits();
+    expect(barracksOf(n)).toContain(q); expect(units[1].length).toBe(1);
+    occ[pCenter[q]]=2;   // (as if occupied by kingdom 2)
+    buildUnits();
+    expect(barracksOf(n)).not.toContain(q); expect(units[1].length).toBe(0);
+    occ[pCenter[q]]=0;
+    buildUnits(); expect(units[1].length).toBe(1);
+  });
+
+  it('every blow that lands is 15% weaker, as it is, or 15% harder', () => {
+    const [x,y]=doorOf(me()), a=makeHuman(me(),H_SOLDIER,x,y), b=makeHuman(W.nations[1],H_SOLDIER,x,y);
+    const seen=new Set<number>();
+    for (let i=0;i<400;i++){ b.hp=1e6; a.cool=0; a.duel=-1; b.duel=-1; strike(a,b); const d=1e6-b.hp; if (d>0) seen.add(Math.round(d*1000)); }
+    const v=[...seen].sort((p,r) => p-r); expect(v).toHaveLength(3);
+    expect(v.map(d => +(d/v[1]).toFixed(2))).toEqual([0.85,1,1.15]);
   });
 });

@@ -982,19 +982,55 @@ export function proposeAlliance(a: number, b: number){
 
 /* ---------- a kingdom falls ---------- */
 /** The loser's castle is broken: its land, buildings and people go to the winner; its gold and goods are lost. */
+/** How well kingdom a did in its war against d, the score the spoils are shared by (never shown): 1 point for each of d's men it killed, and half a point for each man of a's that d killed. */
+export const warScore = (a: number, d: number) => W.kills[a*W.M+d]+0.5*W.kills[d*W.M+a];
+/** When kingdom `loser` falls to several attackers, who gets which tile of its land: the share of each is its war score over all of theirs (whatever the occupation), and the
+    ground each occupies is given to it first; the rest is shared out, each taking what lies nearest its own castle. Returns the new owner of each tile (0 where the loser's land goes to
+    `winner`), or null when `winner` is the only attacker. */
+function spoils(loser: number, winner: number): Uint8Array | null {
+  const M=W.M, takers: number[]=[];
+  for (let a=1;a<M;a++){
+    if (a===loser || !W.nations[a]?.alive) continue;
+    if (a===winner || (W.wars[a*M+loser] && (W.occCount[loser*M+a]>0 || W.kills[a*M+loser]>0))) takers.push(a);
+  }
+  if (takers.length<2) return null;
+  const land: number[]=[]; for (let t=0;t<NT;t++) if (owner[t]===loser) land.push(t);
+  const score=takers.map(a => Math.max(0.0001,warScore(a,loser))), total=score.reduce((x,y) => x+y,0);
+  const exact=score.map(v => land.length*v/total), quota=exact.map(Math.floor);
+  { let rest=land.length-quota.reduce((x,y) => x+y,0);   // (the tiles the rounding leaves go to the biggest fractions)
+    for (const i of takers.map((_,k) => k).sort((x,y) => (exact[y]-quota[y])-(exact[x]-quota[x]) || x-y)){ if (rest<=0) break; quota[i]++; rest--; } }
+  const out=new Uint8Array(NT), got=takers.map(() => 0);
+  // the ground each occupies is its own first, as far as its share goes
+  for (const t of land){ const i=takers.indexOf(occ[t]); if (i>=0 && got[i]<quota[i]){ out[t]=takers[i]; got[i]++; } }
+  // the rest is shared out by nearness to each one's castle: the tiles that lie most clearly nearer one of them first, each to the nearest that still has a share to fill
+  const orig=takers.map(a => originOf(a));
+  const rest=land.filter(t => !out[t]).map(t => {
+    const d=orig.map(([x,y]) => Math.hypot(t%TW+0.5-x,((t/TW)|0)+0.5-y)), sorted=d.slice().sort((x,y) => x-y);
+    return { t, d, regret:sorted[1]-sorted[0] };
+  }).sort((p,q) => q.regret-p.regret || p.t-q.t);
+  for (const r of rest){
+    let bi=-1, bd=Infinity; for (let i=0;i<takers.length;i++) if (got[i]<quota[i] && r.d[i]<bd){ bd=r.d[i]; bi=i; }
+    if (bi>=0){ out[r.t]=takers[bi]; got[bi]++; }
+  }
+  for (const t of land) if (!out[t]) out[t]=winner;
+  return out;
+}
 export function annex(loser: number, winner: number){
   const L=W.nations[loser], cap=L.capTile>=0 ? L.capPlot : -1;
   L.capTile=-1;   // so taking the ground below doesn't count as an ordinary sack
+  const split=spoils(loser,winner);   // (several attackers: the land is shared by their war scores; one: all of it is the winner's)
+  const heir=(t: number) => split ? split[t] || winner : winner;
   for (const h of W.humans){
     if (h.o!==loser) continue;
-    release(h); h.o=winner; h.post=-1; h.site=-1; h.war=-1; h.boat=-1; h.foe=-1; h.aim=-1; h.brave=-1; h.calm=0; h.work=-1;
+    const to=heir(tileOf(h.x,h.y));
+    release(h); h.o=to; h.post=-1; h.site=-1; h.war=-1; h.boat=-1; h.foe=-1; h.aim=-1; h.brave=-1; h.calm=0; h.work=-1;
     h.task=TASK_ROAM; h.path=[]; h.wait=0; h.tx=h.x; h.ty=h.y;
   }
   // buildings change hands before the ground does, so they don't burn
   for (let q=0;q<NP;q++){
     if (pOwner[q]!==loser) continue;
     if (pType[q]===B_CASTLE || pType[q]===B_CPART) continue;
-    if (isStructure(pType[q])){ pOwner[q]=winner; on.plotChanged(q); }
+    if (isStructure(pType[q])){ pOwner[q]=heir(pCenter[q]); on.plotChanged(q); }
   }
   if (cap>=0) for (const k of [cap,cap+1,cap+PW,cap+PW+1]) ignite(k);
   // the loser's armies scatter, and its ships and landings with them; armies sent against it turn for home
@@ -1004,7 +1040,7 @@ export function annex(loser: number, winner: number){
   L.gold=0; L.stock=[0,0,0];
   for (let t=0;t<NT;t++) if (occ[t]===loser) liberate(t);   // what it held of others' land is free again
   for (let o=1;o<W.M;o++){ const i=loser*W.M+o, j=o*W.M+loser; W.ally[i]=W.ally[j]=W.offers[i]=W.offers[j]=W.atWar[i]=W.atWar[j]=W.wars[i]=W.wars[j]=W.aggr[i]=W.aggr[j]=W.lost[i]=W.lost[j]=W.ready[i]=W.ready[j]=0; }
-  for (let t=0;t<NT;t++) if (owner[t]===loser) setOwner(t,winner);   // the last tile eliminates it
+  for (let t=0;t<NT;t++) if (owner[t]===loser) setOwner(t,heir(t));   // the last tile eliminates it
   census();
   on.annexed(loser,winner);
 }
@@ -2007,7 +2043,8 @@ function locked(h: Human, e: Human){
   const pe=partner(e); if (pe && pe!==h) return true;
   const ph=partner(h); return !!ph && ph!==e;
 }
-function strike(h: Human, e: Human){
+export const STRIKE_SWING = 0.15;   // a blow that lands is -15%, 0 or +15% of its damage, at random
+export function strike(h: Human, e: Human){
   if (h.cool>0 || h.beggar) return;   // a beggar strikes no blow: he only stands in the way
   if (locked(h,e)) return;            // (a duel is one on one)
   h.duel=e.id; e.duel=h.id;
@@ -2015,7 +2052,8 @@ function strike(h: Human, e: Human){
   on.swing(h.id,e.id);
   if (W.prand()<HIT_CHANCE){
     const was=e.hp;
-    e.hp-=(h.kind!==H_SOLDIER ? MILITIA_DMG : h.militia ? MILITIA_HIT : HIT_DMG[h.tier])*(revenge(h) ? REVENGE_DMG : 1)*(h.fury ? FURY : 1)*(h.dug ? DIG_BONUS : 1); underFire(e);
+    const roll=1+((W.prand()*3|0)-1)*STRIKE_SWING;   // (each blow that lands hits 15% weaker, as it is, or 15% harder: a little chance in every duel)
+    e.hp-=(h.kind!==H_SOLDIER ? MILITIA_DMG : h.militia ? MILITIA_HIT : HIT_DMG[h.tier])*roll*(revenge(h) ? REVENGE_DMG : 1)*(h.fury ? FURY : 1)*(h.dug ? DIG_BONUS : 1); underFire(e);
     e.by=h.o; if (was>0 && e.hp<=0) W.kills[h.o*W.M+e.o]++;
     on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id);
   }

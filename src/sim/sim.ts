@@ -24,7 +24,7 @@ import { labelWorld, allocIsles, resetNaval, updateNaval, queueShip, colonize } 
 function blankNation(id: number, name: string, hex: string, isPlayer: boolean, code=''): Nation {
   return { id, name, hex, isPlayer, code,
     gold:0, income:0, strength:0, might:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
-    plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, hospitals:0, carpenters:0, jobs:[0,0,0,0,0], unhoused:0, draftAll:false, navals:0, fleet:0, beds:0,
+    plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, hospitals:0, carpenters:0, jobs:[0,0,0,0,0], studying:0, unhoused:0, draftAll:false, navals:0, fleet:0, beds:0,
     sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextCall:0, nextWar:0, nextOffer:0, nextSea:0, nextWave:0, mass:new Map(), waved:new Map(), hungry:0, x0:1e9, y0:1e9, x1:-1, y1:-1, wallR:0, nextWall:0, unpaid:0,
     soldierShare:0, humanProg:0, villagers:0, soldiers:0, militia:0, called:0, wageS:0, wageM:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0,
     study:R_HOUSING, tier:[1,1,1,1,1,1,1], xp:[0,0,0,0,0,0,0] };
@@ -156,7 +156,7 @@ function startReal(b: [number, number], rivals: number | string[], me?: string, 
   const chosen: { country: Country; tile: number }[]=[];
   if (Array.isArray(rivals)){
     // the countries named, at their capitals (those this map has)
-    for (const code of rivals){ const p=caps.find(c => c.country.code===code); if (p && p.country!==mine && !chosen.some(c => c.country===p.country)) chosen.push(p); }
+    for (const code of rivals){ const p=caps.find(c => c.country.code===code) ?? (countryByCode.get(code) ? { country: countryByCode.get(code)!, tile:-1 } : undefined); if (p && p.country!==mine && !chosen.some(c => c.country===p.country)) chosen.push(p); }   // (a country with no capital on this map is founded at a random place)
   } else {
     // the bots' countries: capitals far enough apart, colours distinct, in a shuffled order
     const pool=caps.filter(p => p.country!==mine);
@@ -176,9 +176,10 @@ function startReal(b: [number, number], rivals: number | string[], me?: string, 
     }
   }
   // at random places instead of their capitals (each keeping its own country): anywhere on land with room, or never more than NEAR_FAR of the tiles from another kingdom
-  if (placement!=='real'){
+  if (placement!=='real' || chosen.some(c => c.tile<0)){
     const at: [number, number][]=[[cx,cy]], far=Math.round(TW*NEAR_FAR), minD=Math.max(18,Math.round(TW*0.012));
     for (const c of chosen){
+      if (placement==='real' && c.tile>=0) continue;
       let spot=-1;
       for (let tries=0;tries<4000 && spot<0;tries++){
         let x: number, y: number;

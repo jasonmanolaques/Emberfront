@@ -48,8 +48,8 @@ export const DESERT_TICKS = 30;           // then one deserts every 3 s, the lea
 export const SCRAP_GOLD = 30;             // gold back per tier of a deserter's armour, scrapped
 export const TAX_PER_VILLAGER = 0.1;      // gold a second each villager pays at taxation tier 1 (soldiers pay none); each coin minter adds 10% to the taxes
 export const TAX_PER_TIER = 0.5;          // and what each taxation tier above the first adds to that
-export const LAND_TAX = 0.0004;           // gold a second a kingdom earns for each tile of land it holds (a flat boost for its size: 4 a second for 10,000 tiles)
-export const RUSH_TICKS = 60*GAME_SPEED*10;   // the land rush at the start of a match: the first minute on the clock, when settling unclaimed land costs RUSH_COST of the price
+export const LAND_TAX = 0.0008;           // gold a second a kingdom earns for each tile of land it holds (a flat boost for its size: 8 a second for 10,000 tiles)
+export const RUSH_TICKS = 120*GAME_SPEED*10;   // the land rush at the start of a match: the first two minutes on the clock, when settling unclaimed land costs RUSH_COST of the price
 export const RUSH_COST = 0.5;
 export const GOLD_PER_TILE = 0.36;        // cost of settling one unclaimed tile
 // kingdom strength: what the leaderboard and labels show, and what makes land costly to take

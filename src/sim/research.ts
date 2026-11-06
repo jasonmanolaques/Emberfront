@@ -44,8 +44,9 @@ export function updateResearch(){
     const n=N[i]; if (!n.alive || !n.labs) continue;
     // a finished topic gives way to one that isn't
     if (maxed(n,n.study)){ const next=TOPICS.find(k => !maxed(n,k)); if (next===undefined) continue; n.study=next; }
+    if (!n.studying) continue;   // (a station earns only while its scholar is at its door)
     const t=n.study, need=TIER_XP[t][n.tier[t]]*10;
-    n.xp[t]+=Math.round(n.labs*XP_PER_STATION*TICK*10);   // tenths of a point, so the sums stay exact
+    n.xp[t]+=Math.round(Math.min(n.labs,n.studying)*XP_PER_STATION*TICK*10);   // tenths of a point, so the sums stay exact
     if (n.xp[t]>=need){
       n.xp[t]-=need; n.tier[t]++;
       if (maxed(n,t)) n.xp[t]=0;

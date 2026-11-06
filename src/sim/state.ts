@@ -13,7 +13,7 @@ export interface Nation {
   tiles: number; alive: boolean; capTile: number; capPlot: number;
   plots: number[]; blds: number[]; bCount: number;
   houses: number; farms: number; towers: number; mines: number; barracks: number; minters: number;
-  plantations: number; quarries: number; copperMines: number; labs: number; guilds: number; smithies: number; hospitals: number; carpenters: number; navals: number; jobs: number[]; unhoused: number; draftAll: boolean;   // labs: research stations; navals: naval bases
+  plantations: number; quarries: number; copperMines: number; labs: number; guilds: number; smithies: number; hospitals: number; carpenters: number; navals: number; jobs: number[]; studying: number; unhoused: number; draftAll: boolean;   // labs: research stations; navals: naval bases
   fleet: number;                     // ships docked and ready (any naval base's: they are the kingdom's)
   beds: number;                      // people the houses can hold: a hovel 1, a stone house 2, a manor 3
   sumX: number; sumY: number; ltx: number; lty: number; peak: number;   // ltx/lty: where the kingdom's label sits

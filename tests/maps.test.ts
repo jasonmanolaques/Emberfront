@@ -188,6 +188,16 @@ describe('countries', () => {
     expect(W.nations.length-1).toBe(16);
   });
 
+  it('lets a country with no capital on the map play there all the same, founded at a random place', () => {
+    newWorld(5,'europe-s');
+    const on=new Set(capitalsOn('europe-s').map(c => c.country.code)), away=COUNTRIES.find(k => !on.has(k.code))!;
+    expect(away).toBeDefined();
+    const all=capitalsOn('europe-s'), me=all.find(c => c.country.code==='DE')!;
+    expect(startMatch(me.tile,[away.code,'FR','IT'],'DE')).toBe(true);
+    const n=W.nations.find(k => k.code===away.code)!;
+    expect(n).toBeDefined(); expect(n.alive).toBe(true); expect(n.capTile).toBeGreaterThanOrEqual(0);
+  });
+
   it('can found the rivals at random places, or at random places that keep near each other, each still its own country', () => {
     const run=(placement: 'real' | 'random' | 'near') => {
       newWorld(5,'europe-s');

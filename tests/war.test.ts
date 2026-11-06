@@ -16,6 +16,7 @@ import { UNIT_SIZE, buildUnits, station, unitAt, units, groupKeys, mergeArmies, 
 import { wallOf, walledFor, buildWalls } from '../src/sim/defense';
 import { callable, partner, warringNow, besieged, siegeLocked, allied, atWar, available, ready, declare, warProblem, mayStand, endWar, makePeace, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
   RANKS, rankFor, PEACE_MARCH, DIG_TICKS, invadeSpeed, INVADE_EMPTY, assignArmy, assignProblem, armyProblem, frontInfo, bordersOf, freeArmy, CRISIS_TICKS, frontKey, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, defendProblem, reservesOf, reservesProblem, menOn, deployArmies, armyOrder, armyFront, armyRecall, frontIsles, occOn, attacks, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, frontLines, marchPace, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
+import { annex } from '../src/sim/war';
 import { navalPlan, declareNaval, navalOf, landingOn } from '../src/sim/war';
 import { botSea, navalAttack, seaDrive } from '../src/sim/botsea';
 import { basesOf, dockTile, labelWorld, allocIsles, landingZone, SHIP_CAP, SHIP_FRONT, INV_SAIL, INV_READY, INV_LAND, INV_DONE, shipById } from '../src/sim/naval';
@@ -907,6 +908,48 @@ describe('watchtowers on occupied ground', () => {
     giveWord(1,2);
     for (let i=0;i<1500;i++){ for (const h of men) if (h.hp>0) h.hp=1000; for (const k of [q,q2]) pHp[k]=-1e6; tick(); }
     expect(walled.filter(t => occ[t]===1).length).toBeGreaterThan(walled.length/2);
+  });
+});
+
+describe('the spoils of a fallen kingdom', () => {
+  const M = () => W.M;
+  /** Kingdom 3 on a disc of land, at war with 1 and 2, who killed and lost men fighting it. */
+  function fallen(){
+    world(2); quiet(); N(3).stock=[0,0,0]; paintDisc(N(3),14);
+    for (const a of [1,2]){ W.wars[a*M()+3]=W.wars[3*M()+a]=1; W.atWar[a*M()+3]=W.atWar[3*M()+a]=1; }
+  }
+  const count = (o: number) => { let k=0; for (let t=0;t<NT;t++) if (owner[t]===o) k++; return k; };
+
+  it('is shared by the war scores of its attackers (1 a kill, half a point a loss), whoever broke the castle', () => {
+    fallen();
+    W.kills[1*M()+3]=10; W.kills[3*M()+1]=0;     // score 10
+    W.kills[2*M()+3]=20; W.kills[3*M()+2]=20;    // score 30
+    const own1=count(1), own2=count(2), land=count(3);
+    annex(3,1);   // (1's army broke the castle: but 2 did more)
+    const got1=count(1)-own1, got2=count(2)-own2;
+    expect(got1+got2).toBe(land);
+    expect(Math.abs(got1-land*0.25)).toBeLessThanOrEqual(1);
+    expect(Math.abs(got2-land*0.75)).toBeLessThanOrEqual(1);
+    expect(count(3)).toBe(0);
+  });
+
+  it('gives each the ground it occupies first, then shares out the rest by nearness', () => {
+    fallen();
+    W.kills[1*M()+3]=20; W.kills[2*M()+3]=20;     // equal scores: half each
+    const mine: number[]=[];
+    for (let t=0;t<NT && mine.length<60;t++) if (owner[t]===3 && !underCastle(3,t)){ occupyHack(t,1); mine.push(t); }
+    annex(3,2);
+    expect(mine.every(t => owner[t]===1)).toBe(true);   // (every one of the ground 1 held is 1's)
+    expect(count(1)).toBeGreaterThan(mine.length);        // (and it has its half, more than it held)
+    expect(count(3)).toBe(0);
+  });
+
+  it('goes whole to the one attacker when there is only one', () => {
+    fallen();
+    W.wars[2*M()+3]=W.wars[3*M()+2]=0;
+    const land=count(3), own=count(1);
+    annex(3,1);
+    expect(count(1)-own).toBe(land);
   });
 });
 

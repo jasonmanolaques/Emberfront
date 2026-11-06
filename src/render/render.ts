@@ -3,7 +3,7 @@
    is screen pixels per render pixel. Close in, the map is drawn from the tiles of its picture
    (render/tiles.ts), a few made each frame, those nearest the middle of the screen first; far
    out (a map tile under DETAIL_CSS screen pixels), from the overview, one pixel a map tile. */
-import { TW, TH, RW, RH, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY, B_HOSPITAL, B_NAVAL } from '../core/constants';
+import { TW, TH, RW, RH, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY, B_HOSPITAL, B_RESEARCH, B_NAVAL } from '../core/constants';
 import { clamp, fmt } from '../core/util';
 import { W, owner, isLand, sea, pType, pTimer, pBurn, type Human } from '../sim/state';
 import { findBlock } from '../sim/sim';
@@ -235,6 +235,19 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
         continue;
       }
       if (p.task===TASK_FIX_GO){ box(bx,fy-11,4,2,'#bdb6aa'); ctx.fillStyle='#d6d1c5'; ctx.fillRect(bx,fy-11,4,1); continue; }   // a dressed stone for the job
+    }
+    // scholars are wizards: a pointed hat with a star, a long purple robe and a white beard, a staff with a glowing orb at the station
+    if (p.work>=0 && pType[p.work]===B_RESEARCH){
+      ctx.fillStyle=INK; ctx.fillRect(bx-1,fy-9,6,2);
+      ctx.fillStyle='#3a2c78'; ctx.fillRect(bx-1,fy-8,6,1); ctx.fillRect(bx,fy-10,4,1); ctx.fillRect(bx+1,fy-11,2,1); ctx.fillRect(bx+1,fy-12,1,1);
+      ctx.fillStyle='#f2d27a'; ctx.fillRect(bx+2,fy-10,1,1);
+      ctx.fillStyle='#4b3a8f'; ctx.fillRect(bx,fy-5,4,4); ctx.fillStyle='#34276a'; ctx.fillRect(bx,fy-2,4,1);
+      ctx.fillStyle='#e8e6df'; ctx.fillRect(bx+1,fy-6,2,2);
+      const tx=left ? bx-2 : bx+4, glow=reduceMotion ? 0 : ((now/400+p.id)|0)&1;
+      ctx.fillStyle=INK; ctx.fillRect(tx-1,fy-10,3,10);
+      ctx.fillStyle='#7a5634'; ctx.fillRect(tx,fy-8,1,8);
+      ctx.fillStyle=glow ? '#d8f2ff' : '#7fd0ff'; ctx.fillRect(tx,fy-10,1,2);
+      continue;
     }
     // working: a tool swings beside them
     if (p.task===TASK_HOME_BUILD){

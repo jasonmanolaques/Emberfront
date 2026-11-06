@@ -67,17 +67,20 @@ describe('research stations', () => {
   });
 });
 
+/** Runs until k scholars are at their stations' doors (the points are earned only there), then clears what was earned meanwhile. */
+function staffed(k: number){ for (let i=0;i<6000 && me().studying<k;i++) tick(); expect(me().studying).toBe(k); me().xp.fill(0); }
+
 describe('research', () => {
   it('earns a point a second per station, for housing first, and goes up a tier at 400 then 800', () => {
     start(12345); run(20);
     expect(me().study).toBe(R_HOUSING);
     expect(me().tier).toEqual([1,1,1,1,1,1,1]);
     run(100); expect(me().xp).toEqual([0,0,0,0,0,0,0]);   // nothing without a station
-    place(B_RESEARCH); run(100);                // 10 s
+    place(B_RESEARCH); staffed(1); run(100);    // 10 s
     expect(me().xp[R_HOUSING]).toBe(100);       // 10 points, in tenths
-    place(B_RESEARCH); run(100);                // two stations: twice as fast
-    expect(me().xp[R_HOUSING]).toBe(300);
-    run(1845); expect(me().tier[R_HOUSING]).toBe(1);   // 400 points at two stations: 3700 tenths to go at 2 a tick
+    place(B_RESEARCH); staffed(2); run(100);    // two stations: twice as fast
+    expect(me().xp[R_HOUSING]).toBe(200);
+    run(1895); expect(me().tier[R_HOUSING]).toBe(1);   // 400 points at two stations: 3800 tenths to go at 2 a tick
     run(10); expect(me().tier[R_HOUSING]).toBe(2); expect(me().xp[R_HOUSING]).toBeLessThan(30);
     expect(TIER_XP[R_HOUSING][2]).toBe(800);
   });
@@ -85,7 +88,7 @@ describe('research', () => {
   it('takes 400 points for infantry tier 2 and 800 more for tier 3', () => {
     expect(TIER_XP[R_INFANTRY].slice(1)).toEqual([400,800]);
     start(12345); run(20);
-    me().study=R_INFANTRY; place(B_RESEARCH); place(B_RESEARCH);   // 2 points a second
+    me().study=R_INFANTRY; place(B_RESEARCH); place(B_RESEARCH); staffed(2);   // 2 points a second
     run(1999); expect(me().tier[R_INFANTRY]).toBe(1);
     run(1);   expect(me().tier[R_INFANTRY]).toBe(2);
     run(4000); expect(me().tier[R_INFANTRY]).toBe(3);
@@ -93,7 +96,7 @@ describe('research', () => {
 
   it('studies one topic at a time and keeps what the other has learned', () => {
     start(12345); run(20);
-    place(B_RESEARCH); run(200);
+    place(B_RESEARCH); staffed(1); run(200);
     queueCommand({ type:'research', nation:1, topic:R_TAXES }); run(100);
     expect(me().xp).toEqual([200,100,0,0,0,0,0]);
     queueCommand({ type:'research', nation:1, topic:R_HOUSING }); run(1);

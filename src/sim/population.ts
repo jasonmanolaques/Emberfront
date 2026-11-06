@@ -62,7 +62,8 @@ export const TASK_ROAM = 0,      // between jobs: villagers think or stroll betw
              TASK_REST_GO = 15,      // villagers with nothing to do: walking home to rest
              TASK_REST = 16,         // resting inside a house, out of sight
              TASK_BOAT = 17,         // a soldier of a naval invasion aboard a ship (out of sight), or on his way home by sea
-             TASK_SUPPLY = 22;       // a carpenter or builder walking back to his workshop for materials after a job
+             TASK_SUPPLY = 22,       // a carpenter or builder walking back to his workshop for materials after a job
+             TASK_STUDY = 23;        // a scholar at his research station's door (while he is there, the station earns its points)
 export const HUMAN_EVERY = 200;  // progress per new human: 200 ticks (20 s), each farm adds 3% speed
 export const FARM_BONUS = 0.03;
 /** Beds in n's houses that nobody needs: its capacity less its people (none when everyone is housed or more). */
@@ -116,12 +117,12 @@ export const frontOf = (q: number): [number, number] => [(q%PW)*8+4, ((q/PW)|0)*
 export const pace = (h: Human) => { const t=tileOf(h.x,h.y); return !isLand[t] ? h.sp*FERRY_PACE : h.kind===H_SOLDIER && owner[t]===h.o ? h.sp*HOME_PACE : h.sp; };   // (a villager on a sea lane is in a boat: quicker)
 const standing = (q: number, type: number, id: number) => pType[q]===type && pOwner[q]===id && pBurn[q]<=0;
 /** Does the barracks (or castle) h is training at still stand? */
-const siteStands = (h: Human) => { const n=W.nations[h.o]; return h.site>=0 && (standing(h.site,B_BARRACKS,h.o) || (h.site===n.capPlot && n.capTile>=0)); };
+const siteStands = (h: Human) => { const n=W.nations[h.o]; return h.site>=0 && ((standing(h.site,B_BARRACKS,h.o) && !occ[pCenter[h.site]]) || (h.site===n.capPlot && n.capTile>=0)); };
 /** Is h a militiaman at home, free to be called up or to train as a soldier? */
 /** Militia at home (resting in their houses, or out and about): those a call-up would send. */
 export const homeMilitia = (h: Human) => h.kind===H_SOLDIER && h.militia && h.war<0 && h.hp>0 && !switching(h);
 /** The kingdom's barracks, by plot. */
-export const barracksOf = (n: Nation) => n.blds.filter(q => standing(q,B_BARRACKS,n.id));
+export const barracksOf = (n: Nation) => n.blds.filter(q => standing(q,B_BARRACKS,n.id) && !occ[pCenter[q]]);   // (one on ground the enemy occupies works no more: its soldiers are stationed in the next, or serve as militia, and recruits go to the next barracks or the castle)
 function nearestPlot(plots: number[], x: number, y: number){
   let best=-1, bd=Infinity;
   for (const q of plots){ const [fx,fy]=frontOf(q), d=(fx-x)**2+(fy-y)**2; if (d<bd || (d===bd && q<best)){ bd=d; best=q; } }
@@ -261,6 +262,16 @@ function goCarpenter(h: Human){
   if (!n.plots.length || (k && n.beds>=Math.max(20,k.people*3))) return false;
   return goBuildHome(h);
 }
+/** A scholar goes to the door of his research station and stays there: that is where the station's points are earned. */
+function goStudy(h: Human){
+  const [x,y]=frontOf(h.work);
+  if (Math.hypot(x-h.x,y-h.y)<2){ h.task=TASK_STUDY; h.path=[]; h.wait=lookAgain(); return true; }
+  h.tx=x; h.ty=y; h.task=TASK_STUDY; h.wait=0;
+  if (!(route(h,true) || routeField(h,x,y))) route(h);   // (no safe way: he walks the straight one, as a villager called to the barracks does)
+  return true;
+}
+/** Is villager h a scholar at his station, studying? */
+export const studying = (h: Human) => h.kind===H_VILLAGER && !h.beggar && h.work>=0 && pType[h.work]===B_RESEARCH && h.task===TASK_STUDY && Math.hypot(frontOf(h.work)[0]-h.x,frontOf(h.work)[1]-h.y)<2;
 /** A carpenter or builder who has finished a job walks back to his workshop for the materials of the next one: the further he worked from it, the longer the wait. */
 function resupply(h: Human){
   const w=h.work;
@@ -279,7 +290,7 @@ function think(h: Human){
   release(h); h.task=TASK_ROAM;
   if (h.beggar){ roamTarget(h); return; }   // beggars just drift about town
   if (h.work>=0 && h.kind===H_VILLAGER && pType[h.work]===B_HOSPITAL){ h.dest=-1; h.task=TASK_DOC_BACK; h.path=[]; h.wait=0; return; }   // a doctor: to the hospital, and inside
-  if (h.work>=0 && h.kind===H_VILLAGER){ if (!(pType[h.work]===B_CARPENTER ? goCarpenter(h) : pType[h.work]===B_SMITHY ? goForge(h) : pType[h.work]===B_RESEARCH ? false : goImprove(h))) roamTarget(h); return; }   // builders and smiths work, or wait at their workshop
+  if (h.work>=0 && h.kind===H_VILLAGER){ if (!(pType[h.work]===B_CARPENTER ? goCarpenter(h) : pType[h.work]===B_SMITHY ? goForge(h) : pType[h.work]===B_RESEARCH ? goStudy(h) : goImprove(h))) roamTarget(h); return; }   // builders and smiths work, or wait at their workshop
   if (h.kind===H_VILLAGER && needsHome(n) && goBuildHome(h)) return;
   if (h.kind!==H_VILLAGER){ roamTarget(h); return; }
   if (h.housed && goRest(h,was)) return;   // nothing to do: home to rest (if he has one)
@@ -875,12 +886,13 @@ export function updatePopulation(){
   for (const h of H) if (h.war>=0) marchStep(h); else step(h);
   spread();   // fighters keep a little room between them
   // headcount after everyone has moved, so it matches what is on the map this tick
-  for (const n of N){ n.villagers=0; n.soldiers=0; n.militia=0; n.called=0; n.wageS=0; n.wageM=0; n.training=0; n.beggars=0; n.homeless=0; n.unhoused=0; n.taxpayers=0; n.might=0; n.jobs[0]=n.jobs[1]=n.jobs[2]=n.jobs[3]=n.jobs[4]=0; }
+  for (const n of N){ n.villagers=0; n.soldiers=0; n.militia=0; n.called=0; n.wageS=0; n.wageM=0; n.training=0; n.beggars=0; n.homeless=0; n.unhoused=0; n.taxpayers=0; n.might=0; n.jobs[0]=n.jobs[1]=n.jobs[2]=n.jobs[3]=n.jobs[4]=0; n.studying=0; }
   for (const h of H){
     const n=N[h.o];
     if (h.kind===H_SOLDIER){ n.soldiers++; if (h.militia){ n.militia++; n.might+=STR_MILITIA; if (h.war>=0) n.called++; n.wageM+=wageOf(h); } else { n.wageS+=wageOf(h); n.might+=STR_SOLDIER[h.tier] ?? STR_SOLDIER[1]; } } else if (h.beggar) n.beggars++; else { n.villagers++; n.might+=STR_VILLAGER; if (h.housed) n.taxpayers++; }
     if (!h.housed && !(h.home>=0 && h.kind===H_VILLAGER && !h.beggar)){ n.homeless++; if (h.homeless>=100) n.unhoused++; }   // (one on his way to build himself a home is not homeless yet; the screen counts only those without one for 10 seconds)
     if (h.kind===H_VILLAGER && !h.beggar && h.work>=0){ const t=pType[h.work]; n.jobs[t===B_GUILD ? 0 : t===B_SMITHY ? 1 : t===B_HOSPITAL ? 2 : t===B_RESEARCH ? 4 : 3]++; }
+    if (studying(h)) n.studying++;
     if (switching(h)) n.training++;
   }
 }

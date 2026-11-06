@@ -15,8 +15,11 @@ import { $ } from './dom';
 const win=$('nations'), list=$('nList'), search=$('nSearch') as HTMLInputElement;
 const real = () => W.map!=='gen';
 
-/** The countries that can play on this map, with their capital's tile (-1 on a generated map). */
-export function available(){ return real() ? capitalsOn(W.map) : COUNTRIES.map(country => ({ country, tile:-1 })); }
+/** The countries that can play on this map: all of them, with their capital's tile where it lies on a real-world map (-1 for those with none there, and on a generated map: they are founded at random places). */
+export function available(){
+  const caps=real() ? new Map(capitalsOn(W.map).map(a => [a.country.code,a.tile])) : null;
+  return COUNTRIES.map(country => ({ country, tile: caps?.get(country.code) ?? -1 }));
+}
 
 const maxKingdoms = () => kingdomLimit(W.map);   // (30 on Europe: you and 29 at random)
 const maxRivals = () => maxKingdoms()-1;
@@ -28,8 +31,8 @@ function quick(kind: string, k=0): string[] {
   if (kind==='full') return av.map(a => a.country.code).sort(() => Math.random()-0.5).slice(0,maxRivals());
   const mine=available().find(a => a.country.code===client.me);
   if (real() && mine){
-    const d=(t: number) => Math.hypot(t%TW-mine.tile%TW, ((t/TW)|0)-((mine.tile/TW)|0));
-    return av.sort((a,b) => d(a.tile)-d(b.tile)).slice(0,k).map(a => a.country.code);
+    const d=(t: number) => t<0 || mine.tile<0 ? Infinity : Math.hypot(t%TW-mine.tile%TW, ((t/TW)|0)-((mine.tile/TW)|0));
+    return av.sort((a,b) => d(a.tile)-d(b.tile) || a.country.code.localeCompare(b.country.code)).slice(0,k).map(a => a.country.code);
   }
   return av.map(a => a.country.code).sort(() => Math.random()-0.5).slice(0,k);
 }
@@ -84,7 +87,7 @@ function render(){
   }).join('') || '<li class="none">No country by that name on this map</li>';
   $('nCount').textContent=`${client.rivals.length} rival${client.rivals.length===1?'':'s'} · ${client.rivals.length+1} of ${maxKingdoms()} kingdoms`;
   $('nHint').textContent = real()
-    ? 'Click a country to play it: you start at its real capital. Tick the countries you will face: each is founded at its own capital.'
+    ? 'Click a country to play it: you start at its real capital (a country with none on this map, where you choose). Tick the countries you will face: each is founded at its own capital, or at a random place if it has none on this map.'
     : 'Click a country to play it: you choose where to found it. Tick the countries you will face: they are founded around the map.';
   $('nPlace').hidden=!real();
   for (const b of $('nPlace').querySelectorAll<HTMLButtonElement>('button')) b.setAttribute('aria-pressed',String(b.dataset.p===client.placement));
