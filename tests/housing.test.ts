@@ -6,7 +6,9 @@ import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { build, plotProblem, cancelSite } from '../src/sim/buildings';
 import { humanRate, houseBonus, FARM_BONUS, H_VILLAGER, H_SOLDIER, TASK_ROAM, TASK_HOME_GO, TASK_HOME_BUILD, BUILD_TICKS, ABANDON_TICKS, BEG_TICKS, STARVE_TICKS } from '../src/sim/population';
 import { listen } from '../src/sim/events';
-import { B_BARRACKS } from '../src/core/constants';
+import { B_BARRACKS, B_CARPENTER, B_NAVAL } from '../src/core/constants';
+import { costFor, structureOf } from '../src/sim/buildings';
+import { CARPENT_TICKS } from '../src/sim/population';
 
 const me = () => W.nations[1];
 const mine = () => W.humans.filter(h => h.o === 1);
@@ -247,5 +249,38 @@ describe('empty houses speed up the raising of people', () => {
     const next = (beds: number) => { start(12345,0); me().farms=0; me().humanProg=0; let t=0, was=0;
       while (t<5000){ me().beds=beds; was=me().humanProg; tick(); t++; if (me().humanProg<was) break; } return t; };
     expect(next(100)).toBeLessThan(next(0)*0.7);
+  });
+});
+
+describe('carpenters', () => {
+  it('cost 50 wood, 20 stone and 5 copper, take a villager as their carpenter, and put up a free hovel in 20 seconds, then another', () => {
+    start(12345, 0); expand(6); until(() => houses().length>=6 && mine().length>=12);
+    expect(structureOf(B_CARPENTER)!.cost).toEqual([50,20,5]);
+    expect(CARPENT_TICKS).toBe(400);
+    const plots=me().plots.filter(q => !plotProblem(me(),q));
+    me().stock=[100,100,100]; expect(build(me(),plots[0],B_CARPENTER)).toBe(true);
+    const spent=[...me().stock];
+    expect(spent).toEqual([50,80,95]);
+    run(5);
+    const c=mine().find(h => h.work>=0 && pType[h.work]===B_CARPENTER)!;
+    expect(c).toBeDefined();
+    me().humanProg=-1e9;   // nobody new: the kingdom stays as it is
+    const before=houses().length;
+    // he walks to a site, works for 20 seconds, and the house goes up: nothing taken from the stockpile
+    until(() => c.task===TASK_HOME_BUILD, 800);
+    const site=c.home;
+    run(CARPENT_TICKS-5); expect(pType[site]).toBe(B_SITE);
+    run(10); expect(pType[site]).toBe(B_HOUSE);
+    expect(houses().length).toBeGreaterThanOrEqual(before+1);
+    expect(me().stock).toEqual(spent);
+    until(() => c.home>=0 && c.home!==site, 2500);   // and on to the next site
+  });
+  it('make the next barracks, blacksmith and naval base dearer: 5%, 5% and 10% each', () => {
+    start(12345, 0);
+    const base=(t: number) => structureOf(t)!.cost;
+    expect(costFor(me(),structureOf(B_BARRACKS)!)).toEqual(base(B_BARRACKS));
+    me().barracks=2; expect(costFor(me(),structureOf(B_BARRACKS)!)).toEqual(base(B_BARRACKS).map(c => c ? Math.ceil(c*1.1-1e-9) : 0));
+    me().navals=3; expect(costFor(me(),structureOf(B_NAVAL)!)).toEqual(base(B_NAVAL).map(c => c ? Math.ceil(c*1.3-1e-9) : 0));
+    me().navals=0; me().barracks=0;
   });
 });

@@ -32,7 +32,7 @@
    to the barracks that needs it most nearly (sim/army.ts says which armour each one wants).
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, until the kingdom sends them to war (sim/war.ts). */
-import { STR_VILLAGER, STR_MILITIA, STR_SOLDIER, TW, TH, PW, PH, TICK, GAME_SPEED, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY, B_HOSPITAL } from '../core/constants';
+import { STR_VILLAGER, STR_MILITIA, STR_SOLDIER, TW, TH, PW, PH, TICK, GAME_SPEED, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER } from '../core/constants';
 import { W, owner, occ, isLand, ferry, pType, pOwner, pBurn, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, pSpan, type Human, type Nation } from './state';
 import { homeScore, startSite, cancelSite, finishHouse, plotProblem } from './buildings';
 import { on } from './events';
@@ -80,6 +80,7 @@ export const TOWER_RANGE = 32;   // pixels a watchtower can shoot
 const WALK_EVERY = 100;          // ticks between a kingdom's walking fields being worked out again (10 s)
 const LOOK_TICKS = 100;          // a villager with nothing to do looks for work again every 10 to 12 seconds
 const lookAgain = () => (LOOK_TICKS+W.prand()*20)|0;
+export const CARPENT_TICKS = 20*GAME_SPEED*10;   // ticks a carpenter takes over one hovel: 20 seconds on the clock
 export const BUILD_TICKS = 40;   // ticks to put up a house (4 s)
 export const BEG_TICKS = 600;    // ticks homeless before a villager turns beggar (60 s)
 export const STARVE_TICKS = 900; // ticks homeless before a beggar dies of want (90 s)
@@ -245,13 +246,19 @@ function goBuildHome(h: Human){
   return false;
 }
 
+/** A carpenter sets off to put up one more hovel, for nothing: wherever there is room, while the kingdom has fewer than three beds for each of its people. */
+function goCarpenter(h: Human){
+  const n=W.nations[h.o], k=housing[h.o];
+  if (!n.plots.length || (k && n.beds>=Math.max(20,k.people*3))) return false;
+  return goBuildHome(h);
+}
 /** A villager between jobs decides what to do next: first a roof over everyone's head, then work. */
 function think(h: Human){
   const n=W.nations[h.o], was=h.rest;
   release(h); h.task=TASK_ROAM;
   if (h.beggar){ roamTarget(h); return; }   // beggars just drift about town
   if (h.work>=0 && h.kind===H_VILLAGER && pType[h.work]===B_HOSPITAL){ h.dest=-1; h.task=TASK_DOC_BACK; h.path=[]; h.wait=0; return; }   // a doctor: to the hospital, and inside
-  if (h.work>=0 && h.kind===H_VILLAGER){ if (!(pType[h.work]===B_SMITHY ? goForge(h) : goImprove(h))) roamTarget(h); return; }   // builders and smiths work, or wait at their workshop
+  if (h.work>=0 && h.kind===H_VILLAGER){ if (!(pType[h.work]===B_CARPENTER ? goCarpenter(h) : pType[h.work]===B_SMITHY ? goForge(h) : goImprove(h))) roamTarget(h); return; }   // builders and smiths work, or wait at their workshop
   if (h.kind===H_VILLAGER && needsHome(n) && goBuildHome(h)) return;
   if (h.kind!==H_VILLAGER){ roamTarget(h); return; }
   if (h.housed && goRest(h,was)) return;   // nothing to do: home to rest (if he has one)
@@ -304,7 +311,7 @@ function fillWalk(n: Nation, w: Walk){
   // apart: then, and only for ground the first round could not reach, people pass through the castle
   // (its back gate), rather than a smith or a builder being cut off from half the town
   through=true;
-  const q=n.capPlot, cx0=((q%PW)*8/2|0)-1, cy0=(((q/PW)|0)*8/2|0)-1;
+  const from=tail, q=n.capPlot, cx0=((q%PW)*8/2|0)-1, cy0=(((q/PW)|0)*8/2|0)-1;
   for (let ty=cy0;ty<=cy0+10;ty++) for (let tx=cx0;tx<=cx0+10;tx++){   // (the wall tiles with ground the first round reached beside them)
     const k=ty*TW+tx, i=f.idx(k); if (i<0 || f.d[i]>=0 || !wall(k) || !mine(k)) continue;
     let best=-1;
@@ -312,6 +319,9 @@ function fillWalk(n: Nation, w: Walk){
     if (best>=0){ f.d[i]=best+1; queue[tail++]=k; }
   }
   flood();
+  // (only a real stretch of the kingdom cut off by the castle is worth it: a few stray tiles beside the walls are not, and nobody crosses the castle for them)
+  let beyond=0; for (let i=from;i<tail;i++) if (!wall(queue[i])) beyond++;
+  if (beyond<30) for (let i=from;i<tail;i++) f.d[f.idx(queue[i])]=-1;
 }
 /** The tiles from t down the field to the gate, or null if the field doesn't reach t. */
 function descent(f: Field, t: number){
@@ -409,7 +419,10 @@ function sendToTrain(h: Human, b: number, to: number){
   const n=W.nations[h.o], [x,y]=pType[b]===B_CASTLE ? doorOf(n) : frontOf(b), was=[h.task,h.tx,h.ty,h.wait] as const, path=h.path;
   h.task=TASK_TO_TRAIN; h.tx=x; h.ty=y;
   const picky=h.kind===H_SOLDIER && !h.militia;   // (militia go the way villagers do)
-  if (!route(h,picky) && picky){ [h.task,h.tx,h.ty,h.wait]=was; h.path=path; return false; }   // a soldier out on patrol can wait for a better moment
+  if (!(route(h,true) || routeField(h,x,y))){   // (round the walls by the way that is clear, else by the walking field; only then, for a villager, across them)
+    if (picky){ [h.task,h.tx,h.ty,h.wait]=was; h.path=path; return false; }   // a soldier out on patrol can wait for a better moment
+    route(h);
+  }
   release(h); h.post=-1; h.site=b; h.to=to; h.wait=0;
   return true;
 }
@@ -598,14 +611,14 @@ function improve(n: Nation, q: number){
 }
 /** Every builders guild has one builder and every blacksmith one smith. A workshop without its
     worker takes the villager nearest it, straight away when it is new, a while after he fell. */
-const workshop = (q: number, id: number) => standing(q,B_GUILD,id) || standing(q,B_SMITHY,id) || hospitalStands(q,id);
+const workshop = (q: number, id: number) => standing(q,B_GUILD,id) || standing(q,B_SMITHY,id) || standing(q,B_CARPENTER,id) || hospitalStands(q,id);
 const slots = (q: number) => pType[q]===B_HOSPITAL ? 2 : pType[q]===B_SMITHY ? [1,2,4][pSpan[q]] ?? 1 : 1;   // a hospital has two doctors; blacksmiths side by side join into one that is only drawn bigger: each plot of it has its own smith
 function staffGuilds(n: Nation, mine: Human[]){
   const staffed=new Map<number, number>();
   for (const h of mine){
     if (h.work<0) continue;
     if (!workshop(h.work,n.id) || h.kind!==H_VILLAGER || h.beggar || (staffed.get(h.work) ?? 0)>=slots(h.work)){
-      const busy=h.fix>=0 || h.make>0 || h.load>0 || isDoctorTask(h.task);
+      const busy=h.fix>=0 || h.make>0 || h.load>0 || h.home>=0 || isDoctorTask(h.task);
       h.work=-1; h.load=0; h.make=0; h.dest=-1; if (busy) backToRoam(h); continue;   // whatever he carried is lost
     }
     staffed.set(h.work,(staffed.get(h.work) ?? 0)+1);
@@ -738,7 +751,7 @@ function step(h: Human){
   if (d<0.6){
     h.x=gx; h.y=gy;
     if (h.task===TASK_TO_TRAIN){ h.task=TASK_INSIDE; h.wait=TRAIN_TICKS; return; }
-    if (h.task===TASK_HOME_GO){ h.task=TASK_HOME_BUILD; h.wait=BUILD_TICKS; return; }
+    if (h.task===TASK_HOME_GO){ h.task=TASK_HOME_BUILD; h.wait=h.work>=0 && pType[h.work]===B_CARPENTER ? CARPENT_TICKS : BUILD_TICKS; return; }
     if (h.task===TASK_FIX_GO){ h.task=TASK_FIX; h.wait=FIX_TICKS(pTier[h.fix]); return; }
     if (h.task===TASK_SMITH_FETCH){
       if (n.stock[2]>=ARMOR_COPPER){ n.stock[2]-=ARMOR_COPPER; h.load=1; } else h.make=0;   // no copper in store: the job is off
@@ -794,7 +807,7 @@ export function updatePopulation(){
     if (!N[h.o].alive || (!doc && !mayStand(h,owner[tileOf(h.x,h.y)])) || h.hp<=0){
       const hurt=h.hp<=0 && N[h.o].alive && wound(h);   // (with field medics, some who fall are only wounded: no blood, and a cross)
       if (h.hp<=0 && N[h.o].alive && !hurt) on.died(h.x,h.y,h.o,h.id,h.kind===H_SOLDIER ? 1 : h.beggar ? 2 : 0,h.militia ? 0 : h.tier,h.beggar && h.homeless>=STARVE_TICKS);   // they drop where they fell
-      if (h.work>=0 && (pType[h.work]===B_GUILD || pType[h.work]===B_SMITHY || pType[h.work]===B_HOSPITAL)) pTimer[h.work]=REHIRE_TICKS+1;   // the workshop waits a while for a new hand
+      if (h.work>=0 && (pType[h.work]===B_GUILD || pType[h.work]===B_SMITHY || pType[h.work]===B_CARPENTER || pType[h.work]===B_HOSPITAL)) pTimer[h.work]=REHIRE_TICKS+1;   // the workshop waits a while for a new hand
       release(h); H[i]=H[H.length-1]; H.pop();
     }
   }

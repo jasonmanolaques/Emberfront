@@ -25,8 +25,8 @@ img{max-width:100%}
   --coin:#ffd23f;
   --good:#8fe39b;
   --bad:#ff7562;
-  --f-ui:"Pixelify Sans", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  --f-tag:"Silkscreen", ui-monospace, Menlo, Consolas, monospace;
+  --f-ui:"Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif;
+  --f-tag:"Barlow Condensed", "Segoe UI", system-ui, sans-serif;
   color-scheme:dark;
 }
 html{height:100%;box-sizing:border-box;background:var(--sea)}

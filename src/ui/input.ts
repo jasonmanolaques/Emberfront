@@ -30,7 +30,7 @@ function updateTip(e: PointerEvent){
   const t=hover.tile, o=owner[t], tr=terr[t], landCount=W.landCount;
   let l1, l2;
   if (o){ const n=W.nations[o]; l1=n.name+(n.isPlayer?' (you)':''); l2=`Strength ${fmt(n.strength)} · ${(n.tiles/landCount*100).toFixed(1)}% of land`; }
-  else { l1='Unclaimed land'; l2=hasLandOn(PLAYER,t) ? '0.4 gold a tile to settle' : 'No land of yours here: settle it by sea (needs a naval base and a ship)'; }
+  else { l1='Unclaimed land'; l2=hasLandOn(PLAYER,t) ? '0.36 gold a tile to settle' : 'No land of yours here: settle it by sea (needs a naval base and a ship)'; }
   let l3=TNAME[tr]+(!o && TMULT[tr]>1.05?` · settles ×${+TMULT[tr].toFixed(2)} slower`:'');
   if (o && o!==PLAYER) l3+=allied(PLAYER,o) ? ' · your ally' : atWar(PLAYER,o) ? ' · at war with you' : ' · click for diplomacy';
   if (occ[t]) l3+=` · occupied by ${occ[t]===PLAYER ? 'you' : W.nations[occ[t]].name}`;

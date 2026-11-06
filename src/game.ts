@@ -165,15 +165,10 @@ const TIER_NEWS=[['','','your builders guild can raise stone houses','your build
 const nm = (id: number) => W.nations[id]?.name ?? 'Someone';
 let starvedAt=-1e9;   // when the log last told of beggars dying of want
 const men = (k: number) => `${k} soldier${k===1 ? '' : 's'}`;
-/** The maps, in the order New map goes through them: three generated ones, then three of the real world. */
+/** The maps, in the order New map goes through them. */
 export const MAPS: { name: string; map: string; seed?: number }[] = [
-  { name:'Emberland', map:'gen', seed:4242 },
-  { name:'Greywater', map:'gen', seed:987654321 },
-  { name:'Highmarch', map:'gen', seed:12345 },
-  { name:'Balkans & Anatolia', map:'balkans' },
-  { name:'Europe', map:'europe' },
-  { name:'Europe (small, for testing)', map:'europe-s' },
-  { name:'The World', map:'world' },
+  { name:'Emberland', map:'gen', seed:4242 },   // one landmass, small
+  { name:'Europe', map:'europe-s' },            // the real continent (the smaller of the two drawn)
 ];
 /** Starts afresh on the current map (MAPS), or with `seed`, on a map generated from it. */
 export function newGame(seed?: number){

@@ -26,10 +26,11 @@ describe('a capital on a neck of land', () => {
     }
     n.stock=[300,300,300];
     const bs: number[]=[]; let s=-1;
-    for (const q of n.plots) if (bs.length<8 && !placeProblem(n,q,B_BARRACKS) && build(n,q,B_BARRACKS)){ bs.push(q); n.stock=[300,300,300]; }
-    for (const q of n.plots) if (!placeProblem(n,q,B_SMITHY) && build(n,q,B_SMITHY)){ s=q; break; }
+    const own=(q: number) => owner[tileOf(...frontOf(q))]===1;   // (a plot whose doorstep is on their own ground)
+    for (const q of n.plots) if (own(q) && bs.length<8 && !placeProblem(n,q,B_BARRACKS) && build(n,q,B_BARRACKS)){ bs.push(q); n.stock=[300,300,300]; }
+    for (const q of n.plots) if (own(q) && !placeProblem(n,q,B_SMITHY) && build(n,q,B_SMITHY)){ s=q; break; }
     expect(bs.length).toBeGreaterThan(0); expect(s).toBeGreaterThanOrEqual(0);
-    run(2);
+    run(102);
     const f=walkOf(n).f, [dx,dy]=doorOf(n);
     expect(f.at(tileOf(dx,dy))).toBe(0);
     expect(f.at(tileOf(...frontOf(s)))).toBeGreaterThan(0);   // (the smithy and the barracks stand behind the castle)

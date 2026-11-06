@@ -481,19 +481,21 @@ export function render(now: number, dt: number){
     const nearCap = n.capTile>=0 && Math.abs(lx-n.capTile%TW)<7 && Math.abs(ly-((n.capTile/TW)|0))<7;
     const sx=((lx*RS+RS/2)-camX)*zoom, sy=((ly*RS+RS/2)-camY)*zoom-(nearCap?13*K*zoom:0);
     if (sx<-100||sy<-50||sx>w+100||sy>h+50) continue;
-    ctx.font=`600 ${fs|0}px "Pixelify Sans", ui-monospace, monospace`;
+    ctx.font=`600 ${fs|0}px "Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif`;
     // your name in gold, allies in green, kingdoms at war with you in red
     const rel=allied(PLAYER,i) ? '#8fe39b' : atWar(PLAYER,i) ? '#ff9a8a' : null;
     ctx.lineWidth=Math.max(2,fs*0.2); ctx.strokeStyle='rgba(8,14,22,.85)'; ctx.fillStyle=n.isPlayer?'#ffe27a':rel ?? '#ffffff';
     ctx.strokeText(n.name,sx,sy-fs*0.35); ctx.fillText(n.name,sx,sy-fs*0.35);
-    const ts=(fs*0.72)|0; ctx.font=`500 ${ts}px "Pixelify Sans", ui-monospace, monospace`; ctx.lineWidth=Math.max(2,ts*0.22);
+    { const fh=Math.max(8,Math.round(fs*0.62)), fw=Math.round(fh*1.5), nw=ctx.measureText(n.name).width;   // the kingdom's flag, to the left of its name
+      ctx.imageSmoothingEnabled=false; ctx.drawImage(flagImage(n.code),sx-nw/2-fw-Math.round(fs*0.2),sy-fs*0.35-fh/2,fw,fh); }
+    const ts=(fs*0.72)|0; ctx.font=`500 ${ts}px "Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif`; ctx.lineWidth=Math.max(2,ts*0.22);
     ctx.fillStyle=n.isPlayer?'#ffe27a':rel ?? '#e9eef3';
     ctx.strokeText(fmt(n.strength),sx,sy+fs*0.55); ctx.fillText(fmt(n.strength),sx,sy+fs*0.55);
   }
   // each barracks' army over its roof: soldiers there over its room, and the army by tier
   if (zs>=1.5){
     const fs=Math.round(Math.min(15,Math.max(11,zs*2.8))*dpr);
-    ctx.font=`600 ${fs}px "Pixelify Sans", ui-monospace, monospace`; ctx.lineWidth=Math.max(2,fs*0.25); ctx.strokeStyle='rgba(8,14,22,.9)';
+    ctx.font=`600 ${fs}px "Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif`; ctx.lineWidth=Math.max(2,fs*0.25); ctx.strokeStyle='rgba(8,14,22,.9)';
     for (let i=1;i<N.length;i++) for (const u of units[i] ?? []){
       const top=Math.min(...u.plots.map(q => ((q/PW)|0)))*PS, sx=(u.x*K-camX)*zoom, sy=(top-camY)*zoom-fs*0.7;
       if (sx<-80||sy<-20||sx>w+80||sy>h+20) continue;
@@ -505,7 +507,7 @@ export function render(now: number, dt: number){
   }
   // each army's leader by rank, under his feet, once close enough
   if (zs>=2.5){
-    const fs=Math.round(11*dpr); ctx.font=`600 ${fs}px "Pixelify Sans", ui-monospace, monospace`; ctx.lineWidth=Math.max(2,fs*0.25);
+    const fs=Math.round(11*dpr); ctx.font=`600 ${fs}px "Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif`; ctx.lineWidth=Math.max(2,fs*0.25);
     for (const c of W.campaigns){
       if (c.leader<0) continue;
       const p=W.humans.find(h => h.id===c.leader); if (!p || p.hp<=0 || indoors(p)) continue;
@@ -520,7 +522,7 @@ export function render(now: number, dt: number){
   for (let i=floats.length-1;i>=0;i--){
     const f=floats[i], age=(now-f.t0)/1000; if (age>1.3){ floats.splice(i,1); continue; }
     const sx=(f.x*K-camX)*zoom, sy=(f.y*K-camY)*zoom-age*36*dpr, fs=(16*dpr)|0;
-    ctx.globalAlpha=1-age/1.3; ctx.font=`700 ${fs}px "Pixelify Sans", ui-monospace, monospace`;
+    ctx.globalAlpha=1-age/1.3; ctx.font=`700 ${fs}px "Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif`;
     ctx.lineWidth=3*dpr; ctx.strokeStyle='rgba(8,14,22,.9)'; ctx.fillStyle=f.c;
     ctx.strokeText(f.text,sx,sy); ctx.fillText(f.text,sx,sy);
   }

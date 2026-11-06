@@ -43,7 +43,7 @@ export function drawSpeech(ctx: CanvasRenderingContext2D, now: number, camX: num
   if (!bubbles.size) return;
   const byId=new Map(W.humans.map(p => [p.id,p]));
   const fs=Math.round(12*dpr), pad=Math.round(4*dpr), tail=Math.round(4*dpr), lw=Math.max(1,Math.round(1.5*dpr));
-  ctx.font=`600 ${fs}px "Pixelify Sans", ui-monospace, monospace`; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font=`600 ${fs}px "Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
   const placed: number[][]=[];   // bubbles drawn so far: one that would overlap rises above them
   for (const [id,b] of bubbles){
     const p=byId.get(id), age=now-b.t0;

@@ -1,9 +1,9 @@
 /* ---------- buildings panel: pick a building, then click your land to place it ---------- */
-import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_PART, B_NAVAL } from '../core/constants';
+import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_PART, B_NAVAL } from '../core/constants';
 import type { Nation } from '../sim/state';
 import { W, owner, pType, pTier, pOwner, pMain } from '../sim/state';
 import { R_HOUSING, R_INFANTRY, hasMedics } from '../sim/research';
-import { TASK_FORGE, improvements } from '../sim/population';
+import { TASK_FORGE, TASK_HOME_GO, improvements } from '../sim/population';
 import { units, armorWanted } from '../sim/army';
 import { openResearch } from './research';
 import { openArmy } from './army';
@@ -20,7 +20,7 @@ import { $ } from './dom';
 const panel=$('buildPanel'), list=$('buildList'), tip=$('btip'), title=$('buildTitle');
 /** The building menus on the right: what each holds. */
 export const CATEGORIES = [
-  { id:'urban',     name:'Urban development',   types:[B_FARM, B_GUILD, B_MINTER, B_HOSPITAL] },
+  { id:'urban',     name:'Urban development',   types:[B_FARM, B_GUILD, B_CARPENTER, B_MINTER, B_HOSPITAL] },
   { id:'military',  name:'Military',            types:[B_BARRACKS, B_TOWER, B_SMITHY, B_NAVAL] },
   { id:'resources', name:'Resource buildings',  types:[B_PLANTATION, B_QUARRY, B_COPPERMINE] },
   { id:'society',   name:'Society advancement', types:[B_RESEARCH] },
@@ -28,7 +28,7 @@ export const CATEGORIES = [
 let category='urban';   // the menu showing, or the last one opened
 const ICO=['wood','stone','copper'];
 const owned = (n: Nation, type: number) => type===B_FARM ? n.farms : type===B_BARRACKS ? n.barracks : type===B_TOWER ? n.towers : type===B_MINTER ? n.minters
-  : type===B_PLANTATION ? n.plantations : type===B_QUARRY ? n.quarries : type===B_COPPERMINE ? n.copperMines : type===B_RESEARCH ? n.labs : type===B_GUILD ? n.guilds : type===B_SMITHY ? n.smithies : type===B_HOSPITAL ? n.hospitals : type===B_NAVAL ? n.navals : 0;
+  : type===B_PLANTATION ? n.plantations : type===B_QUARRY ? n.quarries : type===B_COPPERMINE ? n.copperMines : type===B_RESEARCH ? n.labs : type===B_GUILD ? n.guilds : type===B_SMITHY ? n.smithies : type===B_CARPENTER ? n.carpenters : type===B_HOSPITAL ? n.hospitals : type===B_NAVAL ? n.navals : 0;
 const rows=new Map<number, HTMLButtonElement>();   // by type; a block of four by type+BLOCK
 const BLOCK=1000;
 const blockCost = (n: Nation, type: number) => blockPlan(n,0,type).cost;   // (the cost does not depend on where)
@@ -167,6 +167,11 @@ export function clickOwnBuilding(t: number){
   if (pType[q]===B_HOSPITAL){
     const docs=W.humans.filter(h => h.work===q).length, beds=W.wounded.filter(w => w.hosp===q && w.bed>=0).length, out=W.wounded.filter(w => w.o===PLAYER && w.bed<0).length;
     toast(docs<2 ? `The hospital waits for ${2-docs} more villager${docs===1 ? '' : 's'} to become doctors` : beds ? `${beds} of 2 beds taken: the doctors tend ${beds===1 ? 'a wounded soldier' : 'two wounded soldiers'}` : out ? `Your doctors go out for ${out} wounded soldier${out===1 ? '' : 's'}` : 'Both beds are free: the doctors wait for the wounded');
+    return true;
+  }
+  if (pType[q]===B_CARPENTER){
+    const b=W.humans.find(h => h.work===q);
+    toast(!b ? 'The carpenters wait for a villager to take up the saw' : b.home>=0 ? (b.task===TASK_HOME_GO ? 'Your carpenter walks to a site for a new house' : 'Your carpenter is building a new house (20 seconds each, for free)') : 'Your carpenter has no room left for houses, or your people have beds enough');
     return true;
   }
   if (pType[q]===B_GUILD){

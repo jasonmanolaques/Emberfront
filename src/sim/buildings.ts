@@ -5,7 +5,7 @@
    at tier 3 four of a kind in a square join into one of 2×2 (tier 3); a joined building makes far
    more than its parts did apart. ---------- */
 import { plannedWall } from './fort';
-import { TW, PW, PH, NP, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_NAVAL, TH, isStructure } from '../core/constants';
+import { TW, PW, PH, NP, T_FOREST, B_CARPENTER, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_NAVAL, TH, isStructure } from '../core/constants';
 import { W, owner, occ, terr, isLand, isle, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pAband, pMain, pHp, pTier, pSpan, pArmor, pIn, type Nation } from './state';
 import { R_GATHER, hasMedics } from './research';
 import { on } from './events';
@@ -71,7 +71,8 @@ function connectRoad(q: number, id: number, far: boolean){
 }
 function placeBuilding(q: number, id: number, type: number, isNew: boolean){
   if (type===B_EMPTY) return;
-  pType[q]=type; pOwner[q]=id; pVar[q]=(W.srand()*3)|0; pTimer[q]=0; pAband[q]=0; pHp[q]=0; pTier[q]=type===B_HOUSE || type===B_TOWER ? 1 : 0; pSpan[q]=0; pArmor[2][q]=pArmor[3][q]=0;
+  pType[q]=type; pOwner[q]=id; pVar[q]=(W.srand()*(type===B_HOUSE ? 18 : 3))|0;   // (a house: one of 3 shapes, in one of 3 colourings)
+   pTimer[q]=0; pAband[q]=0; pHp[q]=0; pTier[q]=type===B_HOUSE || type===B_TOWER ? 1 : 0; pSpan[q]=0; pArmor[2][q]=pArmor[3][q]=0;
   on.plotChanged(q);
   const n=W.nations[id]; n.bCount++;
   if (type!==B_FARM) connectRoad(q,id,isNew);
@@ -156,16 +157,20 @@ export const STRUCTURES: Structure[] = [
 ];
 export const HOSPITAL_STRUCTURE: Structure = { type: B_HOSPITAL, name: 'Hospital', cost: [15,25,10], info: 'Two villagers become doctors. With field medics research, some of the soldiers who fall are only wounded: a doctor runs out (50% faster) to carry each to the hospital, which has two beds, and heals him in 7 seconds before he goes back to the field. A wounded man bleeds out in 45 seconds if no doctor comes.' };
 STRUCTURES.push(HOSPITAL_STRUCTURE);
+export const CARPENTER_STRUCTURE: Structure = { type: B_CARPENTER, name: 'Carpenters', cost: [50,20,5], info: 'One villager becomes a carpenter and builds additional hovels (tier 1 houses) for free, one every 20 seconds, wherever there is room on your land, to raise how many your kingdom can house. The builders guild can raise them like any other house. Each carpenters you own makes the next 10% dearer.' };
+STRUCTURES.push(CARPENTER_STRUCTURE);
 export const structureOf = (type: number) => STRUCTURES.find(s => s.type===type);
 const countOf = (n: Nation, ty: number) => ty===B_PLANTATION ? n.plantations : ty===B_QUARRY ? n.quarries : n.copperMines;
 /** How much dearer each building of a kind its kingdom already has makes the next one (a share of the base price). */
-export const RISE: Record<number, number> = { [B_FARM]: 0.05, [B_TOWER]: 0.05, [B_MINTER]: 0.1, [B_GUILD]: 0.1, [B_RESEARCH]: 0.2, [B_PLANTATION]: 0.1, [B_QUARRY]: 0.1, [B_COPPERMINE]: 0.1 };
+export const RISE: Record<number, number> = { [B_FARM]: 0.05, [B_TOWER]: 0.05, [B_MINTER]: 0.1, [B_GUILD]: 0.1, [B_RESEARCH]: 0.2, [B_BARRACKS]: 0.05, [B_SMITHY]: 0.05, [B_NAVAL]: 0.1, [B_CARPENTER]: 0.1, [B_PLANTATION]: 0.1, [B_QUARRY]: 0.1, [B_COPPERMINE]: 0.1 };
 /** How many of kingdom n's buildings of `type` there are for pricing: gathering buildings count by the plots they cover (four joined are four). */
 function ownedFor(n: Nation, type: number){
   if (type===B_FARM) return n.farms;
   if (type===B_MINTER) return n.minters;
   if (type===B_TOWER) return n.towers;
   if (type===B_GUILD) return n.guilds;
+  if (type===B_NAVAL) return n.navals;
+  if (type===B_BARRACKS) return n.barracks;
   let k=0; for (const q of n.blds) if (pType[q]===type) k+=[1,2,4][pSpan[q]] ?? 1;
   return Math.max(k,countOf(n,type));
 }
@@ -310,12 +315,12 @@ function countDown(n: Nation, type: number){
   if (type===B_HOUSE){ n.houses=Math.max(0,n.houses-1); n.beds=Math.max(0,n.beds-1); }   // (the census counts beds exactly, once a second)
   else if (type===B_FARM) n.farms--; else if (type===B_BARRACKS) n.barracks--; else if (type===B_TOWER) n.towers--; else if (type===B_MINTER) n.minters--;
   else if (type===B_PLANTATION) n.plantations--; else if (type===B_QUARRY) n.quarries--; else if (type===B_COPPERMINE) n.copperMines--;
-  else if (type===B_RESEARCH) n.labs--; else if (type===B_GUILD) n.guilds--; else if (type===B_SMITHY) n.smithies--; else if (type===B_HOSPITAL) n.hospitals--; else if (type===B_NAVAL) n.navals--;
+  else if (type===B_RESEARCH) n.labs--; else if (type===B_GUILD) n.guilds--; else if (type===B_SMITHY) n.smithies--; else if (type===B_HOSPITAL) n.hospitals--; else if (type===B_CARPENTER) n.carpenters--; else if (type===B_NAVAL) n.navals--;
 }
 export function countUp(n: Nation, type: number){
   if (type===B_FARM) n.farms++; else if (type===B_BARRACKS) n.barracks++; else if (type===B_TOWER) n.towers++; else if (type===B_MINTER) n.minters++;
   else if (type===B_PLANTATION) n.plantations++; else if (type===B_QUARRY) n.quarries++; else if (type===B_COPPERMINE) n.copperMines++;
-  else if (type===B_RESEARCH) n.labs++; else if (type===B_GUILD) n.guilds++; else if (type===B_SMITHY) n.smithies++; else if (type===B_HOSPITAL) n.hospitals++; else if (type===B_NAVAL) n.navals++;
+  else if (type===B_RESEARCH) n.labs++; else if (type===B_GUILD) n.guilds++; else if (type===B_SMITHY) n.smithies++; else if (type===B_HOSPITAL) n.hospitals++; else if (type===B_CARPENTER) n.carpenters++; else if (type===B_NAVAL) n.navals++;
 }
 
 /** Production buildings fill the stockpile every 30 seconds by their tier; pTimer counts their

@@ -15,7 +15,7 @@ import { humanRate, indoors, TASK_ROAM, TASK_HOME_GO, H_SOLDIER, H_VILLAGER, TAS
 import { UNIT_SIZE, buildUnits, station, unitAt, units, groupKeys, mergeArmies, SOLDIER_DMG } from '../src/sim/army';
 import { wallOf, walledFor, buildWalls } from '../src/sim/defense';
 import { callable, partner, warringNow, besieged, siegeLocked, allied, atWar, available, ready, declare, warProblem, mayStand, endWar, makePeace, MAX_ALLIES, HIT_DMG, MILITIA_DMG, DANGER_R, MOB, REVENGE_DMG, REVENGE_PACE, spread,
-  RANKS, rankFor, PEACE_MARCH, DIG_TICKS, invadeSpeed, INVADE_EMPTY, assignArmy, assignProblem, bordersOf, freeArmy, CRISIS_TICKS, frontKey, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, defendProblem, reservesOf, reservesProblem, menOn, deployArmies, armyOrder, armyFront, armyRecall, frontIsles, occOn, attacks, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, frontLines, marchPace, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
+  RANKS, rankFor, PEACE_MARCH, DIG_TICKS, invadeSpeed, INVADE_EMPTY, assignArmy, assignProblem, armyProblem, bordersOf, freeArmy, CRISIS_TICKS, frontKey, stalled, inCrisis, escalate, deescalate, deescalateProblem, defend, callReserves, defendProblem, reservesOf, reservesProblem, menOn, deployArmies, armyOrder, armyFront, armyRecall, frontIsles, occOn, attacks, F_GATHER, F_READY, F_PUSH, F_HOLD, setOffensive, offensiveProblem, frontLines, marchPace, offensiveFront, ADVANCE_TICKS, DENSE, PRESENT, GATHER_AT, ZOC } from '../src/sim/war';
 import { navalPlan, declareNaval, navalOf, landingOn } from '../src/sim/war';
 import { botSea, navalAttack, seaDrive } from '../src/sim/botsea';
 import { basesOf, dockTile, labelWorld, allocIsles, landingZone, SHIP_CAP, SHIP_FRONT, INV_SAIL, INV_READY, INV_LAND, INV_DONE, shipById } from '../src/sim/naval';
@@ -480,20 +480,16 @@ describe('occupation', () => {
     expect(told).toHaveLength(0);
   });
 
-  it('sends the soldiers at home to man their side of the front, on their own land', () => {
+  it('soldiers at home are not sent out to man the front by themselves: with no order they stay where they are', () => {
     world(1); quiet(); paintToward(1,2);
     const guard=soldiers(N(1),6);
     soldiers(N(2),6); run(1);
     expect(declare(2,1,6)).toBe(true); escalate(2,1,true);
-    until(() => guard.filter(h => h.fk===frontKey(2,1) && Math.hypot(h.x-h.fx,h.y-h.fy)<=PRESENT*2).length>=4, 600);   // (a longer walk from a bigger kingdom)
-    const F=offensiveFront(2,1)!.F!;
-    for (const h of guard.filter(h => W.humans.includes(h))){   // (one may have fallen already)
-      expect(h.fk).toBe(frontKey(2,1));
-      expect(owner[(((h.y/2)|0)*TW+((h.x/2)|0))]).toBe(1);   // without leaving home
-      // placed on the line, or (the border here is short) in ranks behind it
-      expect(F.tiles.some(t => Math.hypot(t%TW+0.5-h.fx/2, ((t/TW)|0)+0.5-h.fy/2)<1.5+h.line*RANK_GAP)).toBe(true);
+    run(600);
+    for (const h of guard.filter(h => W.humans.includes(h))){
+      expect(h.fk).toBe(-1);                                   // (no place on any front)
+      expect(owner[(((h.y/2)|0)*TW+((h.x/2)|0))]).toBe(1);   // and at home
     }
-    expect(guard.filter(h => Math.hypot(h.x-h.fx,h.y-h.fy)<=PRESENT*2).length).toBeGreaterThanOrEqual(4);   // (one may be out fighting)
   });
 });
 
@@ -936,10 +932,11 @@ describe('crisis', () => {
     const taken=W.occCount[2*M()+1];
     expect(taken).toBeGreaterThan(300);
     run(30);   // the fronts move to the new line
-    // 2's land is occupied: its armies take it back by themselves, and it may neither counter-charge nor hold the border
-    expect(W.offensive[2*M()+1]).toBe(F_PUSH);
+    // 2's land is occupied: its armies do nothing until told (no army attacks by itself), and then they take it back
+    expect(W.offensive[2*M()+1]).toBe(F_HOLD);
+    expect(setOffensive(2,1,true)).toBe(true);
+    run(5); expect(W.offensive[2*M()+1]).toBe(F_PUSH);
     expect(offensiveProblem(2,1,true)).toMatch(/attacks already/);
-    expect(setOffensive(2,1,true)).toBe(false);
     // all the while it takes its land back, and after it, its men keep to their own side: none out on the enemy's own ground
     let strays=0;
     for (let i=0;i<4000 && W.occCount[2*M()+1]>0;i++){ tick();
@@ -951,7 +948,8 @@ describe('crisis', () => {
     expect(Array.from({ length: NT }, (_, t) => t).some(t => inBand(t) && occ[t]===1)).toBe(false);
     expect(W.occCount[1*M()+2]).toBe(0);                       // (it took none of theirs while it did: only its own)
     run(40);
-    expect(W.offensive[2*M()+1]).toBe(F_HOLD);                 // its land is back: it holds, and may strike back
+    expect(setOffensive(2,1,false)).toBe(true); run(5);        // its land is back: it was told to attack, and is told to hold
+    expect(W.offensive[2*M()+1]).toBe(F_HOLD);                 // it holds, and may strike back
     for (let i=0;i<300;i++){ tick();   // ...and goes on holding on its own side of the border, out of reach of their watchtowers, until it is told to attack
       for (const h of W.humans) if (h.o===2 && h.war>=0 && h.kind===H_SOLDIER){ const t=((h.y/2)|0)*TW+((h.x/2)|0); expect(owner[t]===1 && !occ[t]).toBe(false); }
     }
@@ -1094,7 +1092,9 @@ describe('holding the border, and the second wave', () => {
 
   it('a kingdom whose land is occupied has to take it back first: no counter-charge, no holding, and its armies go after it', () => {
     started(6); run(60);
-    expect(W.offensive[2*W.M+1]).toBe(F_PUSH);   // (set by the retaking itself)
+    expect(W.offensive[2*W.M+1]).toBe(F_HOLD);   // (nothing attacks by itself)
+    expect(setOffensive(2,1,true)).toBe(true);
+    run(5); expect(W.offensive[2*W.M+1]).toBe(F_PUSH);
     expect(offensiveProblem(2,1,true)).toMatch(/attacks already/);
     expect(setOffensive(2,1,true)).toBe(false);
     // told to defend instead, its armies fall back and stop retaking its land (and attack again, retaking it, when told)
@@ -1674,7 +1674,8 @@ describe('naval invasions', () => {
     expect(plan.zone.safe).toBe(true);
     expect(declareNaval(1,2,10,w.base,w.coast)).toBe(true);
     expect(landingOn(1,2)).toBe(false);                             // nothing for the defender to respond to
-    until(() => !navalOf(1,2), 6000);                               // lands by itself on arrival: the war is on
+    expect(setOffensive(1,2,true)).toBe(true);                      // (the word to attack, as for any army)
+    until(() => !navalOf(1,2), 6000);                               // lands on arrival: the war is on
     expect(aboard()).toHaveLength(0);
     expect(W.humans.filter(h => h.o===1 && h.war>=0 && h.boat<0)).toHaveLength(10);
   });
@@ -1790,7 +1791,9 @@ describe('army orders', () => {
     W.crisisAt[1*W.M+2]-=CRISIS_TICKS;
     expect(escalate(1,2)).toBe(true);
     const [c1,c2]=army(1,2);
-    expect([attacks(c1),attacks(c2)]).toEqual([true,true]);   // (it is 1's attack: its armies attack unless told otherwise)
+    expect([attacks(c1),attacks(c2)]).toEqual([false,false]);   // (no army attacks without the word)
+    expect(setOffensive(1,2,true)).toBe(true);
+    expect([attacks(c1),attacks(c2)]).toEqual([true,true]);
     expect(armyOrder(1,c1.id,false)).toBe(true);
     run(5);
     expect([c1.mode,c2.mode,W.offensive[1*W.M+2]]).toEqual([F_HOLD,F_PUSH,F_PUSH]);
@@ -1852,11 +1855,15 @@ describe('two fronts', () => {
     for (let q=0;q<NP;q++){ if (navalSite(N(1),q).orient<0) continue; const d=Math.abs(((q%PW)*4)-(x0+6))+Math.abs(((q/PW)|0)*4-(yA+11)); if (d<bd){ bd=d; base=q; } }
     expect(base).toBeGreaterThanOrEqual(0);
     N(1).stock=[200,200,200]; expect(build(N(1),base,B_NAVAL)).toBe(true); census();
+    // (boats only run from one naval base to another: a second harbour of 1's on its half of the island)
+    let isl=-1; for (let q=0;q<NP && isl<0;q++){ const px=(q%PW)*4, py=((q/PW)|0)*4; if (px>=X0 && px<X0+13 && py>=yA && py<yB-4 && navalSite(N(1),q).orient>=0) isl=q; }
+    expect(isl).toBeGreaterThanOrEqual(0);
+    N(1).stock=[200,200,200]; expect(build(N(1),isl,B_NAVAL)).toBe(true); census();
     const a=place(N(1),B_BARRACKS), b=place(N(1),B_BARRACKS,(yA+11)*TW+X0+7);   // (the second as far from the island as 1's land goes)
     expect([isle[pCenter[a]],isle[pCenter[b]]]).toEqual([isle[Math.round(my)*TW+Math.round(mx)], isle[Math.round(my)*TW+Math.round(mx)]]);
     soldiers(N(1),10,false); N(1).soldierShare=1; noDraft(); noDraft(2); N(2).soldierShare=0; N(2).humanProg=-1e9; N(1).fleet=3; run(3);
     const main=isle[(Math.round(my))*TW+Math.round(mx)], island=isle[(yA+5)*TW+X0+3];
-    return { a, b, main, island, base, X0 };
+    return { a, b, main, island, base, X0, isl };
   }
 
   it('knows each stretch of border by its landmass: the mainland and the island, the longer first', () => {
@@ -1886,8 +1893,8 @@ describe('two fronts', () => {
     expect(escalate(1,2)).toBe(true);
     run(5);
     expect(new Set(W.campaigns.map(c => frontKey(1,2)))).toBeTruthy();
-    // the island army defends, the mainland army attacks: the mainland is invaded, the island is not
-    expect(armyOrder(1,ci.id,false)).toBe(true);
+    // the island army defends (the default), the mainland army is told to attack: the mainland is invaded, the island is not
+    expect(armyOrder(1,cm.id,true)).toBe(true);
     run(300);
     const takenOn=(isl: number) => { let k=0; for (let t=0;t<NT;t++) if (owner[t]===2 && occ[t]===1 && isle[t]===isl) k++; return k; };
     expect(takenOn(main)).toBeGreaterThan(0);
@@ -1912,7 +1919,8 @@ describe('two fronts', () => {
     const coast=Array.from({ length: NT }, (_, t) => t).find(t => owner[t]===2 && isle[t]===island && isLand[t] && wet(t))!;
     expect(declareNaval(1,2,[b],base,coast)).toBe(true);
     const camp=W.campaigns.find(c => c.naval>=0)!;
-    expect(armyOrder(1,camp.id,false)).toBe(true);           // told to defend: it will wait off the coast
+    expect(armyProblem(1,camp.id,false)).toMatch(/defends already/);   // (it defends unless told: it will wait off the coast)
+    expect(setOffensive(1,2,true)).toBe(true); expect(armyOrder(1,camp.id,false)).toBe(true);   // the land army is told to attack, the landing to hold
     const taken=() => W.occCount[2*W.M+1];
     const at0=taken();
     until(() => W.invasions.every(i => i.stage>=INV_READY), 3000);
@@ -2004,16 +2012,7 @@ describe('two fronts', () => {
   });
 
   it('naval bases on two landmasses are joined by a sea lane for the kingdom\'s villagers, and an army\'s boat sails from base to base', () => {
-    const { b, island, base }=twoFronts();
-    let q2=-1;
-    for (let q=0;q<NP && q2<0;q++){
-      if (navalSite(N(1),q).orient<0) continue;
-      let ok=false; const px=(q%PW)*4, py=((q/PW)|0)*4;
-      for (let y=py;y<py+8 && !ok;y++) for (let x=px;x<px+8;x++){ const t=y*TW+x; if (isLand[t] && isle[t]===island && owner[t]===1){ ok=true; break; } }
-      if (ok) q2=q;
-    }
-    expect(q2).toBeGreaterThanOrEqual(0);
-    N(1).stock=[200,200,200]; expect(build(N(1),q2,B_NAVAL)).toBe(true); census();
+    const { b, island, base, isl: q2 }=twoFronts();   // (its second harbour stands on the island)
     run(101);
     const d1=dockTile(base), d2=dockTile(q2);
     expect([ferry[d1],ferry[d2]]).toEqual([1,1]);                  // both harbours are on the lane
@@ -2041,6 +2040,7 @@ describe('what armies cost, and where they stand', () => {
     expect(wages(N(1))[0]).toBeCloseTo(10*WAGE,6);                                 // both massed in a crisis: border pay
     expect(wages(N(1))[1]).toBeCloseTo(3*MIL_WAGE,6);                              // the militia called up
     W.crisisAt[1*W.M+2]-=CRISIS_TICKS; expect(escalate(1,2)).toBe(true); run(3);
+    expect(setOffensive(1,2,true)).toBe(true); run(2);                               // (the word to attack: no army attacks without it)
     expect(wages(N(1))[0]).toBeCloseTo(10*WAGE_ATTACK,6);                          // attacking
     expect(wages(N(1))[1]).toBeCloseTo(3*MIL_ATTACK,6);
     const [c1,c2]=army(1,2); expect(armyOrder(1,c1.id,false)).toBe(true); run(2);

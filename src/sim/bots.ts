@@ -1,5 +1,5 @@
 /* ---------- bots ---------- */
-import { B_EMPTY, B_RUINS, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_HOUSE, PW, PH, NP, WAGE } from '../core/constants';
+import { B_EMPTY, B_RUINS, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_HOUSE, PW, PH, NP, WAGE } from '../core/constants';
 import { W, isle, pType, pOwner, pAband, type Nation } from './state';
 import { launch } from './territory';
 import { grossIncome } from './sim';
@@ -28,7 +28,7 @@ export const stuck = (n: Nation) => beggarProblem(n) && !W.contact[n.id*W.M] && 
 const spareHomes = (n: Nation) => !beggarProblem(n) && (n.abandoned>0 || n.beds>=n.villagers+n.soldiers+n.beggars+3);
 /** How many of n's plots stand empty. */
 const emptyPlots = (n: Nation) => { let k=0; for (const q of n.plots) if (pType[q]===B_EMPTY || pType[q]===B_RUINS) k++; return k; };
-const TOWN = [B_BARRACKS, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL];   // workshops: inside the wall
+const TOWN = [B_BARRACKS, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER];   // workshops: inside the wall
 /** What a bot builds before anything else, while it has too few: the stockpile only comes from the
     gathering buildings, so wood first (a plantation pays for itself in 2 and a half minutes), then
     stone and copper, and a research station to join them into bigger ones. It saves up for these. */
@@ -86,6 +86,8 @@ function wishlist(n: Nation, exposed: boolean){
   if (n.minters < 1+(n.tiles/1500|0)) w.push(B_MINTER);
   // learning once the kingdom has found its feet, and a guild to build on what it learns
   if (n.farms && n.tiles>=300 && !TOPICS.every(t => maxed(n,t)) && n.labs < 1+(n.tiles/2500|0)) w.push(B_RESEARCH);
+  // carpenters add hovels for nothing: for a bot with people short of homes
+  if ((hungry || n.homeless>2) && n.carpenters < 1+(n.tiles/1500|0)) w.push(B_CARPENTER);
   if (n.tier[R_HOUSING]>=2 && n.guilds < 1+(n.tiles/4000|0)) w.push(B_GUILD);
   if (n.tier[R_INFANTRY]>=2 && n.barracks && n.smithies < 1+(n.barracks/6|0)) w.push(B_SMITHY);
   // a hospital (more with a bigger army and a bigger land) once field medics are learned: fewer soldiers lost for good
@@ -369,6 +371,8 @@ function botWar(n: Nation){
   const want=armyShare(n), d=want-n.soldierShare;
   n.soldierShare=Math.min(1,Math.max(0,n.soldierShare+Math.max(-0.04,Math.min(0.1,d))));
   const dug=outnumbered(n);
+  // (no army attacks without the word: a bot gives it to every army of its own that is out against someone it is at war with, unless it was sent to hold the line)
+  for (const c of W.campaigns) if (c.a===id && c.front && c.phase<2 && !c.ordered && W.wars[id*M+c.d]){ c.ordered=true; c.attack=!dug; }
   // a siege of the capital when it is far the stronger (and bold): the armies on the capital's landmass all go for it, except those whose stretch of border
   // the enemy still holds in strength (enough stay to match the enemy soldiers there, the biggest army going first)
   if (W.tickN%100===id%100) for (let o=1;o<M;o++){
@@ -396,7 +400,7 @@ function botWar(n: Nation){
     let got=menOn(id,o);
     if (got<theirs*1.2) for (const c of W.campaigns.slice()){
       if (got>=theirs*1.2) break;
-      if (c.a!==id || !c.front || c.phase!==1 || c.naval>=0 || c.militia || c.d===o || c.unit<0 || W.wars[id*M+c.d] || W.aggr[id*M+c.d] || menOn(c.d,id)>0) continue;
+      if (c.a!==id || !c.front || c.phase!==1 || c.naval>=0 || c.militia || c.d===o || c.unit<0 || W.wars[id*M+c.d] || W.aggr[id*M+c.d] || menOn(c.d,id)>0 || W.occCount[id*M+c.d]>0 || W.occCount[c.d*M+id]>0) continue;   // (an army on a border where land is occupied keeps it: it is not pulled off to make another front beside the first)
       const men=c.members.length;
       if (assignArmy(id,c.unit,o)) got+=men;
     }

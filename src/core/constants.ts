@@ -28,10 +28,11 @@ export const B_EMPTY=0,B_HOUSE=1,B_FARM=2,B_TOWER=3,B_MINE=4,B_CASTLE=5,B_CPART=
 export const B_PLANTATION=11, B_QUARRY=12, B_COPPERMINE=13, B_PART=14;
 export const B_RESEARCH=15, B_GUILD=16, B_SMITHY=17;   // research station, builders guild, blacksmith
 export const B_HOSPITAL=19;   // hospital: 2 plots; two doctors fetch the wounded (sim/medics.ts)
+export const B_CARPENTER=20;   // carpenters: one villager builds extra hovels for free, 20 seconds each (sim/population.ts)
 export const B_NAVAL=18;   // naval base: 8 plots (4×2 or 2×4), at least a third of it on the water
 /** Anything standing on a plot that a kingdom owns and that burns when the ground is taken. */
 export const isStructure = (ty: number) => ty===B_HOUSE || ty===B_FARM || ty===B_TOWER || ty===B_MINE || ty===B_BARRACKS || ty===B_MINTER
-  || ty===B_PLANTATION || ty===B_QUARRY || ty===B_COPPERMINE || ty===B_PART || ty===B_RESEARCH || ty===B_GUILD || ty===B_SMITHY || ty===B_NAVAL || ty===B_HOSPITAL;
+  || ty===B_PLANTATION || ty===B_QUARRY || ty===B_COPPERMINE || ty===B_PART || ty===B_RESEARCH || ty===B_GUILD || ty===B_SMITHY || ty===B_NAVAL || ty===B_HOSPITAL || ty===B_CARPENTER;
 
 /* ---------- economy ---------- */
 export const GOLD_START = 250;            // gold each kingdom starts with
@@ -47,7 +48,7 @@ export const DESERT_TICKS = 30;           // then one deserts every 3 s, the lea
 export const SCRAP_GOLD = 30;             // gold back per tier of a deserter's armour, scrapped
 export const TAX_PER_VILLAGER = 0.1;      // gold a second each villager pays per taxation tier (soldiers pay none); each coin minter adds 10% to the taxes
 export const LAND_TAX = 0.0004;           // gold a second a kingdom earns for each tile of land it holds (a flat boost for its size: 4 a second for 10,000 tiles)
-export const GOLD_PER_TILE = 0.4;         // cost of settling one unclaimed tile
+export const GOLD_PER_TILE = 0.36;        // cost of settling one unclaimed tile
 // kingdom strength: what the leaderboard and labels show, and what makes land costly to take
 /* A kingdom's strength is its military might alone: each villager and each militiaman counts 100, a soldier 200, 300 or 500 by his armour tier (sim/population.ts). */
 export const STR_VILLAGER = 100, STR_MILITIA = 100, STR_SOLDIER = [0, 200, 300, 500];

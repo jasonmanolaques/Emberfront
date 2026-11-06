@@ -5,7 +5,7 @@
    Farms, barracks, watchtowers and coin minters are modular: each plot looks at its four
    neighbours, and plots of the same kind and owner join up, so fields merge into one farmland,
    barracks into one long hall, minters into one workshop, and towers link with walls. */
-import { PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_NAVAL, TW } from '../core/constants';
+import { PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_NAVAL, TW } from '../core/constants';
 import { W, isLand, pType, pOwner, pVar, pMain, pAband, pTier, pBurn } from '../sim/state';
 import { cultureOf, drawCapital, wearCapital } from './capitals';
 import { styleOf, type NationStyle } from './style';
@@ -53,6 +53,7 @@ function joins(q: number){
   return (y>0&&same(q-PW)?N_:0) | (x<PW-1&&same(q+1)?E_:0) | (y<PH-1&&same(q+PW)?S_:0) | (x>0&&same(q-1)?W_:0);
 }
 const SH = 'rgba(14,24,8,.3)';
+const K_MUD_L = '#b38a5c';
 const C = {
   mud:'#957049', mudD:'#73543a', mudL:'#b38a5c', th:'#cfa24c', thD:'#a17a32', thL:'#e6c473', thS:'#86622a',
   post:'#5c432c', door:'#33241a', glow:'#ffcf6a', beam:'#4a3424',
@@ -95,21 +96,25 @@ export function chimneyOf(tier: number, v: number){
 const HOLES = [[[6,6],[10,7],[5,8]],[[7,5],[10,8],[5,8]],[[5,6],[9,8],[7,7]]];
 function drawHouse(ox: number, oy: number, n: NationStyle, v: number, empty: boolean, tier=1){
   if (tier>=2){ drawStoneHouse(ox,oy,n,v,empty,tier); return; }
+  const shape=v%3, look=((v/3)|0)%3;   // (three shapes, each in one of three colourings)
+  const walls=[[K_MUD_L,C.mud,C.mudD],['#f1ead8','#e2d8c0','#bfb294'],['#8a6a44','#6f5233','#52391f']][look];
+  const thatch=[[C.thL,C.th,C.thD,C.thS],['#c9a35a','#a8843f','#7f6230','#6a4f26'],['#b9b27a','#9a9460','#76714a','#5b573a']][look];
   const pal: Pal = empty
     ? { y:'#9c9272', t:'#8c8160', T:'#726a50', s:'#5e5844', v:'#7d7262', w:'#6e6252', W:'#5a5044', d:'#7a6c58', g:'#4a4038', p:'#5a4a3a', k:'#4a4038', r:'#857a6a', R:'#6e6455', l:'#968a78', x:SH }
-    : { y:C.thL, t:C.th, T:C.thD, s:C.thS, v:C.mudL, w:C.mud, W:C.mudD, d:C.door, g:C.glow, p:C.post, k:C.beam, r:n.roof, R:n.roofD, l:n.roofL, x:SH };
-  rows(G,ox,oy,HOUSES[v],pal);
+    : { y:thatch[0], t:thatch[1], T:thatch[2], s:thatch[3], v:walls[0], w:walls[1], W:walls[2], d:C.door, g:C.glow, p:C.post, k:C.beam, r:n.roof, R:n.roofD, l:n.roofL, x:SH };
+  rows(G,ox,oy,HOUSES[shape],pal);
   if (empty){
-    for (const [x,y] of HOLES[v]) P(ox+x,oy+y,'#2a2420');
-    const dx=v===1?7:v===2?7:6; R(ox+dx,oy+11,2,1,'#4a4038'); R(ox+dx,oy+13,2,1,'#4a4038');   // boards across the door
+    for (const [x,y] of HOLES[shape]) P(ox+x,oy+y,'#2a2420');
+    const dx=shape===1?7:shape===2?7:6; R(ox+dx,oy+11,2,1,'#4a4038'); R(ox+dx,oy+13,2,1,'#4a4038');   // boards across the door
     P(ox+3,oy+13,'#5f8a3a'); P(ox+2,oy+12,'#6f9a44'); P(ox+12,oy+13,'#5f8a3a'); P(ox+13,oy+12,'#6f9a44');   // weeds
   }
 }
 /** A stone house or a manor; odd variants face the other way. */
 function drawStoneHouse(ox: number, oy: number, n: NationStyle, v: number, empty: boolean, tier: number){
+  const look=((v>>1)%3), wall=[[C.stL,C.st,'#8f897d',C.stD,'#eadfc4'],['#ecdcb8','#d4c196','#ae9a6c','#a89870','#f5ecd4'],['#d49a80','#bf7a5e','#9a5c44','#8a4e3a','#e8d6c4']][look];   // grey stone, warm limestone or red brick
   const pal: Pal = empty
     ? { l:'#968a78', r:'#857a6a', R:'#6e6455', k:'#4a4038', a:'#a29c90', b:'#8e887c', c:'#6e695f', g:'#3a332c', f:'#2e2824', d:'#4a4038', h:'#6e695f', e:'#a69c88', x:SH }
-    : { l:n.roofL, r:n.roof, R:n.roofD, k:'#4a3424', a:C.stL, b:C.st, c:'#8f897d', g:'#ffd86b', f:'#d99a3e', d:'#5a3c22', h:C.stD, e:'#eadfc4', x:SH };
+    : { l:n.roofL, r:n.roof, R:n.roofD, k:'#4a3424', a:wall[0], b:wall[1], c:wall[2], g:'#ffd86b', f:'#d99a3e', d:'#5a3c22', h:wall[3], e:wall[4], x:SH };
   const flip=v&1;
   rows(G,ox,oy,TIERS[(tier===3 ? 2 : 0)+flip],pal);
   const X=(x: number)=>ox+(flip ? 15-x : x);
@@ -290,6 +295,17 @@ function drawSmithy(ox: number, oy: number, n: NationStyle){
   R(ox+3,oy+9,5,5,'#2a1d16'); R(ox+4,oy+11,3,2,'#ff8a2b'); R(ox+4,oy+11,3,1,'#ffd27a'); P(ox+5,oy+10,'#ff6a1c');   // the hearth
   R(ox+12,oy+11,3,1,'#4a4f55'); R(ox+13,oy+12,1,2,'#3a3e43'); R(ox+11,oy+11,1,1,'#6c737a');   // the anvil
   R(ox+12,oy+8,2,1,'#8d949b'); P(ox+12,oy+9,'#6c737a'); P(ox+13,oy+9,n.roof);               // a helm hung up, in the kingdom's colours
+}
+
+/** Carpenters: a timber workshop under a roof in the kingdom's colour, planks stacked beside it, a sawhorse with a board on it and a saw on the wall. */
+function drawCarpenter(ox: number, oy: number, n: NationStyle){
+  R(ox+1,oy+14,14,1,SH);
+  R(ox+2,oy+7,9,7,'#9a6e42'); R(ox+2,oy+7,9,1,'#c2915c'); for (let x=4;x<11;x+=2) R(ox+x,oy+8,1,6,'#7d5632');   // plank walls
+  R(ox+1,oy+5,11,2,n.roofD); R(ox+2,oy+3,9,2,n.roof); R(ox+3,oy+2,7,1,n.roofL); R(ox+1,oy+6,11,1,'#3b2a1e');       // the roof
+  R(ox+3,oy+9,4,5,'#33241a'); R(ox+8,oy+9,2,2,'#ffcf6a');                                                           // door and window
+  R(ox+8,oy+12,3,1,'#bfc6cc'); P(ox+8,oy+11,'#8a9399'); P(ox+10,oy+11,'#8a9399');                                  // a saw on the wall
+  R(ox+12,oy+8,3,6,'#d9b27a'); R(ox+12,oy+8,3,1,'#ecd2a0'); R(ox+12,oy+10,3,1,'#b08850'); R(ox+12,oy+12,3,1,'#b08850'); // stacked planks
+  R(ox+12,oy+5,1,3,'#6c4a2c'); R(ox+13,oy+5,2,2,n.roof);                                                           // the kingdom's pennant
 }
 
 /** Blacksmiths joined side by side (2×1) or four together (2×2): the forges in a row, their roofs bridged over the seams. Looks only. */
@@ -507,13 +523,14 @@ export function drawPlot(q: number){
     return;
   }
   const v=pVar[q]%3;
-  if (ty===B_HOUSE){ const t=pTier[q]; stamp(ox,oy,PS,PS,()=>drawHouse(0,0,n,t>=2 ? pVar[q] : v,!!pAband[q],t)); }
+  if (ty===B_HOUSE){ const t=pTier[q]; stamp(ox,oy,PS,PS,()=>drawHouse(0,0,n,pVar[q],!!pAband[q],t)); }
   else if (ty===B_RESEARCH) stamp(ox,oy,PS,PS,()=>drawResearch(0,0,n));
   else if (ty===B_SITE) stamp(ox,oy,PS,PS,()=>drawSite(0,0,n));
   else if (ty===B_FARM){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawFarm(0,0,n,pOwner[q]%3,m)); }   // one crop per kingdom, so joined fields match
   else if (ty===B_TOWER){ const m=joins(q), t=towerTier(q), w=wear(q); stamp(ox,oy,PS,PS,()=>drawTower(0,0,n,m,t,w)); }
   else if (ty===B_BARRACKS){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawBarracks(0,0,n,m)); }
   else if (ty===B_MINTER){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawMinter(0,0,n,m)); }
+  else if (ty===B_CARPENTER) stamp(ox,oy,PS,PS,()=>drawCarpenter(0,0,n));
   else if (ty===B_MINE) stamp(ox,oy,PS,PS,()=>drawMine(0,0,n));
   else if (ty===B_RUINS) stamp(ox,oy,PS,PS,()=>drawRuins(0,0,pVar[q]));
   else if (ty===B_CPART){ /* part of a burned castle still standing: leave */ }
@@ -535,6 +552,7 @@ export function drawIcon(ctx: CanvasRenderingContext2D, type: number, n: NationS
   else if (type===B_HOUSE) drawHouse(0,0,n,0,false);
   else if (type===B_RESEARCH) drawResearch(0,0,n);
   else if (type===B_SMITHY) drawSmithy(0,0,n);
+  else if (type===B_CARPENTER) drawCarpenter(0,0,n);
   else if (type===B_NAVAL) drawNaval(0,0,n,orient ? 2 : 4,orient ? 4 : 2,-1);
   else if (BIG[type]){ drawBig(0,0,type,n); drawWorking(ctx,type,0,0,0.99,0); }
   outline(ctx,0,0,ctx.canvas.width,ctx.canvas.height,EDGE);

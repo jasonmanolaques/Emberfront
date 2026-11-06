@@ -183,7 +183,7 @@ const frontOfC = (c: Campaign) => offensives.get(fidOf(c));
 export const occOn = (a: number, d: number, isle: number) => W.occIsle.get((isle*W.M+a)*W.M+d) ?? 0;
 /** Does army c attack (push its front on, or take its kingdom's land back on that landmass) or defend? As it was ordered; else
     the side that began the crisis attacks, and the other defends, but takes back what the enemy holds of its land. */
-export const attacks = (c: Campaign) => c.ordered ? c.attack : !!W.aggr[c.a*W.M+c.d] || occOn(c.a,c.d,c.isle)>0;
+export const attacks = (c: Campaign) => c.ordered && c.attack;   // (no army attacks on its own: only one that was given the word)
 /** One stretch of border between two kingdoms: its landmass, its length in tiles, and where its middle is (in tiles). */
 export interface FrontInfo { isle: number; tiles: number; x: number; y: number; }
 const borderCache = new Map<number, { at: number; list: FrontInfo[] }>();
@@ -415,6 +415,7 @@ export function declare(a: number, d: number, pick: number | number[], militia=0
   if (warProblem(a,d)) return false;
   const M=W.M, counter=W.ready[a*M+d]>0;   // our land is back: this one is for revenge
   sendArmies(a,d,pick,militia,isle,counter);   // (a crisis needs no army: where to place them is up to the one who begins it)
+  if (!W.nations[a].isPlayer) for (const c of W.campaigns) if (c.front && c.a===a && c.d===d && c.phase<2 && !c.ordered){ c.ordered=true; c.attack=true; }   // (a bot that sends an army has told it to attack)
   return begin(a,d,counter);
 }
 /** The diplomacy of an attack beginning, with its armies out: alliance broken, a grudge, a crisis (or, in a war already, more armies). */
@@ -563,9 +564,7 @@ function cutFor(c: Campaign, from: number): Cut | null {
       if (score>bestScore){ bestScore=score; best={ base:q, path:r.path, land, fLand }; }
     };
     const to=dests.filter(d => d.q!==q);
-    if (to.length){ const r=seaNearest(dk,t => to.some(d => d.water.has(t)),40000); if (r){ const d=to.find(d => d.water.has(r.tile))!; consider(r,d.land,d.fLand,1e4); } }   // (base to base is always preferred: a harbour of ours to land at)
-    const r=seaNearest(dk,t => { const n=landBeside(c.a,c.isle,t); if (n<0) return false; const f=c.field.at(n); return f>=0 && (cutoff || f<fB*0.5); },40000);
-    if (r){ const land=landBeside(c.a,c.isle,r.tile); consider(r,land,c.field.at(land),0); }
+    if (to.length){ const r=seaNearest(dk,t => to.some(d => d.water.has(t)),40000); if (r){ const d=to.find(d => d.water.has(r.tile))!; consider(r,d.land,d.fLand,1e4); } }   // (only ever from one naval base of ours to another near the front: with a single base, or none near the front, no army goes by sea, and nobody is landed on open ground)
   }
   cuts.set(k,best);
   return best;
@@ -764,6 +763,7 @@ export function defend(n: number, o: number, pick: number | number[], isle=0){
     if (onFront(n,o,unit.key)) continue;   // its army is there already: its men join it (reinforce)
     if (out) unhitch(out);
     const c=newCampaign(n,o,men.length,W.nations[o].tiles,unit.key,isle);
+    c.ordered=true; c.attack=false;   // (sent to hold the line: it holds it until the word to attack)
     if (muster(c,men,unit)) sent+=men.length;
   }
   if (!sent) return false;
@@ -1377,7 +1377,7 @@ function runOffensives(){
     the worse the odds it takes. */
 function botCrisis(o: Offensive){
   const mine=menOn(o.a,o.d), theirs=menOn(o.d,o.a)+0.5*W.humans.filter(h => h.o===o.d && h.kind===H_SOLDIER && !h.militia && h.war<0).length;
-  if (theirs>mine*(OUTMATCHED+W.nations[o.a].attackAt)) deescalate(o.a,o.d); else escalate(o.a,o.d);
+  if (theirs>mine*(OUTMATCHED+W.nations[o.a].attackAt)) deescalate(o.a,o.d); else setOffensive(o.a,o.d,true);   // (a bot gives its armies the word)
 }
 /* ---------- entrenching ----------
    An army that holds its place on the border on defence (the order, or the default in peace and for a defender) for 10 seconds entrenches: its men hit 15% harder
@@ -1469,7 +1469,7 @@ function safeLine(o: Offensive): number[] {
   return out;
 }
 /** d's standing watchtowers within shooting reach (and a little more) of front line F, nearest the line first: the men of the front go for these before anything else. */
-const TOWER_SEEK = TOWER_RANGE+12;   // pixels from a man's place a tower still draws him out
+const TOWER_SEEK = 8;   // pixels from a man's place a tower still draws him out: only one really close to him (the rest shoot at the line until it has reached them)
 function towersNear(o: Offensive, F: Front): number[] {
   if (!F.tiles.length) return [];
   const D=W.nations[o.d], out: { q: number; d: number }[]=[], step=Math.max(1,F.tiles.length>>6);
@@ -1671,33 +1671,6 @@ function encircle(o: Offensive){
   let big=pockets[0]; for (const p of pockets) if (p.tiles.length>big.tiles.length) big=p;
   for (const p of pockets) if (p!==big && p.closed && !p.held && !p.tiles.includes(D.capTile)) for (const t of p.tiles) takeTile(t,a,d);
 }
-/** The guard of every kingdom at war that has no army of its own on the border mans its side of each
-    front against it: its trained soldiers at home (not militia, who wait to be called up), shared
-    between the fronts by the size of the armies on them, the nearest to each, spread evenly along the
-    line with reserves behind; and the way to their places. */
-function deployGuards(){
-  defended.fill(0);
-  const byD=new Map<number, Offensive[]>();
-  for (const o of offensives.values()){
-    if (!o.F || !o.F.tiles.length || !W.wars[o.key] || frontsOf(o.d*W.M+o.a).length) continue;   // (in a crisis nobody turns out; with its own front there, its armies hold it)
-    let L=byD.get(o.d); if (!L){ L=[]; byD.set(o.d,L); } L.push(o);
-  }
-  for (const [d,list] of byD){
-    defended[d]=1;
-    const guard=W.humans.filter(h => h.o===d && h.kind===H_SOLDIER && !h.militia && h.war<0 && h.post<0 && h.hp>0 && !indoors(h) && !switching(h));
-    let total=0; for (const o of list) total+=o.men.length+1;
-    let rest=guard;
-    list.forEach((o,i) => {
-      const F=o.F!, [cx,cy]=placeAt(F,F.len/2,-1,0,() => true), share=i===list.length-1 ? rest.length : Math.min(rest.length,Math.round(guard.length*(o.men.length+1)/total));
-      rest=rest.slice().sort((p,q) => (p.fk===o.id ? 0 : 1)-(q.fk===o.id ? 0 : 1) || Math.hypot(p.x-cx,p.y-cy)-Math.hypot(q.x-cx,q.y-cy) || p.id-q.id);
-      deploy(F,rest.slice(0,share),-1,o.id,(t) => owner[t]===d);
-      rest=rest.slice(share);
-    });
-    for (const h of rest){ h.fk=-1; h.line=-1; }
-    const srcs: number[]=[]; for (const h of guard) if (h.fk>=0) srcs.push(tileOf(h.fx,h.fy));
-    if (srcs.length){ fillOwnFrom(homeField[d] ??= new Field(), srcs, d); homeFieldFor[d]=-1; }
-  }
-}
 /** Steps to the nearest of `srcs` over kingdom o's own land only. */
 function fillOwnFrom(f: Field, srcs: number[], o: number){
   const n=W.nations[o];
@@ -1758,7 +1731,7 @@ export function updateWar(){
   runOffensives();
   ferryShips(); seaBoats();
   if (W.tickN%10===4) endDeadCrises();
-  if (now%REFRONT===2) deployGuards();
+  if (now%REFRONT===2) defended.fill(0);   // (soldiers at home are no longer sent out to man the front by themselves: an army with no order stays where it is)
   posts=N.map(n => warring[n.id] ? barracksOf(n).map(frontOf) : []);
   if (W.tickN%5===0) findRallies();
   lineUp();
@@ -2153,7 +2126,7 @@ function frontStep(h: Human, c: Campaign){
   const key=c.a*W.M+c.d, pushing=c.mode===F_PUSH, retaking=pushing && !!frontOfC(c)?.liberating, invading=pushing && !retaking, leader=h.id===c.leader;
   if ((h.id+W.tickN)%4===0) chooseOnFront(h,c,invading,retaking,leader);
   let foe=h.foe>=0 ? byId.get(h.foe) : undefined;
-  const R=(pushing ? REACH_PUSH : REACH_HOLD)*1.6;
+  const R=pushing ? REACH_PUSH : REACH_HOLD;   // (a man of the front keeps to his place: he goes out no further than this after anyone)
   // (an army that is not invading never goes out after a man onto the enemy's own ground: only one within his blow's reach)
   if (foe && (foe.hp<=0 || !atWar(h.o,foe.o) || indoors(foe) || locked(h,foe) || (foe.foe!==h.id && (foe.x-h.fx)**2+(foe.y-h.fy)**2>R*R) || (!invading && !stayOut(h,foe,c)))){ foe=undefined; h.foe=-1; }
   if (foe){
@@ -2211,7 +2184,7 @@ function chooseOnFront(h: Human, c: Campaign, invading: boolean, retaking: boole
   h.foe=-1;
   if (leader || !invading || h.fk<0){ h.aim=-1; return; }
   if (h.aim>=0 && targetable(h.aim,c) && byPlace(h,h.aim,1.5)) return;   // busy with one
-  const S=12, x=h.fx, y=h.fy;
+  const S=6, x=h.fx, y=h.fy;   // (a building is only attacked by a man whose place it stands right beside)
   const qx0=Math.max(0,Math.floor((x-S)/8)), qx1=Math.min(PW-1,Math.floor((x+S)/8)), qy0=Math.max(0,Math.floor((y-S)/8)), qy1=Math.min(PH-1,Math.floor((y+S)/8));
   let q=-1, qs=Infinity;
   for (let py=qy0;py<=qy1;py++) for (let px=qx0;px<=qx1;px++){

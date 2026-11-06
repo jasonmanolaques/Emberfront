@@ -1,6 +1,6 @@
 // Buildings a kingdom places, and the gold economy.
 import { describe, it, expect } from 'vitest';
-import { MINTER_BONUS, TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_FARM, B_BARRACKS, B_NAVAL, B_HOSPITAL, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, WAGE, WAGE_IDLE, GOLD_PER_TILE, TAX_PER_VILLAGER, LAND_TAX, STR_VILLAGER, STR_MILITIA, STR_SOLDIER } from '../src/core/constants';
+import { MINTER_BONUS, TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_CARPENTER, B_FARM, B_BARRACKS, B_NAVAL, B_HOSPITAL, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, WAGE, WAGE_IDLE, GOLD_PER_TILE, TAX_PER_VILLAGER, LAND_TAX, STR_VILLAGER, STR_MILITIA, STR_SOLDIER } from '../src/core/constants';
 import { W, owner, isLand, pType, pCenter, pBuild, type Human } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick, incomeParts } from '../src/sim/sim';
 import { declare, escalate } from '../src/sim/war';
@@ -54,7 +54,8 @@ describe('building costs and placement', () => {
     expect(structureOf(B_SMITHY)!.cost).toEqual([10,15,5]);
     expect(structureOf(B_NAVAL)!.cost).toEqual([15,5,0]);
     expect(structureOf(B_HOSPITAL)!.cost).toEqual([15,25,10]);
-    expect(STRUCTURES).toHaveLength(12);
+    expect(STRUCTURES).toHaveLength(13);
+    expect(structureOf(B_CARPENTER)!.cost).toEqual([50,20,5]);
   });
 
   it('takes the resources and places the building, but only if they are all there', () => {
@@ -178,7 +179,7 @@ describe('what the buildings do', () => {
     const near=(want: (t: number) => boolean) => { let spot=-1, best=Infinity;
       for (let t=0;t<NT;t++){ if (!isLand[t] || !want(t)) continue; const d=Math.hypot((t%TW)*2+1-tx, ((t/TW)|0)*2+1-ty); if (d<best){ best=d; spot=t; } } return [spot, best]; };
     const [inside]=near(t => owner[t]===1 && Math.hypot((t%TW)*2+1-tx, ((t/TW)|0)*2+1-ty)>6), [outside, out]=near(t => !owner[t]);
-    expect(out).toBeLessThan(20);
+    expect(out).toBeLessThan(26);
     const mk=(t: number): Human => { const h=makeHuman(W.nations[2], H_SOLDIER, (t%TW)*2+1, ((t/TW)|0)*2+1.5); h.sp=0; h.wait=1e9; W.humans.push(h); return h; };
     const soldier=mk(outside), raider=mk(outside);
     // they are the army of a barracks of the bot's, so they can be sent
