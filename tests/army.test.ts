@@ -1,11 +1,11 @@
 // Barracks armies, soldier tiers, armour and the blacksmith.
 import { describe, it, expect } from 'vitest';
 import { listen } from '../src/sim/events';
-import { TW, TH, NT, PW, B_BARRACKS, B_SMITHY, B_TOWER } from '../src/core/constants';
+import { TW, TH, NT, PW, B_BARRACKS, B_SMITHY, B_TOWER, GAME_SPEED } from '../src/core/constants';
 import { W, owner, isLand, pArmor, pType, pOwner, pTimer, type Human } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { build, placeProblem } from '../src/sim/buildings';
-import { H_SOLDIER, H_VILLAGER, REHIRE_TICKS, FORGE_TICKS, makeHuman, doorOf, frontOf } from '../src/sim/population';
+import { H_SOLDIER, H_VILLAGER, REHIRE_TICKS, FORGE_TICKS, TASK_SMITH_FETCH, makeHuman, doorOf, frontOf } from '../src/sim/population';
 import { units, unitAt, UNIT_SIZE, SOLDIER_HP } from '../src/sim/army';
 import { R_INFANTRY } from '../src/sim/research';
 import { available } from '../src/sim/war';
@@ -107,17 +107,19 @@ describe('soldier tiers and the blacksmith', () => {
     expect(men.every(h => h.tier===1 && h.hp===SOLDIER_HP[1])).toBe(true);
   });
 
-  it('fetches a copper from the castle, forges 5 seconds, and brings the armour to the barracks, where a soldier puts it on', () => {
+  it('pays 5 copper at once, forges 20 seconds at his own forge (no trip to the castle), and brings the armour to the barracks, where a soldier puts it on', () => {
     const { b, smith, men }=armoury(5);
     me().tier[R_INFANTRY]=2; me().stock=[0,0,25];   // copper for 5 suits
-    until(() => smith.load===1, 2000);
-    expect(me().stock[2]).toBe(20);                 // 5 copper taken from the store
-    until(() => smith.load===2, 1000);              // forged
+    until(() => smith.make>=2, 2000);
+    expect(me().stock[2]).toBe(20);                 // 5 copper taken from the store, upfront
+    let trips=0; for (let i=0;i<FORGE_TICKS+600 && smith.load<2;i++){ tick(); if (smith.task===TASK_SMITH_FETCH) trips++; }
+    expect(trips).toBe(0);                          // (he never goes to the castle for it)
+    expect(smith.load).toBeGreaterThanOrEqual(2);   // forged
     until(() => men.some(h => h.tier===2), 1500);   // delivered, and worn
     const t2=men.find(h => h.tier===2)!;
     expect(SOLDIER_HP[2]).toBe(20);
     until(() => t2.hp>=20, 800);
-    expect(FORGE_TICKS).toBe(50);
+    expect(FORGE_TICKS).toBe(20*GAME_SPEED*10);
     // reinforced armour for every rack, then no more
     until(() => men.every(h => h.tier===2), 8000);
     let made=0; listen({ forged: () => { made++; } });

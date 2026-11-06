@@ -55,7 +55,7 @@ export const TASK_ROAM = 0,      // between jobs: villagers think or stroll betw
              TASK_HOME_BUILD = 8,// building it
              TASK_FIX_GO = 9,    // builders: walking to the house they will improve
              TASK_FIX = 10,      // improving it
-             TASK_SMITH_FETCH = 11,  // blacksmiths: walking to the castle for copper
+             TASK_SMITH_FETCH = 11,  // (no longer used: a smith pays his copper from the stockpile at once and goes to work at his forge)
              TASK_SMITH_BACK = 12,   // carrying it to the smithy
              TASK_FORGE = 13,        // forging armour
              TASK_SMITH_DELIVER = 14,// carrying the armour to a barracks
@@ -98,7 +98,7 @@ export const ABANDON_TICKS = 200;// ticks with more houses than people before th
 export const FIX_SECONDS = [0,20,40];   // seconds a builder works to raise a house or a watchtower from tier t to t+1 (nothing to pay: the guild itself is the investment)
 export const FIX_TICKS = (tier: number) => FIX_SECONDS[tier]*GAME_SPEED*10;
 export const REHIRE_TICKS = 50;  // ticks after a builder or smith falls before another villager takes his place (5 s)
-export const FORGE_TICKS = 50;   // ticks a smith works on a piece of armour (5 s)
+export const FORGE_TICKS = 20*GAME_SPEED*10;   // ticks a smith works on a piece of armour: 20 seconds on the clock
 export const ARMOR_COPPER = 5;   // copper each piece takes
 
 /** Switching role: walking to a barracks (or the castle) for it, or inside training. */
@@ -737,9 +737,11 @@ function goForge(h: Human){
     bd=d; best=u; tier=t;
   }
   if (!best) return false;
-  h.make=tier; h.dest=nearestPlot(best.plots,sx,sy);
-  const [x,y]=doorOf(n); h.tx=x; h.ty=y; h.task=TASK_SMITH_FETCH; h.wait=0;
-  if (!walkTo(h,x,y)){ h.make=0; h.dest=-1; h.task=TASK_ROAM; return false; }
+  // the copper is paid from the stockpile at once, and he starts at his own forge (walking there first if he is away from it): no trip to the castle
+  h.make=tier; h.dest=nearestPlot(best.plots,sx,sy); n.stock[2]-=ARMOR_COPPER;
+  if (Math.hypot(sx-h.x,sy-h.y)<2){ h.task=TASK_FORGE; h.path=[]; h.wait=FORGE_TICKS; return true; }
+  h.tx=sx; h.ty=sy; h.task=TASK_SMITH_BACK; h.wait=0;
+  if (!walkTo(h,sx,sy)){ n.stock[2]+=ARMOR_COPPER; h.make=0; h.dest=-1; h.task=TASK_ROAM; return false; }
   return true;
 }
 /** Plans h's walk to (x,y): the straight way (round the castle) if it is safe, else round by the
