@@ -6,7 +6,7 @@
    more than its parts did apart. ---------- */
 import { plannedWall } from './fort';
 import { TW, PW, PH, NP, T_FOREST, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_NAVAL, TH, isStructure } from '../core/constants';
-import { W, owner, occ, terr, isLand, isle, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pPrio, pAband, pMain, pHp, pTier, pSpan, pArmor, pIn, type Nation } from './state';
+import { W, owner, occ, terr, isLand, isle, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pAband, pMain, pHp, pTier, pSpan, pArmor, pIn, type Nation } from './state';
 import { R_GATHER, hasMedics } from './research';
 import { on } from './events';
 
@@ -21,12 +21,12 @@ export function ignite(q: number){
 export function captureBuilding(q: number, o: number){
   const main=pType[q]===B_PART ? pMain[q] : q, prev=pOwner[main]; if (prev===o || !prev) return;
   const P=W.nations[prev], N=W.nations[o];
-  for (const k of cover(main)){ pOwner[k]=o; pPrio[k]=0; pIn[k]=0; on.plotChanged(k); }
+  for (const k of cover(main)){ pOwner[k]=o; pIn[k]=0; on.plotChanged(k); }
   const i=P.blds.indexOf(main); if (i>=0) P.blds.splice(i,1);
   if (!N.blds.includes(main)) N.blds.push(main);
   for (const h of W.humans) if (h.o===prev){ if (h.rest===main) h.rest=-1; if (h.home===main) h.home=-1; if (h.work===main) h.work=-1; if (h.site===main) h.site=-1; if (h.post===main) h.post=-1; }
 }
-export function toRuins(q: number){ pSpan[q]=0; pType[q]=B_RUINS; pOwner[q]=0; pVar[q]=(W.srand()*8)|0; pBurn[q]=0; pTimer[q]=35+W.srand()*30; pPrio[q]=0; pAband[q]=0; pHp[q]=0; pTier[q]=0; pArmor[2][q]=pArmor[3][q]=0; on.plotChanged(q); }
+export function toRuins(q: number){ pSpan[q]=0; pType[q]=B_RUINS; pOwner[q]=0; pVar[q]=(W.srand()*8)|0; pBurn[q]=0; pTimer[q]=35+W.srand()*30; pAband[q]=0; pHp[q]=0; pTier[q]=0; pArmor[2][q]=pArmor[3][q]=0; on.plotChanged(q); }
 
 export function isBld(ty: number){ return isStructure(ty) || ty===B_CASTLE || ty===B_CPART; }
 function nbBuildings(q: number, id: number){
@@ -71,7 +71,7 @@ function connectRoad(q: number, id: number, far: boolean){
 }
 function placeBuilding(q: number, id: number, type: number, isNew: boolean){
   if (type===B_EMPTY) return;
-  pType[q]=type; pOwner[q]=id; pVar[q]=(W.srand()*3)|0; pTimer[q]=0; pPrio[q]=0; pAband[q]=0; pHp[q]=0; pTier[q]=type===B_HOUSE || type===B_TOWER ? 1 : 0; pSpan[q]=0; pArmor[2][q]=pArmor[3][q]=0;
+  pType[q]=type; pOwner[q]=id; pVar[q]=(W.srand()*3)|0; pTimer[q]=0; pAband[q]=0; pHp[q]=0; pTier[q]=type===B_HOUSE || type===B_TOWER ? 1 : 0; pSpan[q]=0; pArmor[2][q]=pArmor[3][q]=0;
   on.plotChanged(q);
   const n=W.nations[id]; n.bCount++;
   if (type!==B_FARM) connectRoad(q,id,isNew);
@@ -253,7 +253,7 @@ export function demolish(q: number){
   const m=mainOf(q), ty=pType[m], o=pOwner[m], n=W.nations[o];
   const plots=ty===B_SITE ? [m] : cover(m);
   for (const k of plots){
-    pType[k]=B_EMPTY; pOwner[k]=0; pMain[k]=0; pTimer[k]=0; pPrio[k]=0; pAband[k]=0; pHp[k]=0; pTier[k]=0; pSpan[k]=0; pArmor[2][k]=pArmor[3][k]=0;
+    pType[k]=B_EMPTY; pOwner[k]=0; pMain[k]=0; pTimer[k]=0; pAband[k]=0; pHp[k]=0; pTier[k]=0; pSpan[k]=0; pArmor[2][k]=pArmor[3][k]=0;
     on.plotChanged(k);
   }
   if (!n) return;
@@ -271,7 +271,7 @@ export function build(n: Nation, q: number, type: number, over: Over='none'){
   costFor(n,s).forEach((c,g) => n.stock[g]-=c);
   const orient=type===B_NAVAL ? navalSite(n,q,over).orient : 0;
   for (const m of underneath(q,type,orient)) demolish(m);
-  for (const k of footprint(q,type,orient).slice(1)){ pType[k]=B_PART; pOwner[k]=n.id; pMain[k]=q; pBurn[k]=0; pAband[k]=0; pPrio[k]=0; }
+  for (const k of footprint(q,type,orient).slice(1)){ pType[k]=B_PART; pOwner[k]=n.id; pMain[k]=q; pBurn[k]=0; pAband[k]=0; }
   placeBuilding(q,n.id,type,false);
   if (type===B_NAVAL) pSpan[q]=orient;
   // count it right away rather than at the next census, so its effect starts now
@@ -362,9 +362,3 @@ export function joinGatherers(n: Nation){
   }
 }
 
-/** Watchtowers calling for a garrison are numbered in the order they asked. */
-export function togglePriority(n: Nation, q: number){
-  if (pType[q]!==B_TOWER || pOwner[q]!==n.id || pBurn[q]>0) return;
-  pPrio[q] = pPrio[q] ? 0 : ++W.prioSeq;
-  on.plotChanged(q);
-}

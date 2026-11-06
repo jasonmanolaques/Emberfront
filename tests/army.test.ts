@@ -61,16 +61,12 @@ describe('barracks armies', () => {
     expect(UNIT_SIZE).toBe(5);
   });
 
-  it('stations as many soldiers as the barracks hold; the rest patrol the city, guard towers and only defend', () => {
+  it('stations as many soldiers as the barracks hold; the rest patrol the city and only defend', () => {
     start(12345); expand(6);
-    const b=place(B_BARRACKS), t=place(B_TOWER);
+    const b=place(B_BARRACKS);
     const men=soldiers(8); run(2);
     expect(men.filter(h => h.base>=0)).toHaveLength(5);
     expect(available(me()).map(a => a.men.length)).toEqual([5]);   // only they can march
-    queueCommand({ type:'priority', nation:1, plot:t }); run(2);
-    const guards=men.filter(h => h.post===t);
-    expect(guards).toHaveLength(3);
-    expect(guards.every(h => h.base<0)).toBe(true);                 // tower guards come from the patrol
     run(300);
     const [bx,by]=frontOf(b);
     for (const h of men.filter(h => h.base>=0)) expect(Math.hypot(h.x-bx,h.y-by)).toBeLessThan(16);
@@ -78,15 +74,14 @@ describe('barracks armies', () => {
 });
 
 describe('filling the ranks', () => {
-  it('gives a fallen soldier\'s place to a new recruit, never to a watchtower guard', () => {
+  it('gives a fallen soldier\'s place to a new recruit, not to one of the patrol', () => {
     start(12345); expand(6);
-    place(B_BARRACKS); const t=place(B_TOWER);
+    place(B_BARRACKS);
     const men=soldiers(8); run(2);
-    queueCommand({ type:'priority', nation:1, plot:t }); run(2);
-    const army=men.filter(h => h.base>=0), guards=men.filter(h => h.post===t);
-    expect([army.length, guards.length]).toEqual([5, 3]);
+    const army=men.filter(h => h.base>=0), patrol=men.filter(h => h.base<0);
+    expect([army.length, patrol.length]).toEqual([5, 3]);
     army[0].hp=0; run(5);
-    expect(guards.every(h => h.base<0 && h.post===t)).toBe(true);   // the guards stay at their tower
+    expect(patrol.every(h => h.base<0)).toBe(true);   // the patrol stays what it is
     expect(units[1][0].members).toHaveLength(4);
     const [x,y]=doorOf(me()), recruit=makeHuman(me(),H_SOLDIER,x,y+1); W.humans.push(recruit); run(2);
     expect(recruit.base).toBeGreaterThanOrEqual(0);                    // the new recruit takes the place

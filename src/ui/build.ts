@@ -1,7 +1,7 @@
 /* ---------- buildings panel: pick a building, then click your land to place it ---------- */
 import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_PART, B_NAVAL } from '../core/constants';
 import type { Nation } from '../sim/state';
-import { W, owner, pType, pTier, pOwner, pPrio, pMain } from '../sim/state';
+import { W, owner, pType, pTier, pOwner, pMain } from '../sim/state';
 import { R_HOUSING, R_INFANTRY, hasMedics } from '../sim/research';
 import { TASK_FORGE, improvements } from '../sim/population';
 import { units, armorWanted } from '../sim/army';
@@ -142,7 +142,7 @@ export function placeAt(t: number){
   queueCommand({ type:'build', nation:PLAYER, plot:q, kind:s.type });
 }
 
-/** A click on your own land outside placing: a watchtower toggles its call for a garrison, a research
+/** A click on your own land outside placing: a research
     station opens the research panel, a barracks its army's panel, and a builders guild or blacksmith
     says what its worker is up to. Returns true if it did. */
 export function clickOwnBuilding(t: number){
@@ -174,8 +174,5 @@ export function clickOwnBuilding(t: number){
       : improvements(me).length ? 'Your builder waits: there is no way over your own land to what is left' : 'Your builder has nothing left to improve');
     return true;
   }
-  if (pType[q]!==B_TOWER) return false;
-  queueCommand({ type:'priority', nation:PLAYER, plot:q });
-  toast(pPrio[q] ? 'Watchtower no longer calls for a garrison' : me.militia ? 'Watchtower calls for 5 militia from those at home' : 'Watchtower calls for 5 militia: raise some with the soldier slider');
-  return true;
+  return false;
 }

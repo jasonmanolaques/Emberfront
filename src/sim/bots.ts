@@ -1,12 +1,12 @@
 /* ---------- bots ---------- */
 import { B_EMPTY, B_RUINS, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_HOUSE, PW, PH, NP, WAGE } from '../core/constants';
-import { W, isle, pType, pOwner, pPrio, pAband, type Nation } from './state';
+import { W, isle, pType, pOwner, pAband, type Nation } from './state';
 import { launch } from './territory';
 import { grossIncome } from './sim';
 import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, R_MEDICS, TOPICS, MAX_TIER, setStudy, maxed, hasMedics } from './research';
 import { UNIT_SIZE, units } from './army';
-import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, togglePriority, anyWithin, isEnemyLand, type Over } from './buildings';
-import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, guardsOpening, standingTower, WALL_MIN, WALL_MAX } from './fort';
+import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, anyWithin, isEnemyLand, type Over } from './buildings';
+import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, standingTower, WALL_MIN, WALL_MAX } from './fort';
 import { SEC_SIEGE } from './front';
 import { allied, atWar, assignArmy, frontIsles, ready, available, declare, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, frontIds, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD } from './war';
 
@@ -65,12 +65,11 @@ function wishlist(n: Nation, exposed: boolean){
     else if (n.tier[R_HOUSING]<2 && !n.labs && n.tiles>=150) w.push(B_RESEARCH);
   }
   // soldiers left without room in a barracks guard the wall's openings
-  let towers=0, outposts=0, gates=0;
-  for (const q of n.blds) if (pType[q]===B_TOWER && pOwner[q]===n.id){ towers++; if (!wallNeighbours(q,n.id)) outposts++; else if (guardsOpening(n,q)) gates++; }
-  const guards=Math.min(gates*2, n.soldiers>>2);
+  let outposts=0;
+  for (const q of n.blds) if (pType[q]===B_TOWER && pOwner[q]===n.id && !wallNeighbours(q,n.id)) outposts++;
   if (!n.barracks && n.soldierShare>0) w.push(B_BARRACKS);
   // room in the barracks for the army it keeps (new modules join the old, making one bigger army)
-  else if (n.soldiers-guards>n.barracks*UNIT_SIZE-2 && n.barracks<2+(n.tiles/400|0)) w.push(B_BARRACKS);
+  else if (n.soldiers>n.barracks*UNIT_SIZE-2 && n.barracks<2+(n.tiles/400|0)) w.push(B_BARRACKS);
   // the capital is the heart of a kingdom: its wall of watchtowers comes first, and only once that
   // stands (adequately) does a bot spread towers to its borders, as lone outposts facing its neighbours
   if (wallDue(n,exposed) && (footing(n) || danger(n,exposed)>=2)){
@@ -157,14 +156,6 @@ function wallPlot(n: Nation){
     if (s>bs){ bs=s; best=q; }
   }
   return best;
-}
-/** The towers flanking the wall's openings call for a garrison; the rest, outposts included, don't. */
-function garrisonGates(n: Nation){
-  for (const q of n.blds){
-    if (pType[q]!==B_TOWER || pOwner[q]!==n.id) continue;
-    const want=n.barracks>0 && guardsOpening(n,q);
-    if (!!pPrio[q]!==want) togglePriority(n,q);
-  }
 }
 const sameNeighbour = (q: number, type: number, id: number) =>
   [q-1,q+1,q-PW,q+PW].some(k => k>=0 && pType[k]===type && pOwner[k]===id);
@@ -262,7 +253,6 @@ function botStudy(n: Nation, exposed: boolean){
 
 function botBuild(n: Nation, exposed: boolean){
   botStudy(n,exposed);
-  garrisonGates(n);
   let saving=false;   // threatened and short of a wall tower: lesser works don't get its stone
   const first=foundations(n), hold=[false,false,false];   // (short of a gathering building: lesser works don't get the goods it needs)
   for (const type of wishlist(n,exposed)){

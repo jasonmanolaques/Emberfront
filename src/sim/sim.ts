@@ -2,7 +2,7 @@
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
 import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, kingdomLimit, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, LAND_TAX, MINTER_BONUS, WAGE, } from '../core/constants';
 import { mulberry32 } from '../core/rng';
-import { W, resizeGrid, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pPrio, pIn, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
+import { W, resizeGrid, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pIn, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
 import { genMap } from './mapgen';
 import { genRealMap, capitalsOn, REAL_MAPS } from './realmap';
@@ -10,7 +10,7 @@ import { VIEWS } from './mapview';
 import { COUNTRIES, MAJOR, countryByCode, colourGap, type Country } from '../core/countries';
 import { setOwner, stepAttack, launch, touches } from './territory';
 import { mergeArmies, unmergeArmies } from './army';
-import { toRuins, build, buildBlock, togglePriority, produce, resetHomes } from './buildings';
+import { toRuins, build, buildBlock, produce, resetHomes } from './buildings';
 import { scanContacts, census, censusStep } from './census';
 import { botThink } from './bots';
 import { updatePopulation, resetWalks, resetRooms } from './population';
@@ -82,7 +82,7 @@ export function newWorld(seed: number, map='gen'){
   if (W.map==='gen'){ resizeGrid(GEN_W,GEN_H); genMap(seed); }
   else { resizeGrid(VIEWS[W.map].w,VIEWS[W.map].h); genRealMap(W.map,7); }   // a real map's ground is the same every match
   owner.fill(0); occ.fill(0); road.fill(0); frontMark.fill(0);
-  pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0); pPrio.fill(0); pAband.fill(0); pIn.fill(0); pHp.fill(0); pTier.fill(0); pSpan.fill(0); pArmor[2].fill(0); pArmor[3].fill(0); W.prioSeq=0;
+  pType.fill(0); pOwner.fill(0); pBurn.fill(0); pTimer.fill(0); pVar.fill(0); pAband.fill(0); pIn.fill(0); pHp.fill(0); pTier.fill(0); pSpan.fill(0); pArmor[2].fill(0); pArmor[3].fill(0);
   W.burning=[]; W.attacks=[]; W.attackSeq=0; W.commands.length=0;
   W.nations=[blankNation(0,'Unclaimed land','#cfc6a8',false)];
   W.M=1; W.contact=new Int32Array(1);
@@ -235,8 +235,6 @@ function applyCommand(c: Command){
     n.soldierShare=Math.min(1,Math.max(0,c.share));
   } else if (c.type==='build'){
     const n=W.nations[c.nation]; if (n){ if (c.block) buildBlock(n,c.plot,c.kind,'any'); else build(n,c.plot,c.kind,'any'); }   // the player may build over his own buildings
-  } else if (c.type==='priority'){
-    const n=W.nations[c.nation]; if (n && n.alive) togglePriority(n,c.plot);
   } else if (c.type==='ally'){
     proposeAlliance(c.nation,c.target);
   } else if (c.type==='war'){

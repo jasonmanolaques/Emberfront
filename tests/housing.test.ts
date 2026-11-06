@@ -4,7 +4,7 @@ import { TW, TH, NT, NP, PW, B_HOUSE, B_SITE, B_EMPTY, B_MINTER, TAX_PER_VILLAGE
 import { W, owner, isLand, pType, pOwner, pAband, pCenter, pBuild } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { build, plotProblem, cancelSite } from '../src/sim/buildings';
-import { humanRate, spareBeds, HOUSE_BONUS, FARM_BONUS, H_VILLAGER, H_SOLDIER, TASK_ROAM, TASK_HOME_GO, TASK_HOME_BUILD, BUILD_TICKS, ABANDON_TICKS, BEG_TICKS, STARVE_TICKS } from '../src/sim/population';
+import { humanRate, houseBonus, FARM_BONUS, H_VILLAGER, H_SOLDIER, TASK_ROAM, TASK_HOME_GO, TASK_HOME_BUILD, BUILD_TICKS, ABANDON_TICKS, BEG_TICKS, STARVE_TICKS } from '../src/sim/population';
 import { listen } from '../src/sim/events';
 import { B_BARRACKS } from '../src/core/constants';
 
@@ -231,14 +231,15 @@ describe('homeless people and beggars', () => {
 });
 
 describe('empty houses speed up the raising of people', () => {
-  it('raises humans 1% faster for each bed nobody needs, on top of the farms: none when everyone fills a house, 6% with 6 more beds than people', () => {
+  it('raises humans faster by the share of beds nobody needs, 0 to 100%, on top of the farms: none when everyone fills a house, 50% with 6 people in 12 beds, 90% with 1 in 10', () => {
     start(12345, 0);
-    expect(HOUSE_BONUS).toBe(0.01);
     me().farms=0; me().beds=12;
-    expect(spareBeds(me(),12)).toBe(0); expect(humanRate(me(),12)).toBe(1);      // 12 people, 12 beds: no bonus
-    expect(spareBeds(me(),6)).toBe(6); expect(humanRate(me(),6)).toBeCloseTo(1.06,9);   // 6 people: 6 spare beds, 6%
+    expect(houseBonus(me(),12)).toBe(0); expect(humanRate(me(),12)).toBe(1);      // 12 people, 12 beds: no bonus
+    expect(houseBonus(me(),6)).toBeCloseTo(0.5,9); expect(humanRate(me(),6)).toBeCloseTo(1.5,9);
     expect(humanRate(me(),20)).toBe(1);                                          // (more people than beds: none, never a penalty)
-    me().farms=10; expect(humanRate(me(),6)).toBeCloseTo(1+FARM_BONUS*10+0.06,9);
+    me().beds=10; expect(houseBonus(me(),1)).toBeCloseTo(0.9,9);                  // 10 houses and 1 villager: 90%
+    me().beds=0; expect(houseBonus(me(),0)).toBe(0);
+    me().beds=12; me().farms=10; expect(humanRate(me(),6)).toBeCloseTo(1+FARM_BONUS*10+0.5,9);
   });
 
   it('in play, a kingdom with houses to spare raises its people sooner, and an upgraded house (more beds) adds to the bonus', () => {

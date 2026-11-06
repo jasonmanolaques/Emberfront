@@ -1,14 +1,14 @@
 // Watchtowers and the castle by tier, battle damage, and soldiers' wages.
 import { describe, it, expect } from 'vitest';
 import { TW, TH, NT, NP, PW, T_GRASS, B_FARM, B_TOWER, B_CASTLE, B_BARRACKS, WAGE, WAGE_IDLE, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD } from '../src/core/constants';
-import { W, owner, isLand, terr, pBuild, pType, pOwner, pHp, pTier, pPrio, type Human, type Nation } from '../src/sim/state';
+import { W, owner, isLand, terr, pBuild, pType, pOwner, pHp, pTier, type Human, type Nation } from '../src/sim/state';
 import { botThink } from '../src/sim/bots';
 import { wallPlots, ringOf, isGate, plannedWall, wallNeighbours } from '../src/sim/fort';
 import { newWorld, startMatch, tick, grossIncome } from '../src/sim/sim';
 import { listen } from '../src/sim/events';
 import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
-import { build, plotProblem, structureOf, costFor, finishHouse, togglePriority } from '../src/sim/buildings';
+import { build, plotProblem, structureOf, costFor, finishHouse } from '../src/sim/buildings';
 import { H_SOLDIER, H_VILLAGER, makeHuman, doorOf } from '../src/sim/population';
 import { bldHp, wear, TOWER_RELOADS, TOWER_DMGS, TOWER_HP, CASTLE_HP } from '../src/sim/defense';
 import { R_TOWERS, R_CASTLE } from '../src/sim/research';
@@ -173,11 +173,5 @@ describe('bots fortifying', () => {
     const ring=wallPlots(n), built=ring.filter(q => pType[q]===B_TOWER && pOwner[q]===2);
     expect(built.length).toBeGreaterThan(ring.length*0.6);
     expect(ring.every(q => pType[q]===B_TOWER || !pType[q] || before.has(q))).toBe(true);   // nothing new on the line but towers
-    for (const q of n.blds) if (pType[q]===B_TOWER) expect(!!pPrio[q]).toBe(wallNeighbours(q,2)===1);
-    // a tower standing alone: an outpost, no garrison
-    const lone=Array.from({ length: NP }, (_, k) => k).find(k => !plotProblem(n,k) && ringOf(n,k)!==n.wallR && !wallNeighbours(k,2))!;
-    n.stock=[50,50,50]; expect(build(n,lone,B_TOWER)).toBe(true); togglePriority(n,lone);
-    W.simTime+=60; n.nextThink=0; botThink(n);
-    expect(pPrio[lone]).toBe(0);
   });
 });

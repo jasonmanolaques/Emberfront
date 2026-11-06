@@ -7,7 +7,7 @@ import { declare, escalate } from '../src/sim/war';
 import { listen } from '../src/sim/events';
 import { setOwner, tileCost } from '../src/sim/territory';
 import { STRUCTURES, structureOf, costFor, build, buildBlock, blockPlan, blockPlots, plotProblem, placeProblem } from '../src/sim/buildings';
-import { humanRate, HUMAN_EVERY as E, H_SOLDIER, H_VILLAGER, SOLDIER_HP, frontOf, doorOf, switching, makeHuman } from '../src/sim/population';
+import { humanRate, houseBonus, HUMAN_EVERY as E, H_SOLDIER, H_VILLAGER, SOLDIER_HP, frontOf, doorOf, switching, makeHuman } from '../src/sim/population';
 
 const me = () => W.nations[1];
 const mine = () => W.humans.filter(h => h.o === 1);
@@ -137,8 +137,8 @@ describe('what the buildings do', () => {
     start(12345, 0); expand(3);
     const plots=freePlots();
     for (let k=0;k<4;k++) place(B_FARM, plots[k]);
-    const before=mine().length, t0=W.tickN, p0=me().humanProg, rate=humanRate(me(),mine().length);   // (4 farms: 12% faster, and 1% for each bed nobody needs)
-    expect(rate).toBeCloseTo(1.12+0.01*Math.max(0,me().beds-mine().length),9);
+    const before=mine().length, t0=W.tickN, p0=me().humanProg, rate=humanRate(me(),mine().length);   // (4 farms: 12% faster, and the share of beds nobody needs)
+    expect(rate).toBeCloseTo(1.12+houseBonus(me(),mine().length),9);
     run(10*E);
     expect(Math.abs((mine().length-before) - (Math.floor((p0+10*E*rate)/E) - Math.floor(p0/E)))).toBeLessThanOrEqual(1);   // (houses finished meanwhile speed it up a little)
     expect(W.tickN-t0).toBe(10*E);
@@ -169,38 +169,6 @@ describe('what the buildings do', () => {
     for (const h of army) expect(Math.hypot(h.x-bx, h.y-by)).toBeLessThan(16);
     const [cx, cy]=doorOf(me());
     for (const h of patrol) expect(Math.hypot(h.x-cx, h.y-cy)).toBeLessThan(50);   // round the castle
-  });
-
-  it('splits 5 soldiers without room in a barracks 3 and 2 between two watchtowers calling for a garrison', () => {
-    start(12345, 0); expand(8);
-    const plots=freePlots(); place(B_BARRACKS, plots[0]); const t1=place(B_TOWER, plots[3]), t2=place(B_TOWER, plots[6]);
-    while (mine().length<10) tick();
-    me().humanProg = -1e9;   // no more newcomers, so the kingdom stays at 10 people
-    queueCommand({ type: 'soldiers', nation: 1, share: 1 });   // 10 soldiers: 5 in the barracks' army, 5 patrolling
-    for (let i=0;i<3000 && (mine().some(switching) || mine().filter(h => h.kind===H_SOLDIER).length<10);i++) tick();
-    expect(mine().filter(h => h.kind===H_SOLDIER)).toHaveLength(10);
-    expect(mine().filter(h => h.base<0)).toHaveLength(5);
-    queueCommand({ type: 'priority', nation: 1, plot: t1 });
-    queueCommand({ type: 'priority', nation: 1, plot: t2 });
-    tick();
-    const at=(q: number)=>mine().filter(h => h.post===q).length;
-    expect([at(t1), at(t2)]).toEqual([3, 2]);
-    // they walk over and stand guard
-    run(400);
-    const [x1, y1]=frontOf(t1);
-    for (const h of mine().filter(h => h.post===t1)) expect(Math.hypot(h.x-x1, h.y-y1)).toBeLessThan(20);
-    // the first tower stands down: its guards go back, and the second fills up to 5
-    queueCommand({ type: 'priority', nation: 1, plot: t1 }); tick();
-    expect([at(t1), at(t2)]).toEqual([0, 5]);
-  });
-
-  it('lets only the owner call a garrison, and only to a watchtower', () => {
-    start(12345, 1);
-    const farm=place(B_FARM);
-    queueCommand({ type: 'priority', nation: 1, plot: farm }); tick();
-    const tower=place(B_TOWER);
-    queueCommand({ type: 'priority', nation: 2, plot: tower }); tick();
-    expect(mine().filter(h => h.post>=0)).toHaveLength(0);
   });
 
   it('holds its fire at peace; at war it shoots enemy soldiers on its own land, 2 damage every 8 seconds, and not those outside', () => {

@@ -7,7 +7,7 @@ import { newWorld, startMatch, queueCommand, tick, grossIncome } from '../src/si
 import { listen, on } from '../src/sim/events';
 import { setOwner, occIsleAdd } from '../src/sim/territory';
 import { census } from '../src/sim/census';
-import { build, plotProblem, placeProblem, SIZE, structureOf, costFor, togglePriority, finishHouse } from '../src/sim/buildings';
+import { build, plotProblem, placeProblem, SIZE, structureOf, costFor, finishHouse } from '../src/sim/buildings';
 import { resetRooms } from '../src/sim/population';
 import { humanRate, indoors, TASK_ROAM, TASK_HOME_GO, H_SOLDIER, H_VILLAGER, TASK_REST, TASK_TO_TRAIN, TASK_INSIDE, MILITIA_HP, SOLDIER_HP, VILLAGER_HP, HOME_PACE, makeHuman, doorOf, frontOf, switching, pace, maxHp } from '../src/sim/population';
 import { UNIT_SIZE, buildUnits, station, unitAt, units, groupKeys, mergeArmies, SOLDIER_DMG } from '../src/sim/army';
@@ -208,7 +208,7 @@ describe('declaring war', () => {
     world(1); quiet();
     place(N(1),B_BARRACKS); place(N(2),B_FARM); paintToward(1,2);
     const men=soldiers(N(1),4);
-    const tower=place(N(1),B_TOWER); togglePriority(N(1),tower);
+    const tower=place(N(1),B_TOWER);
     expect(declare(1,2,4)).toBe(true);
     queueCommand({ type:'soldiers', nation:1, share:0 });   // the kingdom wants no soldiers at all
     for (let i=0;i<60;i++){ tick(); for (const h of men) if (W.humans.includes(h)){ expect(switching(h)).toBe(false); expect(h.post).toBe(-1); } }
@@ -2275,6 +2275,19 @@ describe('an army touching a third kingdom\'s land', () => {
     run(3);
     expect(W.humans.includes(h)).toBe(true);
     expect(h.hp).toBeGreaterThan(0);
+  });
+  it('a man who finds himself on a third kingdom\'s ground walks on to the front instead of standing there', () => {
+    world(2); labelWorld(); allocIsles(); quiet(); paintDisc(N(1),14); paintDisc(N(2),30); paintDisc(N(3),30); paintToward(1,2); noDraft(2); noDraft(3);
+    soldiers(N(1),10); noDraft(); run(2);
+    for (const a of available(N(1))) assignArmy(1,a.unit.key,2);
+    run(2);
+    const c=W.campaigns.find(k => k.a===1)!, h=W.humans.find(k => k.id===c.members.find(m => m!==c.leader)!)!;
+    const t=Array.from({ length: NT }, (_, k) => k).find(k => owner[k]===3 && Math.hypot((k%TW)-(N(3).capTile%TW),((k/TW)|0)-((N(3).capTile/TW)|0))>20)!;
+    h.x=(t%TW)*2+1; h.y=((t/TW)|0)*2+1; h.fk=-1; h.path=[];
+    const x0=h.x, y0=h.y;
+    run(300);
+    expect(W.humans.includes(h)).toBe(true);
+    expect(Math.hypot(h.x-x0,h.y-y0)).toBeGreaterThan(8);   // he is on his way
   });
 });
 

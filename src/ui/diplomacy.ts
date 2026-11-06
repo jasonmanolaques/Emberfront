@@ -9,7 +9,7 @@ import { W, pType, pOwner, pBurn } from '../sim/state';
 import { client } from '../client';
 import { basesOf, dockTile, shipById, SHIP_CAP, SHIP_WAIT } from '../sim/naval';
 import { queueCommand } from '../sim/sim';
-import { allied, atWar, available, callable, callableCount, allyProblem, warProblem, navalPlan, navalOf, defendProblem, reservesOf, reservesProblem, inCrisis, crisisWait, attacks, hasArmies, OFFER_TICKS, PRESENT, F_GATHER, F_READY, F_PUSH } from '../sim/war';
+import { allied, atWar, available, callable, callableCount, allyProblem, warProblem, navalPlan, navalOf, reservesOf, reservesProblem, inCrisis, crisisWait, attacks, hasArmies, OFFER_TICKS, PRESENT, F_GATHER, F_READY, F_PUSH } from '../sim/war';
 import type { Campaign, Human } from '../sim/state';
 import { toast, ui } from './hud';
 import { ArmyPicker, armyName, baseName } from './armies';
@@ -186,29 +186,9 @@ export function noteDeath(id: number, _o: number, kind: number){
     (kind===1 ? b.soldiers : b.villagers)[s]++; b.side.delete(id);
   }
 }
-/** Each side's armies in this fight: "West army 4/10 +1", the men with it out of its barracks'
-    room, and reinforcements on their way to it. */
-function groupsOf(o: number, side: number, byId: Map<number, Human>){
-  const k=side===0 ? PLAYER : o, out: string[]=[];
-  for (const c of W.campaigns){
-    if (c.a!==k || !between(c,o) || c.phase===2) continue;
-    let here=0, coming=0;
-    for (const id of c.members){
-      const h=byId.get(id); if (!h) continue;
-      // on a front, with the army means at his place in the line; on a march, near its banner
-      if (c.front ? h.fk>=0 && (h.x-h.fx)**2+(h.y-h.fy)**2<(PRESENT*3)**2 : (h.x-c.bx)**2+(h.y-c.by)**2<40*40) here++; else coming++;
-    }
-    const u=unitAt(c.unit), n=W.nations[k];
-    if (c.militia){ out.push(`<em title="Militia called up as reserves">Reserves ${here}${coming ? ` +${coming}` : ''}</em>`); continue; }
-    const name=u && u.o===k ? armyName(n,u) : 'Army';
-    const tip=`${here} with the army, room for ${u?.cap ?? c.startSoldiers}`+(coming ? `, ${coming} reinforcement${coming===1?'':'s'} on the way` : '');
-    out.push(`<em title="${tip}">${esc(name)} ${here}/${u && u.o===k ? u.cap : c.startSoldiers}${coming ? ` +${coming}` : ''}</em>`);
-  }
-  return out.length ? '<br>'+out.join(' · ') : '';
-}
 /** Two colours pushing against each other, as wide as each side's share of everyone in the fight;
     the fallen darken each side from its outer end, under a field of skulls. Then the numbers. */
-function powerBar(f: Front, b: Battle, byId: Map<number, Human>){
+function powerBar(f: Front, b: Battle){
   const all=b.total[0]+b.total[1]; if (!all) return '';
   const L=f.a===PLAYER ? 0 : 1, R=1-L, ids=[PLAYER,f.o];
   const seg=(s: number, cls: string) => {
@@ -217,42 +197,36 @@ function powerBar(f: Front, b: Battle, byId: Map<number, Human>){
   };
   const info=(s: number) => {
     const dead=b.soldiers[s]+b.villagers[s];
-    return `<span><b style="color:${W.nations[ids[s]].hex}">${esc(nameOf(ids[s]))}</b> ${b.total[s]-dead} fighting`+
-      `<br>Dead: ${b.soldiers[s]} soldier${b.soldiers[s]===1?'':'s'}, ${b.villagers[s]} villager${b.villagers[s]===1?'':'s'}`+
-      groupsOf(f.o,s,byId)+`</span>`;
+    return `<span title="${esc(nameOf(ids[s]))}: ${b.soldiers[s]} soldier${b.soldiers[s]===1?'':'s'} and ${b.villagers[s]} villager${b.villagers[s]===1?'':'s'} dead"><i class="flag" style="${flagCSS(W.nations[ids[s]].code)}"></i> DEAD: ${dead}</span>`;
   };
   return `<div class="pbar" title="Balance of power: everyone in the fight, the fallen under skulls">${seg(L,'l')}${seg(R,'r')}</div><div class="pinfo">${info(L)}${info(R)}</div>`;
 }
 
 let lastChips='';
 const dismissed=new Set<number>();   // wars and crises whose bar the player closed (it returns with the next one)
-/** Can we send armies to hold our border with o: they are massing on it, or at war with us? */
-const canDefend = (o: number) => !defendProblem(PLAYER,o);
 export function updateWarChips(){
   const all=fronts(), byId=new Map<number, Human>();
   for (const o of [...dismissed]) if (!all.some(f => f.o===o)) dismissed.delete(o);
   const list=all.filter(f => !dismissed.has(f.o));
   for (const h of W.humans) byId.set(h.id,h);
   const html=list.map(f => {
-    const kind=f.war ? 'War' : 'Crisis', open=(f.crisis===2 || f.war) && canDefend(f.o) && W.campaigns.some(c => c.front && c.a===f.o && c.d===PLAYER && c.phase<2);
+    const kind=f.war ? 'War' : 'Crisis';
     const [label, act, off] =
       f.theyOffer ? ['Accept peace', 'peace', false] :
       f.ready ? ['Counter-attack or peace ▾', 'counter', false] :
       f.crisis===1 ? ['De-escalate', 'calm', false] :
-      open ? ['Respond ▾', 'respond', false] :
       f.crisis===2 ? ['Crisis', '', true] :
       f.iOffer ? ['Peace offered…', '', true] :
       ['Offer peace', 'end', false];
     const massed=f.incoming.reduce((k,c)=>k+c.members.length,0);
     const men=(massed ? ` · ${massed} ${f.a===PLAYER ? 'holding their border' : 'on your border'}` : '')+(f.men>0 ? ` · ${f.men} out` : '');
-    const chip=`<button class="chip war${f.theyOffer||f.ready?' offer':''}${open?' threat':''}" data-o="${f.o}" data-act="${act}" ${off||!act?'disabled':''}><i class="flag" style="${flagCSS(W.nations[f.a].code)}"></i>${esc(nameOf(f.a))} – ${esc(nameOf(f.d))} · ${kind}${men}<b>${label}</b></button>`;
-    return `<div class="front" data-o="${f.o}"><div class="fhead">${chip}<button class="x fclose" data-o="${f.o}" aria-label="Close this war bar" title="Close this bar (it comes back with the next war or crisis)">×</button></div>${word(f.o,byId)}${powerBar(f,track(f.o,byId),byId)}${reserves(f.o)}</div>`;
+    const chip=`<button class="chip war${f.theyOffer||f.ready?' offer':''}" data-o="${f.o}" data-act="${act}" ${off||!act?'disabled':''}><i class="flag" style="${flagCSS(W.nations[f.a].code)}"></i>${esc(nameOf(f.a))} – ${esc(nameOf(f.d))} · ${kind}${men}<b>${label}</b></button>`;
+    return `<div class="front" data-o="${f.o}"><div class="fhead">${chip}<button class="x fclose" data-o="${f.o}" aria-label="Close this war bar" title="Close this bar (it comes back with the next war or crisis)">×</button></div>${word(f.o,byId)}${powerBar(f,track(f.o,byId))}${reserves(f.o)}</div>`;
   }).join('');
   if (html!==lastChips){ lastChips=html; wars.innerHTML=html; placePop(); }
   if (!pop.hidden){
     if (!popCounter && !list.some(f => f.o===popFor)) closePop();   // (the war is over: the menu goes with it)
     else if (popCounter){ if (!W.ready[PLAYER*W.M+popFor]) closePop(); }
-    else if (!canDefend(popFor)) closePop();
   }
 }
 /** Under the chip, the word for our armies against o: gathering on the border (and how many are in
@@ -306,7 +280,7 @@ function reserves(o: number){
   if (out?.all) return home;
   const why=reservesProblem(PLAYER,o,true);
   if (why==='No crisis or war with them' || why==='Needs a shared border' || !k) return home;
-  const call=`<button class="fres" data-o="${o}" data-call="1" ${why?'disabled':''} title="${why ? esc(why) : `Every militiaman at home (but the watchtowers' guards) joins this front${out ? `, beside the ${out.members.length} already there` : ''}. Called up they are paid a soldier's wage, and they die easily`}">${out ? 'Call the rest' : 'Call reserves'} · ${k} militia</button>`;
+  const call=`<button class="fres" data-o="${o}" data-call="1" ${why?'disabled':''} title="${why ? esc(why) : `Every militiaman at home joins this front${out ? `, beside the ${out.members.length} already there` : ''}. Called up they are paid a soldier's wage, and they die easily`}">${out ? 'Call the rest' : 'Call reserves'} · ${k} militia</button>`;
   return home ? `<div class="fresrow">${call}${home}</div>` : call;
 }
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]!);
@@ -349,7 +323,6 @@ export function setupDiplomacy(){
     if (r){ if (!r.disabled){ queueCommand({ type:'reserves', nation:PLAYER, target:+r.dataset.o!, call:!!r.dataset.call }); lastChips=''; r.disabled=true; } return; }
     const b=(e.target as HTMLElement).closest('button.chip') as HTMLButtonElement | null; if (!b || b.disabled) return;
     const o=+b.dataset.o!, act=b.dataset.act;
-    if (act==='respond'){ if (!pop.hidden && popFor===o) closePop(); else openPop(o); return; }
     if (act==='counter'){ if (!pop.hidden && popFor===o) closePop(); else openPop(o,true); return; }
     if (act==='peace') queueCommand({ type:'peace', nation:PLAYER, target:o });
     else if (act==='calm') queueCommand({ type:'deescalate', nation:PLAYER, target:o });

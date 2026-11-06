@@ -28,7 +28,7 @@
    reports ready to counter-attack. Guards stay by their watchtowers, and the castle shoots too.
    Everyone heals slowly. Allies open their land to each other's armies. */
 import { TW, TH, NT, NP, PW, PH, TICK, GAME_SPEED, WAGE, WAGE_IDLE, WAGE_ATTACK, MIL_WAGE, MIL_ATTACK, B_CASTLE, B_CPART, B_TOWER, B_HOUSE, B_FARM, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_MINE, B_RESEARCH, B_GUILD, B_NAVAL, isStructure } from '../core/constants';
-import { W, owner, occ, isLand, isle, sea, pType, pOwner, pBurn, pMain, pHp, pPrio, pCenter, pTier, pIn, type Campaign, type Human, type Nation, type Invasion } from './state';
+import { W, owner, occ, isLand, isle, sea, pType, pOwner, pBurn, pMain, pHp, pCenter, pTier, pIn, type Campaign, type Human, type Nation, type Invasion } from './state';
 import { on } from './events';
 import { setOwner, occIsleAdd } from './territory';
 import { ignite, dims } from './buildings';
@@ -137,6 +137,7 @@ interface Offensive {
   depth: Field | null;            // how far each tile of the defender's is from the line as the attack began (STEP a tile)
   since: number;                  // tick it began
   noFront: number;                // ticks it has had no front
+  through: boolean;               // some of its men found no way round a third kingdom's land: the way is now worked out over it too
   liberating: boolean;            // its own land is occupied by the enemy: its armies take it back first, and may not attack
   Fd: Front | null;               // the line its defending armies hold: the edge of the ground no enemy tower reaches (null: the front's own line)
   safeAt: number;                 // tick Fd was worked out
@@ -245,17 +246,19 @@ export const warringNow = (o: number) => warring[o]===1;
     the sources), FIELD_MARGIN tiles wider. It looks for the tiles `mark` stamps (each stamped tile
     counts once; one is enough if `first`), and stops `margin` steps past the last of them. Returns
     the first such tile reached, or -1. */
+let thirds=false;   // pass over the land of kingdoms that are neither the target nor allies too (when there is no way round it)
+let boxExtra: number[]=[];   // tiles the field's box must take in as well (men who stand away from both kingdoms)
 let breach=false;   // fill straight through enemy walls (when they leave no way round)
 function fill(f: Field, src: number[], a: number, d: number, any: boolean, mark: (stamp: number) => number, first: boolean, margin: number){
   const stamp=++wantSeq, wanted=mark(stamp);
-  fitBox(f,[a,d],src);
+  fitBox(f,[a,d],boxExtra.length ? src.concat(boxExtra) : src);
   const F=f.d, w=f.w, h=f.h, x0=f.x0, y0=f.y0;
   let head=0, tail=0, found=-1, left=wanted, until=32000;
   for (const s of src){ const l=f.idx(s); if (l>=0 && F[l]<0){ F[l]=0; queue[tail++]=l; } }
   // which owners' land the army may cross
   // (d's own land only once it is war: before that, in a peace or a crisis, an army keeps off it on its way to the border)
   const pass=new Uint8Array(W.M); pass[0]=pass[a]=1; if (any || W.wars[a*W.M+d]) pass[d]=1;
-  for (let o=1;o<W.M;o++) if (any || W.ally[a*W.M+o]) pass[o]=1;
+  for (let o=1;o<W.M;o++) if (any || W.ally[a*W.M+o] || (thirds && o!==d)) pass[o]=1;
   // whose walls stop it (none of them when breaching)
   const wall=new Uint8Array(W.M); if (!breach) for (let o=1;o<W.M;o++) wall[o]=o!==a && !W.ally[a*W.M+o] ? 1 : 0;
   const tw=TW, land=isLand, own=owner, Q=queue, mk=want, wo=wallOf;   // local names: much faster in a hot loop than imports
@@ -828,7 +831,7 @@ function offensiveOf(a: number, d: number, isle=0, aboard=false, sec=0){
   let o=offensives.get(id);
   if (!o){
     if (!frontsOf(key).length) W.offensive[key]=F_GATHER;
-    o={ id, key, a, d, isle, sec, st:W.offensive[key], F:null, walk:new Field(), k:0, progress:0, strips:0, depth:null, since:W.tickN, noFront:0, liberating:false, Fd:null, safeAt:-1e9, lineAt:-1e9, lineSig:-1, towers:[], speed:1, clock:0, men:[], atk:[], def:[], camps:[] };
+    o={ id, key, a, d, isle, sec, st:W.offensive[key], F:null, walk:new Field(), k:0, progress:0, strips:0, depth:null, since:W.tickN, noFront:0, through:false, liberating:false, Fd:null, safeAt:-1e9, lineAt:-1e9, lineSig:-1, towers:[], speed:1, clock:0, men:[], atk:[], def:[], camps:[] };
     offensives.set(id,o);
   }
   return o;
@@ -987,7 +990,7 @@ export function annex(loser: number, winner: number){
   for (let q=0;q<NP;q++){
     if (pOwner[q]!==loser) continue;
     if (pType[q]===B_CASTLE || pType[q]===B_CPART) continue;
-    if (isStructure(pType[q])){ pOwner[q]=winner; pPrio[q]=0; on.plotChanged(q); }
+    if (isStructure(pType[q])){ pOwner[q]=winner; on.plotChanged(q); }
   }
   if (cap>=0) for (const k of [cap,cap+1,cap+PW,cap+PW+1]) ignite(k);
   // the loser's armies scatter, and its ships and landings with them; armies sent against it turn for home
@@ -1329,7 +1332,7 @@ function runOffensives(){
     }
     if (!o.F || (now+id)%REFRONT===0) redeploy(o);
     if (!o.F!.tiles.length){   // no border left to fight on: the armies wait, and in the end are unassigned (back at their barracks)
-      if (++o.noFront>=NO_FRONT) for (const c of cs) sendHome(c,'done');
+      if (++o.noFront>=NO_FRONT) for (const c of cs) if (!(war && !attacks(c))) sendHome(c,'done');   // (an army ordered to defend, at war, stays at its post until the word to attack: only the others are unassigned)
       note(key,war,o.st); continue;
     }
     o.noFront=0;
@@ -1527,10 +1530,16 @@ function redeploy(o: Offensive){
     const L=c.placed===2 && Fd ? Fd : F, u=mine[mine.length>>1].slot, [lx,ly]=placeAt(L,u,1,deep+1,ok);
     l.fk=id; l.slot=u; l.line=deep+1; l.fx=lx; l.fy=ly; srcs.push(tileOf(lx,ly));
   }
-  if (!srcs.length || srcs.every(t => o.walk.at(t)===0)) return;   // (the way there still leads to everyone's place)
+  // a man on land of his own landmass with no way left to the front but over a third kingdom's ground (it lies across his path, or he has come to stand on its coast):
+  // the way is worked out over that ground too (`through`), rather than leave him standing there
+  const adrift=(h: Human) => { const t=tileOf(h.x,h.y); return h.hp>0 && !indoors(h) && h.task!==TASK_BOAT && isLand[t] && (!o.isle || isle[t]===o.isle) && o.walk.at(t)<0 && !seaBound.has(h.id) && (camps.get(h.war)?.naval ?? -1)<0; };
   const men=o.men.concat(o.camps.map(c => byId.get(c.leader)).filter((h): h is Human => !!h));
+  const stuck=men.some(adrift);
+  if (!stuck && (!srcs.length || srcs.every(t => o.walk.at(t)===0))) return;   // (the way there still leads to everyone's place)
+  if (stuck) o.through=true;
   const mark=(stamp: number) => { let k=0; for (const h of men){ const t=tileOf(h.x,h.y); if (want[t]!==stamp){ want[t]=stamp; k++; } } return k; };
-  fillOrBreach(o.walk,srcs,o.a,o.d,false,mark,false,8,(b) => b>=0);
+  thirds=o.through; if (thirds) boxExtra=men.map(h => tileOf(h.x,h.y));
+  fillOrBreach(o.walk,srcs,o.a,o.d,false,mark,false,8,(b) => b>=0); thirds=false; boxExtra=[];
 }
 /** The front pushes on, a strip at a time at the pace the line's strength allows (a strip a second
     with a man every DENSE tiles or closer, slower as it thins). Each man of the front rank in his place

@@ -5,7 +5,7 @@
    out (a map tile under DETAIL_CSS screen pixels), from the overview, one pixel a map tile. */
 import { TW, TH, RW, RH, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY, B_HOSPITAL, B_NAVAL } from '../core/constants';
 import { clamp, fmt } from '../core/util';
-import { W, owner, isLand, sea, pType, pPrio, pTimer, pBurn, type Human } from '../sim/state';
+import { W, owner, isLand, sea, pType, pTimer, pBurn, type Human } from '../sim/state';
 import { findBlock } from '../sim/sim';
 import { placeProblem, structureOf, canAfford, navalSite, blockPlan, SIZE, PRODUCE_TICKS, dims } from '../sim/buildings';
 import { client, reduceMotion } from '../client';
@@ -404,17 +404,6 @@ export function render(now: number, dt: number){
     else ctx.fillStyle = f>0.5?'rgba(235,232,224,.55)':'rgba(235,232,224,.25)';
     const sz = k===0 && f<0.4 ? 1 : s;
     ctx.fillRect(Math.floor(ppx[i]),Math.floor(ppy[i]),sz,sz);
-  }
-  // watchtowers calling for a garrison carry a "!"
-  if (detail){
-    const qx0=Math.max(0,Math.floor(vx0/PS)), qy0=Math.max(0,Math.floor(vy0/PS)), qx1=Math.min(PW-1,Math.floor(vx1/PS)), qy1=Math.min(PH-1,Math.floor((vy1+PS)/PS));
-    const bob=reduceMotion ? 0 : ((now/400)|0)&1;
-    for (let y=qy0;y<=qy1;y++) for (let x=qx0;x<=qx1;x++){
-      const q=y*PW+x; if (pType[q]!==B_TOWER || !pPrio[q]) continue;
-      const ex=x*PS+7, ey=y*PS-12-bob;
-      ctx.fillStyle=INK; ctx.fillRect(ex-2,ey-2,6,13);
-      ctx.fillStyle='#ffd23f'; ctx.fillRect(ex,ey,2,6); ctx.fillRect(ex,ey+7,2,2);
-    }
   }
   // arrows from watchtowers and castles: a flash on the battlements, a bright bolt arcing over
   // with a fading streak behind it, and a burst where it hits

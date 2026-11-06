@@ -321,6 +321,7 @@ button:disabled:active{transform:none;box-shadow:2px 2px 0 var(--ink)}
 .pinfo{display:flex;justify-content:space-between;gap:10px;font-size:11px;line-height:1.25;color:var(--text);background:var(--plate);border:2px solid var(--edge);box-shadow:0 0 0 2px var(--ink);padding:3px 6px}
 .pinfo span:last-child{text-align:right}
 .pinfo b{font-weight:600}
+.pinfo span{display:inline-flex;align-items:center;gap:6px}
 .pinfo em{font-style:normal;color:var(--gold);white-space:nowrap}
 
 /* Research: opened by clicking a research station */

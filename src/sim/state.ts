@@ -160,7 +160,6 @@ export type Command =
   | { type: 'attack'; nation: number; tile: number; ratio: number }
   | { type: 'soldiers'; nation: number; share: number }
   | { type: 'build'; nation: number; plot: number; kind: number; block?: boolean }     // kind: B_FARM, B_BARRACKS, B_TOWER or B_MINTER; block: four farms or towers on the 2 by 2 plots from `plot`
-  | { type: 'priority'; nation: number; plot: number }                // toggle a watchtower's call for a garrison
   | { type: 'colonize'; nation: number; tile: number; ratio: number }   // send a ship to colonize the landmass of this unclaimed tile, with this share of the treasury
   | { type: 'ship'; nation: number; plot: number }                   // build a ship at this naval base
   | { type: 'ally'; nation: number; target: number }                  // propose an alliance
@@ -197,7 +196,6 @@ export let pHp = new Float32Array(NP);     // damage a building has taken (multi
 export let pArmor = [new Uint8Array(0), new Uint8Array(0), new Uint8Array(NP), new Uint8Array(NP)];   // barracks: armour of tier 2 and 3 stored there
 export let pTier = new Uint8Array(NP);   // houses: 1 hovel, 2 stone house, 3 manor; watchtowers 1-3 (0 for anything else)
 export let pSpan = new Uint8Array(NP);   // plantations, quarries, copper mines (main plot): 0 one plot, 1 two side by side, 2 a 2×2 block
-export let pPrio = new Int32Array(NP);   // watchtowers calling for a garrison: order they asked in (0 = not asking)
 function placeCentres(){ for (let q=0;q<NP;q++){ const px=q%PW, py=(q/PW)|0; pCenter[q]=(py*4+2)*TW+px*4+2; } }
 placeCentres();
 /** Makes the map w×h tiles: every array sized by the map is made anew (empty). */
@@ -210,7 +208,7 @@ export function resizeGrid(w: number, h: number){
   pType=new Uint8Array(NP); pOwner=new Uint8Array(NP); pVar=new Uint8Array(NP); pBuild=new Uint8Array(NP);
   pMain=new Int32Array(NP); pCenter=new Int32Array(NP); pBurn=new Float32Array(NP); pTimer=new Float32Array(NP);
   pAband=new Uint8Array(NP); pIn=new Uint8Array(NP); pHp=new Float32Array(NP); pArmor=[new Uint8Array(0), new Uint8Array(0), new Uint8Array(NP), new Uint8Array(NP)];
-  pTier=new Uint8Array(NP); pSpan=new Uint8Array(NP); pPrio=new Int32Array(NP);
+  pTier=new Uint8Array(NP); pSpan=new Uint8Array(NP);
   placeCentres();
 }
 
@@ -221,7 +219,6 @@ export const W = {
   commands: [] as Command[], simTime: 0, tickN: 0,
   prand: Math.random as Rng,         // separate stream for people, so they never shift the territory game's randomness
   humans: [] as Human[], humanSeq: 0,
-  prioSeq: 0,
   campaigns: [] as Campaign[], campSeq: 0,
   ally: new Uint8Array(1),           // [a*M+b] 1 if allied (both ways)
   atWar: new Uint8Array(1),          // [a*M+b] 1 while any campaign runs between them, rebuilt each tick

@@ -33,7 +33,7 @@
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, until the kingdom sends them to war (sim/war.ts). */
 import { STR_VILLAGER, STR_MILITIA, STR_SOLDIER, TW, TH, PW, PH, TICK, GAME_SPEED, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY, B_HOSPITAL } from '../core/constants';
-import { W, owner, occ, isLand, ferry, pType, pOwner, pBurn, pPrio, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, type Human, type Nation } from './state';
+import { W, owner, occ, isLand, ferry, pType, pOwner, pBurn, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, type Human, type Nation } from './state';
 import { homeScore, startSite, cancelSite, finishHouse, plotProblem } from './buildings';
 import { on } from './events';
 import { Field } from './field';
@@ -64,16 +64,17 @@ export const TASK_ROAM = 0,      // between jobs: villagers think or stroll betw
              TASK_BOAT = 17;         // a soldier of a naval invasion aboard a ship (out of sight), or on his way home by sea
 export const HUMAN_EVERY = 200;  // progress per new human: 200 ticks (20 s), each farm adds 3% speed
 export const FARM_BONUS = 0.03;
-export const HOUSE_BONUS = 0.01;   // villager generation 1% faster for each bed standing empty (beds beyond the people the kingdom has): a kingdom that has lost many people recovers quickly
 /** Beds in n's houses that nobody needs: its capacity less its people (none when everyone is housed or more). */
 export const spareBeds = (n: Nation, people: number) => Math.max(0,n.beds-people);
-/** How fast kingdom n's capital raises humans: 1 a tick, and a bonus for each farm and for each spare bed, `people` being everyone it has. */
-export const humanRate = (n: Nation, people: number) => (1+FARM_BONUS*n.farms+HOUSE_BONUS*spareBeds(n,people))*(W.siege[n.id]>0 ? 2 : 1);   // (a capital under siege raises people twice as fast, to have a chance)
+/** The bonus to raising humans that empty homes give, from 0 to 1 (0% to 100%): the share of the kingdom's beds that stand empty. With 10 hovels and 1 person it is 90%;
+    with everyone housed, nothing. A kingdom that has lost many people recovers quickly, small ones and early game included. */
+export const houseBonus = (n: Nation, people: number) => n.beds>0 ? spareBeds(n,people)/n.beds : 0;
+/** How fast kingdom n's capital raises humans: 1 a tick, and a bonus for each farm and for the empty homes, `people` being everyone it has. */
+export const humanRate = (n: Nation, people: number) => (1+FARM_BONUS*n.farms+houseBonus(n,people))*(W.siege[n.id]>0 ? 2 : 1);   // (a capital under siege raises people twice as fast, to have a chance)
 const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 s)
 const PATROL_R = 36;             // pixels around the capital door soldiers patrol when there is no barracks
 export const HOME_PACE = 1.15;   // soldiers on their own kingdom's land move 15% faster
 export const REGEN = 0.01;        // hit points everyone heals a tick (0.1 a second)
-export const GARRISON = 5;       // soldiers a watchtower calls for
 export const TOWER_RANGE = 32;   // pixels a watchtower can shoot
 const WALK_EVERY = 100;          // ticks between a kingdom's walking fields being worked out again (10 s)
 const LOOK_TICKS = 100;          // a villager with nothing to do looks for work again every 10 to 12 seconds
@@ -500,29 +501,6 @@ function demote(mine: Human[]){
   }
 }
 
-/** Shares out idle soldiers among the watchtowers calling for a garrison, one at a time in the
-    order the towers called, so 5 soldiers for 2 towers go 3 and 2. */
-function garrison(n: Nation, mine: Human[]){
-  const towers=n.blds.filter(q => standing(q,B_TOWER,n.id) && pPrio[q]).sort((a,b) => pPrio[a]-pPrio[b]);
-  const count=new Map(towers.map(q => [q,0]));
-  for (const h of mine){
-    if (h.kind!==H_SOLDIER || h.post<0) continue;
-    if (h.base>=0){ h.post=-1; continue; }   // he has joined an army
-    if (count.has(h.post)) count.set(h.post, count.get(h.post)!+1);
-    else { h.post=-1; if (!switching(h)) backToRoam(h); }   // that tower stopped asking or is gone: back to the barracks
-  }
-  const idle=mine.filter(h => h.kind===H_SOLDIER && h.post<0 && h.base<0 && h.war<0 && !switching(h));   // only soldiers with no room in a barracks guard towers
-  for (let progress=true; progress && idle.length;){
-    progress=false;
-    for (const q of towers){
-      if (!idle.length) break;
-      if (count.get(q)!>=GARRISON) continue;
-      const [x,y]=frontOf(q), h=nearest(idle,x,y).shift()!;
-      h.post=q; count.set(q, count.get(q)!+1); backToRoam(h); progress=true;
-    }
-  }
-}
-
 const roomAt=new Map<number, [number, boolean]>();
 export const resetRooms = () => roomAt.clear();
 /** Has kingdom n a plot a house could be built on? (looked at every 5 seconds) */
@@ -845,7 +823,6 @@ export function updatePopulation(){
     for (const h of station(n, mine, switching)) if (!indoors(h) && !switching(h) && h.task===TASK_ROAM) backToRoam(h);   // off to his barracks
     demote(mine);
     armUp(n, switching);
-    garrison(n, mine);
     staffGuilds(n, mine);
   }
   if (W.tickN%10===5) reinforce();   // soldiers at their barracks join its army in the field
