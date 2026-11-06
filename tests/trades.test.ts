@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { B_BARRACKS, TW, TH, NP, PW, B_FARM, B_TOWER, B_RESEARCH, B_CARPENTER, RUSH_TICKS, GAME_SPEED } from '../src/core/constants';
 import { plotProblem, build } from '../src/sim/buildings';
-import { taxRate } from '../src/sim/sim';
+import { taxRate, incomeParts } from '../src/sim/sim';
 import { TIER_XP, TOPICS, R_TAXES, R_HOUSING } from '../src/sim/research';
 import { LAND_TAX } from '../src/core/constants';
 import { occ, pCenter } from '../src/sim/state';
@@ -158,9 +158,13 @@ describe('scholars and the call-up', () => {
 });
 
 describe('v70', () => {
-  it('the land rush lasts two minutes, and the land tax is twice what it was', () => {
+  it('the land rush lasts two minutes, and the land tax is doubled only then', () => {
     expect(RUSH_TICKS).toBe(120*GAME_SPEED*10);
-    expect(LAND_TAX).toBeCloseTo(0.0008,9);
+    expect(LAND_TAX).toBeCloseTo(0.0004,9);
+    const n=me(); n.taxpayers=0;
+    expect(incomeParts(n).land).toBeCloseTo(LAND_TAX*2*n.tiles,9);   // (in the rush)
+    W.rushUntil=0;
+    expect(incomeParts(n).land).toBeCloseTo(LAND_TAX*n.tiles,9);
   });
 
   it('a research station earns nothing until its scholar stands at its door', () => {

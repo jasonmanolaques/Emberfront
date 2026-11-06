@@ -1,6 +1,6 @@
 /* ---------- simulation entry points: worlds, matches, commands, ticks ----------
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
-import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, kingdomLimit, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, TAX_PER_TIER, RUSH_TICKS, LAND_TAX, MINTER_BONUS, WAGE, } from '../core/constants';
+import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, kingdomLimit, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, TAX_PER_TIER, RUSH_TICKS, RUSH_LAND_TAX, LAND_TAX, MINTER_BONUS, WAGE, } from '../core/constants';
 import { mulberry32 } from '../core/rng';
 import { W, resizeGrid, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pIn, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
@@ -287,7 +287,7 @@ export const paid = (n: Nation) => n.soldiers-n.militia+n.called;
 export const taxRate = (n: Nation) => TAX_PER_VILLAGER+TAX_PER_TIER*Math.max(0,n.tier[R_TAXES]-1);
 export function incomeParts(n: Nation){
   let lost=0; for (let b=1;b<W.M;b++) lost+=W.occCount[n.id*W.M+b];   // (land the enemy occupies pays no tax)
-  const tax=taxRate(n)*n.taxpayers, land=LAND_TAX*Math.max(0,n.tiles-lost), boost=(tax+land)*MINTER_BONUS*n.minters;
+  const tax=taxRate(n)*n.taxpayers, land=LAND_TAX*(W.tickN<W.rushUntil ? RUSH_LAND_TAX : 1)*Math.max(0,n.tiles-lost), boost=(tax+land)*MINTER_BONUS*n.minters;
   return { tax, land, boost, soldiers:n.wageS, militia:n.wageM };
 }
 export const grossIncome = (n: Nation) => { const p=incomeParts(n); return p.tax+p.land+p.boost; };
