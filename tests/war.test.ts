@@ -339,11 +339,11 @@ describe('bots at war', () => {
     outer: for (let r=0;r<60;r++) for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){ if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue; if (startMatch((TH/2+dy*3)*TW+TW/2+dx*3, 9)) break outer; }
     quiet();
     const crises=collect('crisis'), wars=collect('escalated');
-    let taken=0;
-    for (let k=0;k<6;k++){ run(6000); taken=Math.max(taken,W.occCount.reduce((a,b)=>a+b,0)); }   // (with doubled health a war takes long: breaking a castle, and so annexing, is tested above)
+    const taken=collect('occupied');
+    run(36000);   // (with doubled health a war takes long: breaking a castle, and so annexing, is tested above)
     expect(crises.length).toBeGreaterThan(0);    // attacks: massed on a border...
     expect(wars.length).toBeGreaterThan(0);      // ...and then war
-    expect(taken).toBeGreaterThan(0);            // ...and ground taken
+    expect(taken.length).toBeGreaterThan(0);     // ...and ground taken
   }, 400000);
 });
 
@@ -847,6 +847,68 @@ describe('walls', () => {
   });
 });
 
+
+describe('watchtowers on occupied ground', () => {
+  /** A straight border (nation 1 on the left, 2 on the right) with a band of 2's ground along it occupied by 1, and a watchtower of 2's standing in the band, `deep` tiles in. */
+  function banded(deep: number, pair=false){
+    split(0);
+    const mx=Math.round(((N(1).capTile%TW)+(N(2).capTile%TW))/2), my=Math.round((((N(1).capTile/TW)|0)+((N(2).capTile/TW)|0))/2);
+    const q=Math.floor((my)/4)*PW+Math.floor((mx+deep)/4);
+    N(2).stock=[50,50,50];
+    expect(build(N(2),q,B_TOWER)).toBe(true);
+    if (pair){ N(2).stock=[50,50,50]; expect(build(N(2),q+PW,B_TOWER)).toBe(true); }
+    for (let y=my-10;y<=my+10;y++) for (let x=mx;x<=mx+deep+4;x++){ const t=y*TW+x; if (owner[t]===2 && !underCastle(2,t)) occupyHack(t,1); }
+    return { q, mx, my };
+  }
+
+  it('are gone for by a few men of the front, wherever they stand on it (not only those by the line)', () => {
+    const { q }=banded(14);
+    const men=soldiers(N(1),20); for (const h of men) h.tier=3;
+    noDraft(); noDraft(2);
+    expect(declare(1,2,20)).toBe(true);
+    giveWord(1,2);
+    const sent=new Set<number>();
+    let down=-1;
+    for (let i=0;i<4000 && down<0;i++){
+      for (const h of men) if (h.hp>0) h.hp=1000;   // (no matter the arrows)
+      tick();
+      for (const h of men) if (h.aim===q) sent.add(h.id);
+      if (pType[q]!==B_TOWER || pBurn[q]>0) down=i;
+    }
+    expect(down).toBeGreaterThanOrEqual(0);
+    expect(sent.size).toBeGreaterThanOrEqual(2);
+    expect(sent.size).toBeLessThanOrEqual(10);   // (a few: never the whole line)
+  });
+
+  it('are targets for the siege too, even off the way to the castle', () => {
+    const { q }=banded(14);
+    const men=soldiers(N(1),20); for (const h of men) h.tier=3;
+    noDraft(); noDraft(2);
+    expect(declare(1,2,20)).toBe(true);
+    giveWord(1,2);
+    const c=W.campaigns.find(k => k.a===1 && k.d===2 && k.front)!;
+    expect(armyFront(1,c.id,isle[N(2).capTile],SEC_SIEGE)).toBe(true);
+    let down=-1;
+    for (let i=0;i<4000 && down<0;i++){ for (const h of men) if (h.hp>0) h.hp=1000; tick(); if (pType[q]!==B_TOWER || pBurn[q]>0) down=i; }
+    expect(down).toBeGreaterThanOrEqual(0);
+  });
+
+  it('do not leave a pocket of free ground round them: the ground under their walls is occupied while they stand', () => {
+    const { q }=banded(14,true);
+    const q2=q+PW;
+    pHp[q]=-1e6; pHp[q2]=-1e6;   // (they hold out)
+    buildWalls();
+    const walled=Array.from({ length: NT }, (_, t) => t).filter(t => wallOf[t]===2 && owner[t]===2);
+    expect(walled.length).toBeGreaterThan(2);
+    for (const t of walled) if (occ[t]===1) freeHack(t);   // (the wall's ground left free beside what is occupied: a pocket)
+    const men=soldiers(N(1),20); for (const h of men) h.tier=3;
+    noDraft(); noDraft(2);
+    expect(declare(1,2,20)).toBe(true);
+    giveWord(1,2);
+    for (let i=0;i<1500;i++){ for (const h of men) if (h.hp>0) h.hp=1000; for (const k of [q,q2]) pHp[k]=-1e6; tick(); }
+    expect(walled.filter(t => occ[t]===1).length).toBeGreaterThan(walled.length/2);
+  });
+});
 
 describe('crisis', () => {
   const M = () => W.M;

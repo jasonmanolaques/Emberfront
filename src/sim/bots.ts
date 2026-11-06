@@ -381,7 +381,12 @@ function botWar(n: Nation){
     if (D.capTile<0 || menOn(id,o)<defence(D)*2.2 || n.attackAt<=0.6) continue;
     const cap=isle[D.capTile], mine=W.campaigns.filter(c => c.a===id && c.d===o && c.front && c.phase<2 && c.naval<0 && !c.militia && c.unit>=0 && c.sec!==SEC_SIEGE).sort((x,y) => y.members.length-x.members.length);
     let left=facing(id,o)*0.5;   // (the enemy soldiers that may be met on the way: half of them stay behind)
-    for (const c of mine){ if (c.isle!==cap) continue; if (left>0){ left-=c.members.length; continue; } assignArmy(id,c.unit,o,0,true,SEC_SIEGE); }
+    // (and the siege takes men only in step with the stretch of the border it covers, so that the rest of the front is not left with none: at most twice its share, never over half)
+    const onSiege=W.campaigns.filter(c => c.a===id && c.d===o && c.front && c.phase<2 && c.naval<0 && !c.militia && c.sec===SEC_SIEGE).reduce((k,c) => k+c.members.length,0);
+    const onLand=mine.reduce((k,c) => c.isle===cap ? k+c.members.length : k,0)+onSiege;
+    const whole=lineOf(id,o,false,undefined,cap,0).len, rush=lineOf(id,o,false,undefined,cap,SEC_SIEGE).len;
+    let room=onLand*Math.min(0.5,2*rush/Math.max(1,whole))-onSiege;
+    for (const c of mine){ if (c.isle!==cap) continue; if (left>0){ left-=c.members.length; continue; } if (room<=0) break; room-=c.members.length; assignArmy(id,c.unit,o,0,true,SEC_SIEGE); }
   }
   for (let o=1;o<M;o++){
     if (!W.offers[o*M+id]) continue;

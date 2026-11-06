@@ -143,6 +143,7 @@ interface Offensive {
   safeAt: number;                 // tick Fd was worked out
   lineAt: number;                 // tick F (the line) was worked out
   towers: number[];               // enemy watchtowers within reach of its line: what its men go for first
+  far: number[];                  // enemy watchtowers standing on ground its side has occupied: a few men are sent after each, wherever they are
   speed: number;                  // how fast it takes ground (invadeSpeed), worked out every second
   clock: number;                  // ticks toward the next strip, at that speed
   lineSig: number;                // how much land of either kingdom was occupied then (the line is worked out again when that changes)
@@ -211,7 +212,11 @@ export const frontIsles = (a: number, d: number) => frontInfo(a,d).map(f => f.is
 let defended = new Uint8Array(1);              // per nation: some offensive against it has a front its guard stands on
 const DIRS8 = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
 
+/** The men sent after watchtowers on occupied ground: man id → the plot of the tower (worked out with each front's places). */
+const jobs=new Map<number, number>();
+const DETAIL = 3;   // men sent after each such tower
 export function resetWar(M: number){
+  jobs.clear();
   W.campaigns=[]; W.campSeq=0;
   W.ally=new Uint8Array(M*M); W.atWar=new Uint8Array(M*M); W.offers=new Int32Array(M*M); W.grudge=new Int32Array(M*M).fill(-1e9);
   W.wars=new Uint8Array(M*M); W.aggr=new Uint8Array(M*M); W.warSince=new Int32Array(M*M); W.occCount=new Int32Array(M*M); W.lost=new Uint8Array(M*M); W.ready=new Int32Array(M*M); W.groups=[]; W.offensive=new Uint8Array(M*M); W.siege=new Int32Array(M); W.siegeBy=new Uint8Array(M); W.kills=new Int32Array(M*M); W.stall=new Int32Array(M*M); W.lastNet=new Int32Array(M*M);
@@ -830,7 +835,7 @@ function offensiveOf(a: number, d: number, isle=0, aboard=false, sec=0){
   let o=offensives.get(id);
   if (!o){
     if (!frontsOf(key).length) W.offensive[key]=F_GATHER;
-    o={ id, key, a, d, isle, sec, st:W.offensive[key], F:null, walk:new Field(), k:0, progress:0, strips:0, depth:null, since:W.tickN, noFront:0, through:false, liberating:false, Fd:null, safeAt:-1e9, lineAt:-1e9, lineSig:-1, towers:[], speed:1, clock:0, men:[], atk:[], def:[], camps:[] };
+    o={ id, key, a, d, isle, sec, st:W.offensive[key], F:null, walk:new Field(), k:0, progress:0, strips:0, depth:null, since:W.tickN, noFront:0, through:false, liberating:false, Fd:null, safeAt:-1e9, lineAt:-1e9, lineSig:-1, towers:[], far:[], speed:1, clock:0, men:[], atk:[], def:[], camps:[] };
     offensives.set(id,o);
   }
   return o;
@@ -1481,6 +1486,31 @@ function towersNear(o: Offensive, F: Front): number[] {
   }
   return out.sort((a,b) => a.d-b.d || a.q-b.q).map(e => e.q);
 }
+/** d's standing watchtowers on ground a's side holds of d's, on o's stretch of the border (any, for a siege): the men of the front go after these wherever they stand. */
+function towersHeld(o: Offensive): number[] {
+  const D=W.nations[o.d], out: number[]=[];
+  if (!(W.occCount[o.d*W.M+o.a]>0)) return out;
+  for (const q of D.blds){
+    if (pType[q]!==B_TOWER || pOwner[q]!==o.d || pBurn[q]>0) continue;
+    const t=pCenter[q]; if (owner[t]!==o.d || occ[t]!==o.a || (o.isle && isle[t]!==o.isle)) continue;
+    if (o.sec && o.sec!==SEC_SIEGE && !(o.sec & (1<<(sectorOf(o.d,t)-1)))) continue;
+    out.push(q);
+  }
+  return out.sort((p,q) => p-q);
+}
+/** Sends DETAIL men of o's attackers (the reserves first, the nearest) after each tower on ground it holds. */
+function sendDetails(o: Offensive){
+  for (const h of o.men) jobs.delete(h.id);
+  if (!o.far.length || !o.atk.length) return;
+  const free=o.atk.filter(h => h.fk===o.id && h.hp>0);   // (its leaders are not among o.men)
+  let budget=Math.floor(free.length/2);   // (never more than half the men leave the line)
+  for (const q of o.far){
+    if (budget<=0) break;
+    const x=(q%PW)*8+4, y=((q/PW)|0)*8+4, taken=free.filter(h => jobs.get(h.id)===q).length;
+    const cand=free.filter(h => !jobs.has(h.id)).sort((p,r) => (+(p.line===0))-(+(r.line===0)) || Math.hypot(p.x-x,p.y-y)-Math.hypot(r.x-x,r.y-y) || p.id-r.id);
+    for (let k=taken;k<DETAIL && k-taken<cand.length && budget>0;k++,budget--) jobs.set(cand[k-taken].id,q);
+  }
+}
 /** A handful of tiles along the fronts fought against kingdom d (where its land is under attack), or none. */
 export function borderPoints(d: number): number[] {
   const out: number[]=[];
@@ -1501,7 +1531,7 @@ function redeploy(o: Offensive){
   // (the line is worked out from the map only now and then, or when something calls for it: o.F set to null; the men's places are laid out on it every REFRONT ticks)
   const sig=occSig(o.a,o.d), keep=!coming && !!o.F && W.tickN-o.lineAt<LINE_EVERY && sig===o.lineSig;
   const F=o.F=keep ? o.F! : coming ? lineOf(o.a,o.d,false,coming.coast.filter(t => owner[t]===o.a)) : lineOf(o.a,o.d,false,undefined,o.isle,o.sec), id=o.id, ok=standsFor(o.a,o.d);
-  if (!keep){ o.lineAt=W.tickN; o.lineSig=sig; o.towers=towersNear(o,F); }
+  if (!keep){ o.lineAt=W.tickN; o.lineSig=sig; o.towers=towersNear(o,F); o.far=towersHeld(o); }
   let Fd: Front | null=null;
   if (o.def.length){
     if (W.tickN-o.safeAt>=SAFE_EVERY || !o.Fd){ o.safeAt=W.tickN; const line=safeLine(o); o.Fd=line.length ? lineOf(o.a,o.d,false,line) : null; }
@@ -1515,6 +1545,7 @@ function redeploy(o: Offensive){
     if (c.placed!==want){ c.placed=want; for (const m of c.members){ const h=byId.get(m); if (h){ h.fk=-1; h.slot=-1; h.line=-1; } } }
   }
   o.k=place(o.atk,F);
+  sendDetails(o);
   if (Fd && o.def.length) place(o.def,Fd); else if (o.def.length) place(o.def,F);
   const srcs: number[]=[];
   for (const h of o.men) srcs.push(tileOf(h.fx,h.fy));
@@ -1636,9 +1667,9 @@ function behind(t: number, a: number, d: number){
   for (let yy=Math.max(0,y-2);yy<=Math.min(TH-1,y+2);yy++) for (let xx=Math.max(0,x-2);xx<=Math.min(TW-1,x+2);xx++){ const k=yy*TW+xx; if (k===t || !isLand[k]) continue; all++; if (holds(a,d,k)) ours++; }
   return ours>all*0.55;
 }
-/** a takes tile t of d's ground (occupying it, or freeing its own), unless a soldier of d's holds it, an enemy wall stands on it, or it is under the castle. */
+/** a takes tile t of d's ground (occupying it, or freeing its own), unless a soldier of d's holds it or it is under the castle. */
 function takeTile(t: number, a: number, d: number){
-  if (!enemyOf(a,d,t) || (heldAt[t]===W.tickN && heldBy[t]!==a) || walledFor(a,t) || underCastle(d,t)) return false;
+  if (!enemyOf(a,d,t) || (heldAt[t]===W.tickN && heldBy[t]!==a) || underCastle(d,t)) return false;   // (a wall holds the men back, not the ground: no pocket is left round a tower)
   if (owner[t]===a) liberate(t); else occupy(t,a);
   return true;
 }
@@ -2064,6 +2095,7 @@ function targetable(q: number, c: Campaign){
   if (pOwner[q]!==c.d || pBurn[q]>0) return false;
   if (ty===B_CASTLE) return true;
   if (!isStructure(ty) || ty===B_PART) return false;
+  if (ty===B_TOWER && occ[pCenter[q]]===c.a) return true;   // (a watchtower on ground it holds is a target wherever the army stands, the siege's too)
   if (c.front){   // the stance: a rush goes for watchtowers in its way only
     if (c.sec===SEC_SIEGE) return ty===B_TOWER && inRushWay(q,c);
   }
@@ -2133,7 +2165,7 @@ function frontStep(h: Human, c: Campaign){
     if ((foe.x-h.x)**2+(foe.y-h.y)**2<=MELEE_R*MELEE_R) strike(h,foe); else moveTo(h,c,foe.x,foe.y,1.6);
     return;
   }
-  if (h.aim>=0 && (!invading || !targetable(h.aim,c) || !byPlace(h,h.aim,1.5))) h.aim=-1;   // (the front has moved on from it)
+  if (h.aim>=0 && (!invading || !targetable(h.aim,c) || (jobs.get(h.id)!==h.aim && !byPlace(h,h.aim,1.5)))) h.aim=-1;   // (the front has moved on from it)
   if (h.aim>=0){
     const [x0,y0,x1,y1]=rectOf(h.aim);
     if (h.x>=x0-1.5 && h.x<=x1+1.5 && h.y>=y0-1.5 && h.y<=y1+1.5) hitBuilding(h,c);
@@ -2173,6 +2205,8 @@ function chooseOnFront(h: Human, c: Campaign, invading: boolean, retaking: boole
   }
   // an invading army goes for the watchtowers in reach of its line before anything else (each one it leaves standing shoots its men down), unless an enemy is on him
   if (invading && !leader && h.fk>=0 && !(best && best.foe===h.id)){
+    const job=jobs.get(h.id);
+    if (job!==undefined && pType[job]===B_TOWER && pBurn[job]<=0 && targetable(job,c)){ h.aim=job; h.foe=-1; return; }   // (sent after a tower on ground his side holds)
     const o=frontOfC(c);
     if (o){
       let tq=-1, td=Infinity;
@@ -2183,7 +2217,7 @@ function chooseOnFront(h: Human, c: Campaign, invading: boolean, retaking: boole
   if (best){ h.foe=best.id; h.aim=-1; return; }
   h.foe=-1;
   if (leader || !invading || h.fk<0){ h.aim=-1; return; }
-  if (h.aim>=0 && targetable(h.aim,c) && byPlace(h,h.aim,1.5)) return;   // busy with one
+  if (h.aim>=0 && targetable(h.aim,c) && (jobs.get(h.id)===h.aim || byPlace(h,h.aim,1.5))) return;   // busy with one
   const S=6, x=h.fx, y=h.fy;   // (a building is only attacked by a man whose place it stands right beside)
   const qx0=Math.max(0,Math.floor((x-S)/8)), qx1=Math.min(PW-1,Math.floor((x+S)/8)), qy0=Math.max(0,Math.floor((y-S)/8)), qy1=Math.min(PH-1,Math.floor((y+S)/8));
   let q=-1, qs=Infinity;
