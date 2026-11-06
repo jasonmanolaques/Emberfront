@@ -414,8 +414,7 @@ export const hasArmies = (a: number, d: number) => W.campaigns.some(c => c.front
 export function declare(a: number, d: number, pick: number | number[], militia=0, isle=0){
   if (warProblem(a,d)) return false;
   const M=W.M, counter=W.ready[a*M+d]>0;   // our land is back: this one is for revenge
-  const sent=sendArmies(a,d,pick,militia,isle,counter);
-  if (!sent && !hasArmies(a,d)) return false;
+  sendArmies(a,d,pick,militia,isle,counter);   // (a crisis needs no army: where to place them is up to the one who begins it)
   return begin(a,d,counter);
 }
 /** The diplomacy of an attack beginning, with its armies out: alliance broken, a grudge, a crisis (or, in a war already, more armies). */
@@ -449,7 +448,7 @@ export function deployArmies(a: number, d: number, pick: number | number[], mili
 function endDeadCrises(){
   const M=W.M;
   for (let a=1;a<M;a++) for (let d=1;d<M;d++){
-    const k=a*M+d; if (!W.aggr[k] || W.wars[k]) continue;
+    const k=a*M+d; if (!W.aggr[k] || W.wars[k] || W.nations[a].isPlayer) continue;   // (a crisis the player began stands until he calls it off or gives the word, armies or none)
     if (W.campaigns.some(c => c.front && c.a===a && c.d===d && c.phase<2) || W.invasions.some(i => i.a===a && i.d===d && i.stage<INV_DONE)) continue;
     W.aggr[k]=0; W.crisisAt[k]=0;
   }
@@ -1070,7 +1069,7 @@ const armiesOn = (a: number, d: number) => W.campaigns.filter(c => c.front && c.
 /** Why a can't give the word to attack d (`go`: every army attacks) or to hold (every army defends), or null if it can. */
 export function offensiveProblem(a: number, d: number, go: boolean): string | null {
   const key=a*W.M+d, cs=armiesOn(a,d);
-  if (!cs.length) return 'No army on the border';
+  if (!cs.length && !(go && inCrisis(a,d))) return 'No army on the border';
   if (go && !W.wars[key]){
     if (!inCrisis(a,d)) return 'They have not attacked: your armies hold the border';
     const w=crisisWait(a,d); if (w>0) return `Time to talk: ${Math.ceil(w/10/GAME_SPEED)} s before war may begin`;
@@ -1973,7 +1972,7 @@ function towersFire(){
       const s=h.kind===H_SOLDIER;
       if ((s && !soldier) || (s===soldier && (d<bd || (d===bd && target!==null && h.id<target.id)))){ target=h; bd=d; soldier=s; }
     }
-    if (target){ const was=target.hp; target.hp-=dmg; underFire(target); if (was>0 && target.hp<=0) W.kills[i*W.M+target.o]++; on.towerShot(x,y,target.x,target.y-2,target.hp<=0,target.id); }
+    if (target){ const was=target.hp; target.hp-=dmg; underFire(target); target.by=i; if (was>0 && target.hp<=0) W.kills[i*W.M+target.o]++; on.towerShot(x,y,target.x,target.y-2,target.hp<=0,target.id); }
   };
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive || !warring[i]) continue;
@@ -2013,7 +2012,7 @@ function strike(h: Human, e: Human){
   if (W.prand()<HIT_CHANCE){
     const was=e.hp;
     e.hp-=(h.kind!==H_SOLDIER ? MILITIA_DMG : h.militia ? MILITIA_HIT : HIT_DMG[h.tier])*(revenge(h) ? REVENGE_DMG : 1)*(h.fury ? FURY : 1)*(h.dug ? DIG_BONUS : 1); underFire(e);
-    if (was>0 && e.hp<=0) W.kills[h.o*W.M+e.o]++;
+    e.by=h.o; if (was>0 && e.hp<=0) W.kills[h.o*W.M+e.o]++;
     on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id);
   }
   if (e.foe<0 && (e.kind===H_SOLDIER || e.brave>=1)) e.foe=h.id;   // he turns to fight back
@@ -2035,14 +2034,28 @@ export function marchPace(h: Human, c: Campaign){
     ahead of it he waits for his army to come up rather than march on alone. */
 function moveTo(h: Human, c: Campaign, gx: number, gy: number, stop=0, toLine=false){
   let dx=gx-h.x, dy=gy-h.y, d=Math.hypot(dx,dy);
-  if (d<=stop+0.05) return;
+  if (d<=stop+0.05){ if (h.path.length) h.path=[]; return; }
   if (d>2 && !clearWay(c.field,h.x,h.y,gx,gy)){
     const here=c.field.at(tileOf(h.x,h.y)), flag=c.field.at(tileOf(c.bx,c.by));
-    if (toLine && Math.hypot(c.bx-h.x,c.by-h.y)>2 && clearWay(c.field,h.x,h.y,c.bx,c.by)){ dx=c.bx-h.x; dy=c.by-h.y; d=Math.hypot(dx,dy); stop=0; }
+    const way=h.path.length>=2 && !toLine && Math.hypot(h.path[h.path.length-2]-gx,h.path[h.path.length-1]-gy)<=4;   // (on his way along his own land to a place of his: he keeps to it)
+    if (way){
+      if (h.path.length>2 && Math.hypot(h.path[0]-h.x,h.path[1]-h.y)<1.2) h.path.splice(0,2);
+      dx=h.path[0]-h.x; dy=h.path[1]-h.y; d=Math.hypot(dx,dy); stop=0; if (d<1e-6){ h.path.splice(0,2); return; }
+    }
+    else if (toLine && Math.hypot(c.bx-h.x,c.by-h.y)>2 && clearWay(c.field,h.x,h.y,c.bx,c.by)){ dx=c.bx-h.x; dy=c.by-h.y; d=Math.hypot(dx,dy); stop=0; }
     else if (toLine && here>=0 && flag>=0 && here<flag) return;
     else {
-      const s=downhill(c.field,h.x,h.y);
+      const s=here===0 && !toLine && owner[tileOf(gx,gy)]===h.o ? null : downhill(c.field,h.x,h.y);
       if (s){ dx=s[0]-h.x; dy=s[1]-h.y; d=Math.hypot(dx,dy); stop=0; if (d<1e-6) return; }
+      else if (here===0 && !toLine && owner[tileOf(gx,gy)]===h.o){
+        // he stands on a place of the line that is not his own (the field is 0 at every place) and the straight way to his is shut (a bay, a lake, a bend of the border):
+        // he goes on to it by a way over his own land, rather than stand there leaving a gap in the line
+        const n=h.path.length;
+        if (!n || Math.hypot(h.path[n-2]-gx,h.path[n-1]-gy)>4) h.path=routeHome(h,gx,gy);
+        if (h.path.length>2 && Math.hypot(h.path[0]-h.x,h.path[1]-h.y)<1.2) h.path.splice(0,2);
+        if (h.path.length){ dx=h.path[0]-h.x; dy=h.path[1]-h.y; d=Math.hypot(dx,dy); stop=0; if (d<1e-6) return; }
+        else { const t=downhill(c.field,h.x,h.y); if (t){ dx=t[0]-h.x; dy=t[1]-h.y; d=Math.hypot(dx,dy); stop=0; if (d<1e-6) return; } else if (c.front && c.phase===1 && !W.wars[c.a*W.M+c.d]) return; }
+      }
       else if (c.front && c.phase===1 && !W.wars[c.a*W.M+c.d]) return;   // (no way there but over their land, before war: he waits)
     }
   }

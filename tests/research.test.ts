@@ -1,9 +1,9 @@
 // Research stations, house tiers and the builders guild.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NT, NP, B_HOUSE, B_RESEARCH, B_GUILD, B_TOWER, TAX_PER_VILLAGER, LAND_TAX } from '../src/core/constants';
-import { W, owner, isLand, pType, pOwner, pTier, pCenter, pTimer } from '../src/sim/state';
+import { TW, TH, NT, NP, PW, B_HOUSE, B_SMITHY, B_RESEARCH, B_GUILD, B_TOWER, TAX_PER_VILLAGER, LAND_TAX } from '../src/core/constants';
+import { W, owner, isLand, pType, pOwner, pTier, pCenter, pTimer, pSpan } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
-import { build, placeProblem } from '../src/sim/buildings';
+import { build, placeProblem, costFor, structureOf } from '../src/sim/buildings';
 import { H_VILLAGER, TASK_FIX, TASK_FIX_GO, FIX_TICKS, REHIRE_TICKS, improvements } from '../src/sim/population';
 import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, TIER_XP, HOUSE_BEDS } from '../src/sim/research';
 import { bldHp } from '../src/sim/war';
@@ -38,6 +38,34 @@ function place(type: number, near=false){
   for (const q of near ? me().plots.slice().sort((a,b) => fromCapital(a)-fromCapital(b)) : me().plots) if (!placeProblem(me(),q,type) && build(me(),q,type)) return q;
   throw new Error('nowhere to build');
 }
+
+describe('blacksmiths side by side', () => {
+  it('each plot of a joined smithy has its own smith: the join is only for looks', () => {
+    start(12345); expand(6); until(() => houses().length>=12);
+    me().stock=[100,100,100];
+    const plots=me().plots.filter(q => !placeProblem(me(),q,B_SMITHY) && !placeProblem(me(),q+1,B_SMITHY) && (q%PW)<PW-1 && Math.floor(q/PW)===Math.floor((q+1)/PW));
+    expect(plots.length).toBeGreaterThan(0);
+    const q=plots[0]; expect(build(me(),q,B_SMITHY)).toBe(true); me().stock=[100,100,100]; expect(build(me(),q+1,B_SMITHY)).toBe(true);
+    run(20);
+    const mains=Array.from({ length: NP }, (_, k) => k).filter(k => pType[k]===B_SMITHY && pOwner[k]===1);
+    const plotsOf=mains.reduce((k,m) => k+[1,2,4][pSpan[m]],0);
+    expect(plotsOf).toBe(2);
+    until(() => mine().filter(h => h.work>=0 && mains.includes(h.work)).length===2, 600);
+    expect(mine().filter(h => h.work>=0 && mains.includes(h.work))).toHaveLength(2);
+  });
+});
+
+describe('research stations', () => {
+  it('each one you own makes the next 20% dearer', () => {
+    start(12345);
+    const base=structureOf(B_RESEARCH)!.cost;
+    expect(costFor(me(),structureOf(B_RESEARCH)!)).toEqual(base);
+    place(B_RESEARCH);
+    expect(costFor(me(),structureOf(B_RESEARCH)!)).toEqual(base.map(c => Math.ceil(c*1.2-1e-9)));
+    place(B_RESEARCH);
+    expect(costFor(me(),structureOf(B_RESEARCH)!)).toEqual(base.map(c => Math.ceil(c*1.4-1e-9)));
+  });
+});
 
 describe('research', () => {
   it('earns a point a second per station, for housing first, and goes up a tier at 200 then 400', () => {

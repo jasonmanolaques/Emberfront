@@ -149,7 +149,7 @@ export const STRUCTURES: Structure[] = [
   { type: B_PLANTATION, name: 'Plantation', cost: [10,0,0], info: 'Saplings growing into trees: +2 wood every 30 seconds. With resource gathering research, two side by side join (+5), then four in a square (+15). Each plantation you own makes the next 10% dearer.' },
   { type: B_QUARRY,     name: 'Stone quarry', cost: [5,10,0], info: 'A pit with a pulley hauling stone up: +2 stone every 30 seconds. With resource gathering research, two side by side join (+5), then four in a square (+15). Each quarry you own makes the next 10% dearer.' },
   { type: B_COPPERMINE, name: 'Copper mine', cost: [10,10,0], info: 'A shaft into the rock with the furnace glowing inside: +1 copper every 30 seconds. With resource gathering research, two side by side join (+3), then four in a square (+10). Each copper mine you own makes the next 10% dearer.' },
-  { type: B_RESEARCH,   name: 'Research station', cost: [15,15,10], info: 'Scholars earn 1 research point a second; more stations, faster research. Click a placed station to choose what to study.' },
+  { type: B_RESEARCH,   name: 'Research station', cost: [15,15,10], info: 'Scholars earn 1 research point a second; more stations, faster research, and each station you own makes the next 20% dearer. Click a placed station, or use the button on this tab, to choose what to study.' },
   { type: B_GUILD,      name: 'Builders guild', cost: [10,50,10], info: 'The city\'s investment: one villager becomes its builder, and as research allows he raises houses and watchtowers a tier for free, non-stop: 20 seconds from tier 1 to 2, 40 from 2 to 3. He takes whichever job costs the least time, walk included, so the lowest buildings come first. More guilds, more builders. Takes 2×1 plots. Each guild you own makes the next 10% dearer.' },
   { type: B_NAVAL,      name: 'Naval base', cost: [15,5,0], info: 'A harbour on the coast: 8 plots (4×2 or 2×4), at least a third of them on the water. Click it to build ships (5 wood each). Settle islands from the settle menu: a ship takes your gold to the coast you point at and the border spreads from there; villagers cross by boat to build. Ships carry 5 soldiers each, for naval invasions.' },
   { type: B_SMITHY,     name: 'Blacksmith', cost: [10,15,5], info: 'One villager becomes its smith. With infantry research he fetches 5 copper from the castle, forges armour for 5 seconds and carries it to the barracks: reinforced armour for every rack, then heavy armour.' },
@@ -159,7 +159,7 @@ STRUCTURES.push(HOSPITAL_STRUCTURE);
 export const structureOf = (type: number) => STRUCTURES.find(s => s.type===type);
 const countOf = (n: Nation, ty: number) => ty===B_PLANTATION ? n.plantations : ty===B_QUARRY ? n.quarries : n.copperMines;
 /** How much dearer each building of a kind its kingdom already has makes the next one (a share of the base price). */
-export const RISE: Record<number, number> = { [B_FARM]: 0.05, [B_TOWER]: 0.05, [B_MINTER]: 0.1, [B_GUILD]: 0.1, [B_PLANTATION]: 0.1, [B_QUARRY]: 0.1, [B_COPPERMINE]: 0.1 };
+export const RISE: Record<number, number> = { [B_FARM]: 0.05, [B_TOWER]: 0.05, [B_MINTER]: 0.1, [B_GUILD]: 0.1, [B_RESEARCH]: 0.2, [B_PLANTATION]: 0.1, [B_QUARRY]: 0.1, [B_COPPERMINE]: 0.1 };
 /** How many of kingdom n's buildings of `type` there are for pricing: gathering buildings count by the plots they cover (four joined are four). */
 function ownedFor(n: Nation, type: number){
   if (type===B_FARM) return n.farms;

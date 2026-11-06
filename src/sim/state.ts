@@ -67,6 +67,7 @@ export interface Human {
   cool: number;                      // ticks until they can strike again
   slot: number;                      // place in the campaign's formation, or the home guard's line
   dug: boolean;                      // entrenched: an army holding its border for 10 seconds hits 15% harder and has 15% more health until it is told to attack
+  by: number;                        // the kingdom whose blow last struck him (so a kill is counted for it only if he really dies: a wounded man is no kill)
   fury: boolean;                     // spawned in a siege, in the besieged capital: 25% more hit points and damage until the siege is over
   brave: number;                     // villagers with enemies near: -1 not yet decided, 0 running away, 1 fighting
   calm: number;                      // ticks since an enemy was last near

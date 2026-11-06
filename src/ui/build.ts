@@ -33,6 +33,7 @@ const rows=new Map<number, HTMLButtonElement>();   // by type; a block of four b
 const BLOCK=1000;
 const blockCost = (n: Nation, type: number) => blockPlan(n,0,type).cost;   // (the cost does not depend on where)
 
+$('openResearch').addEventListener('click',()=>{ openResearch(); });
 /** Builds the panel's rows once a match starts, with icons in the player's colours. */
 export function setupBuildPanel(){
   list.textContent=''; rows.clear();
@@ -122,6 +123,7 @@ export function toggleBuildPanel(open?: boolean, cat=category){
   const c=CATEGORIES.find(c => c.id===category)!;
   title.textContent=c.name;
   for (const [key,b] of rows) b.hidden=!c.types.includes(key>=BLOCK ? key-BLOCK : key);
+  $('openResearch').hidden=c.id!=='society';   // (the research panel is a button away, not only a click on a station)
   for (const b of document.querySelectorAll<HTMLElement>('#tools .cat')) b.setAttribute('aria-expanded',String(show && b.dataset.cat===category));
   if (show) refreshBuildPanel(); else { tip.hidden=true; stopPlacing(); }
 }

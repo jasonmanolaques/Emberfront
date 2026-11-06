@@ -231,15 +231,16 @@ describe('homeless people and beggars', () => {
 });
 
 describe('empty houses speed up the raising of people', () => {
-  it('raises humans faster by the share of beds nobody needs, 0 to 100%, on top of the farms: none when everyone fills a house, 50% with 6 people in 12 beds, 90% with 1 in 10', () => {
+  it('raises humans faster by twice the share of beds nobody needs, 0 to 200%, on top of the farms: none when everyone fills a house, 100% with 6 people in 12 beds, 180% with 1 in 10', () => {
     start(12345, 0);
     me().farms=0; me().beds=12;
     expect(houseBonus(me(),12)).toBe(0); expect(humanRate(me(),12)).toBe(1);      // 12 people, 12 beds: no bonus
-    expect(houseBonus(me(),6)).toBeCloseTo(0.5,9); expect(humanRate(me(),6)).toBeCloseTo(1.5,9);
+    expect(houseBonus(me(),6)).toBeCloseTo(1,9); expect(humanRate(me(),6)).toBeCloseTo(2,9);
     expect(humanRate(me(),20)).toBe(1);                                          // (more people than beds: none, never a penalty)
-    me().beds=10; expect(houseBonus(me(),1)).toBeCloseTo(0.9,9);                  // 10 houses and 1 villager: 90%
+    me().beds=10; expect(houseBonus(me(),1)).toBeCloseTo(1.8,9);                  // 10 houses and 1 villager: 180%
+    expect(houseBonus(me(),0)).toBeCloseTo(2,9);                                  // nobody at all: the top, 200%
     me().beds=0; expect(houseBonus(me(),0)).toBe(0);
-    me().beds=12; me().farms=10; expect(humanRate(me(),6)).toBeCloseTo(1+FARM_BONUS*10+0.5,9);
+    me().beds=12; me().farms=10; expect(humanRate(me(),6)).toBeCloseTo(1+FARM_BONUS*10+1,9);
   });
 
   it('in play, a kingdom with houses to spare raises its people sooner, and an upgraded house (more beds) adds to the bonus', () => {

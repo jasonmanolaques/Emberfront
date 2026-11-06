@@ -98,9 +98,10 @@ function orders(key: number){
 
 /** The armies merged under the open row, one line each, and the button that takes them apart. */
 function members(ms: number[]){
-  const lines=ms.map((k,i) => { const u=unitAt(k), c=campOne(k), men=c ? c.members.length : (u?.members.length ?? 0);
+  let total=0;
+  const lines=ms.map((k,i) => { const u=unitAt(k), c=campOne(k), men=c ? c.members.length : (u?.members.length ?? 0); total+=men;
     return `<div class="gm"><span class="an">${esc(rowName(k))}${i===0 ? ' <i class="grp">lead</i>' : ''}</span><span class="as">${men} men · ${c ? (c.dug ? 'entrenched' : attacks(c) ? 'attacking' : 'defending') : 'at home'}</span></div>`; }).join('');
-  return `<div class="ato">Merged armies</div>${lines}${btn('unmerge','Unmerge armies',`data-k="${ms[0]}"`,{ title:'Take the armies apart: each is on its own again, with its own orders' })}`;
+  return `<div class="ato">Merged armies · ${total} men in all</div>${lines}${btn('unmerge','Unmerge armies',`data-k="${ms[0]}"`,{ title:'Take the armies apart: each is on its own again, with its own orders' })}`;
 }
 
 /** Brings the panel up to date (each HUD refresh): the rows and orders when they change, the words in place. */

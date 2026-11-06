@@ -3,6 +3,8 @@
 import { describe, it, expect } from 'vitest';
 import { TICK, TW, TH, NT, NP, PW, WAGE, WAGE_IDLE, WAGE_ATTACK, MIL_WAGE, MIL_ATTACK, T_GRASS, T_WATER, B_NAVAL, B_HOUSE, B_FARM, B_TOWER, B_BARRACKS, B_RUINS, B_GUILD, B_HOSPITAL } from '../src/core/constants';
 import { W, owner, occ, isLand, isle, terr, pBuild, pType, pOwner, pBurn, pCenter, pHp, pIn, type Human, type Nation } from '../src/sim/state';
+import { scanContacts } from '../src/sim/census';
+import { capitalsOn } from '../src/sim/realmap';
 import { newWorld, startMatch, queueCommand, tick, grossIncome } from '../src/sim/sim';
 import { listen, on } from '../src/sim/events';
 import { setOwner, occIsleAdd } from '../src/sim/territory';
@@ -2261,6 +2263,32 @@ describe('soldiers keep off third kingdoms\' ground', () => {
     expect(W.humans.includes(h)).toBe(true);
     expect(owner[((h.y/2)|0)*TW+((h.x/2)|0)]).toBe(1);
   });
+});
+
+describe('an army covers the whole of its front', () => {
+  it('every man of the front rank reaches his own place along a winding border (none left standing on another man\'s place, leaving a gap)', () => {
+    newWorld(5,'europe-s');
+    const de=capitalsOn('europe-s').find(c => c.country.code==='DE')!;
+    expect(startMatch(de.tile,29,'DE','real')).toBe(true);
+    for (const n of W.nations.slice(2)){ n.nextThink=1e9; n.nextWar=1e9; }
+    const me=N(1); me.gold=1e6;
+    const rv=W.nations.slice(2).filter(n => n.alive).sort((p,q) => Math.hypot(p.capTile%TW-me.capTile%TW,((p.capTile/TW)|0)-((me.capTile/TW)|0))-Math.hypot(q.capTile%TW-me.capTile%TW,((q.capTile/TW)|0)-((me.capTile/TW)|0)))[0];
+    const rx=rv.capTile%TW, ry=(rv.capTile/TW)|0;
+    for (let r=0;r<400 && !(W.contact[1*W.M+rv.id]>0);r++){
+      let t=-1, bd=1e9;
+      for (let i=0;i<NT;i++){ if (owner[i] || !isLand[i] || ![i-1,i+1,i-TW,i+TW].some(k => owner[k]===1)) continue; const d=Math.hypot(i%TW-rx,((i/TW)|0)-ry); if (d<bd){ bd=d; t=i; } }
+      if (t>=0) queueCommand({ type:'attack', nation:1, tile:t, ratio:0.9 });
+      me.gold+=500; run(30); scanContacts(true);
+    }
+    expect(W.contact[1*W.M+rv.id]).toBeGreaterThan(0);
+    soldiers(me,48); noDraft(); run(2);
+    for (const a of available(me)) assignArmy(1,a.unit.key,rv.id);
+    run(2000);
+    const rank=W.humans.filter(h => h.o===1 && h.kind===H_SOLDIER && h.war>=0 && h.fk>=0 && h.line===0);
+    expect(rank.length).toBeGreaterThan(5);
+    const there=rank.filter(h => (h.x-h.fx)**2+(h.y-h.fy)**2<16);
+    expect(there.length).toBeGreaterThanOrEqual(rank.length*0.9);
+  }, 120000);
 });
 
 describe('an army touching a third kingdom\'s land', () => {

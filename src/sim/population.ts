@@ -33,7 +33,7 @@
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, until the kingdom sends them to war (sim/war.ts). */
 import { STR_VILLAGER, STR_MILITIA, STR_SOLDIER, TW, TH, PW, PH, TICK, GAME_SPEED, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY, B_HOSPITAL } from '../core/constants';
-import { W, owner, occ, isLand, ferry, pType, pOwner, pBurn, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, type Human, type Nation } from './state';
+import { W, owner, occ, isLand, ferry, pType, pOwner, pBurn, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, pSpan, type Human, type Nation } from './state';
 import { homeScore, startSite, cancelSite, finishHouse, plotProblem } from './buildings';
 import { on } from './events';
 import { Field } from './field';
@@ -66,9 +66,10 @@ export const HUMAN_EVERY = 200;  // progress per new human: 200 ticks (20 s), ea
 export const FARM_BONUS = 0.03;
 /** Beds in n's houses that nobody needs: its capacity less its people (none when everyone is housed or more). */
 export const spareBeds = (n: Nation, people: number) => Math.max(0,n.beds-people);
-/** The bonus to raising humans that empty homes give, from 0 to 1 (0% to 100%): the share of the kingdom's beds that stand empty. With 10 hovels and 1 person it is 90%;
+/** The bonus to raising humans that empty homes give, from 0 to 2 (0% to 200%): twice the share of the kingdom's beds that stand empty. With 10 hovels and 1 person it is 180%;
     with everyone housed, nothing. A kingdom that has lost many people recovers quickly, small ones and early game included. */
-export const houseBonus = (n: Nation, people: number) => n.beds>0 ? spareBeds(n,people)/n.beds : 0;
+export const houseBonus = (n: Nation, people: number) => n.beds>0 ? HOUSE_MAX*spareBeds(n,people)/n.beds : 0;
+export const HOUSE_MAX = 2;   // the bonus of a kingdom whose houses all stand empty: +200%
 /** How fast kingdom n's capital raises humans: 1 a tick, and a bonus for each farm and for the empty homes, `people` being everyone it has. */
 export const humanRate = (n: Nation, people: number) => (1+FARM_BONUS*n.farms+houseBonus(n,people))*(W.siege[n.id]>0 ? 2 : 1);   // (a capital under siege raises people twice as fast, to have a chance)
 const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 s)
@@ -376,7 +377,7 @@ function goRest(h: Human, at=-1){
 export function makeHuman(n: Nation, kind: number, x: number, y: number): Human {
   return { id:++W.humanSeq, o:n.id, kind, militia:false, to:0, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+W.prand()*2,
     hp:kind===H_SOLDIER?SOLDIER_HP[1]:VILLAGER_HP, post:-1, site:-1, home:-1, rest:-1, duel:-1, housed:false, homeless:0, beggar:false,
-    war:-1, boat:-1, foe:-1, aim:-1, cool:0, slot:0, brave:-1, fury:false, dug:false, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
+    by:0, war:-1, boat:-1, foe:-1, aim:-1, cool:0, slot:0, brave:-1, fury:false, dug:false, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
     tier:kind===H_SOLDIER?1:0, base:-1, load:0, make:0, dest:-1 };
 }
 /** A new villager or militiaman walks out of the capital; a new soldier out of the barracks nearest the capital. */
@@ -598,7 +599,7 @@ function improve(n: Nation, q: number){
 /** Every builders guild has one builder and every blacksmith one smith. A workshop without its
     worker takes the villager nearest it, straight away when it is new, a while after he fell. */
 const workshop = (q: number, id: number) => standing(q,B_GUILD,id) || standing(q,B_SMITHY,id) || hospitalStands(q,id);
-const slots = (q: number) => pType[q]===B_HOSPITAL ? 2 : 1;   // a hospital has two doctors
+const slots = (q: number) => pType[q]===B_HOSPITAL ? 2 : pType[q]===B_SMITHY ? [1,2,4][pSpan[q]] ?? 1 : 1;   // a hospital has two doctors; blacksmiths side by side join into one that is only drawn bigger: each plot of it has its own smith
 function staffGuilds(n: Nation, mine: Human[]){
   const staffed=new Map<number, number>();
   for (const h of mine){
@@ -610,7 +611,8 @@ function staffGuilds(n: Nation, mine: Human[]){
     staffed.set(h.work,(staffed.get(h.work) ?? 0)+1);
   }
   let filled=0; for (const k of staffed.values()) filled+=k;
-  if (filled===n.guilds+n.smithies+2*n.hospitals) return;
+  let wanted=0; for (const q of n.blds) if (workshop(q,n.id)) wanted+=slots(q);
+  if (filled===wanted) return;
   let free: Human[] | null=null;
   for (const q of n.blds){
     if (!workshop(q,n.id)) continue;

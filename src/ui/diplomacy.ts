@@ -73,12 +73,11 @@ function refreshWar(force: boolean){
   const soldiers=picker.count(), war=!!W.wars[PLAYER*W.M+target], out=hasArmies(PLAYER,target);
   $('dCommitVal').textContent=`${soldiers} soldier${soldiers===1?'':'s'}`;
   const attackWhy=warProblem(PLAYER,target), attack=$('dAttack') as HTMLButtonElement;
-  attack.hidden=war; attack.disabled=!!attackWhy || !out;
+  attack.hidden=war; attack.disabled=!!attackWhy;
   $('dSplit').textContent = war ? 'You are at war: send armies to the front by assigning them to a border (the Armies list, then Assign border) and give them the order to attack or defend.'
     : out ? 'The armies you have on their border mass there: a crisis, not yet a war. Both sides get 30 seconds to react before you can begin the offensive. Assign more armies to their border first if you want them in it.'
-    : 'Assign an army to their border first (the Armies list, then Assign border): an attack masses the armies you have there. Or invade from the sea.';
+    : 'Begin a crisis: you need no army on their border to start one, but nobody fights until you give the word, 30 seconds in at the soonest, so assign armies to their border (the Armies list, then Assign border). Or invade from the sea.';
   const why: string[]=[];
-  if (!war && !out) why.push('Attack: no army of yours is on their border yet');
   if (attackWhy && !war) why.push('Attack: '+attackWhy.toLowerCase());
   $('dWhy').textContent=why.join(' · ');
   // the naval invasion: the naval bases, the ships, and what the armies chosen need
@@ -125,7 +124,7 @@ function startLanding(){
 }
 
 function send(){
-  if (!target || !hasArmies(PLAYER,target)) return;
+  if (!target) return;
   if (allied(PLAYER,target)) toast(`Your alliance with ${W.nations[target].name} is over`);
   queueCommand({ type:'war', nation:PLAYER, target, units:[], militia:0 });
   closeDiplomacy();
@@ -161,13 +160,14 @@ function fronts(){
 /* ---------- the balance of power: everyone who has fought in the current battle with o, and the fallen ----------
    A battle starts when an army sets out between us after a lull, and counts everyone who joins
    it: the armies, and anyone else pulled into the fight. Side 0 is us, side 1 them. */
-interface Battle { side: Map<number, number>; total: number[]; soldiers: number[]; villagers: number[]; active: boolean; }
+interface Battle { side: Map<number, number>; total: number[]; soldiers: number[]; villagers: number[]; active: boolean; crisis: number; }
 const battles=new Map<number, Battle>();
 const between=(c: Campaign, o: number) => (c.a===PLAYER && c.d===o) || (c.a===o && c.d===PLAYER);
 function track(o: number, byId: Map<number, Human>){
   const active=W.campaigns.some(c => between(c,o) && c.hostile && c.phase<2);
+  const M=W.M, crisis=Math.max(W.crisisAt[PLAYER*M+o],W.crisisAt[o*M+PLAYER]);   // (the tick the latest crisis between us began: a new one is a new battle, with its own dead)
   let b=battles.get(o);
-  if (!b || (active && !b.active)){ b={ side:new Map(), total:[0,0], soldiers:[0,0], villagers:[0,0], active }; battles.set(o,b); }
+  if (!b || (active && !b.active) || b.crisis!==crisis){ b={ side:new Map(), total:[0,0], soldiers:[0,0], villagers:[0,0], active, crisis }; battles.set(o,b); }
   b.active=active;
   const sideOf=(h: Human) => h.o===PLAYER ? 0 : h.o===o ? 1 : -1;
   const add=(h: Human) => { const s=sideOf(h); if (s<0 || b!.side.has(h.id)) return; b!.side.set(h.id,s); b!.total[s]++; };
@@ -235,7 +235,7 @@ export function updateWarChips(){
 function word(o: number, byId: Map<number, Human>){
   const M=W.M, key=PLAYER*M+o, st=W.offensive[key];
   const mine=W.campaigns.filter(c => c.a===PLAYER && c.d===o && c.phase<2 && c.hostile);
-  if (mine.some(c => c.front)){
+  if (mine.some(c => c.front) || inCrisis(PLAYER,o)){   // (a crisis needs no army: begun with none, it waits for the player to place some)
     let men=0, here=0;
     for (const c of mine) if (c.front) for (const id of c.members){
       const h=byId.get(id); if (!h || h.id===c.leader) continue;
@@ -254,7 +254,7 @@ function word(o: number, byId: Map<number, Human>){
     }
     if (inCrisis(PLAYER,o)){
       if (wait>0) return `<button class="fword" disabled title="A crisis runs 30 seconds before the offensive can begin: time for both sides to react, to de-escalate or to answer">⏳ Time to talk · ${secs} s · ${here}/${men} in place</button>`;
-      if (st===F_GATHER) return `<button class="fword" disabled title="Your armies are taking their places along the border">Gathering on the border · ${here}/${men} in place</button>`;
+      if (men && st===F_GATHER) return `<button class="fword" disabled title="Your armies are taking their places along the border">Gathering on the border · ${here}/${men} in place</button>`;
       return `<button class="fword go" data-o="${o}" data-go="1" title="Begin the offensive: every army of yours on the border attacks (set an army to defend on the armies list to keep it back)">⚔ Begin offensive</button>`;
     }
     if (!W.wars[key]) return '';

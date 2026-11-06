@@ -11,7 +11,7 @@ import { on } from './events';
 
 export const BLEED_TICKS = 45*GAME_SPEED*10;      // a wounded man with no doctor on his way bleeds out in 45 seconds
 export const HEAL_TICKS = 7*GAME_SPEED*10;        // and one in a hospital bed is on his feet again after 7
-export const MEDIC_SPEED = 1.5;                   // a doctor on his way to a wounded man runs 50% faster
+export const MEDIC_SPEED = 1.5;                   // a doctor on his way to a wounded man, and on his way back carrying him, runs 50% faster
 export const BEDS = 2;
 // doctors' tasks (Human.task): the numbers follow TASK_BOAT in population.ts
 export const TASK_DOC_WAIT = 18, TASK_DOC_GO = 19, TASK_DOC_BACK = 20, TASK_DOC_HEAL = 21;
@@ -26,6 +26,7 @@ export const hospitalDoor = (q: number): [number, number] => [(q%PW)*8+8, ((q/PW
 export function wound(h: Human): boolean {
   const n=W.nations[h.o];
   if (!n?.alive || h.kind!==1 || !hasMedics(n) || W.prand()>=woundChance(n)) return false;
+  if (h.by>0) W.kills[h.by*W.M+h.o]=Math.max(0,W.kills[h.by*W.M+h.o]-1);   // (a wounded man is no kill: only if he dies)
   W.wounded.push({ id:h.id, o:h.o, h, x:h.x, y:h.y, left:BLEED_TICKS, medic:-1, carried:false, hosp:-1, bed:-1, heal:0 });
   return true;
 }
@@ -66,7 +67,7 @@ export function medicStep(h: Human){
   }
   if (h.task===TASK_DOC_BACK){
     const carrying=!!w && w.carried && w.medic===h.id;
-    if (go(h,dx,dy,1)){
+    if (go(h,dx,dy,carrying ? MEDIC_SPEED : 1)){
       if (carrying){ const b=freeBed(q); if (b>=0){ w!.bed=b; w!.hosp=q; w!.heal=HEAL_TICKS; w!.x=dx; w!.y=dy; h.task=TASK_DOC_HEAL; } }   // (no bed free: he waits at the door)
       else { h.dest=-1; h.task=TASK_DOC_WAIT; }
     } else if (carrying){ w!.x=h.x; w!.y=h.y; }   // he carries him
@@ -92,6 +93,6 @@ export function updateMedics(revive: (h: Human, x: number, y: number) => void){
       continue;
     }
     if (w.carried || w.medic>=0) continue;   // a doctor has him: the clock is stopped
-    if (--w.left<=0){ on.died(w.x,w.y,w.o,w.id,1,w.h.militia ? 0 : w.h.tier,false); W.wounded.splice(i,1); }
+    if (--w.left<=0){ if (w.h.by>0) W.kills[w.h.by*W.M+w.o]++; on.died(w.x,w.y,w.o,w.id,1,w.h.militia ? 0 : w.h.tier,false); W.wounded.splice(i,1); }
   }
 }
