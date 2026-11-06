@@ -100,7 +100,7 @@ Houses are built by villagers (above). Everything else is placed by the kingdom 
 | Barracks | 5 / 5 / 0 | Trains soldiers and houses an army of 5 with 5 armour racks. Barracks side by side join into one bigger army. Click it to see its army |
 | Watchtower | 2 / 5 / 1 (**each tower you own makes the next 5% dearer**; **Watchtower ×4** places four on a 2 by 2 square the same way) | At war, shoots the nearest enemy soldier in range on your land, or else the nearest enemy villager there (2, 3 or 4 damage every 4, 3.5 or 3 s by its tier; 20, 30 or 40 blows to burn; see the defences below). |
 | Coin minter | 5 / 5 / 5 | +5% gold income (`MINTER_BONUS`); **each one you own makes the next 10% dearer** |
-| Plantation | 10 / 0 / 0 | One plot. Saplings grow into trees over 30 s: +2 wood, more when joined (below); each one makes the next 10% dearer |
+| Plantation | 10 / 0 / 0 | One plot. A sawmill yard (shed with a saw, stacked logs and planks, trees growing beside it) whose trees grow over 30 s: +2 wood, more when joined (below); each one makes the next 10% dearer |
 | Stone quarry | 5 / 10 / 0 | One plot. A pulley hauls stone out of the pit: +2 stone every 30 s, more when joined; each one makes the next 10% dearer |
 | Copper mine | 10 / 10 / 0 | One plot. A shaft glowing orange: +1 copper every 30 s, more when joined; each one makes the next 10% dearer |
 | Blacksmith | 10 / 15 / 5 | One villager becomes its smith, who forges armour for the barracks once infantry research allows it, 5 copper a piece. Blacksmiths side by side join into one bigger forge (2 plots, then 4) with no research and no bonus: only the look changes, and **every plot of it keeps its own smith** (4 smithies joined, 4 smiths) |

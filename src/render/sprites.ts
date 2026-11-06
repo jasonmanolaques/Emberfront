@@ -545,8 +545,15 @@ export function drawIcon(ctx: CanvasRenderingContext2D, type: number, n: NationS
    Plantations, quarries and copper mines are drawn at their size: one plot (tier 1), two side by
    side (tier 2) or a 2×2 block (tier 3); the builders guild is always 2×1. */
 export const BIG: Record<number, [number, number]> = { [B_PLANTATION]: [1,1], [B_QUARRY]: [1,1], [B_COPPERMINE]: [1,1], [B_GUILD]: [2,1], [B_HOSPITAL]: [2,1] };
-/** Where the saplings stand in a plantation of w×h plots: one in each plot. */
-const slots = (w: number, h: number) => { const out: number[][]=[]; for (let y=0;y<h;y++) for (let x=0;x<w;x++) out.push([x*16+8, y*16+11]); return out; };
+/** Where the trees of a plantation (a sawmill yard) of w×h plots stand, by the foot of the trunk: one beside the shed in a single plot, more in the bigger yards. */
+const slots = (w: number, h: number) => {
+  const W=w*16, H=h*16;
+  if (w===1) return [[W-4,H-3]];
+  const out=[[W-7,10],[W-14,12]]; if (h===2) out.push([6,21]);
+  return out;
+};
+/** A cheap fixed 0..1 scatter from two numbers, so the dirt of a yard is speckled the same way every time. */
+const speck = (a: number, b: number) => { let h=(Math.imul(a|0,374761393)+Math.imul(b|0,668265263)+1013904223)|0; h=Math.imul(h^(h>>>15),2246822519); h=Math.imul(h^(h>>>13),3266489917); h^=h>>>16; return (h>>>0)/4294967296; };
 /** A copper mine's shafts by size: [centre x, width]. */
 const shafts = (w: number, h: number) => w===1 ? [[8,4]] : h===1 ? [[16,8]] : [[9,6],[23,6]];
 function drawBig(ox: number, oy: number, type: number, n: NationStyle, w=BIG[type][0], h=BIG[type][1]){
@@ -554,15 +561,17 @@ function drawBig(ox: number, oy: number, type: number, n: NationStyle, w=BIG[typ
   if (type===B_GUILD){ drawGuild(ox,oy,n); return; }
   if (type===B_HOSPITAL){ drawHospital(ox,oy,n); return; }
   if (type===B_PLANTATION){
-    R(ox,oy,W,H,'#7a5c36');                                        // turned earth
-    for (let y=3;y<H;y+=4) R(ox+1,oy+y,W-2,1,'#8e6c40');
-    for (const [x,y] of slots(w,h)){ R(ox+x-3,oy+y+1,7,2,'#5e4428'); R(ox+x-2,oy+y+1,5,1,'#4e3820'); }   // a dug bed under each sapling
-    const rail=C.woodL;
-    R(ox,oy,W,1,rail); R(ox,oy+H-1,W,1,rail); R(ox,oy,1,H,rail); R(ox+W-1,oy,1,H,rail);
-    for (let p=0;p<W;p+=10){ P(ox+p,oy,C.woodD); P(ox+p,oy+H-1,C.woodD); } for (let p=0;p<H;p+=10){ P(ox,oy+p,C.woodD); P(ox+W-1,oy+p,C.woodD); }
-    P(ox+W-1,oy,C.woodD); P(ox+W-1,oy+H-1,C.woodD); P(ox,oy+H-1,C.woodD);
-    R(ox+2,oy+2,1,4,C.woodD); R(ox+3,oy+2,3,2,n.roof);                // the kingdom's marker post
-    if (w===2 && h===2){ R(ox+13,oy+17,6,2,C.wood); R(ox+14,oy+16,4,1,C.woodL); P(ox+13,oy+17,C.woodD); P(ox+18,oy+18,C.woodD); }   // a pile of felled logs
+    // a sawmill yard: trodden earth, a shed with a saw, planks and logs stacked, a stump; the trees growing by it are drawn live
+    R(ox,oy,W,H,'#8a6f45'); for (let i=0;i<W*H/7;i++) P(ox+((speck(i,3)*W)|0),oy+((speck(i,4)*H)|0),'#9b8052');
+    const sw=Math.min(W-6,16);
+    R(ox+2,oy+2,sw,7,'#8a5a32'); R(ox+2,oy+2,sw,1,'#c2915c'); R(ox+2,oy+8,sw,1,'#6c4a2c');   // the shed's wall
+    R(ox+1,oy,sw+2,3,n.roof); R(ox+1,oy,sw+2,1,n.roofL); R(ox+1,oy+2,sw+2,1,n.roofD);
+    R(ox+2+sw-6,oy+4,5,5,'#2a1a10');                                  // its open front
+    R(ox+5,oy+5,5,5,'#bfc6cc'); R(ox+6,oy+4,3,7,'#bfc6cc'); P(ox+7,oy+6,'#555'); P(ox+5,oy+5,'#8a9399'); P(ox+9,oy+9,'#8a9399');   // the saw
+    for (let i=0,n6=W>=32 ? 6 : 3;i<n6;i++){ const lx=ox+2+(i%3)*5, ly=oy+H-4-((i/3)|0)*3; R(lx,ly,6,3,'#9a6e42'); R(lx,ly,6,1,'#c2915c'); R(lx+5,ly,1,3,'#d9b27a'); P(lx+5,ly+1,'#8a5f38'); }   // logs
+    if (h>=2){ R(ox+W-12,oy+H-8,9,5,'#d9b27a'); R(ox+W-12,oy+H-8,9,1,'#ecd2a0'); R(ox+W-12,oy+H-5,9,1,'#b08850'); R(ox+W-11,oy+H-11,7,3,'#d9b27a'); R(ox+W-11,oy+H-11,7,1,'#ecd2a0'); }   // planks
+    R(ox+W-6,oy+H-3,4,2,'#9a6e42'); R(ox+W-6,oy+H-3,4,1,'#d9b27a'); R(ox+W-5,oy+H-1,2,1,'#6c4a2c');   // a stump
+    R(ox+W-5,oy+2,1,4,C.woodD); R(ox+W-4,oy+2,3,2,n.roof);                                       // the kingdom's marker post
   } else if (type===B_QUARRY){
     // a stepped pit cut into the ground, the deepest step darkest
     const cols=['#a49d90','#8d867b','#6f695f','#4a4640'], lips=['#c4beb4','#a49d90','#8d867b'];
@@ -605,7 +614,8 @@ export function drawWorking(ctx: CanvasRenderingContext2D, type: number, ox: num
     }
   }
   if (type===B_PLANTATION){
-    // each bed grows a tree from a sprout to a full tree over the cycle
+    const f=((now/110)|0)&1; P(ox+5+f*4,oy+5,'#eef2f5'); P(ox+9-f*4,oy+9,'#eef2f5');   // the saw's teeth flicker round
+    // each tree by the yard grows from a sprout to a full tree over the cycle
     for (const [sx,sy] of slots(w,h)){
       const x=ox+sx, y=oy+sy;
       if (k<0.2){ P(x,y,'#7fb34c'); P(x,y-1,'#b2d86c'); }
