@@ -41,7 +41,7 @@ describe('goods with nothing on the map to gather', () => {
       expect(costFor(me(),structureOf(type)!)).toEqual([0,0,0]);
       expect(place(type)).toEqual([0,0,0]);
       const base=structureOf(type)!.cost;
-      expect(costFor(me(),structureOf(type)!)).toEqual(base.map(c => c ? Math.ceil(c*1.1-1e-9) : 0));   // the second costs a tenth more
+      expect(costFor(me(),structureOf(type)!)).toEqual(base.map(c => c ? Math.round(c*1.1) : 0));   // the second costs a tenth more
       expect(canAfford(me(),structureOf(type)!)).toBe(false);   // and is paid for
     }
   });
@@ -57,13 +57,13 @@ describe('goods with nothing on the map to gather', () => {
     expect(RISE[B_FARM]).toBe(0.05);
     expect(costFor(me(),structureOf(B_FARM)!)).toEqual(base);
     me().farms=10;
-    expect(costFor(me(),structureOf(B_FARM)!)).toEqual(base.map(c => c ? Math.ceil(c*1.5-1e-9) : 0));   // 10 farms: half as much again
+    expect(costFor(me(),structureOf(B_FARM)!)).toEqual(base.map(c => c ? Math.round(c*1.5) : 0));   // 10 farms: half as much again
     me().farms=20;
     expect(costFor(me(),structureOf(B_FARM)!)).toEqual(base.map(c => c*2));   // 20 farms: double
     me().minters=5; me().guilds=3;
-    expect(costFor(me(),structureOf(B_MINTER)!)).toEqual(structureOf(B_MINTER)!.cost.map(c => Math.ceil(c*1.5-1e-9)));
-    expect(costFor(me(),structureOf(B_GUILD)!)).toEqual(structureOf(B_GUILD)!.cost.map(c => Math.ceil(c*1.3-1e-9)));
+    expect(costFor(me(),structureOf(B_MINTER)!)).toEqual(structureOf(B_MINTER)!.cost.map(c => Math.round(c*1.5)));
+    expect(costFor(me(),structureOf(B_GUILD)!)).toEqual(structureOf(B_GUILD)!.cost.map(c => Math.round(c*1.3)));
     me().towers=0; expect(costFor(me(),structureOf(B_TOWER)!)).toEqual(structureOf(B_TOWER)!.cost);   // each watchtower makes the next 5% dearer
-    me().towers=10; expect(costFor(me(),structureOf(B_TOWER)!)).toEqual(structureOf(B_TOWER)!.cost.map(c => c ? Math.ceil(c*1.5-1e-9) : 0));
+    me().towers=10; expect(costFor(me(),structureOf(B_TOWER)!)).toEqual(structureOf(B_TOWER)!.cost.map(c => c ? Math.round(c*1.5) : 0));
   });
 });

@@ -22,6 +22,7 @@ import { resetSpeech, say, pick, LINES } from './render/speech';
 import { RANKS } from './sim/war';
 import { setupBuildPanel, toggleBuildPanel } from './ui/build';
 import { ui, log, toast, showHUD, checkEnd, onEliminated, onCapitalFell, onBuildingPlaced } from './ui/hud';
+import { soldierMax } from './sim/population';
 import { setupDiplomacy, resetDiplomacy, noteDeath } from './ui/diplomacy';
 import './render/nature';   // (paints the cacti)
 import { refreshResearch, closeResearch } from './ui/research';
@@ -257,7 +258,8 @@ export function settleBySea(t: number, ratio: number){
 
 /** Asks the kingdom to keep `v` (0..1) of its people as soldiers. */
 export function setSoldierShare(v: number){
-  v=clamp(v,0,1); soldiersEl.value=String(Math.round(v*100)); $('soldiersVal').textContent=Math.round(v*100)+'%'; soldiersEl.style.setProperty('--fill',(v*100)+'%');
+  const me=W.nations[PLAYER]; v=clamp(v,0,me && !me.draftAll ? Math.floor(soldierMax(me)*100)/100 : 1);   // (not past the free villagers, unless the lock is open)
+  soldiersEl.value=String(Math.round(v*100)); $('soldiersVal').textContent=Math.round(v*100)+'%'; soldiersEl.style.setProperty('--fill',(v*100)+'%');
   if (W.nations[PLAYER]) queueCommand({ type:'soldiers', nation:PLAYER, share:v });
 }
 const soldiersEl=$('soldiers') as HTMLInputElement;

@@ -66,10 +66,18 @@ export const HUMAN_EVERY = 200;  // progress per new human: 200 ticks (20 s), ea
 export const FARM_BONUS = 0.03;
 /** Beds in n's houses that nobody needs: its capacity less its people (none when everyone is housed or more). */
 export const spareBeds = (n: Nation, people: number) => Math.max(0,n.beds-people);
-/** The bonus to raising humans that empty homes give, from 0 to 2 (0% to 200%): twice the share of the kingdom's beds that stand empty. With 10 hovels and 1 person it is 180%;
-    with everyone housed, nothing. A kingdom that has lost many people recovers quickly, small ones and early game included. */
-export const houseBonus = (n: Nation, people: number) => n.beds>0 ? HOUSE_MAX*spareBeds(n,people)/n.beds : 0;
-export const HOUSE_MAX = 2;   // the bonus of a kingdom whose houses all stand empty: +200%
+/** The bonus to raising humans that homes give: from 0 to 200% by twice the share of the kingdom's beds that stand empty (with 10 hovels and 1 person, 180%; with
+    everyone housed, nothing), plus 0.5% for every bed it has, empty or not. A kingdom that has lost many people recovers quickly, small ones and early game included. */
+export const houseBonus = (n: Nation, people: number) => n.beds>0 ? HOUSE_MAX*spareBeds(n,people)/n.beds + BED_BONUS*n.beds : 0;
+export const HOUSE_MAX = 2;      // the bonus of a kingdom whose houses all stand empty: +200%
+export const BED_BONUS = 0.005; // and every bed it has, empty or full, adds 0.5% (100 beds: +50%)
+/** How many of n's people work at a trade: builders, smiths, doctors and carpenters. */
+export const professionals = (n: Nation) => n.jobs[0]+n.jobs[1]+n.jobs[2]+n.jobs[3];
+/** The largest share of its people the soldier slider may ask for: all but the professionals, whom recruiting would take from their work (unless the lock is on). */
+export function soldierMax(n: Nation){
+  const people=n.villagers+n.soldiers; if (people<=0) return 1;
+  return Math.max(0,Math.min(1,(people-professionals(n))/people));
+}
 /** How fast kingdom n's capital raises humans: 1 a tick, and a bonus for each farm and for the empty homes, `people` being everyone it has. */
 export const humanRate = (n: Nation, people: number) => (1+FARM_BONUS*n.farms+houseBonus(n,people))*(W.siege[n.id]>0 ? 2 : 1);   // (a capital under siege raises people twice as fast, to have a chance)
 const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 s)
@@ -387,7 +395,7 @@ function goRest(h: Human, at=-1){
 export function makeHuman(n: Nation, kind: number, x: number, y: number): Human {
   return { id:++W.humanSeq, o:n.id, kind, militia:false, to:0, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+W.prand()*2,
     hp:kind===H_SOLDIER?SOLDIER_HP[1]:VILLAGER_HP, post:-1, site:-1, home:-1, rest:-1, duel:-1, housed:false, homeless:0, beggar:false,
-    by:0, war:-1, boat:-1, foe:-1, aim:-1, cool:0, slot:0, brave:-1, fury:false, dug:false, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
+    by:0, vet:false, war:-1, boat:-1, foe:-1, aim:-1, cool:0, slot:0, brave:-1, fury:false, dug:false, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
     tier:kind===H_SOLDIER?1:0, base:-1, load:0, make:0, dest:-1 };
 }
 /** A new villager or militiaman walks out of the capital; a new soldier out of the barracks nearest the capital. */
@@ -500,6 +508,16 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
       if (plot>=0){ if (sendToTrain(h,plot,T_SOLDIER)){ const u=unitAt(plot)!; room.set(u,room.get(u)!-1); spare--; diff--; } }
       else if (n.capTile>=0 && sendToTrain(h,n.capPlot,T_MILITIA)) diff--;
     }
+    // the lock is on and the free villagers are used up: the professionals are called up too, at once, as tier 1 soldiers (trained men, stronger than militia)
+    if (diff>0 && n.draftAll){
+      const pros=mine.filter(h => h.kind===H_VILLAGER && !h.beggar && h.work>=0 && !switching(h) && h.war<0).sort((a,b) => a.id-b.id);
+      for (const h of pros){
+        if (diff<=0) break;
+        release(h); h.work=-1; h.load=0; h.make=0; h.dest=-1; h.fix=-1;
+        h.sp+=SPEED_UP[T_SOLDIER]-SPEED_UP[T_VILLAGER]; h.kind=H_SOLDIER; h.militia=false; h.tier=1; h.vet=true; h.base=-1; h.post=-1; h.hp=maxHp(h);
+        backToRoam(h); diff--;
+      }
+    }
     return;
   }
   // too many: militia go back to work first (at the castle), then soldiers (at a barracks), the least armoured first
@@ -510,7 +528,7 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
 /** Trained soldiers at home with no place in a barracks (theirs fell, or shrank) serve on as militia. */
 function demote(mine: Human[]){
   for (const h of mine){
-    if (h.kind!==H_SOLDIER || h.militia || h.base>=0 || h.war>=0 || h.hp<=0 || switching(h)) continue;
+    if (h.kind!==H_SOLDIER || h.militia || h.vet || h.base>=0 || h.war>=0 || h.hp<=0 || switching(h)) continue;
     h.militia=true; h.tier=1; h.sp-=SPEED_UP[T_SOLDIER]-SPEED_UP[T_MILITIA]; h.hp=Math.min(h.hp,maxHp(h));   // (his armour is lost with his barracks)
   }
 }
@@ -715,7 +733,7 @@ function step(h: Human){
     if (--h.wait<=0){
       const to=h.to, was=h.kind!==H_SOLDIER ? T_VILLAGER : h.militia ? T_MILITIA : T_SOLDIER;
       h.sp+=SPEED_UP[to]-SPEED_UP[was];
-      if (to===T_VILLAGER){ if (was===T_SOLDIER && h.tier>=2) pArmor[h.tier][h.site]++; h.kind=H_VILLAGER; h.militia=false; h.tier=0; h.base=-1; }   // his armour goes back on the racks
+      if (to===T_VILLAGER){ if (was===T_SOLDIER && h.tier>=2) pArmor[h.tier][h.site]++; h.kind=H_VILLAGER; h.militia=false; h.vet=false; h.tier=0; h.base=-1; }   // his armour goes back on the racks
       else { h.kind=H_SOLDIER; h.militia=to===T_MILITIA; h.tier=1; h.base=to===T_SOLDIER ? h.site : -1; }   // a new soldier takes the place he trained for
       h.to=T_VILLAGER; h.hp=maxHp(h); backToRoam(h); on.roleChanged(h.x,h.y,h.kind);
     }
@@ -844,11 +862,12 @@ export function updatePopulation(){
   for (const h of H) if (h.war>=0) marchStep(h); else step(h);
   spread();   // fighters keep a little room between them
   // headcount after everyone has moved, so it matches what is on the map this tick
-  for (const n of N){ n.villagers=0; n.soldiers=0; n.militia=0; n.called=0; n.wageS=0; n.wageM=0; n.training=0; n.beggars=0; n.homeless=0; n.taxpayers=0; n.might=0; }
+  for (const n of N){ n.villagers=0; n.soldiers=0; n.militia=0; n.called=0; n.wageS=0; n.wageM=0; n.training=0; n.beggars=0; n.homeless=0; n.unhoused=0; n.taxpayers=0; n.might=0; n.jobs[0]=n.jobs[1]=n.jobs[2]=n.jobs[3]=0; }
   for (const h of H){
     const n=N[h.o];
     if (h.kind===H_SOLDIER){ n.soldiers++; if (h.militia){ n.militia++; n.might+=STR_MILITIA; if (h.war>=0) n.called++; n.wageM+=wageOf(h); } else { n.wageS+=wageOf(h); n.might+=STR_SOLDIER[h.tier] ?? STR_SOLDIER[1]; } } else if (h.beggar) n.beggars++; else { n.villagers++; n.might+=STR_VILLAGER; if (h.housed) n.taxpayers++; }
-    if (!h.housed && !(h.home>=0 && h.kind===H_VILLAGER && !h.beggar)) n.homeless++;   // (one on his way to build himself a home is not homeless yet)
+    if (!h.housed && !(h.home>=0 && h.kind===H_VILLAGER && !h.beggar)){ n.homeless++; if (h.homeless>=100) n.unhoused++; }   // (one on his way to build himself a home is not homeless yet; the screen counts only those without one for 10 seconds)
+    if (h.kind===H_VILLAGER && !h.beggar && h.work>=0){ const t=pType[h.work]; n.jobs[t===B_GUILD ? 0 : t===B_SMITHY ? 1 : t===B_HOSPITAL ? 2 : 3]++; }
     if (switching(h)) n.training++;
   }
 }

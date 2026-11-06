@@ -3,6 +3,7 @@ import { TNAME, TMULT, PLAYER, UI_SCALE } from '../core/constants';
 import { fmt } from '../core/util';
 import { W, owner, occ, terr, isLand } from '../sim/state';
 import { allied, atWar } from '../sim/war';
+import { queueCommand } from '../sim/sim';
 import { client } from '../client';
 import { view, cam, clampCam, zoomAt, tileAt } from '../render/camera';
 import { hover } from '../render/render';
@@ -110,6 +111,8 @@ export function bindInput(){
 
   const soldiersEl=$('soldiers') as HTMLInputElement;
   soldiersEl.addEventListener('input',()=>setSoldierShare(+soldiersEl.value/100));
+  { const cell=$('meJobsCell'), tog=()=>cell.setAttribute('aria-expanded',String(cell.getAttribute('aria-expanded')!=='true')); cell.addEventListener('click',tog); cell.addEventListener('keydown',e => { if (e.key==='Enter' || e.key===' '){ e.preventDefault(); tog(); } }); }
+  $('soldierLock').addEventListener('click',()=>{ const me=W.nations[PLAYER]; if (me) queueCommand({ type:'draftAll', nation:PLAYER, on:!me.draftAll }); });
 
   $('pause').onclick=()=>setPaused(!client.paused);
   for (const b of document.querySelectorAll<HTMLButtonElement>('#tools .cat')) b.onclick=()=>toggleBuildPanel(undefined,b.dataset.cat);

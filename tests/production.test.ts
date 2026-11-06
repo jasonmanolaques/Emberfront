@@ -100,11 +100,11 @@ describe('production buildings', () => {
     listen({ produced: () => {} });
   });
 
-  it('take 15 blows a tier', () => {
+  it('take 30 blows a tier', () => {
     emptyKingdom(); me().tier[R_GATHER]=3;
-    const a=spot(B_COPPERMINE); put(B_COPPERMINE,a); expect(bldHp(a)).toBe(15);
+    const a=spot(B_COPPERMINE); put(B_COPPERMINE,a); expect(bldHp(a)).toBe(30);
     const q=block(2,2); for (const k of [q,q+1,q+PW,q+PW+1]) put(B_COPPERMINE,k);
-    expect(bldHp(q)).toBe(45);
+    expect(bldHp(q)).toBe(90);
   });
 
   it('cost what the design says', () => {
@@ -113,7 +113,7 @@ describe('production buildings', () => {
       me().stock=type===B_COPPERMINE ? [...cost] : [0,0,0];
       expect(build(me(), spot(type), type)).toBe(true);   // the first plantation and quarry are free, the copper mine is paid for
       expect(me().stock).toEqual([0,0,0]);
-      const next=cost.map(c => c ? Math.ceil(c*1.1-1e-9) : 0);   // each one owned makes the next a tenth dearer
+      const next=cost.map(c => c ? Math.round(c*1.1) : 0);   // each one owned makes the next a tenth dearer
       me().stock=next.map(c => c ? c-1 : 0);
       expect(build(me(), spot(type), type)).toBe(false);   // the next, one short of each
       me().stock=[...next];

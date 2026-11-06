@@ -45,8 +45,8 @@ export const HIT_TICKS = 10;          // ticks between blows (one a second)
 const DUEL_R = 8;                     // pixels apart a duel holds: further, one has run and it is over
 export const HIT_CHANCE = 0.7;
 export const HIT_DMG = SOLDIER_DMG;   // a soldier's blow, by tier (soldiers have SOLDIER_HP by tier)
-export const MILITIA_DMG = 0.5;       // a villager with a pitchfork does half that
-export const BLD_DMG = 1;             // a blow on a building
+export const MILITIA_DMG = 0.75;      // a villager with a pitchfork does half that
+export const BLD_DMG = 1.5;             // a blow on a building
 const GUARD_R = 26, BARRACKS_R = 30, CAPITAL_R = 40;   // pixels around their post soldiers at home defend
 export const CASTLE_RANGE = 40;       // the castle shoots further than a watchtower (and twice as often: sim/defense.ts)
 const DEFEND_R = 30;                  // pixels around its line the home guard fights

@@ -120,7 +120,17 @@ input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:20px
 input[type=range]::-webkit-slider-runnable-track{height:8px;background:linear-gradient(90deg,var(--track,var(--ember)) var(--fill,40%),#0b141c var(--fill,40%));border:2px solid var(--edge)}
 input[type=range]::-moz-range-track{height:8px;background:#0b141c;border:2px solid var(--edge)}
 input[type=range]::-moz-range-progress{height:8px;background:var(--track,var(--ember))}
+#meJobsCell{cursor:pointer}
+#meJobsCell:hover dt,#meJobsCell[aria-expanded=true] dt{color:var(--gold)}
+.jobs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 12px;font-size:12px;padding:4px 6px;background:var(--plate-2);border:2px solid var(--edge)}
+.jobs span{display:flex;justify-content:space-between;gap:6px}
+.jobs b{font-weight:600}
+.jobs .none{grid-column:1/-1;color:var(--muted)}
 #soldiers{--track:var(--steel);--fill:0%}
+.sbar{position:relative}
+#soldierBlock{position:absolute;right:7px;top:50%;height:12px;margin-top:-6px;width:0;background:repeating-linear-gradient(135deg,#3f7fd6 0 4px,#2d5fa8 4px 8px);border:2px solid var(--edge);border-left-color:#8fc0ff;pointer-events:none;box-sizing:border-box}
+.lockbtn{padding:0 5px;font-size:13px;line-height:1.3;margin-left:auto;margin-right:8px;box-shadow:none}
+.lockbtn[aria-pressed=true]{background:var(--bad);border-color:var(--bad)}
 #bar label.split{padding-top:8px;border-top:2px solid var(--edge)}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:20px;margin-top:-8px;background:var(--gold);border:2px solid var(--ink);box-shadow:2px 2px 0 rgba(0,0,0,.4)}
 input[type=range]::-moz-range-thumb{width:14px;height:18px;background:var(--gold);border:2px solid var(--ink);border-radius:0}

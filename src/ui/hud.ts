@@ -1,7 +1,8 @@
 /* ---------- HUD: kingdom card, leaderboard, attack chips, log, toasts, end card ---------- */
 import { PLAYER, TICK, UNPAID_TICKS, GAME_SPEED } from '../core/constants';
 import { fmt, fmtTime } from '../core/util';
-import { HUMAN_EVERY, FARM_BONUS, humanRate, houseBonus } from '../sim/population';
+import { HUMAN_EVERY, FARM_BONUS, humanRate, houseBonus, professionals, soldierMax } from '../sim/population';
+import { setSoldierShare } from '../game';
 import { W } from '../sim/state';
 import { allied, atWar } from '../sim/war';
 import { client } from '../client';
@@ -23,7 +24,7 @@ export const ui={ meGold:$('meGold'), meRate:$('meRate'), meLand:$('meLand'), me
 let lastBoard=0;
 export function updateHUD(now: number){
   const me=W.nations[PLAYER]; if (!me) return;
-  const landCount=W.landCount;
+  const landCount=W.landCount, pros=professionals(me);
   ui.meGold.textContent=fmt(me.gold); const inc=me.alive?me.income:0;
   ui.meRate.textContent=(inc<0?'':'+')+(inc*GAME_SPEED).toFixed(1)+'/s'; ui.meRate.classList.toggle('neg',inc<0); ui.meGold.classList.toggle('neg',me.gold<0);
   // soldiers' wages, and what happens when they go unpaid
@@ -40,14 +41,24 @@ export function updateHUD(now: number){
   const sub=[me.beds>me.houses ? `room for ${me.beds}` : '', me.abandoned ? `${me.abandoned} empty` : ''].filter(Boolean).join(' · ');
   if (sub){ const sp=document.createElement('small'); sp.textContent=sub; ui.meHouses.append(sp); } ui.meStrength.textContent=fmt(me.strength);
   ui.meWood.textContent=fmt(me.stock[0]); ui.meStone.textContent=fmt(me.stock[1]); ui.meCopper.textContent=fmt(me.stock[2]);
-  ui.meHomeless.hidden=!me.homeless;
-  ui.meHomeless.textContent=`${me.homeless} homeless${me.beggars?` · ${me.beggars} begging`:''} · homeless villagers pay no tax`;
-  ui.meVillagers.textContent=String(me.villagers); ui.meSoldiers.textContent=String(me.soldiers-me.militia);
+  ui.meHomeless.hidden=!me.unhoused && !me.beggars;   // (only those who have been without a home for a while, and are not off to build one)
+  ui.meHomeless.textContent=`${me.unhoused} homeless${me.beggars?` · ${me.beggars} begging`:''} · homeless villagers pay no tax`;
+  { const open=$('meJobsCell').getAttribute('aria-expanded')==='true', box=$('meJobs'); box.hidden=!open;
+    if (open){ const rows: [string, number][]=[['Builders',me.jobs[0]],['Blacksmiths',me.jobs[1]],['Doctors',me.jobs[2]],['Carpenters',me.jobs[3]]].filter(r => (r[1] as number)>0) as [string, number][];
+      const html=rows.length ? rows.map(r => `<span>${r[0]}<b>${r[1]}</b></span>`).join('')+`<span>Free villagers<b>${Math.max(0,me.villagers-pros)}</b></span>` : '<span class="none">No villager has a trade yet: build a builders guild, blacksmith, hospital or carpenters</span>';
+      if (box.dataset.h!==html){ box.dataset.h=html; box.innerHTML=html; } } }
+  ui.meVillagers.textContent=String(Math.max(0,me.villagers-pros)); $('meJobsN').textContent=String(pros); ui.meSoldiers.textContent=String(me.soldiers-me.militia);
   ui.meMilitia.textContent=me.called ? `${me.militia} (${me.called} called up)` : String(me.militia); ui.meMilitiaRow.hidden=!me.militia; ui.meTraining.textContent=String(me.training);
   const people=me.villagers+me.soldiers+me.beggars, spare=houseBonus(me,people), perTick=humanRate(me,people);
   ui.meNext.textContent = me.alive && me.capTile>=0 ? `Next human in ${Math.max(0,(HUMAN_EVERY-me.humanProg)/perTick*TICK/GAME_SPEED).toFixed(1)}s${me.farms?` · farms +${Math.round(FARM_BONUS*me.farms*100)}%`:''}${spare>0?` · empty homes +${Math.round(spare*100)}%`:''}` : 'No capital: no new humans';
   // without a barracks, everyone under arms trains at the castle as militia
   ui.soldiers.disabled=!me.alive; ui.soldiersHint.hidden=!me.alive || me.barracks>0;
+  // the slider stops short of the professionals (the blue part), unless the lock is open
+  { const people=me.villagers+me.soldiers, cap=me.draftAll ? 1 : Math.floor(soldierMax(me)*100)/100;
+    const blk=$('soldierBlock'), lock=$('soldierLock');
+    blk.style.width=people ? `calc((100% - 14px) * ${(pros/people).toFixed(4)})` : '0'; blk.hidden=!pros;
+    lock.setAttribute('aria-pressed',String(me.draftAll)); lock.textContent=me.draftAll ? '🔓' : '🔒';
+    if (me.alive && +ui.soldiers.value/100>cap+0.004) setSoldierShare(cap); }
   ui.clock.textContent=fmtTime(W.simTime/GAME_SPEED);
   if (now-lastBoard>450){
     lastBoard=now;

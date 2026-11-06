@@ -16,16 +16,16 @@ import { HOUSE_TOUGH, R_CASTLE } from './research';
 import { isGatherer, gatherTier } from './buildings';
 
 export const TOWER_RELOADS = [0, 80, 70, 60];   // ticks between a watchtower's shots, by tier (8, 7 and 6 s)
-export const TOWER_DMGS = [0, 2, 3, 4];         // damage of a shot, by tier (the castle's too)
-export const TOWER_HP = [0, 20, 30, 40];        // blows a watchtower takes, by tier
-export const CASTLE_HP = [0, 200, 400, 600];    // blows the castle takes, by tier
+export const TOWER_DMGS = [0, 3, 4.5, 6];         // damage of a shot, by tier (the castle's too)
+export const TOWER_HP = [0, 40, 60, 80];        // blows a watchtower takes, by tier
+export const CASTLE_HP = [0, 400, 800, 1200];    // blows the castle takes, by tier
 export const CASTLE_MEND = 0.2;                 // blows the castle mends a tick (2 a second)
 export const TOWER_COST = [[], [4,10,0], [8,20,0]];   // [wood, stone, copper] to rebuild a watchtower from tier t to t+1
-export const HOUSE_HP = 10, GATHER_HP = 15;     // blows a hovel takes (a stone house 3 times, a manor 6); a plantation, quarry or mine per tier
+export const HOUSE_HP = 20, GATHER_HP = 30;     // blows a hovel takes (a stone house 3 times, a manor 6); a plantation, quarry or mine per tier
 
 /** Blows a building takes before it burns (the castle: before the kingdom falls). */
-export const BLD_HP: Record<number, number> = { [B_HOUSE]: HOUSE_HP, [B_FARM]: 15, [B_TOWER]: TOWER_HP[1], [B_BARRACKS]: 20, [B_MINTER]: 15,
-  [B_PLANTATION]: GATHER_HP, [B_QUARRY]: GATHER_HP, [B_COPPERMINE]: GATHER_HP, [B_MINE]: 10, [B_RESEARCH]: 15, [B_GUILD]: 15, [B_SMITHY]: 15, [B_CARPENTER]: 15, [B_HOSPITAL]: 15, [B_NAVAL]: 25, [B_CASTLE]: CASTLE_HP[1] };
+export const BLD_HP: Record<number, number> = { [B_HOUSE]: HOUSE_HP, [B_FARM]: 30, [B_TOWER]: TOWER_HP[1], [B_BARRACKS]: 40, [B_MINTER]: 30,
+  [B_PLANTATION]: GATHER_HP, [B_QUARRY]: GATHER_HP, [B_COPPERMINE]: GATHER_HP, [B_MINE]: 20, [B_RESEARCH]: 30, [B_GUILD]: 30, [B_SMITHY]: 30, [B_CARPENTER]: 30, [B_HOSPITAL]: 30, [B_NAVAL]: 50, [B_CASTLE]: CASTLE_HP[1] };
 
 /** The tier of the watchtower on plot q, and of kingdom o's castle. */
 export const towerTier = (q: number) => pTier[q] || 1;
@@ -39,7 +39,7 @@ export function bldHp(q: number){
   if (isGatherer(ty)) return GATHER_HP*gatherTier(q);
   if (ty===B_TOWER) return TOWER_HP[towerTier(q)];
   if (ty===B_CASTLE) return CASTLE_HP[castleTier(pOwner[q])];
-  return BLD_HP[ty] ?? 8;
+  return BLD_HP[ty] ?? 16;
 }
 /** How battered the building on plot q looks: 0 whole; towers 1 from half their blows; the castle
     1 damaged (a third gone) or 2 badly damaged (two thirds gone). */

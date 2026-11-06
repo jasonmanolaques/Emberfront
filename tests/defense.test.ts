@@ -47,9 +47,9 @@ function dummy(x: number, y: number){
 }
 
 describe('watchtowers by tier', () => {
-  it('shoot every 8, 7 and 6 seconds for 2, 3 and 4 damage, and take 20, 30 and 40 blows', () => {
+  it('shoot every 8, 7 and 6 seconds for 3, 4.5 and 6 damage, and take 40, 60 and 80 blows', () => {
     expect(TOWER_RELOADS.slice(1)).toEqual([80, 70, 60]);
-    expect(TOWER_DMGS.slice(1)).toEqual([2, 3, 4]);
+    expect(TOWER_DMGS.slice(1)).toEqual([3, 4.5, 6]);
     for (const tier of [1,2,3]){
       world(1); paintDisc(N(1),40);
       N(1).tier[R_TOWERS]=tier;   // (the builders would rebuild it; here it is set by hand)
@@ -70,24 +70,24 @@ describe('watchtowers by tier', () => {
   it('look battered from half their blows, and don\'t mend', () => {
     world(1); paintDisc(N(1),14);
     const q=place(N(1),B_TOWER);
-    pHp[q]=9; expect(wear(q)).toBe(0);
-    pHp[q]=10; expect(wear(q)).toBe(1);
-    run(100); expect(pHp[q]).toBe(10);
+    pHp[q]=19; expect(wear(q)).toBe(0);
+    pHp[q]=20; expect(wear(q)).toBe(1);
+    run(100); expect(pHp[q]).toBe(20);
   });
 });
 
 describe('the castle by tier', () => {
-  it('takes 200, 400 and 600 blows, mends 2 a second, and looks damaged then badly damaged', () => {
+  it('takes 400, 800 and 1200 blows, mends 2 a second, and looks damaged then badly damaged', () => {
     world(1);
     const q=N(1).capPlot;
     expect(pType[q]).toBe(B_CASTLE);
     for (const tier of [1,2,3]){ N(1).tier[R_CASTLE]=tier; expect(bldHp(q)).toBe(CASTLE_HP[tier]); }
     N(1).tier[R_CASTLE]=1;
-    pHp[q]=60; expect(wear(q)).toBe(0);
-    pHp[q]=70; expect(wear(q)).toBe(1);
-    pHp[q]=140; expect(wear(q)).toBe(2);
-    run(100); expect(pHp[q]).toBeCloseTo(120, 3);   // 2 a second
-    run(700); expect(pHp[q]).toBe(0);
+    pHp[q]=130; expect(wear(q)).toBe(0);
+    pHp[q]=140; expect(wear(q)).toBe(1);
+    pHp[q]=280; expect(wear(q)).toBe(2);
+    run(100); expect(pHp[q]).toBeCloseTo(260, 2);   // 2 a second
+    run(1310); expect(pHp[q]).toBe(0);
   });
 
   it('shoots like two watchtowers of its tier: twice as often, as hard', () => {

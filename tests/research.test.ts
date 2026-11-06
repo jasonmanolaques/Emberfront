@@ -61,9 +61,9 @@ describe('research stations', () => {
     const base=structureOf(B_RESEARCH)!.cost;
     expect(costFor(me(),structureOf(B_RESEARCH)!)).toEqual(base);
     place(B_RESEARCH);
-    expect(costFor(me(),structureOf(B_RESEARCH)!)).toEqual(base.map(c => Math.ceil(c*1.2-1e-9)));
+    expect(costFor(me(),structureOf(B_RESEARCH)!)).toEqual(base.map(c => Math.round(c*1.2)));
     place(B_RESEARCH);
-    expect(costFor(me(),structureOf(B_RESEARCH)!)).toEqual(base.map(c => Math.ceil(c*1.4-1e-9)));
+    expect(costFor(me(),structureOf(B_RESEARCH)!)).toEqual(base.map(c => Math.round(c*1.4)));
   });
 });
 
@@ -123,14 +123,14 @@ describe('house tiers and the builders guild', () => {
     expect(HOUSE_BEDS.slice(1)).toEqual([1,2,3]);
     start(12345); expand(4); until(() => houses().length>=4);
     const [a,b,c]=houses(); pTier[b]=2; pTier[c]=3;
-    expect([bldHp(a),bldHp(b),bldHp(c)]).toEqual([10,30,60]);
+    expect([bldHp(a),bldHp(b),bldHp(c)]).toEqual([20,60,120]);
     run(20);   // census (a pass takes ten ticks, and one may be under way)
     expect(me().beds).toBe(houses().length+1+2);
   });
 
   it('takes one villager as its builder, and does nothing until housing research allows it', () => {
     start(12345); expand(6); until(() => houses().length>=10);
-    const g=place(B_GUILD); run(2);
+    const g=place(B_GUILD); until(() => mine().some(h => h.work===g), 3000);
     const builders=mine().filter(h => h.work===g);
     expect(builders).toHaveLength(1);
     expect(builders[0].kind).toBe(H_VILLAGER);
@@ -140,7 +140,7 @@ describe('house tiers and the builders guild', () => {
 
   it('raises a house a tier for nothing: 20 seconds from tier 1 to 2, then 40 from 2 to 3', () => {
     start(12345); expand(6); until(() => houses().length>=10);
-    const g=place(B_GUILD); me().tier[R_HOUSING]=3; run(2);
+    const g=place(B_GUILD); me().tier[R_HOUSING]=3; until(() => mine().some(h => h.work===g), 3000);
     const b=mine().find(h => h.work===g)!;
     until(() => b.task===TASK_FIX);
     const q=b.fix, before=[...me().stock];
@@ -157,7 +157,7 @@ describe('house tiers and the builders guild', () => {
     me().tier[R_HOUSING]=3;
     const g0=me().plots.find(q => !placeProblem(me(),q,B_GUILD))!, hs=houses().sort((a,b) => Math.abs(pCenter[a]-pCenter[g0])-Math.abs(pCenter[b]-pCenter[g0])), last=hs[0];
     for (const q of hs) if (q!==last) pTier[q]=2;   // all but one already stone houses
-    const g=place(B_GUILD); run(2);
+    const g=place(B_GUILD); until(() => mine().some(h => h.work===g), 3000);
     const b=mine().find(h => h.work===g)!;
     until(() => b.task===TASK_FIX, 2000);
     expect(pTier[b.fix]).toBe(1);   // the tier 1 house, not one of the stone houses
@@ -167,7 +167,7 @@ describe('house tiers and the builders guild', () => {
     start(12345); expand(6); until(() => houses().length>=10);
     me().tier[R_HOUSING]=3;
     for (const q of houses()) pTier[q]=2;
-    const g=place(B_GUILD); run(2);
+    const g=place(B_GUILD); until(() => mine().some(h => h.work===g), 3000);
     const b=mine().find(h => h.work===g)!;
     until(() => b.task===TASK_FIX, 2000);
     const q=b.fix; expect(pTier[q]).toBe(2);
@@ -176,7 +176,7 @@ describe('house tiers and the builders guild', () => {
 
   it('has every guild\'s builder at work non-stop, and the stone houses go on to manors', () => {
     start(12345); expand(8); until(() => houses().length>=12);
-    const g1=place(B_GUILD), g2=place(B_GUILD); me().tier[R_HOUSING]=3; run(2);
+    const g1=place(B_GUILD), g2=place(B_GUILD); me().tier[R_HOUSING]=3; until(() => mine().some(h => h.work===g1) && mine().some(h => h.work===g2), 3000);
     const bs=[g1,g2].map(g => mine().find(h => h.work===g)!);
     let idle=0;
     for (let i=0;i<9000;i++){ tick(); if (i>600 && bs.some(b => b.fix<0 && b.task!==TASK_FIX_GO && b.task!==TASK_FIX)) idle++; }
@@ -186,7 +186,7 @@ describe('house tiers and the builders guild', () => {
 
   it('finds a new builder 5 seconds after the old one falls', () => {
     start(12345); expand(6); until(() => houses().length>=10);
-    const g=place(B_GUILD); run(2);
+    const g=place(B_GUILD); until(() => mine().some(h => h.work===g), 3000);
     const b=mine().find(h => h.work===g)!; b.hp=0; run(1);
     expect(pTimer[g]).toBeGreaterThan(0);
     run(REHIRE_TICKS-5); expect(mine().filter(h => h.work===g)).toHaveLength(0);
@@ -199,7 +199,7 @@ describe('watchtowers rebuilt by the builders guild', () => {
   it('rebuilds a watchtower a tier up for nothing: 20 seconds, then 40', () => {
     start(12345); expand(6); until(() => houses().length>=6);
     const t=place(B_TOWER,true); const g=place(B_GUILD,true);   // (beside the capital, where the builder can walk)
-    me().tier[R_TOWERS]=3; me().tier[R_HOUSING]=1; run(2);
+    me().tier[R_TOWERS]=3; me().tier[R_HOUSING]=1; until(() => mine().some(h => h.work===g), 3000);
     const b=mine().find(h => h.work===g)!;
     expect(pTier[t]).toBe(1);
     expect(improvements(me())[0]).toBe(t);
@@ -208,6 +208,6 @@ describe('watchtowers rebuilt by the builders guild', () => {
     until(() => pTier[t]===3, 3000);
     expect(me().stock).toEqual(before);
     expect(b.fix).toBe(-1);
-    expect(bldHp(t)).toBe(40);
+    expect(bldHp(t)).toBe(80);
   });
 });

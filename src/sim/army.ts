@@ -17,10 +17,10 @@ import { on } from './events';
 import { R_INFANTRY } from './research';
 
 export const UNIT_SIZE = 5;                         // soldiers and armour racks per barracks module
-export const SOLDIER_HP = [0, 8, 10, 15];           // by tier
-export const SOLDIER_DMG = [0, 1, 1.5, 2];          // a blow, by tier
-export const VILLAGER_HP = 4;
-export const MILITIA_HP = 5, MILITIA_HIT = 0.75;       // a militiaman's hit points, and his blow
+export const SOLDIER_HP = [0, 16, 20, 30];          // by tier (twice what they were: longer fights)
+export const SOLDIER_DMG = [0, 1.5, 2.25, 3];       // a blow, by tier (half as much again)
+export const VILLAGER_HP = 8;
+export const MILITIA_HP = 10, MILITIA_HIT = 1.125;       // a militiaman's hit points, and his blow
 export const TIER_NAME = ['', 'I', 'II', 'III'];
 const H_SOLDIER = 1;                                // (population.ts; repeated here to keep this module standalone)
 const RACK_R = 14;                                  // pixels from a barracks door a soldier picks up armour

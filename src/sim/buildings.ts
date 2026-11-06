@@ -182,7 +182,7 @@ const FIRST_FREE = [B_PLANTATION, B_QUARRY];
 export function costFor(n: Nation, s: Structure): number[] {
   if (FIRST_FREE.includes(s.type) && countOf(n,s.type)===0) return [0,0,0];
   const rise=RISE[s.type];
-  if (rise) { const k=ownedFor(n,s.type); return s.cost.map(c => c ? Math.ceil(c*(1+rise*k)-1e-9) : 0); }
+  if (rise) { const k=ownedFor(n,s.type); return s.cost.map(c => c ? Math.round(c*(1+rise*k)) : 0); }
   return s.cost;
 }
 export const canAfford = (n: Nation, s: Structure) => costFor(n,s).every((c,g) => n.stock[g]>=c);

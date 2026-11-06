@@ -13,7 +13,7 @@ import { mergeArmies, unmergeArmies } from './army';
 import { toRuins, build, buildBlock, produce, resetHomes } from './buildings';
 import { scanContacts, census, censusStep } from './census';
 import { botThink } from './bots';
-import { updatePopulation, resetWalks, resetRooms } from './population';
+import { updatePopulation, resetWalks, resetRooms, soldierMax } from './population';
 import { resetWar, declare, declareNaval, proposeAlliance, endWar, makePeace, setOffensive, armyOrder, armyFront, armyRecall, armyRedirect, assignArmy, deployArmies, deescalate, defend, callReserves } from './war';
 import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
@@ -24,7 +24,7 @@ import { labelWorld, allocIsles, resetNaval, updateNaval, queueShip, colonize } 
 function blankNation(id: number, name: string, hex: string, isPlayer: boolean, code=''): Nation {
   return { id, name, hex, isPlayer, code,
     gold:0, income:0, strength:0, might:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
-    plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, hospitals:0, carpenters:0, navals:0, fleet:0, beds:0,
+    plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, hospitals:0, carpenters:0, jobs:[0,0,0,0], unhoused:0, draftAll:false, navals:0, fleet:0, beds:0,
     sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextCall:0, nextWar:0, nextOffer:0, nextSea:0, nextWave:0, mass:new Map(), waved:new Map(), hungry:0, x0:1e9, y0:1e9, x1:-1, y1:-1, wallR:0, nextWall:0, unpaid:0,
     soldierShare:0, humanProg:0, villagers:0, soldiers:0, militia:0, called:0, wageS:0, wageM:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0,
     study:R_HOUSING, tier:[1,1,1,1,1,1,1], xp:[0,0,0,0,0,0,0] };
@@ -232,7 +232,10 @@ function applyCommand(c: Command){
     const n=W.nations[c.nation]; if (n) queueShip(n,c.plot);
   } else if (c.type==='soldiers'){
     const n=W.nations[c.nation]; if (!n || !n.alive) return;
-    n.soldierShare=Math.min(1,Math.max(0,c.share));
+    n.soldierShare=Math.min(n.draftAll ? 1 : soldierMax(n),Math.max(0,c.share));   // (not past the free villagers, unless the lock is on)
+  } else if (c.type==='draftAll'){
+    const n=W.nations[c.nation]; if (!n || !n.alive) return;
+    n.draftAll=c.on; if (!c.on) n.soldierShare=Math.min(n.soldierShare,soldierMax(n));   // (locked again: the limit slides back to the free villagers)
   } else if (c.type==='build'){
     const n=W.nations[c.nation]; if (n){ if (c.block) buildBlock(n,c.plot,c.kind,'any'); else build(n,c.plot,c.kind,'any'); }   // the player may build over his own buildings
   } else if (c.type==='ally'){

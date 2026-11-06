@@ -27,11 +27,13 @@
       <div><dt><i class="ico copper"></i>Copper</dt><dd id="meCopper">0</dd></div>
     </dl>
     <dl class="stats people">
-      <div><dt>Villagers</dt><dd id="meVillagers">0</dd></div>
+      <div title="Villagers with no trade: the ones recruiting calls up first"><dt>Villagers</dt><dd id="meVillagers">0</dd></div>
+      <div id="meJobsCell" role="button" tabindex="0" aria-expanded="false" title="Villagers who have become builders, smiths, doctors or carpenters: click for what each is doing"><dt>Trades ▸</dt><dd id="meJobsN">0</dd></div>
       <div><dt>Soldiers</dt><dd id="meSoldiers">0</dd></div>
       <div id="meMilitiaRow" title="Raised at the castle, beyond your barracks room or with no barracks: they rest in your houses, guard watchtowers that call for them, pay no tax and draw no wages until called up" hidden><dt>Militia</dt><dd id="meMilitia">0</dd></div>
       <div><dt>Training</dt><dd id="meTraining">0</dd></div>
     </dl>
+    <div id="meJobs" class="jobs" hidden aria-label="What the villagers with trades do"></div>
     <dl class="stats income" aria-label="Income">
       <div title="Villager tax: each housed villager pays 0.1 gold a second (0.2 and 0.3 with taxation research)"><dt>Tax</dt><dd id="meTax">+0</dd></div>
       <div title="Land you hold pays 0.0004 gold a second a tile"><dt>Land tax</dt><dd id="meLandTax">+0</dd></div>
@@ -50,8 +52,8 @@
   </section>
 
   <section id="bar" class="plate" hidden aria-label="Attack and army">
-    <label for="soldiers" class="split"><span>People serving as soldiers</span><b id="soldiersVal">0%</b></label>
-    <input type="range" id="soldiers" min="0" max="100" step="5" value="0">
+    <label for="soldiers" class="split"><span>People serving as soldiers</span><button type="button" id="soldierLock" class="lockbtn" aria-pressed="false" title="The blue part of the bar is your professionals (builders, smiths, doctors, carpenters): the slider stops short of it so recruiting never takes them from their work. Click to override in an emergency and call them up too: they become tier 1 soldiers. Click again to lock the limit back.">🔒</button><b id="soldiersVal">0%</b></label>
+    <div class="sbar"><input type="range" id="soldiers" min="0" max="100" step="5" value="0"><i id="soldierBlock" aria-hidden="true"></i></div>
     <span class="hint" id="soldiersHint">No barracks: they train at the castle as militia</span>
     <div id="attacks"></div>
   </section>

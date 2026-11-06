@@ -7,7 +7,7 @@ import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, R_MEDICS,
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, anyWithin, isEnemyLand, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, standingTower, WALL_MIN, WALL_MAX } from './fort';
-import { SEC_SIEGE } from './front';
+import { SEC_SIEGE, lineOf } from './front';
 import { allied, atWar, assignArmy, frontIsles, ready, available, declare, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, frontIds, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD } from './war';
 
 const WALL = -1;   // a tower of the town wall, in a wishlist
@@ -495,6 +495,8 @@ function botWar(n: Nation){
     if (s>bs){ bs=s; best=o; }
   }
   if (!best){ if (navalAttack(n,pool,need,o => defence(W.nations[o]))) n.nextWave=W.simTime+waveGap(n); else n.nextWar=W.simTime+60+srand()*60; return; }   // (nobody worth attacking: it settles with its gold for a while, and looks again later)   // (nobody to attack by land: a landing from the sea, if its ships can)
+  // (a border that gives no line to fight along, a corner touching or a few tiles left over from a peace, is no front: it looks elsewhere, and later)
+  if (!lineOf(id,best,false,undefined,frontIsles(id,best)[0] ?? 0).tiles.length){ n.nextWar=W.simTime+90+srand()*60; return; }
   // the biggest army goes first; the rest follow in waves
   const army=biggest(n); if (army<0) return;
   declare(id,best,[army]); n.nextWave=W.simTime+waveGap(n);

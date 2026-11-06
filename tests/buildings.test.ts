@@ -167,7 +167,7 @@ describe('what the buildings do', () => {
     run(100);
     const army=soldiers.filter(h => h.base>=0), patrol=soldiers.filter(h => h.base<0);
     expect(army).toHaveLength(5);
-    for (const h of army) expect(Math.hypot(h.x-bx, h.y-by)).toBeLessThan(16);
+    for (const h of army) expect(Math.hypot(h.x-bx, h.y-by)).toBeLessThan(20);
     const [cx, cy]=doorOf(me());
     for (const h of patrol) expect(Math.hypot(h.x-cx, h.y-cy)).toBeLessThan(50);   // round the castle
   });

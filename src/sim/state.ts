@@ -13,7 +13,7 @@ export interface Nation {
   tiles: number; alive: boolean; capTile: number; capPlot: number;
   plots: number[]; blds: number[]; bCount: number;
   houses: number; farms: number; towers: number; mines: number; barracks: number; minters: number;
-  plantations: number; quarries: number; copperMines: number; labs: number; guilds: number; smithies: number; hospitals: number; carpenters: number; navals: number;   // labs: research stations; navals: naval bases
+  plantations: number; quarries: number; copperMines: number; labs: number; guilds: number; smithies: number; hospitals: number; carpenters: number; navals: number; jobs: number[]; unhoused: number; draftAll: boolean;   // labs: research stations; navals: naval bases
   fleet: number;                     // ships docked and ready (any naval base's: they are the kingdom's)
   beds: number;                      // people the houses can hold: a hovel 1, a stone house 2, a manor 3
   sumX: number; sumY: number; ltx: number; lty: number; peak: number;   // ltx/lty: where the kingdom's label sits
@@ -68,6 +68,7 @@ export interface Human {
   slot: number;                      // place in the campaign's formation, or the home guard's line
   dug: boolean;                      // entrenched: an army holding its border for 10 seconds hits 15% harder and has 15% more health until it is told to attack
   by: number;                        // the kingdom whose blow last struck him (so a kill is counted for it only if he really dies: a wounded man is no kill)
+  vet: boolean;                      // a professional called up in an emergency: a tier 1 soldier with no barracks place, who stays a soldier (not demoted to militia)
   fury: boolean;                     // spawned in a siege, in the besieged capital: 25% more hit points and damage until the siege is over
   brave: number;                     // villagers with enemies near: -1 not yet decided, 0 running away, 1 fighting
   calm: number;                      // ticks since an enemy was last near
@@ -160,6 +161,7 @@ export interface Invasion {
 export type Command =
   | { type: 'attack'; nation: number; tile: number; ratio: number }
   | { type: 'soldiers'; nation: number; share: number }
+  | { type: 'draftAll'; nation: number; on: boolean }               // the lock on the soldier slider: also call up the professionals
   | { type: 'build'; nation: number; plot: number; kind: number; block?: boolean }     // kind: B_FARM, B_BARRACKS, B_TOWER or B_MINTER; block: four farms or towers on the 2 by 2 plots from `plot`
   | { type: 'colonize'; nation: number; tile: number; ratio: number }   // send a ship to colonize the landmass of this unclaimed tile, with this share of the treasury
   | { type: 'ship'; nation: number; plot: number }                   // build a ship at this naval base
