@@ -19,7 +19,7 @@ const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
 function until(done: () => boolean, max: number){ for (let i=0;i<max;i++){ if (done()) return i; tick(); } throw new Error('timed out'); }
 /** A flat, all-grass map with the player in the middle and `rivals` bots that never think. */
 function world(rivals: number){
-  newWorld(7);
+  newWorld(7); W.rushUntil=0;
   isLand.fill(1); terr.fill(T_GRASS); pBuild.fill(1);
   W.landTiles=Int32Array.from({ length: NT }, (_, i) => i); W.landCount=NT;
   if (!startMatch((TH/2)*TW+TW/2, rivals)) throw new Error('no spawn');

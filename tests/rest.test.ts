@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { TW, TH, NP, B_HOUSE, B_GUILD } from '../src/core/constants';
 import { build, plotProblem, finishHouse } from '../src/sim/buildings';
 import { R_HOUSING } from '../src/sim/research';
-import { W, owner, isLand, pType, pIn, pTier, pCenter } from '../src/sim/state';
+import { W, owner, isLand, pType, pIn, pTier, pCenter, pAband } from '../src/sim/state';
 import { newWorld, startMatch, tick } from '../src/sim/sim';
 import { setOwner } from '../src/sim/territory';
 import { scanContacts } from '../src/sim/census';
@@ -15,7 +15,7 @@ const me = () => W.nations[1];
 const mine = () => W.humans.filter(h => h.o === 1);
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
 function start(seed: number, rivals: number){
-  newWorld(seed);
+  newWorld(seed); W.rushUntil=0;
   for (let r=0;r<60;r++) for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){
     if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
     if (startMatch((TH/2+dy*3)*TW + TW/2+dx*3, rivals)) return;
@@ -70,7 +70,7 @@ describe('builders and smiths round a wall', () => {
     expect(far).toHaveLength(3);
     me().stock=[100,100,100]; me().tier[R_HOUSING]=2;
     for (let q=0;q<NP;q++) if (!plotProblem(me(),q) && (pCenter[q]%TW)<cx+8){ expect(build(me(),q,B_GUILD)).toBe(true); break; }
-    for (let k=0;k<20 && far.some(q => pTier[q]<2);k++){ me().stock=[100,100,100]; run(300); }
+    for (let k=0;k<80 && far.some(q => pTier[q]<2);k++){ me().stock=[100,100,100]; for (const q of far) pAband[q]=0; if (k===6) me().humanProg=-1e9; run(300); }   // (once the builder has come: nobody new, whose near houses would keep him busy for ever)   // (the builder walks a long way round the wall and back for materials: keep the empty houses from being given up meanwhile)
     expect(far.map(q => pTier[q])).toEqual([2,2,2]);   // stone houses
   });
 });

@@ -1,11 +1,10 @@
 /* ---------- research: stations earn points, the kingdom studies one topic at a time ----------
    Each research station earns 1 research point a second, all of them going to the one topic the
    kingdom is studying (housing until it picks another). Every topic starts at tier 1 and goes up
-   to tier 3: housing and taxation take 200 points to reach tier 2 and 400 more for tier 3,
-   infantry 400 and then 600, watchtowers, the castle and resource gathering 400 and then 800. What is learned stays
+   to tier 3: every topic takes 400 points to reach tier 2 and 800 more for tier 3 (field medics 400, 800, 1200). What is learned stays
    learned, even if every station burns.
    Housing lets the builders guild turn hovels into stone houses (tier 2) and manors (tier 3);
-   taxation raises each villager's tax by 0.1 gold a second per tier; infantry lets the
+   taxation raises each villager's tax by 0.5 gold a second per tier; infantry lets the
    blacksmith forge reinforced (tier 2) and then heavy (tier 3) armour for the barracks;
    watchtowers lets the builders guild rebuild watchtowers a tier up (sim/defense.ts); the castle
    is rebuilt at once; resource gathering lets plantations, quarries and copper mines side by side
@@ -19,7 +18,7 @@ export const TOPICS = [R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GAT
 export const TOPIC_NAME = ['Housing', 'Taxation', 'Infantry', 'Watchtowers', 'Castle', 'Resource gathering', 'Field medics'];
 export const MAX_TIER = 3;
 export const TOPIC_MAX = [3, 3, 3, 3, 3, 3, 4];   // the top tier of each topic: field medics has three steps (tiers 2 to 4: learned, better, best)
-export const TIER_XP = [[0, 200, 400], [0, 200, 400], [0, 400, 600], [0, 400, 800], [0, 400, 800], [0, 400, 800], [0, 400, 600, 800]];   // by topic: points to go from tier t to t+1, by t (twice what they were)
+export const TIER_XP = [[0, 400, 800], [0, 400, 800], [0, 400, 800], [0, 400, 800], [0, 400, 800], [0, 400, 800], [0, 400, 800, 1200]];   // by topic: points to go from tier t to t+1, by t: 400 for the first step, 800 for the next, and so on, the same for every topic
 export const XP_PER_STATION = 1;      // points a second each research station earns
 /** People a house of each tier holds, and how many blows it takes compared with a hovel. */
 export const HOUSE_BEDS = [1, 1, 2, 3], HOUSE_TOUGH = [1, 1, 3, 6];

@@ -1,6 +1,6 @@
 /* ---------- simulation entry points: worlds, matches, commands, ticks ----------
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
-import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, kingdomLimit, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, LAND_TAX, MINTER_BONUS, WAGE, } from '../core/constants';
+import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, kingdomLimit, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, TAX_PER_TIER, RUSH_TICKS, LAND_TAX, MINTER_BONUS, WAGE, } from '../core/constants';
 import { mulberry32 } from '../core/rng';
 import { W, resizeGrid, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pIn, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
@@ -24,7 +24,7 @@ import { labelWorld, allocIsles, resetNaval, updateNaval, queueShip, colonize } 
 function blankNation(id: number, name: string, hex: string, isPlayer: boolean, code=''): Nation {
   return { id, name, hex, isPlayer, code,
     gold:0, income:0, strength:0, might:0, tiles:0, alive:false, capTile:-1, capPlot:-1,
-    plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, hospitals:0, carpenters:0, jobs:[0,0,0,0], unhoused:0, draftAll:false, navals:0, fleet:0, beds:0,
+    plots:[], blds:[], bCount:0, houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, hospitals:0, carpenters:0, jobs:[0,0,0,0,0], unhoused:0, draftAll:false, navals:0, fleet:0, beds:0,
     sumX:0, sumY:0, ltx:0, lty:0, peak:0, expandAt:0, attackAt:0, ratio:0, nextThink:0, nextCall:0, nextWar:0, nextOffer:0, nextSea:0, nextWave:0, mass:new Map(), waved:new Map(), hungry:0, x0:1e9, y0:1e9, x1:-1, y1:-1, wallR:0, nextWall:0, unpaid:0,
     soldierShare:0, humanProg:0, villagers:0, soldiers:0, militia:0, called:0, wageS:0, wageM:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0,
     study:R_HOUSING, tier:[1,1,1,1,1,1,1], xp:[0,0,0,0,0,0,0] };
@@ -86,8 +86,8 @@ export function newWorld(seed: number, map='gen'){
   W.burning=[]; W.attacks=[]; W.attackSeq=0; W.commands.length=0;
   W.nations=[blankNation(0,'Unclaimed land','#cfc6a8',false)];
   W.M=1; W.contact=new Int32Array(1);
-  W.simTime=0; W.tickN=0;
-  W.humans=[]; W.humanSeq=0;
+  W.simTime=0; W.tickN=0; W.rushUntil=RUSH_TICKS;
+  W.humans=[]; W.humanSeq=0; W.wounded=[];
   resetWar(1); resetStories(1); resetWalks(); labelWorld(); resetNaval(); resetHomes(); resetRooms();
 }
 
@@ -282,9 +282,11 @@ function applyCommand(c: Command){
 export const paid = (n: Nation) => n.soldiers-n.militia+n.called;
 /** What a kingdom's income is made of, in gold a second: its villagers' tax, its land tax, what its
     coin minters add to both, and what it pays its soldiers and its militia called up (a wage each). */
+/** What each of n's taxpaying villagers pays a second: 0.1, and 0.5 more for each taxation tier above the first. */
+export const taxRate = (n: Nation) => TAX_PER_VILLAGER+TAX_PER_TIER*Math.max(0,n.tier[R_TAXES]-1);
 export function incomeParts(n: Nation){
   let lost=0; for (let b=1;b<W.M;b++) lost+=W.occCount[n.id*W.M+b];   // (land the enemy occupies pays no tax)
-  const tax=TAX_PER_VILLAGER*n.tier[R_TAXES]*n.taxpayers, land=LAND_TAX*Math.max(0,n.tiles-lost), boost=(tax+land)*MINTER_BONUS*n.minters;
+  const tax=taxRate(n)*n.taxpayers, land=LAND_TAX*Math.max(0,n.tiles-lost), boost=(tax+land)*MINTER_BONUS*n.minters;
   return { tax, land, boost, soldiers:n.wageS, militia:n.wageM };
 }
 export const grossIncome = (n: Nation) => { const p=incomeParts(n); return p.tax+p.land+p.boost; };

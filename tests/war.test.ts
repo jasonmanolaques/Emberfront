@@ -36,7 +36,7 @@ function until(done: () => boolean, max: number){ for (let i=0;i<max;i++){ if (d
 
 /** A flat, all-grass, empty map with the player in the middle and `rivals` bots that never think. */
 function world(rivals: number, seed=7){
-  newWorld(seed);
+  newWorld(seed); W.rushUntil=0;
   isLand.fill(1); terr.fill(T_GRASS); pBuild.fill(1);
   W.landTiles=Int32Array.from({ length: NT }, (_, i) => i); W.landCount=NT;
   if (!startMatch((TH/2)*TW+TW/2, rivals)) throw new Error('no spawn');
@@ -335,7 +335,7 @@ describe('soldiers on the move', () => {
 
 describe('bots at war', () => {
   it('declare wars and take land from one another in a long match', () => {
-    newWorld(987654321);
+    newWorld(987654321); W.rushUntil=0;
     outer: for (let r=0;r<60;r++) for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){ if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue; if (startMatch((TH/2+dy*3)*TW+TW/2+dx*3, 9)) break outer; }
     quiet();
     const crises=collect('crisis'), wars=collect('escalated');
@@ -2330,7 +2330,7 @@ describe('soldiers keep off third kingdoms\' ground', () => {
 
 describe('an army covers the whole of its front', () => {
   it('every man of the front rank reaches his own place along a winding border (none left standing on another man\'s place, leaving a gap)', () => {
-    newWorld(5,'europe-s');
+    newWorld(5,'europe-s'); W.rushUntil=0;
     const de=capitalsOn('europe-s').find(c => c.country.code==='DE')!;
     expect(startMatch(de.tile,29,'DE','real')).toBe(true);
     for (const n of W.nations.slice(2)){ n.nextThink=1e9; n.nextWar=1e9; }
@@ -2489,13 +2489,22 @@ describe('field medics, the wounded and the hospital', () => {
     expect(build(N(1),q,B_HOSPITAL)).toBe(true);
     expect(N(1).stock).toEqual([0,0,0]); expect(pType[q]).toBe(B_HOSPITAL);
   });
-  it('field medics is learned for 400 points (8% wounded), then 600 more (12%) and 800 more (20%); before that nobody is wounded', () => {
-    world(1); expect(TIER_XP[R_MEDICS]).toEqual([0,400,600,800]);
+  it('field medics is learned for 400 points (8% wounded), then 800 more (12%) and 1200 more (20%); before that nobody is wounded', () => {
+    world(1); expect(TIER_XP[R_MEDICS]).toEqual([0,400,800,1200]);
     expect([1,2,3,4].map(t => { N(1).tier[R_MEDICS]=t; return woundChance(N(1)); })).toEqual([0,0.08,0.12,0.20]);
     expect(TOPIC_MAX[R_MEDICS]).toBe(4);
     const { men }=field(false,false);
     for (const h of men) h.hp=0; run(3);
     expect(W.wounded).toHaveLength(0);
+  });
+  it('militia are wounded too, and only plain villagers are never', () => {
+    const { men }=field(true,false);
+    for (const h of men){ h.militia=true; h.base=-1; h.tier=1; }
+    const h=fall(men); expect(h).toBeDefined(); expect(h!.militia).toBe(true);
+    // (a villager who falls is just dead)
+    const [x,y]=doorOf(N(1)), v=makeHuman(N(1),H_VILLAGER,x,y); W.humans.push(v);
+    const before=W.wounded.length; for (let i=0;i<60;i++){ const k=makeHuman(N(1),H_VILLAGER,x,y); W.humans.push(k); k.hp=0; tick(); }
+    expect(W.wounded.length).toBe(before);
   });
   it('some who fall are wounded, lie without blood, bleed out in 45 s with no hospital, and then die for good', () => {
     const { men }=field(true,false);

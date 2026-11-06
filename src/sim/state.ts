@@ -68,7 +68,6 @@ export interface Human {
   slot: number;                      // place in the campaign's formation, or the home guard's line
   dug: boolean;                      // entrenched: an army holding its border for 10 seconds hits 15% harder and has 15% more health until it is told to attack
   by: number;                        // the kingdom whose blow last struck him (so a kill is counted for it only if he really dies: a wounded man is no kill)
-  vet: boolean;                      // a professional called up in an emergency: a tier 1 soldier with no barracks place, who stays a soldier (not demoted to militia)
   fury: boolean;                     // spawned in a siege, in the besieged capital: 25% more hit points and damage until the siege is over
   brave: number;                     // villagers with enemies near: -1 not yet decided, 0 running away, 1 fighting
   calm: number;                      // ticks since an enemy was last near
@@ -219,7 +218,7 @@ export const W = {
   map: 'gen',   // 'gen' for a generated map, else a real-world one (sim/realmap.ts)
   mapSeed: 1, srand: Math.random as Rng, seaLevel: 0, heightRange: 1, landCount: 1, landTiles: new Int32Array(0),
   nations: [] as Nation[], M: 1, contact: new Int32Array(1), attacks: [] as Attack[], burning: [] as number[], attackSeq: 0,
-  commands: [] as Command[], simTime: 0, tickN: 0,
+  commands: [] as Command[], simTime: 0, tickN: 0, rushUntil: 0,   // rushUntil: the tick the land rush (settling at half price) ends
   prand: Math.random as Rng,         // separate stream for people, so they never shift the territory game's randomness
   humans: [] as Human[], humanSeq: 0,
   campaigns: [] as Campaign[], campSeq: 0,

@@ -128,7 +128,7 @@ input[type=range]::-moz-range-progress{height:8px;background:var(--track,var(--e
 .jobs .none{grid-column:1/-1;color:var(--muted)}
 #soldiers{--track:var(--steel);--fill:0%}
 .sbar{position:relative}
-#soldierBlock{position:absolute;right:7px;top:50%;height:12px;margin-top:-6px;width:0;background:repeating-linear-gradient(135deg,#3f7fd6 0 4px,#2d5fa8 4px 8px);border:2px solid var(--edge);border-left-color:#8fc0ff;pointer-events:none;box-sizing:border-box}
+#soldierBlock{position:absolute;right:0;top:50%;height:12px;margin-top:-6px;width:0;background:repeating-linear-gradient(135deg,#3f7fd6 0 4px,#2d5fa8 4px 8px);border:2px solid var(--edge);border-left-color:#8fc0ff;pointer-events:none;box-sizing:border-box}
 .lockbtn{padding:0 5px;font-size:13px;line-height:1.3;margin-left:auto;margin-right:8px;box-shadow:none}
 .lockbtn[aria-pressed=true]{background:var(--bad);border-color:var(--bad)}
 #bar label.split{padding-top:8px;border-top:2px solid var(--edge)}
@@ -151,6 +151,9 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--gold);outline-
 /* Event log */
 #log{position:absolute;left:max(16px,env(safe-area-inset-left,0px));bottom:16px;width:290px;display:grid;gap:6px;pointer-events:none}
 #log .entry{position:relative;background:var(--plate);border:2px solid var(--edge);box-shadow:0 0 0 2px var(--ink);padding:5px 8px;font-size:13px;animation:fade 9s forwards}
+#rush{position:relative;border-color:var(--gold);padding:5px 8px;font-size:13px}
+#rush b{color:var(--gold)}
+#rush span{font-variant-numeric:tabular-nums;font-weight:700}
 #log .entry.good{border-color:#3f7a4a}
 #log .entry.bad{border-color:#8a3a2e}
 @keyframes fade{0%,80%{opacity:1}100%{opacity:0}}
@@ -205,7 +208,7 @@ button.pick #pcName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;wh
 .row .tag{margin-right:-2px}
 .keys{font-size:13px;color:var(--muted)}
 
-@media (max-width:1100px){#log{display:none}}
+@media (max-width:1100px){#log .entry{display:none}}
 @media (max-width:640px){
   body{font-size:13px}
   #me{gap:6px;padding:8px 10px 10px}
@@ -395,3 +398,5 @@ button.army[aria-pressed=true] .at{color:var(--gold)}
 #crash{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:flex;gap:8px;align-items:center;max-width:min(720px,calc(100% - 32px));padding:6px 10px;font-size:13px;border-color:#b5483a;z-index:9}
 #crash button{padding:3px 8px;font-size:12px}
 #crash .x{width:24px;height:24px;padding:0}
+.pbar.unknown{height:auto;padding:2px 6px;justify-content:center;background:#17212b}
+.pbar.unknown i{width:auto;min-width:0;font-style:normal;color:var(--dim,#9fb0be);font-size:11px;letter-spacing:.04em;text-transform:uppercase}

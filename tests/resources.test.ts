@@ -9,7 +9,7 @@ import { TASK_REST } from '../src/sim/population';
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
 const me = () => W.nations[1];
 function start(seed: number, rivals: number){
-  newWorld(seed);
+  newWorld(seed); W.rushUntil=0;
   for (let r=0;r<60;r++) for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){
     if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
     if (startMatch((TH/2+dy*3)*TW + TW/2+dx*3, rivals)) return;

@@ -14,7 +14,7 @@ const SEA_X0=250, SEA_X1=290;   // a channel of water from x=250 to 289; the isl
 
 /** A flat map: mainland west of a channel, an island east of it; the player in the middle of the mainland. */
 function world(rivals=0){
-  newWorld(7);
+  newWorld(7); W.rushUntil=0;
   isLand.fill(1); terr.fill(T_GRASS); pBuild.fill(1);
   for (let y=0;y<TH;y++) for (let x=SEA_X0;x<SEA_X1;x++){ const t=y*TW+x; isLand[t]=0; terr[t]=T_WATER; }
   for (let q=0;q<NP;q++){ const c=(((q/PW)|0)*4+2)*TW+(q%PW)*4+2; pBuild[q]=isLand[c] ? 1 : 0; }
@@ -183,7 +183,7 @@ describe('villagers cross by boat', () => {
 
 describe('ships keep to the water', () => {
   it('no stretch of any ship\'s course crosses land, on a real map with coves, peninsulas and islands', () => {
-    newWorld(5,'europe-s');
+    newWorld(5,'europe-s'); W.rushUntil=0;
     const water: number[]=[]; for (let t=0;t<NT;t+=37) if (!isLand[t] && sea[t]>0) water.push(t);
     let checked=0, bad=0, rng=12345; const rnd=() => (rng=(Math.imul(rng,1103515245)+12345)>>>0)/4294967296;
     for (let k=0;k<400 && checked<60;k++){

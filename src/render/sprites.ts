@@ -284,6 +284,42 @@ function drawResearch(ox: number, oy: number, n: NationStyle){
   P(ox+12,oy+1,brass); P(ox+13,oy,brass); P(ox+14,oy,'#f2d27a');   // the telescope
 }
 
+/** Two research stations side by side are drawn as one long model: a hall between two round towers (purely how they look: each is still a station). */
+function drawResearchDouble(ox: number, oy: number, n: NationStyle){
+  const st=C.st, sd=C.stD, sl=C.stL, dome='#5c9e93', domeL='#8cc8bc', domeD='#3c6f68', brass='#d6ad4c';
+  R(ox+1,oy+14,30,1,SH);
+  // the long hall, plastered, under one roof in the kingdom's colours
+  R(ox+7,oy+9,18,5,'#e3d7bc'); R(ox+7,oy+13,18,1,'#b9ab8c'); R(ox+7,oy+9,1,5,'#f1e8d2');
+  R(ox+7,oy+8,18,1,'#3b2a1e'); R(ox+7,oy+6,18,2,n.roofD); R(ox+8,oy+5,16,1,n.roof); R(ox+10,oy+4,12,1,n.roofL);
+  for (const wx of [9,21]){ R(ox+wx,oy+10,2,2,'#ffd86b'); P(ox+wx,oy+10,'#fff1b0'); R(ox+wx,oy+12,2,1,'#6b4a2c'); P(ox+wx,oy+12,'#c0503a'); P(ox+wx+1,oy+12,'#3d6fb0'); }
+  R(ox+15,oy+10,2,4,C.door);
+  // a round tower at each end, domes open to the sky, a telescope on the right one
+  for (const tx of [1,25]){
+    R(ox+tx,oy+6,6,8,st); R(ox+tx,oy+6,1,8,sl); R(ox+tx+5,oy+6,1,8,sd);
+    for (let y=8;y<14;y+=3) R(ox+tx+1,oy+y,4,1,'#a7a194');
+    R(ox+tx+2,oy+10,2,2,'#7fd0ff'); P(ox+tx+2,oy+10,'#d8f2ff');
+    R(ox+tx,oy+5,6,1,sd);
+    R(ox+tx+1,oy+2,4,3,dome); R(ox+tx,oy+3,6,2,dome); R(ox+tx+1,oy+2,2,1,domeL); P(ox+tx,oy+3,domeL); R(ox+tx+4,oy+3,1,2,domeD); P(ox+tx+5,oy+4,domeD);
+    R(ox+tx+3,oy+2,1,3,'#2a2420');
+  }
+  P(ox+28,oy+1,brass); P(ox+29,oy,brass); P(ox+30,oy,'#f2d27a');
+}
+/** How plot q of a row of research stations is drawn: 1 the left half of a pair, 2 the right half, 0 alone. Each row of them is paired from its left end. */
+function researchPair(q: number){
+  const o=pOwner[q]; let k=0;
+  for (let k2=q; k2%PW>0 && pType[k2-1]===B_RESEARCH && pOwner[k2-1]===o; k2--) k++;
+  if (k%2) return 2;
+  return q%PW<PW-1 && pType[q+1]===B_RESEARCH && pOwner[q+1]===o ? 1 : 0;
+}
+/** Redraws the whole row of research stations that plot q is in or beside: a new one (or a gone one) may change how every one to its right is paired. */
+function drawResearchRow(q: number){
+  for (const seed of [q, q-1, q+1]){
+    if (seed<0 || seed>=NP || (seed/PW|0)!==(q/PW|0) || pType[seed]!==B_RESEARCH) continue;
+    let a=seed, b=seed; while (a%PW>0 && pType[a-1]===B_RESEARCH) a--; while (b%PW<PW-1 && pType[b+1]===B_RESEARCH) b++;
+    for (let k=a;k<=b;k++) drawPlot(k);
+  }
+}
+
 /* ---------- blacksmith: a stone forge open at the front, its hearth glowing, an anvil outside ---------- */
 function drawSmithy(ox: number, oy: number, n: NationStyle){
   const st=C.st, sd=C.stD, sl=C.stL;
@@ -524,7 +560,12 @@ export function drawPlot(q: number){
   }
   const v=pVar[q]%3;
   if (ty===B_HOUSE){ const t=pTier[q]; stamp(ox,oy,PS,PS,()=>drawHouse(0,0,n,pVar[q],!!pAband[q],t)); }
-  else if (ty===B_RESEARCH) stamp(ox,oy,PS,PS,()=>drawResearch(0,0,n));
+  else if (ty===B_RESEARCH){
+    const pr=researchPair(q);
+    if (pr===1) stamp(ox,oy,2*PS,PS,()=>drawResearchDouble(0,0,n));
+    else if (pr===2) drawPlot(q-1);   // (the right half of a pair: the left one draws both)
+    else stamp(ox,oy,PS,PS,()=>drawResearch(0,0,n));
+  }
   else if (ty===B_SITE) stamp(ox,oy,PS,PS,()=>drawSite(0,0,n));
   else if (ty===B_FARM){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawFarm(0,0,n,pOwner[q]%3,m)); }   // one crop per kingdom, so joined fields match
   else if (ty===B_TOWER){ const m=joins(q), t=towerTier(q), w=wear(q); stamp(ox,oy,PS,PS,()=>drawTower(0,0,n,m,t,w)); }
@@ -542,6 +583,7 @@ export function drawPlotAndNeighbours(q: number){
   drawPlot(q);
   const x=q%PW;
   for (const k of [q-PW, x<PW-1?q+1:-1, q+PW, x>0?q-1:-1]) if (k>=0 && k<NP && MODULAR.includes(pType[k])) drawPlot(k);
+  drawResearchRow(q);
 }
 
 /** Draws a building's sprite into an icon (one plot is 16×16, unjoined) in the given kingdom colours. */

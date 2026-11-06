@@ -32,7 +32,7 @@
    to the barracks that needs it most nearly (sim/army.ts says which armour each one wants).
    Soldiers never gather. They wait at their barracks, or guard a watchtower that calls for
    them, until the kingdom sends them to war (sim/war.ts). */
-import { STR_VILLAGER, STR_MILITIA, STR_SOLDIER, TW, TH, PW, PH, TICK, GAME_SPEED, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER } from '../core/constants';
+import { STR_VILLAGER, STR_MILITIA, STR_SOLDIER, TW, TH, PW, PH, TICK, GAME_SPEED, UNPAID_TICKS, DESERT_TICKS, SCRAP_GOLD, B_CASTLE, B_CPART, B_BARRACKS, B_TOWER, B_HOUSE, B_SITE, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_RESEARCH } from '../core/constants';
 import { W, owner, occ, isLand, ferry, pType, pOwner, pBurn, pAband, pIn, pCenter, pTimer, pTier, pHp, pArmor, pSpan, type Human, type Nation } from './state';
 import { homeScore, startSite, cancelSite, finishHouse, plotProblem } from './buildings';
 import { on } from './events';
@@ -61,7 +61,8 @@ export const TASK_ROAM = 0,      // between jobs: villagers think or stroll betw
              TASK_SMITH_DELIVER = 14,// carrying the armour to a barracks
              TASK_REST_GO = 15,      // villagers with nothing to do: walking home to rest
              TASK_REST = 16,         // resting inside a house, out of sight
-             TASK_BOAT = 17;         // a soldier of a naval invasion aboard a ship (out of sight), or on his way home by sea
+             TASK_BOAT = 17,         // a soldier of a naval invasion aboard a ship (out of sight), or on his way home by sea
+             TASK_SUPPLY = 22;       // a carpenter or builder walking back to his workshop for materials after a job
 export const HUMAN_EVERY = 200;  // progress per new human: 200 ticks (20 s), each farm adds 3% speed
 export const FARM_BONUS = 0.03;
 /** Beds in n's houses that nobody needs: its capacity less its people (none when everyone is housed or more). */
@@ -71,8 +72,8 @@ export const spareBeds = (n: Nation, people: number) => Math.max(0,n.beds-people
 export const houseBonus = (n: Nation, people: number) => n.beds>0 ? HOUSE_MAX*spareBeds(n,people)/n.beds + BED_BONUS*n.beds : 0;
 export const HOUSE_MAX = 2;      // the bonus of a kingdom whose houses all stand empty: +200%
 export const BED_BONUS = 0.005; // and every bed it has, empty or full, adds 0.5% (100 beds: +50%)
-/** How many of n's people work at a trade: builders, smiths, doctors and carpenters. */
-export const professionals = (n: Nation) => n.jobs[0]+n.jobs[1]+n.jobs[2]+n.jobs[3];
+/** How many of n's people work at a trade: builders, smiths, doctors, carpenters and scholars. */
+export const professionals = (n: Nation) => n.jobs[0]+n.jobs[1]+n.jobs[2]+n.jobs[3]+n.jobs[4];
 /** The largest share of its people the soldier slider may ask for: all but the professionals, whom recruiting would take from their work (unless the lock is on). */
 export function soldierMax(n: Nation){
   const people=n.villagers+n.soldiers; if (people<=0) return 1;
@@ -89,7 +90,7 @@ const WALK_EVERY = 100;          // ticks between a kingdom's walking fields bei
 const LOOK_TICKS = 100;          // a villager with nothing to do looks for work again every 10 to 12 seconds
 const lookAgain = () => (LOOK_TICKS+W.prand()*20)|0;
 export const CARPENT_TICKS = 20*GAME_SPEED*10;   // ticks a carpenter takes over one hovel: 20 seconds on the clock
-export const BUILD_TICKS = 40;   // ticks to put up a house (4 s)
+export const BUILD_TICKS = 15*GAME_SPEED*10;   // ticks a spawned villager takes to put up his own home: 15 seconds on the clock (a carpenter, 20, builds extra ones for nothing)
 export const BEG_TICKS = 600;    // ticks homeless before a villager turns beggar (60 s)
 export const STARVE_TICKS = 900; // ticks homeless before a beggar dies of want (90 s)
 export const ABANDON_TICKS = 200;// ticks with more houses than people before the extra ones stand empty (20 s)
@@ -260,13 +261,25 @@ function goCarpenter(h: Human){
   if (!n.plots.length || (k && n.beds>=Math.max(20,k.people*3))) return false;
   return goBuildHome(h);
 }
+/** A carpenter or builder who has finished a job walks back to his workshop for the materials of the next one: the further he worked from it, the longer the wait. */
+function resupply(h: Human){
+  const w=h.work;
+  if (w>=0 && h.kind===H_VILLAGER && (pType[w]===B_CARPENTER || pType[w]===B_GUILD) && workshop(w,h.o)){
+    const [x,y]=frontOf(w);
+    if (Math.hypot(x-h.x,y-h.y)>2){
+      release(h); h.fix=-1; h.home=-1; h.tx=x; h.ty=y; h.task=TASK_SUPPLY; h.wait=0;
+      if (route(h,true) || routeField(h,x,y)) return;
+    }
+  }
+  think(h);
+}
 /** A villager between jobs decides what to do next: first a roof over everyone's head, then work. */
 function think(h: Human){
   const n=W.nations[h.o], was=h.rest;
   release(h); h.task=TASK_ROAM;
   if (h.beggar){ roamTarget(h); return; }   // beggars just drift about town
   if (h.work>=0 && h.kind===H_VILLAGER && pType[h.work]===B_HOSPITAL){ h.dest=-1; h.task=TASK_DOC_BACK; h.path=[]; h.wait=0; return; }   // a doctor: to the hospital, and inside
-  if (h.work>=0 && h.kind===H_VILLAGER){ if (!(pType[h.work]===B_CARPENTER ? goCarpenter(h) : pType[h.work]===B_SMITHY ? goForge(h) : goImprove(h))) roamTarget(h); return; }   // builders and smiths work, or wait at their workshop
+  if (h.work>=0 && h.kind===H_VILLAGER){ if (!(pType[h.work]===B_CARPENTER ? goCarpenter(h) : pType[h.work]===B_SMITHY ? goForge(h) : pType[h.work]===B_RESEARCH ? false : goImprove(h))) roamTarget(h); return; }   // builders and smiths work, or wait at their workshop
   if (h.kind===H_VILLAGER && needsHome(n) && goBuildHome(h)) return;
   if (h.kind!==H_VILLAGER){ roamTarget(h); return; }
   if (h.housed && goRest(h,was)) return;   // nothing to do: home to rest (if he has one)
@@ -395,7 +408,7 @@ function goRest(h: Human, at=-1){
 export function makeHuman(n: Nation, kind: number, x: number, y: number): Human {
   return { id:++W.humanSeq, o:n.id, kind, militia:false, to:0, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+W.prand()*2,
     hp:kind===H_SOLDIER?SOLDIER_HP[1]:VILLAGER_HP, post:-1, site:-1, home:-1, rest:-1, duel:-1, housed:false, homeless:0, beggar:false,
-    by:0, vet:false, war:-1, boat:-1, foe:-1, aim:-1, cool:0, slot:0, brave:-1, fury:false, dug:false, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
+    by:0, war:-1, boat:-1, foe:-1, aim:-1, cool:0, slot:0, brave:-1, fury:false, dug:false, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
     tier:kind===H_SOLDIER?1:0, base:-1, load:0, make:0, dest:-1 };
 }
 /** A new villager or militiaman walks out of the capital; a new soldier out of the barracks nearest the capital. */
@@ -508,13 +521,13 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
       if (plot>=0){ if (sendToTrain(h,plot,T_SOLDIER)){ const u=unitAt(plot)!; room.set(u,room.get(u)!-1); spare--; diff--; } }
       else if (n.capTile>=0 && sendToTrain(h,n.capPlot,T_MILITIA)) diff--;
     }
-    // the lock is on and the free villagers are used up: the professionals are called up too, at once, as tier 1 soldiers (trained men, stronger than militia)
+    // the lock is on and the free villagers are used up: the professionals are called up too, at once, as militia (the reserve unit: they rest in houses, are called to fronts like the rest)
     if (diff>0 && n.draftAll){
       const pros=mine.filter(h => h.kind===H_VILLAGER && !h.beggar && h.work>=0 && !switching(h) && h.war<0).sort((a,b) => a.id-b.id);
       for (const h of pros){
         if (diff<=0) break;
         release(h); h.work=-1; h.load=0; h.make=0; h.dest=-1; h.fix=-1;
-        h.sp+=SPEED_UP[T_SOLDIER]-SPEED_UP[T_VILLAGER]; h.kind=H_SOLDIER; h.militia=false; h.tier=1; h.vet=true; h.base=-1; h.post=-1; h.hp=maxHp(h);
+        h.sp+=SPEED_UP[T_MILITIA]-SPEED_UP[T_VILLAGER]; h.kind=H_SOLDIER; h.militia=true; h.tier=1; h.base=-1; h.post=-1; h.hp=maxHp(h);
         backToRoam(h); diff--;
       }
     }
@@ -528,7 +541,7 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
 /** Trained soldiers at home with no place in a barracks (theirs fell, or shrank) serve on as militia. */
 function demote(mine: Human[]){
   for (const h of mine){
-    if (h.kind!==H_SOLDIER || h.militia || h.vet || h.base>=0 || h.war>=0 || h.hp<=0 || switching(h)) continue;
+    if (h.kind!==H_SOLDIER || h.militia || h.base>=0 || h.war>=0 || h.hp<=0 || switching(h)) continue;
     h.militia=true; h.tier=1; h.sp-=SPEED_UP[T_SOLDIER]-SPEED_UP[T_MILITIA]; h.hp=Math.min(h.hp,maxHp(h));   // (his armour is lost with his barracks)
   }
 }
@@ -629,7 +642,7 @@ function improve(n: Nation, q: number){
 }
 /** Every builders guild has one builder and every blacksmith one smith. A workshop without its
     worker takes the villager nearest it, straight away when it is new, a while after he fell. */
-const workshop = (q: number, id: number) => standing(q,B_GUILD,id) || standing(q,B_SMITHY,id) || standing(q,B_CARPENTER,id) || hospitalStands(q,id);
+const workshop = (q: number, id: number) => standing(q,B_GUILD,id) || standing(q,B_SMITHY,id) || standing(q,B_CARPENTER,id) || standing(q,B_RESEARCH,id) || hospitalStands(q,id);
 const slots = (q: number) => pType[q]===B_HOSPITAL ? 2 : pType[q]===B_SMITHY ? [1,2,4][pSpan[q]] ?? 1 : 1;   // a hospital has two doctors; blacksmiths side by side join into one that is only drawn bigger: each plot of it has its own smith
 function staffGuilds(n: Nation, mine: Human[]){
   const staffed=new Map<number, number>();
@@ -733,7 +746,7 @@ function step(h: Human){
     if (--h.wait<=0){
       const to=h.to, was=h.kind!==H_SOLDIER ? T_VILLAGER : h.militia ? T_MILITIA : T_SOLDIER;
       h.sp+=SPEED_UP[to]-SPEED_UP[was];
-      if (to===T_VILLAGER){ if (was===T_SOLDIER && h.tier>=2) pArmor[h.tier][h.site]++; h.kind=H_VILLAGER; h.militia=false; h.vet=false; h.tier=0; h.base=-1; }   // his armour goes back on the racks
+      if (to===T_VILLAGER){ if (was===T_SOLDIER && h.tier>=2) pArmor[h.tier][h.site]++; h.kind=H_VILLAGER; h.militia=false; h.tier=0; h.base=-1; }   // his armour goes back on the racks
       else { h.kind=H_SOLDIER; h.militia=to===T_MILITIA; h.tier=1; h.base=to===T_SOLDIER ? h.site : -1; }   // a new soldier takes the place he trained for
       h.to=T_VILLAGER; h.hp=maxHp(h); backToRoam(h); on.roleChanged(h.x,h.y,h.kind);
     }
@@ -749,7 +762,7 @@ function step(h: Human){
   if (h.kind===H_SOLDIER ? guardStep(h) : alarmStep(h)) return;   // at war: soldiers defend, villagers run or fight
   if ((h.task===TASK_HOME_GO || h.task===TASK_HOME_BUILD) && (pType[h.home]!==B_SITE || owner[pCenter[h.home]]!==h.o)){ think(h); return; }   // the site was lost
   if (h.task===TASK_HOME_BUILD){
-    if (--h.wait<=0){ const q=h.home; h.home=-1; finishHouse(q,h.o); think(h); }
+    if (--h.wait<=0){ const q=h.home; h.home=-1; finishHouse(q,h.o); resupply(h); }
     return;
   }
   if (h.task===TASK_FORGE){
@@ -758,7 +771,7 @@ function step(h: Human){
   }
   if ((h.task===TASK_FIX_GO || h.task===TASK_FIX) && !improvable(n,h.fix)){ think(h); return; }   // the house burned, was lost or is done
   if (h.task===TASK_FIX){
-    if (--h.wait<=0){ improve(n,h.fix); think(h); }
+    if (--h.wait<=0){ improve(n,h.fix); resupply(h); }
     return;
   }
   if (h.wait>0){ h.wait--; return; }
@@ -825,7 +838,7 @@ export function updatePopulation(){
     if (!N[h.o].alive || (!doc && !mayStand(h,owner[tileOf(h.x,h.y)])) || h.hp<=0){
       const hurt=h.hp<=0 && N[h.o].alive && wound(h);   // (with field medics, some who fall are only wounded: no blood, and a cross)
       if (h.hp<=0 && N[h.o].alive && !hurt) on.died(h.x,h.y,h.o,h.id,h.kind===H_SOLDIER ? 1 : h.beggar ? 2 : 0,h.militia ? 0 : h.tier,h.beggar && h.homeless>=STARVE_TICKS);   // they drop where they fell
-      if (h.work>=0 && (pType[h.work]===B_GUILD || pType[h.work]===B_SMITHY || pType[h.work]===B_CARPENTER || pType[h.work]===B_HOSPITAL)) pTimer[h.work]=REHIRE_TICKS+1;   // the workshop waits a while for a new hand
+      if (h.work>=0 && (pType[h.work]===B_GUILD || pType[h.work]===B_SMITHY || pType[h.work]===B_CARPENTER || pType[h.work]===B_RESEARCH || pType[h.work]===B_HOSPITAL)) pTimer[h.work]=REHIRE_TICKS+1;   // the workshop waits a while for a new hand
       release(h); H[i]=H[H.length-1]; H.pop();
     }
   }
@@ -862,12 +875,12 @@ export function updatePopulation(){
   for (const h of H) if (h.war>=0) marchStep(h); else step(h);
   spread();   // fighters keep a little room between them
   // headcount after everyone has moved, so it matches what is on the map this tick
-  for (const n of N){ n.villagers=0; n.soldiers=0; n.militia=0; n.called=0; n.wageS=0; n.wageM=0; n.training=0; n.beggars=0; n.homeless=0; n.unhoused=0; n.taxpayers=0; n.might=0; n.jobs[0]=n.jobs[1]=n.jobs[2]=n.jobs[3]=0; }
+  for (const n of N){ n.villagers=0; n.soldiers=0; n.militia=0; n.called=0; n.wageS=0; n.wageM=0; n.training=0; n.beggars=0; n.homeless=0; n.unhoused=0; n.taxpayers=0; n.might=0; n.jobs[0]=n.jobs[1]=n.jobs[2]=n.jobs[3]=n.jobs[4]=0; }
   for (const h of H){
     const n=N[h.o];
     if (h.kind===H_SOLDIER){ n.soldiers++; if (h.militia){ n.militia++; n.might+=STR_MILITIA; if (h.war>=0) n.called++; n.wageM+=wageOf(h); } else { n.wageS+=wageOf(h); n.might+=STR_SOLDIER[h.tier] ?? STR_SOLDIER[1]; } } else if (h.beggar) n.beggars++; else { n.villagers++; n.might+=STR_VILLAGER; if (h.housed) n.taxpayers++; }
     if (!h.housed && !(h.home>=0 && h.kind===H_VILLAGER && !h.beggar)){ n.homeless++; if (h.homeless>=100) n.unhoused++; }   // (one on his way to build himself a home is not homeless yet; the screen counts only those without one for 10 seconds)
-    if (h.kind===H_VILLAGER && !h.beggar && h.work>=0){ const t=pType[h.work]; n.jobs[t===B_GUILD ? 0 : t===B_SMITHY ? 1 : t===B_HOSPITAL ? 2 : 3]++; }
+    if (h.kind===H_VILLAGER && !h.beggar && h.work>=0){ const t=pType[h.work]; n.jobs[t===B_GUILD ? 0 : t===B_SMITHY ? 1 : t===B_HOSPITAL ? 2 : t===B_RESEARCH ? 4 : 3]++; }
     if (switching(h)) n.training++;
   }
 }

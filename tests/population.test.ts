@@ -40,7 +40,7 @@ function roomy(r = 24){
 }
 let barracks = -1;
 function start(seed: number, rivals: number, withBarracks = true){
-  newWorld(seed);
+  newWorld(seed); W.rushUntil=0;
   for (let r=0;r<60;r++) for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){
     if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
     if (startMatch((TH/2+dy*3)*TW + TW/2+dx*3, rivals)){ roomy(); barracks = withBarracks ? addBarracks() : -1; return; }
@@ -114,8 +114,9 @@ describe('population', () => {
   });
 
   it('trains the rest as militia at the castle once the barracks are full: unpaid, and paying no tax', () => {
-    run(10*E); setShare(1);
-    soon(() => switching().length>=8);   // (anyone busy with a load or a house follows later)
+    run(10*E); { const prog=me().humanProg; me().humanProg=-1e9; for (let i=0;i<800 && mine().some(h => h.home>=0);i++) tick(); me().humanProg=prog; }   // (a new villager takes 15 s to build his home: wait for the builders, so that all can be called at once)
+    setShare(1);
+    soon(() => switching().length>=8);
     expect(switching().filter(h => h.to===T_SOLDIER)).toHaveLength(5);   // the barracks' room
     const cap = switching().filter(h => h.to===T_MILITIA), [dx, dy] = doorOf(W.nations[1]);
     expect(cap.length).toBeGreaterThanOrEqual(3);
@@ -223,7 +224,7 @@ describe('population', () => {
 describe('population with bots', () => {
   it('never loses a person while the kingdom loses no land', () => {
     // seed 4242, spawned at tile 40500: bots expand into the unclaimed ground right next to the castle
-    newWorld(4242); startMatch(40500, 9); setShare(0.5);
+    newWorld(4242); W.rushUntil=0; startMatch(40500, 9); setShare(0.5);
     let tiles = me().tiles, lost = 0;
     for (let i=0;i<3000;i++){
       const before = new Set(mine().filter(h => !h.beggar).map(h => h.id));   // (beggars can die of want)

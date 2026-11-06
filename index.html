@@ -28,14 +28,14 @@
     </dl>
     <dl class="stats people">
       <div title="Villagers with no trade: the ones recruiting calls up first"><dt>Villagers</dt><dd id="meVillagers">0</dd></div>
-      <div id="meJobsCell" role="button" tabindex="0" aria-expanded="false" title="Villagers who have become builders, smiths, doctors or carpenters: click for what each is doing"><dt>Trades ▸</dt><dd id="meJobsN">0</dd></div>
+      <div id="meJobsCell" role="button" tabindex="0" aria-expanded="false" title="Villagers who have become builders, smiths, doctors, carpenters or scholars: click for what each is doing"><dt>Trades ▸</dt><dd id="meJobsN">0</dd></div>
       <div><dt>Soldiers</dt><dd id="meSoldiers">0</dd></div>
       <div id="meMilitiaRow" title="Raised at the castle, beyond your barracks room or with no barracks: they rest in your houses, guard watchtowers that call for them, pay no tax and draw no wages until called up" hidden><dt>Militia</dt><dd id="meMilitia">0</dd></div>
       <div><dt>Training</dt><dd id="meTraining">0</dd></div>
     </dl>
     <div id="meJobs" class="jobs" hidden aria-label="What the villagers with trades do"></div>
     <dl class="stats income" aria-label="Income">
-      <div title="Villager tax: each housed villager pays 0.1 gold a second (0.2 and 0.3 with taxation research)"><dt>Tax</dt><dd id="meTax">+0</dd></div>
+      <div title="Villager tax: each housed villager pays 0.1 gold a second (0.6 and 1.1 with taxation research)"><dt>Tax</dt><dd id="meTax">+0</dd></div>
       <div title="Land you hold pays 0.0004 gold a second a tile"><dt>Land tax</dt><dd id="meLandTax">+0</dd></div>
       <div id="meBoostRow" title="Coin minters add 5% each to the taxes" hidden><dt>Minters</dt><dd id="meBoost">+0</dd></div>
       <div title="Each soldier draws 0.3 gold a second"><dt>Soldiers</dt><dd id="meSoldCost">−0</dd></div>
@@ -52,7 +52,7 @@
   </section>
 
   <section id="bar" class="plate" hidden aria-label="Attack and army">
-    <label for="soldiers" class="split"><span>People serving as soldiers</span><button type="button" id="soldierLock" class="lockbtn" aria-pressed="false" title="The blue part of the bar is your professionals (builders, smiths, doctors, carpenters): the slider stops short of it so recruiting never takes them from their work. Click to override in an emergency and call them up too: they become tier 1 soldiers. Click again to lock the limit back.">🔒</button><b id="soldiersVal">0%</b></label>
+    <label for="soldiers" class="split"><span>People serving as soldiers</span><button type="button" id="soldierLock" class="lockbtn" aria-pressed="false" title="The blue part of the bar is your professionals (builders, smiths, doctors, carpenters): the slider stops short of it so recruiting never takes them from their work. Click to override in an emergency and call them up too: they become militia, the reserve unit. Click again to lock the limit back.">🔒</button><b id="soldiersVal">0%</b></label>
     <div class="sbar"><input type="range" id="soldiers" min="0" max="100" step="5" value="0"><i id="soldierBlock" aria-hidden="true"></i></div>
     <span class="hint" id="soldiersHint">No barracks: they train at the castle as militia</span>
     <div id="attacks"></div>
@@ -182,7 +182,7 @@
     <span class="tag" id="exTitle">Settle: spend of your gold</span>
     <div class="exrow" id="exLand"><button data-r="0.25">25%</button><button data-r="0.5">50%</button><button data-r="0.75">75%</button><button data-r="1">100%</button><button id="exSeaBtn" class="sea" aria-label="Naval settlement" title="Naval settlement">⚓</button></div>
   </div>
-  <div id="log" aria-live="polite"></div>
+  <div id="log" aria-live="polite"><div id="rush" class="plate" hidden><b>Land rush</b> · settling costs 50% less for <span id="rushT">1:00</span></div></div>
   <div id="crash" class="plate" hidden role="alert"><span id="crashText"></span><button id="crashCopy" title="Copy the details to report">Copy details</button><button id="crashX" class="x" aria-label="Close">×</button></div>
   <div id="banner" class="plate" hidden>Tap open land to found your capital</div>
   <div id="toast" class="plate" hidden></div>

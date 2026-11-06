@@ -15,7 +15,7 @@ const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
 
 describe('a capital on a neck of land', () => {
   it('lets the smith reach barracks on the far side of the castle, and the walking field cover the whole town', () => {
-    newWorld(5,'europe-s');
+    newWorld(5,'europe-s'); W.rushUntil=0;
     const gr=capitalsOn('europe-s').find(c => c.country.code==='GR')!;
     expect(startMatch(gr.tile,15,'GR','real')).toBe(true);
     const n=me(); n.tier[R_INFANTRY]=2;

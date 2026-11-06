@@ -202,6 +202,8 @@ function powerBar(f: Front, b: Battle){
   return `<div class="pbar" title="Balance of power: everyone in the fight, the fallen under skulls">${seg(L,'l')}${seg(R,'r')}</div><div class="pinfo">${info(L)}${info(R)}</div>`;
 }
 
+/** Does the player's land touch o's? (A crisis with a kingdom it does not touch is a landing from the sea, coming: what it masses there is out of sight.) */
+const bordering = (o: number) => W.contact[PLAYER*W.M+o]>0 || W.occCount[PLAYER*W.M+o]>0 || W.occCount[o*W.M+PLAYER]>0;
 let lastChips='';
 const dismissed=new Set<number>();   // wars and crises whose bar the player closed (it returns with the next one)
 export function updateWarChips(){
@@ -219,9 +221,10 @@ export function updateWarChips(){
       f.iOffer ? ['Peace offered…', '', true] :
       ['Offer peace', 'end', false];
     const massed=f.incoming.reduce((k,c)=>k+c.members.length,0);
-    const men=(massed ? ` · ${massed} ${f.a===PLAYER ? 'holding their border' : 'on your border'}` : '')+(f.men>0 ? ` · ${f.men} out` : '');
+    const near=bordering(f.o), sea=!near && !f.war;   // (no shared border, at crisis: they come by ship, and how many is not known)
+    const men=(massed ? (sea ? (f.a===PLAYER ? ' · by sea' : ' · coming by sea') : ` · ${massed} ${f.a===PLAYER ? 'holding their border' : 'on your border'}`) : '')+(f.men>0 && !(sea && f.a!==PLAYER) ? ` · ${f.men} out` : '');
     const chip=`<button class="chip war${f.theyOffer||f.ready?' offer':''}" data-o="${f.o}" data-act="${act}" ${off||!act?'disabled':''}><i class="flag" style="${flagCSS(W.nations[f.a].code)}"></i>${esc(nameOf(f.a))} – ${esc(nameOf(f.d))} · ${kind}${men}<b>${label}</b></button>`;
-    return `<div class="front" data-o="${f.o}"><div class="fhead">${chip}<button class="x fclose" data-o="${f.o}" aria-label="Close this war bar" title="Close this bar (it comes back with the next war or crisis)">×</button></div>${word(f.o,byId)}${powerBar(f,track(f.o,byId))}${reserves(f.o)}</div>`;
+    return `<div class="front" data-o="${f.o}"><div class="fhead">${chip}<button class="x fclose" data-o="${f.o}" aria-label="Close this war bar" title="Close this bar (it comes back with the next war or crisis)">×</button></div>${word(f.o,byId)}${sea && f.a!==PLAYER ? '<div class="pbar unknown" title="They have no border with you: they mean to come by ship, and their strength is not known"><i>Balance of power unknown</i></div>' : powerBar(f,track(f.o,byId))}${reserves(f.o)}</div>`;
   }).join('');
   if (html!==lastChips){ lastChips=html; wars.innerHTML=html; placePop(); }
   if (!pop.hidden){
@@ -266,7 +269,7 @@ function word(o: number, byId: Map<number, Human>){
   const theirs=o*M+PLAYER;
   if (W.campaigns.some(c => c.front && c.a===o && c.d===PLAYER && c.phase<2)){
     const s=W.offensive[theirs];
-    return `<button class="fword them" disabled>${inCrisis(o,PLAYER) ? 'Their army masses on your border · not yet war' : s===F_PUSH ? 'Their army attacks along the front' : s===F_GATHER || s===F_READY ? 'Their army masses on your border' : 'Their army holds the front'}</button>`;
+    return `<button class="fword them" disabled>${inCrisis(o,PLAYER) ? (bordering(o) ? 'Their army masses on your border · not yet war' : 'They mean to come by sea · not yet war') : s===F_PUSH ? 'Their army attacks along the front' : s===F_GATHER || s===F_READY ? (bordering(o) ? 'Their army masses on your border' : 'Their fleet gathers against you') : 'Their army holds the front'}</button>`;
   }
   return '';
 }
@@ -298,7 +301,7 @@ function openPop(o: number, counter=false){
   popFor=o; popCounter=counter; pop.hidden=false; popMenu.hidden=false;
   const war=!!W.wars[PLAYER*W.M+o], crisis=inCrisis(o,PLAYER) && !war;
   ($('wpTitle')).textContent = counter ? `Your land is free of ${W.nations[o].name}`
-    : crisis ? `${W.nations[o].name} masses on your border` : `${W.nations[o].name}'s army is coming`;
+    : crisis ? (bordering(o) ? `${W.nations[o].name} masses on your border` : `${W.nations[o].name} means to come by sea`) : `${W.nations[o].name}'s army is coming`;
   $('wpPeace').textContent = counter ? 'Offer peace' : 'Request peace';
   $('wpPeace').hidden=!war;   // (a crisis isn't a war yet)
   popMenu.classList.add('one');

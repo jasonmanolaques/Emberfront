@@ -16,7 +16,7 @@ const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
 const houses = () => { const out: number[]=[]; for (let q=0;q<NP;q++) if (pType[q]===B_HOUSE && pOwner[q]===1) out.push(q); return out; };
 const building = () => mine().filter(h => h.task===TASK_HOME_GO || h.task===TASK_HOME_BUILD);
 function start(seed: number, rivals: number){
-  newWorld(seed);
+  newWorld(seed); W.rushUntil=0;
   for (let r=0;r<60;r++) for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){
     if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
     if (startMatch((TH/2+dy*3)*TW + TW/2+dx*3, rivals)) return;
@@ -76,7 +76,7 @@ describe('building homes', () => {
 
   it('sends a newcomer straight to work when a house is free', () => {
     start(12345, 0); expand(6);
-    until(() => me().houses>=6 && !building().length);
+    until(() => me().houses>=6); me().humanProg=-1e9; until(() => !building().length); me().humanProg=0;   // (builders take 15 s: stop the arrivals for a moment so all are done)
     // two people die; their houses stay
     const h0=houses().length;
     for (const h of mine().slice(0,2)) h.hp=0;
@@ -157,7 +157,7 @@ describe('homeless people and beggars', () => {
   /** A town of 8 housed people, then no room left to build and two houses gone: the two newest are homeless. */
   function crowded(){
     start(12345, 0); expand(6);
-    until(() => me().houses>=8 && !building().length);
+    until(() => me().houses>=8);
     me().humanProg=-1e9;
     until(() => !building().length);
     pBuild.fill(0);   // no room left anywhere to build another house
@@ -261,7 +261,7 @@ describe('carpenters', () => {
     me().stock=[100,100,100]; expect(build(me(),plots[0],B_CARPENTER)).toBe(true);
     const spent=[...me().stock];
     expect(spent).toEqual([50,80,95]);
-    run(5);
+    until(() => mine().some(h => h.work>=0 && pType[h.work]===B_CARPENTER), 3000);   // (a free villager takes the job: those putting up their own homes take 15 s)
     const c=mine().find(h => h.work>=0 && pType[h.work]===B_CARPENTER)!;
     expect(c).toBeDefined();
     me().humanProg=-1e9;   // nobody new: the kingdom stays as it is

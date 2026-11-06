@@ -1,5 +1,5 @@
 /* ---------- territory & combat ---------- */
-import { GAME_SPEED, TW, TH, NT, PW, PH, TMULT, B_TOWER, B_CASTLE, B_CPART, GOLD_PER_TILE, isStructure } from '../core/constants';
+import { GAME_SPEED, TW, TH, NT, PW, PH, TMULT, B_TOWER, B_CASTLE, B_CPART, GOLD_PER_TILE, RUSH_COST, isStructure } from '../core/constants';
 import { W, owner, occ, terr, isLand, isle, frontMark, pType, pOwner, pBurn, type Attack } from './state';
 import { on } from './events';
 import { ignite, captureBuilding } from './buildings';
@@ -17,7 +17,7 @@ export function towerCover(d: number, t: number){
 /** Gold it costs nation a to take tile t from d. Unclaimed land is a flat price; another
     kingdom's land is dearer the stronger that kingdom is for its size, and near its watchtowers. */
 export function tileCost(a: number, d: number, t: number){
-  if (!d) return GOLD_PER_TILE;
+  if (!d) return GOLD_PER_TILE*(W.tickN<W.rushUntil ? RUSH_COST : 1);   // (the first minute of a match: half price, for everyone)
   const D=W.nations[d], dens=D.strength/Math.max(1,D.tiles);
   let c=TMULT[terr[t]]*(1+0.5*dens);
   if (towerCover(d,t)) c*=1.5;
