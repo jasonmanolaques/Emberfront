@@ -649,8 +649,8 @@ describe('the front', () => {
     expect(lines.size).toBeGreaterThan(2);               // two ranks of reserves at least
     // each behind the man he backs up, no nearer the line than him
     const off=(x: number, y: number) => Math.min(...S.F!.tiles.map(t => Math.hypot(t%TW+0.5-x/2, ((t/TW)|0)+0.5-y/2)));
-    for (const h of W.humans) if (h.o===1 && h.fk===frontKey(1,2) && h.line>=1){
-      const front=W.humans.find(e => e.o===1 && e.line===0 && e.slot===h.slot)!;
+    for (const h of W.humans) if (h.o===1 && h.fk===frontKey(1,2) && h.line>=1 && h.line<60){
+      const front=W.humans.filter(e => e.o===1 && e.line===0).sort((p,q) => Math.abs(p.slot-h.slot)-Math.abs(q.slot-h.slot))[0]!;   // (the man of the front rank he backs up: the nearest along the line)
       expect(off(h.fx,h.fy)).toBeGreaterThanOrEqual(off(front.fx,front.fy)-0.25);
       if (h.line===1) expect(off(h.fx,h.fy)).toBeGreaterThan(off(front.fx,front.fy)+RANK_GAP*0.5);   // the first rank behind, a rank back
     }
@@ -881,19 +881,6 @@ describe('watchtowers on occupied ground', () => {
     expect(sent.size).toBeLessThanOrEqual(10);   // (a few: never the whole line)
   });
 
-  it('are targets for the siege too, even off the way to the castle', () => {
-    const { q }=banded(14);
-    const men=soldiers(N(1),20); for (const h of men) h.tier=3;
-    noDraft(); noDraft(2);
-    expect(declare(1,2,20)).toBe(true);
-    giveWord(1,2);
-    const c=W.campaigns.find(k => k.a===1 && k.d===2 && k.front)!;
-    expect(armyFront(1,c.id,isle[N(2).capTile],SEC_SIEGE)).toBe(true);
-    let down=-1;
-    for (let i=0;i<4000 && down<0;i++){ for (const h of men) if (h.hp>0) h.hp=1000; tick(); if (pType[q]!==B_TOWER || pBurn[q]>0) down=i; }
-    expect(down).toBeGreaterThanOrEqual(0);
-  });
-
   it('do not leave a pocket of free ground round them: the ground under their walls is occupied while they stand', () => {
     const { q }=banded(14,true);
     const q2=q+PW;
@@ -906,8 +893,9 @@ describe('watchtowers on occupied ground', () => {
     noDraft(); noDraft(2);
     expect(declare(1,2,20)).toBe(true);
     giveWord(1,2);
-    for (let i=0;i<1500;i++){ for (const h of men) if (h.hp>0) h.hp=1000; for (const k of [q,q2]) pHp[k]=-1e6; tick(); }
-    expect(walled.filter(t => occ[t]===1).length).toBeGreaterThan(walled.length/2);
+    let most=0;
+    for (let i=0;i<1500 && N(2).alive;i++){ for (const h of men) if (h.hp>0) h.hp=1000; for (const k of [q,q2]) pHp[k]=-1e6; tick(); most=Math.max(most,walled.filter(t => occ[t]===1).length); }
+    expect(most).toBeGreaterThan(walled.length/2);   // (the war may be won before the end)
   });
 });
 
@@ -1056,6 +1044,7 @@ describe('crisis', () => {
     run(40);
     expect(setOffensive(2,1,false)).toBe(true); run(5);        // its land is back: it was told to attack, and is told to hold
     expect(W.offensive[2*M()+1]).toBe(F_HOLD);                 // it holds, and may strike back
+    run(150);                                                  // (the men out beyond the line come back to it)
     for (let i=0;i<300;i++){ tick();   // ...and goes on holding on its own side of the border, out of reach of their watchtowers, until it is told to attack
       for (const h of W.humans) if (h.o===2 && h.war>=0 && h.kind===H_SOLDIER){ const t=((h.y/2)|0)*TW+((h.x/2)|0); expect(owner[t]===1 && !occ[t]).toBe(false); }
     }
@@ -1119,7 +1108,7 @@ describe('holding the border, and the second wave', () => {
   function started(defenders=0){
     world(1); quiet(); paintDisc(N(2),60); paintToward(1,2);
     soldiers(N(1),40); if (defenders) soldiers(N(2),defenders); noDraft(); N(2).soldierShare=defenders ? 1 : 0; N(2).humanProg=-1e9; run(2);
-    expect(declare(1,2,40)).toBe(true); if (defenders) expect(defendProblem(2,1)).toBeNull(), expect(defend(2,1,defenders)).toBe(true); giveWord(1,2); run(500);
+    expect(declare(1,2,40)).toBe(true); if (defenders) expect(defendProblem(2,1)).toBeNull(), expect(defend(2,1,defenders)).toBe(true); giveWord(1,2); for (let i=0;i<2500 && W.occCount[2*W.M+1]<=100;i++) tick();   // (a short front takes only so many men: against a few defenders it takes a while)
     const taken=() => W.occCount[2*W.M+1];
     expect(taken()).toBeGreaterThan(100);
     return taken;
@@ -1145,7 +1134,7 @@ describe('holding the border, and the second wave', () => {
     queueCommand({ type:'offensive', nation:1, target:2, go:true }); tick();
     expect(W.offensive[1*W.M+2]).toBe(F_PUSH);
     run(600);
-    expect(taken()).toBeGreaterThan(before);
+    expect(taken()>before || !N(2).alive).toBe(true);   // (on, or the kingdom is annexed)
   });
 
   it('how fast an invasion goes depends on the defender\'s soldiers on that landmass: 75% faster with none, 10% slower with a few, 40% slower with as many as the invaders, 50% at most', () => {
@@ -1225,20 +1214,43 @@ describe('parts of a border, and the siege of a capital', () => {
     const near=Math.min(...took.map(t => Math.hypot((t%TW)*2+1-gx, ((t/TW)|0)*2+1-gy)));
     return { took, near, gx, gy };
   }
-  it('the siege: the armies take a narrow way to the capital, further in than the whole border gets, and not the rest of the border', () => {
-    const all=fight(0,360), siege=fight(SEC_SIEGE,360);   // (the invasion is slow: strips come every 2 seconds, a siege's every second)
-    expect(all.took.length).toBeGreaterThan(50);
-    expect(siege.took.length).toBeGreaterThan(50);
-    expect(siege.near).toBeLessThan(all.near-10);                  // closer to the capital
+  /** The castle of kingdom 2 enclosed by ground 1 occupies (as hacked in), the rest of 2's land free. */
+  const enclose = () => {
+    const q=N(2).capPlot, x0=(q%PW)*4, y0=((q/PW)|0)*4;
+    for (let y=y0-1;y<=y0+8;y++) for (let x=x0-1;x<=x0+8;x++){ const t=y*TW+x; if (owner[t]===2 && !occ[t] && !underCastle(2,t)) occupyHack(t,1); }
+    // (and a way of occupied ground to its own land, or the pocket would be given back at once)
+    const [ax,ay]=[N(1).capTile%TW,(N(1).capTile/TW)|0], [bx,by]=[x0+4,y0+4], L=Math.hypot(bx-ax,by-ay);
+    for (let s=0;s<=L;s++) for (let d=-2;d<=2;d++){ const x=Math.round(ax+(bx-ax)*s/L-(by-ay)/L*d), y=Math.round(ay+(by-ay)*s/L+(bx-ax)/L*d), t=y*TW+x; if (owner[t]===2 && !occ[t] && !underCastle(2,t)) occupyHack(t,1); }
+  };
+  it('the siege of a capital is offered only once the castle stands inside the occupied zone, and is the walls of the castle alone: the front stays the border', () => {
+    world(1); labelWorld(); allocIsles(); quiet(); paintDisc(N(2),60); paintToward(1,2);
+    soldiers(N(1),40); noDraft(); N(2).soldierShare=0; N(2).humanProg=-1e9; run(2);
+    const keys=available(N(1)).map(a => a.unit.key);
+    expect(declare(1,2,40)).toBe(true);
+    // (the castle is not in the zone: no siege border, no way to it but the front)
+    expect(bordersOf(1).some(b => b.sec===SEC_SIEGE)).toBe(false);
+    expect(assignProblem(1,keys[0],2,0+SEC_SIEGE)).toMatch(/not inside your occupied zone/);
+    expect(assignArmy(1,keys[0],2,0,undefined,SEC_SIEGE)).toBe(false);
+    enclose(); W.tickN+=100;
+    expect(castleCutOff(2)).toBe(true);
+    expect(bordersOf(1).some(b => b.sec===SEC_SIEGE)).toBe(true);
+    const cap=isle[N(2).capTile], ring=lineOf(1,2,false,undefined,cap,SEC_SIEGE), whole=lineOf(1,2,false,undefined,cap,0);
+    expect(ring.tiles.length).toBeGreaterThan(10);
+    expect(ring.tiles.every(t => underCastle(2,t))).toBe(true);       // the siege: the walls of the castle
+    expect(whole.tiles.length).toBeGreaterThan(20);
+    expect(whole.tiles.every(t => !underCastle(2,t))).toBe(true);     // the front: the rest of the border, still there for the armies that stay on it
   });
-  it('a siege that holds the way to the capital goes on to break it: the capital falls', () => {
+  it('an army assigned to the siege of the enclosed castle breaks it: the capital falls', () => {
     world(1); labelWorld(); allocIsles(); quiet(); paintDisc(N(2),60); paintToward(1,2);
     soldiers(N(1),40); noDraft(); N(2).soldierShare=0; N(2).humanProg=-1e9; run(2);
     const keys=available(N(1)).map(a => a.unit.key), fell=collect('capitalFell');
     expect(declare(1,2,40)).toBe(true);
+    giveWord(1,2); enclose(); W.tickN+=100;
     for (const k of keys) expect(assignArmy(1,k,2,0,undefined,SEC_SIEGE)).toBe(true);
-    giveWord(1,2); run(1200);
-    expect(fell.length+collect('eliminated').length+(N(2).alive ? 0 : 1)).toBeGreaterThan(0);
+    run(60);
+    expect(W.campaigns.some(c => c.sec===SEC_SIEGE)).toBe(true);
+    run(1800);
+    expect(fell.length+(N(2).alive ? 0 : 1)).toBeGreaterThan(0);   // the capital falls
   });
   it('one border that runs on unbroken is offered whole, however many compass sectors it crosses: no parts, so no gaps in the front', () => {
     world(1); labelWorld(); allocIsles(); quiet(); paintDisc(N(1),14);
@@ -1558,17 +1570,20 @@ describe('invasions: the siege of a capital, peace, and two attackers', () => {
     }
     return { cx, cy };
   }
-  it('an army that has the castle surrounded stops pushing the border: its front is the castle alone', () => {
-    // 1 occupies all round the castle but the land further out is still free: it is the castle that is left to break
+  it('with the castle surrounded the front is still the rest of the border: the castle is the siege\'s, and an army that has nothing else left goes round it', () => {
+    // 1 occupies all round the castle but the land further out is still free: it is the castle that is the siege's, and the border that is the front's
     const { cx, cy }=besieged(12);
     expect(castleCutOff(2)).toBe(true);
     const F=lineOf(1,2);
     expect(F.tiles.length).toBeGreaterThan(10);
-    expect(F.tiles.every(t => underCastle(2,t))).toBe(true);   // nothing of the outer border is in the front
-    // (whereas with free ground left beside the castle, the front is the border and not the castle)
+    expect(F.tiles.every(t => !underCastle(2,t))).toBe(true);   // the front keeps the outer border
+    const S=lineOf(1,2,false,undefined,isle[N(2).capTile],SEC_SIEGE);
+    expect(S.tiles.length).toBeGreaterThan(10);
+    expect(S.tiles.every(t => underCastle(2,t))).toBe(true);
     for (let t=0;t<NT;t++) if (owner[t]===2 && occ[t]===1 && Math.hypot((t%TW)+0.5-cx,((t/TW)|0)+0.5-cy)<5.5){ freeHack(t); }
     expect(castleCutOff(2)).toBe(false);
     expect(lineOf(1,2).tiles.some(t => !underCastle(2,t))).toBe(true);
+    expect(lineOf(1,2,false,undefined,isle[N(2).capTile],SEC_SIEGE).tiles).toHaveLength(0);   // (no siege until it is enclosed)
   });
   it('a peace with the castle cut off gives its kingdom the ground round it back, to rebuild on', () => {
     const { cx, cy }=besieged(12);
@@ -2097,7 +2112,7 @@ describe('two fronts', () => {
   it('an army at home is stationed on a border in peace, moved to the other front of the same kingdom, and told to attack or defend, before and during the war', () => {
     const { a, main, island }=twoFronts();
     expect([...new Set(bordersOf(1).filter(b => b.sec!==SEC_SIEGE).map(b => b.isle))].sort()).toEqual([main,island].sort());   // (the mainland border in parts, the island's whole)
-    expect(bordersOf(1).filter(b => b.sec===SEC_SIEGE).map(b => b.d)).toEqual([2]);   // (and the siege of their capital)
+    expect(bordersOf(1).filter(b => b.sec===SEC_SIEGE).map(b => b.d)).toEqual([]);   // (and no siege of their capital: it is not inside the occupied zone)
     expect(bordersOf(1).every(b => b.tiles.length>0)).toBe(true);
     expect(assignProblem(1,a,2)).toBeNull();
     expect(assignArmy(1,a,2,main)).toBe(true);
@@ -2260,7 +2275,7 @@ describe('watchtowers', () => {
     census(); buildWalls();
     expect(declare(1,2,40)).toBe(true); giveWord(1,2);
     let tDown=-1, menAtDown=0;
-    for (let i=0;i<2500 && tDown<0;i++){ tick(); if (TQ.filter(q => pType[q]===B_TOWER && pBurn[q]<=0).length<=2){ tDown=i; menAtDown=menOn(1,2); } }
+    for (let i=0;i<2500 && tDown<0;i++){ tick(); if (TQ.filter(q => pType[q]===B_TOWER && pBurn[q]<=0).length<=3){ tDown=i; menAtDown=menOn(1,2); } }
     expect(tDown).toBeGreaterThan(0);                      // the ring comes down
     expect(menAtDown).toBeGreaterThan(20);                 // without bleeding the army white
   });

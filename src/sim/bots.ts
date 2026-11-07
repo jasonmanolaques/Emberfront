@@ -7,7 +7,7 @@ import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, R_MEDICS,
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, anyWithin, isEnemyLand, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, standingTower, WALL_MIN, WALL_MAX } from './fort';
-import { SEC_SIEGE, lineOf } from './front';
+import { SEC_SIEGE, MIN_GAP, lineOf, castleCutOff } from './front';
 import { allied, atWar, assignArmy, frontIsles, ready, available, declare, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, frontIds, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD } from './war';
 
 const WALL = -1;   // a tower of the town wall, in a wishlist
@@ -373,20 +373,18 @@ function botWar(n: Nation){
   const dug=outnumbered(n);
   // (no army attacks without the word: a bot gives it to every army of its own that is out against someone it is at war with, unless it was sent to hold the line)
   for (const c of W.campaigns) if (c.a===id && c.front && c.phase<2 && !c.ordered && W.wars[id*M+c.d]){ c.ordered=true; c.attack=!dug; }
-  // a siege of the capital when it is far the stronger (and bold): the armies on the capital's landmass all go for it, except those whose stretch of border
-  // the enemy still holds in strength (enough stay to match the enemy soldiers there, the biggest army going first)
+  // the siege of a capital, once the castle stands inside the zone this bot occupies (castleCutOff): enough armies leave the front for the ring round it to be manned,
+  // the biggest staying where they are, and at least 40% of the men on that landmass stay on the front, which goes on being held or pushed
   if (W.tickN%100===id%100) for (let o=1;o<M;o++){
     if (o===id || !W.nations[o].alive || !W.wars[id*M+o]) continue;
     const D=W.nations[o];
-    if (D.capTile<0 || menOn(id,o)<defence(D)*2.2 || n.attackAt<=0.6) continue;
-    const cap=isle[D.capTile], mine=W.campaigns.filter(c => c.a===id && c.d===o && c.front && c.phase<2 && c.naval<0 && !c.militia && c.unit>=0 && c.sec!==SEC_SIEGE).sort((x,y) => y.members.length-x.members.length);
-    let left=facing(id,o)*0.5;   // (the enemy soldiers that may be met on the way: half of them stay behind)
-    // (and the siege takes men only in step with the stretch of the border it covers, so that the rest of the front is not left with none: at most twice its share, never over half)
-    const onSiege=W.campaigns.filter(c => c.a===id && c.d===o && c.front && c.phase<2 && c.naval<0 && !c.militia && c.sec===SEC_SIEGE).reduce((k,c) => k+c.members.length,0);
-    const onLand=mine.reduce((k,c) => c.isle===cap ? k+c.members.length : k,0)+onSiege;
-    const whole=lineOf(id,o,false,undefined,cap,0).len, rush=lineOf(id,o,false,undefined,cap,SEC_SIEGE).len;
-    let room=onLand*Math.min(0.5,2*rush/Math.max(1,whole))-onSiege;
-    for (const c of mine){ if (c.isle!==cap) continue; if (left>0){ left-=c.members.length; continue; } if (room<=0) break; room-=c.members.length; assignArmy(id,c.unit,o,0,true,SEC_SIEGE); }
+    if (D.capTile<0 || !castleCutOff(o)) continue;
+    const cap=isle[D.capTile], ring=lineOf(id,o,false,undefined,cap,SEC_SIEGE);
+    const all=W.campaigns.filter(c => c.a===id && c.d===o && c.front && c.phase<2 && c.naval<0 && !c.militia && c.unit>=0 && c.isle===cap);
+    const onSiege=all.filter(c => c.sec===SEC_SIEGE).reduce((k,c) => k+c.members.length,0), total=all.reduce((k,c) => k+c.members.length,0);
+    const need=Math.ceil(ring.len/MIN_GAP)+3-onSiege, spare=Math.floor(total*0.6)-onSiege;
+    let room=Math.min(need,spare);
+    for (const c of all.filter(c => c.sec!==SEC_SIEGE).sort((x,y) => x.members.length-y.members.length || x.id-y.id)){ if (room<=0) break; room-=c.members.length; assignArmy(id,c.unit,o,0,true,SEC_SIEGE); }
   }
   for (let o=1;o<M;o++){
     if (!W.offers[o*M+id]) continue;

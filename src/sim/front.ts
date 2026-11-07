@@ -14,6 +14,7 @@ export const MIN_GAP = 2;              // tiles between men of the front rank, s
 export const RANK_GAP = 2;             // tiles between one rank and the next behind it
 export const A_OFF = 1, D_OFF = 0.5;   // tiles from the line's tiles back to the attacker's front rank, and in to the defender's
 const STEP_CAP = 3;                    // a break in the line (the sea, a castle) counts as at most this many tiles
+const SHIFT = 0.3;                     // tiles along the line a man's place may move at each laying out (every 5 ticks)
 const SMOOTH = 3;                      // tiles either way along the line that the way back is averaged over
 
 export interface Front {
@@ -61,26 +62,17 @@ export function secName(mask: number){
   if (!ks.length || ks.length===8) return 'whole border';
   return ks.length===1 ? SECTOR_NAMES[ks[0]] : ks.length===2 ? `${SECTOR_NAMES[ks[0]]} and ${SECTOR_NAMES[ks[1]]}` : `${SECTOR_NAMES[ks[0]]} to ${SECTOR_NAMES[ks[ks.length-1]]}`;
 }
-export const SIEGE_WIDTH = 14;   // tiles either side of the way to the castle the siege keeps to
-export const SIEGE_NEAR = 20;    // tiles round the castle that are the siege's whole
 /** The compass sector (1-8) tile t lies in, as seen from d's castle. */
 export function sectorOf(d: number, t: number){
   const [ox,oy]=originOf(d);
   return ((Math.round(Math.atan2((t/TW|0)+0.5-oy, t%TW+0.5-ox)/(Math.PI/4))+8)%8)+1;
 }
-/** The tiles of border `all` that belong to part `sec` of it. The siege's are those within SIEGE_WIDTH of the way from the border tile nearest the castle to the castle,
-    and any within SIEGE_NEAR of it: all of them once the castle stands cut off. */
+/** The tiles of border `all` that belong to part `sec` of it. The siege's are the walls of the castle, and only once the castle stands inside the occupation zone (cut off):
+    until then there is no siege, and no way to it but the front. */
 export function partOf(d: number, all: number[], sec: number){
   if (!sec) return all;
   if (sec!==SEC_SIEGE) return all.filter(t => (sec & (1<<(sectorOf(d,t)-1)))!==0);
-  if (!all.length || castleCutOff(d)) return all;
-  const [ox,oy]=originOf(d); let p=all[0], pd=Infinity;
-  for (const t of all){ const e=Math.hypot(t%TW+0.5-ox,((t/TW)|0)+0.5-oy); if (e<pd){ pd=e; p=t; } }
-  const ax=p%TW+0.5, ay=((p/TW)|0)+0.5, dx=ox-ax, dy=oy-ay, L=dx*dx+dy*dy;
-  return all.filter(t => {
-    const x=t%TW+0.5, y=((t/TW)|0)+0.5, u=L ? Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/L)) : 0;
-    return Math.hypot(x-(ax+u*dx),y-(ay+u*dy))<=SIEGE_WIDTH || Math.hypot(x-ox,y-oy)<=SIEGE_NEAR;
-  });
+  return castleCutOff(d) ? all.filter(t => underCastle(d,t)) : [];
 }
 
 /** Works out the front of a's attack on d (`only`: just the border on that landmass, else all of it; `sec`: just that part of it). The castle can't be taken, only broken: the line runs
@@ -123,7 +115,8 @@ export function lineOf(a: number, d: number, original=false, preset?: number[], 
   const open=all.filter(t => !underCastle(d,t)), walls=all.filter(t => underCastle(d,t));
   // The castle surrounded: nothing of theirs left beside it. The armies stop pushing the border and only break the castle.
   const island=walls.length>0 && castleCutOff(d);
-  const tiles=!open.length || island ? (island ? walls : all) : open;
+  // (the front: the open ground; the siege: the walls of a castle the occupation has enclosed; with no open ground left the front is the castle's walls too)
+  const tiles=sec===SEC_SIEGE ? walls : open.length ? open : all;
   const n=tiles.length, F: Front={ a, d, tiles, s:new Float64Array(n), len:0, bx:new Float32Array(n), by:new Float32Array(n), own:!!pset };
   if (!n) return F;
   // put in order along the line: each stretch of it (tiles touching, corners too) is measured from one
@@ -270,12 +263,26 @@ export const frontRank = (F: Front, n: number) => !n || !F.tiles.length ? 0 : Ma
     there, else the man nearest it steps up. Sets each man's h.fk (key), h.slot (how far along the
     line his place is), h.line (0 the front rank, 1 the rank behind it, …) and h.fx, h.fy (where he
     stands). Returns k. */
-export function deploy(F: Front, men: Human[], side: number, key: number, ok: (t: number) => boolean){
+export const RESERVE_LINE = 60;   // h.line of a man held back behind the line (the line takes DENSITY men to a tile of it at most)
+export const DENSITY = 2.5;
+export function deploy(F: Front, all: Human[], side: number, key: number, ok: (t: number) => boolean){
+  if (!frontRank(F,all.length)) return 0;
+  const T=F.tiles, step=Math.max(1,T.length>>6);
+  const nearest=(h: Human) => { let bi=0, bd=Infinity; const hx=h.x/2, hy=h.y/2; for (let i=0;i<T.length;i+=step){ const t=T[i], e=(t%TW+0.5-hx)**2+(((t/TW)|0)+0.5-hy)**2; if (e<bd){ bd=e; bi=i; } } return { bi, bd }; };
+  // the line takes only so many men at most (DENSITY, 2.5, to a tile of it, in all its ranks): the rest wait behind it, spread out, to step up for those who fall, and take no part in the
+  // balance of power at the front. Those already on the line keep their places; of the others the nearest the line come first.
+  const cap=Math.max(1,Math.ceil(F.len*DENSITY));
+  let men=all; const reserve: Human[]=[];
+  if (all.length>cap){
+    const holder=(h: Human) => h.fk===key && h.slot>=0 && h.line<RESERVE_LINE, dist=new Map<number, number>();
+    for (const h of all) dist.set(h.id, holder(h) ? 0 : nearest(h).bd);
+    const sorted=all.slice().sort((p,q) => (+!holder(p))-(+!holder(q)) || dist.get(p.id)!-dist.get(q.id)! || p.id-q.id);
+    men=sorted.slice(0,cap); reserve.push(...sorted.slice(cap));
+  }
   const n=men.length, k=frontRank(F,n);
-  if (!k) return 0;
-  const T=F.tiles, along=new Map<number, number>();
+  const along=new Map<number, number>();
   for (const h of men){
-    if (h.fk===key && h.slot>=0){ along.set(h.id, Math.min(F.len, h.slot)); continue; }
+    if (h.fk===key && h.slot>=0 && h.line<RESERVE_LINE){ along.set(h.id, Math.min(F.len, h.slot)); continue; }
     // a newcomer: where he is nearest the line
     let bi=0, bd=Infinity; const hx=h.x/2, hy=h.y/2;
     for (let i=0;i<T.length;i++){ const t=T[i], e=(t%TW+0.5-hx)**2+(((t/TW)|0)+0.5-hy)**2; if (e<bd){ bd=e; bi=i; } }
@@ -290,14 +297,30 @@ export function deploy(F: Front, men: Human[], side: number, key: number, ok: (t
     const dist=(h: Human) => (h.x-fx)**2+(h.y-fy)**2;
     group.sort((p,q) => (p.fk===key && p.line===0 ? 0 : 1)-(q.fk===key && q.line===0 ? 0 : 1) || dist(p)-dist(q) || p.id-q.id);
     // the reserves in ranks behind him: one file, or (more than a few) a block as wide as it is deep
-    const files=size<=5 ? 1 : Math.ceil(Math.sqrt(size-1)), [,,bx,by]=pointAt(F,u);
+    const files=size<=5 ? 1 : Math.ceil(Math.sqrt(size-1));
     group.forEach((h,r) => {
-      let [x,y]=r ? placeAt(F,u,side,1+((r-1)/files|0),ok) : [fx,fy];
+      // a man who held a slot moves toward his share of the line a little at a time (a man falling does not send everyone running along the line): the others close up slowly
+      const old=h.fk===key && h.slot>=0 ? Math.min(F.len,h.slot) : u, slot=old+Math.max(-SHIFT,Math.min(SHIFT,u-old));
+      const [,,bx,by]=pointAt(F,slot);
+      let [x,y]=placeAt(F,slot,side,r ? 1+((r-1)/files|0) : 0,ok);
       if (r && files>1){
         const across=((r-1)%files-(files-1)/2)*RANK_GAP*2, nx=x-by*across, ny=y+bx*across;   // (pixels, square to the way back)
         if (nx>=0 && ny>=0 && nx<TW*2 && ny<TH*2 && ok(((ny/2)|0)*TW+((nx/2)|0))){ x=nx; y=ny; }
       }
-      h.fk=key; h.slot=u; h.line=r ? 1+((r-1)/files|0) : 0; h.fx=x; h.fy=y;
+      h.fk=key; h.slot=slot; h.line=r ? 1+((r-1)/files|0) : 0; h.fx=x; h.fy=y;
+    });
+  }
+  // the reserve: in loose rows well behind the line (14 tiles back, a row every 4 tiles), 3 tiles apart, spread along a long line and across a short one
+  const m=reserve.length;
+  if (m){
+    reserve.sort((p,q) => (p.fk===key ? p.slot : 1e9)-(q.fk===key ? q.slot : 1e9) || p.id-q.id);
+    const perRow=Math.max(4,Math.min(14,Math.ceil(F.len/3))), longLine=F.len>=perRow*3;
+    reserve.forEach((h,j) => {
+      const row=(j/perRow)|0, col=j%perRow, stagger=(row%2)*0.5;
+      const u=longLine ? ((col+stagger+0.5)%perRow)*F.len/perRow : F.len/2;
+      let [x,y]=placeAt(F,u,side,7+row*2,ok);
+      if (!longLine){ const [,,bx,by]=pointAt(F,u), across=(col+stagger-(perRow-1)/2)*6, nx=x-by*across, ny=y+bx*across; if (nx>=0 && ny>=0 && nx<TW*2 && ny<TH*2 && ok(((ny/2)|0)*TW+((nx/2)|0))){ x=nx; y=ny; } }
+      h.fk=key; h.slot=u; h.line=RESERVE_LINE; h.fx=x; h.fy=y;
     });
   }
   return k;
