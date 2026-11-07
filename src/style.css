@@ -33,7 +33,7 @@ html{height:100%;box-sizing:border-box;background:var(--sea)}
 *,*::before,*::after{box-sizing:border-box}
 [hidden]{display:none!important}
 body{height:100%;margin:0;background:var(--sea);color:var(--text);font-family:var(--f-ui);font-size:15px;line-height:1.3;overflow:hidden;-webkit-font-smoothing:antialiased}
-#game > :not(#view):not(#scrim){zoom:var(--ui,0.8)}   /* the whole interface at 80%: every panel, none of the map */
+#game > :not(#view):not(#scrim):not(#wall){zoom:var(--ui,0.8)}   /* the whole interface at 80%: every panel, none of the map */
 #game{position:relative;width:100%;height:100%;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
 #view{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
 #view.dragging{cursor:grabbing}
@@ -52,6 +52,9 @@ body{height:100%;margin:0;background:var(--sea);color:var(--text);font-family:va
 .troops .cap{color:var(--muted);font-size:14px}
 .troops .rate{margin-left:auto;font-size:13px;color:var(--good)}
 .troops .rate.neg{color:var(--bad)}
+.autobtn{font:inherit;font-size:13px;font-weight:600;padding:5px 8px;background:#0e1822;color:var(--muted);border:2px solid var(--edge);cursor:pointer;text-align:left}
+.autobtn:hover{color:var(--text,#e8eef3)}
+.autobtn[aria-pressed=true]{color:#10161d;background:var(--gold);border-color:var(--gold)}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0}
 .stats div{display:grid;gap:1px;min-width:0}
 .stats div[hidden]{display:none}
@@ -172,11 +175,6 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--gold);outline-
 .card h1{font-size:clamp(42px,10vw,60px);letter-spacing:.01em}
 .card h2{font-size:clamp(30px,7vw,40px)}
 .card p{margin:0;max-width:62ch}
-.sub{font-size:17px}
-.how{list-style:none;margin:0;padding:0;display:grid;gap:7px}
-.how li{position:relative;padding-left:16px;font-size:15px}
-.how li::before{content:"";position:absolute;left:2px;top:.45em;width:6px;height:6px;background:var(--ember)}
-.how b{color:var(--gold);font-weight:600}
 .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 button.pick{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;font-size:17px;font-weight:700;text-align:left}
 button.pick .flag{width:30px;height:20px;flex:none;border:2px solid var(--ink)}
@@ -206,7 +204,6 @@ button.pick #pcName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;wh
 #nList .you{font-size:13px;font-weight:700;color:var(--gold);padding:4px 8px}
 .mapname{flex:1;min-width:0;font-weight:600;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
 .row .tag{margin-right:-2px}
-.keys{font-size:13px;color:var(--muted)}
 
 @media (max-width:1100px){#log .entry{display:none}}
 @media (max-width:640px){
@@ -400,3 +397,18 @@ button.army[aria-pressed=true] .at{color:var(--gold)}
 #crash .x{width:24px;height:24px;padding:0}
 .pbar.unknown{height:auto;padding:2px 6px;justify-content:center;background:#17212b}
 .pbar.unknown i{width:auto;min-width:0;font-style:normal;color:var(--dim,#9fb0be);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+
+/* ---------- the title screen: a slideshow of gameplay behind the logo ---------- */
+#wall{position:absolute;inset:0;overflow:hidden;background:#0a1118}
+#wall .wp{position:absolute;inset:-4%;background-size:cover;background-position:center;opacity:0;transition:opacity 1.4s ease;will-change:opacity,transform}
+#wall .wp.on{opacity:1;animation:drift 7s linear forwards}
+@keyframes drift{from{transform:scale(1.04) translate(0,0)}to{transform:scale(1.12) translate(-1.2%,-.8%)}}
+#wall::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 50% 45%,rgba(8,12,18,.05),rgba(8,12,18,.55)),linear-gradient(180deg,rgba(8,12,18,.22),rgba(8,12,18,.42))}
+#intro.title{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:18px;padding:16px;text-align:center}
+.title .logo{width:clamp(72px,12vw,120px);height:auto;image-rendering:pixelated;filter:drop-shadow(0 0 14px rgba(255,138,43,.65)) drop-shadow(0 4px 0 rgba(0,0,0,.45));animation:flicker 2.4s steps(2) infinite}
+@keyframes flicker{50%{filter:drop-shadow(0 0 22px rgba(255,170,60,.85)) drop-shadow(0 4px 0 rgba(0,0,0,.45))}}
+.title .wordmark{margin:0;font-family:'Barlow Condensed',var(--f-ui);font-weight:700;font-size:clamp(46px,11vw,112px);line-height:.9;letter-spacing:.08em;padding-left:.08em;text-indent:0;
+  background:linear-gradient(180deg,#fff0a8 0%,#ffc547 38%,#ff8a2b 68%,#d9421e 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(3px 3px 0 #4a160a) drop-shadow(6px 6px 0 rgba(0,0,0,.5))}
+.tcontrols{width:min(360px,calc(100% - 24px));display:grid;gap:10px;margin-top:10px;padding:14px;background:rgba(15,24,34,.78);border:2px solid var(--edge);box-shadow:0 0 0 2px var(--ink),4px 4px 0 2px rgba(0,0,0,.32);backdrop-filter:blur(2px)}
+@media (prefers-reduced-motion:reduce){#wall .wp.on{animation:none;transform:scale(1.06)}.title .logo{animation:none}}

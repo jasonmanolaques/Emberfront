@@ -143,21 +143,21 @@ export const gatherTier = (q: number) => pSpan[q]+1;
 export const PRODUCE_TICKS = 300;   // 30 s
 export const PRODUCES: Record<number, [number, number[]]> = { [B_PLANTATION]: [0,[0,2,5,15]], [B_QUARRY]: [1,[0,2,5,15]], [B_COPPERMINE]: [2,[0,1,3,10]] };
 export const STRUCTURES: Structure[] = [
-  { type: B_FARM,     name: 'Farm',        cost: [5,2,0], info: 'Each farm brings new villagers 3% sooner, and makes the next farm 5% dearer.' },
-  { type: B_BARRACKS, name: 'Barracks',    cost: [5,5,0], info: 'Trains soldiers and houses an army of 5, with 5 armour racks. Barracks side by side join into one bigger army: four together march as one army of 20. Soldiers without room patrol the city and only defend. Click a barracks to see its army.' },
-  { type: B_TOWER,    name: 'Watchtower',  cost: [2,5,1], info: 'While you are at war, shoots enemy soldiers that come near, and their villagers. Click a placed tower to call up to 5 soldiers to guard it.' },
-  { type: B_MINTER,   name: 'Coin minter', cost: [5,5,5], info: 'Raises your gold income by 5%. Each coin minter you own makes the next 10% dearer.' },
-  { type: B_PLANTATION, name: 'Plantation', cost: [10,0,0], info: 'Saplings growing into trees: +2 wood every 30 seconds. With resource gathering research, two side by side join (+5), then four in a square (+15). Each plantation you own makes the next 10% dearer.' },
-  { type: B_QUARRY,     name: 'Stone quarry', cost: [5,10,0], info: 'A pit with a pulley hauling stone up: +2 stone every 30 seconds. With resource gathering research, two side by side join (+5), then four in a square (+15). Each quarry you own makes the next 10% dearer.' },
-  { type: B_COPPERMINE, name: 'Copper mine', cost: [10,10,0], info: 'A shaft into the rock with the furnace glowing inside: +1 copper every 30 seconds. With resource gathering research, two side by side join (+3), then four in a square (+10). Each copper mine you own makes the next 10% dearer.' },
-  { type: B_RESEARCH,   name: 'Research station', cost: [15,15,10], info: 'A villager becomes the scholar of each station, and the station earns 1 research point a second; more stations, faster research (two side by side are drawn as one), and each station you own makes the next 20% dearer. Click a placed station, or use the button on this tab, to choose what to study.' },
-  { type: B_GUILD,      name: 'Builders guild', cost: [10,50,10], info: 'The city\'s investment: one villager becomes its builder, and as research allows he raises houses and watchtowers a tier for free, non-stop: 20 seconds from tier 1 to 2, 40 from 2 to 3. He takes whichever job costs the least time, walk included, so the lowest buildings come first. More guilds, more builders. Takes 2×1 plots. Each guild you own makes the next 10% dearer.' },
-  { type: B_NAVAL,      name: 'Naval base', cost: [15,5,0], info: 'A harbour on the coast: 8 plots (4×2 or 2×4), at least a third of them on the water. Click it to build ships (5 wood each). Settle islands from the settle menu: a ship takes your gold to the coast you point at and the border spreads from there; villagers cross by boat to build. Ships carry 5 soldiers each, for naval invasions.' },
-  { type: B_SMITHY,     name: 'Blacksmith', cost: [10,15,5], info: 'One villager becomes its smith. With infantry research he pays 5 copper from the stockpile, forges armour at once for 20 seconds and carries it to the barracks: reinforced armour for every rack, then heavy armour.' },
+  { type: B_FARM,     name: 'Farm',        cost: [5,2,0], info: 'Villagers arrive 3% sooner.' },
+  { type: B_BARRACKS, name: 'Barracks',    cost: [5,5,0], info: 'Trains soldiers: an army of 5. Joined barracks make bigger armies.' },
+  { type: B_TOWER,    name: 'Watchtower',  cost: [2,5,1], info: 'Shoots enemies in war. Click it to call guards.' },
+  { type: B_MINTER,   name: 'Coin minter', cost: [5,5,5], info: '+5% gold income.' },
+  { type: B_PLANTATION, name: 'Plantation', cost: [10,0,0], info: '+2 wood every 30 s. Joined ones give more (needs research).' },
+  { type: B_QUARRY,     name: 'Stone quarry', cost: [5,10,0], info: '+2 stone every 30 s. Joined ones give more (needs research).' },
+  { type: B_COPPERMINE, name: 'Copper mine', cost: [10,10,0], info: '+1 copper every 30 s. Joined ones give more (needs research).' },
+  { type: B_RESEARCH,   name: 'Research station', cost: [15,15,10], info: 'A scholar earns 1 research point a second. Click to pick what to study.' },
+  { type: B_GUILD,      name: 'Builders guild', cost: [10,50,10], info: 'A builder upgrades your houses and towers for free.' },
+  { type: B_NAVAL,      name: 'Naval base', cost: [15,5,0], info: 'Builds ships to settle islands and invade. Needs a coast.' },
+  { type: B_SMITHY,     name: 'Blacksmith', cost: [10,15,5], info: 'A smith forges armour for barracks (5 copper each).' },
 ];
-export const HOSPITAL_STRUCTURE: Structure = { type: B_HOSPITAL, name: 'Hospital', cost: [15,25,10], info: 'Two villagers become doctors. With field medics research, some of the soldiers who fall are only wounded: a doctor runs out (50% faster) to carry each to the hospital, which has two beds, and heals him in 7 seconds before he goes back to the field. A wounded man bleeds out in 45 seconds if no doctor comes.' };
+export const HOSPITAL_STRUCTURE: Structure = { type: B_HOSPITAL, name: 'Hospital', cost: [15,25,10], info: 'Two doctors heal wounded soldiers (needs field medics research).' };
 STRUCTURES.push(HOSPITAL_STRUCTURE);
-export const CARPENTER_STRUCTURE: Structure = { type: B_CARPENTER, name: 'Carpenters', cost: [50,20,5], info: 'One villager becomes a carpenter and builds additional hovels (tier 1 houses) for free, one every 20 seconds, wherever there is room on your land, to raise how many your kingdom can house. The builders guild can raise them like any other house. Each carpenters you own makes the next 10% dearer.' };
+export const CARPENTER_STRUCTURE: Structure = { type: B_CARPENTER, name: 'Carpenters', cost: [50,20,5], info: 'A carpenter builds free hovels.' };
 STRUCTURES.push(CARPENTER_STRUCTURE);
 export const structureOf = (type: number) => STRUCTURES.find(s => s.type===type);
 const countOf = (n: Nation, ty: number) => ty===B_PLANTATION ? n.plantations : ty===B_QUARRY ? n.quarries : n.copperMines;

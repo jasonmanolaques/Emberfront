@@ -11,6 +11,8 @@ import { render, resetGhosts } from './render/render';
 import { resetPeople } from './render/people';
 import { shots } from './render/effects';
 import { updateHUD } from './ui/hud';
+import { setupAutoSettle, updateAutoSettle } from './ui/autosettle';
+import { setupTitle } from './ui/title';
 import { bindInput } from './ui/input';
 import { refreshBuildPanel } from './ui/build';
 import { $ } from './ui/dom';
@@ -48,7 +50,7 @@ function frame(now: number){
     if (acc>=TICK*2) acc=TICK*2;
   }
   try { render(now, running ? dt*client.speed : (client.state==='play' ? 0 : dt)); } catch (e){ fault('drawing',e); }
-  if (now>hudAt && client.state==='play'){ try { updateHUD(now); refreshBuildPanel(); } catch (e){ fault('panels',e); } hudAt=now+200; }
+  if (now>hudAt && client.state==='play'){ try { updateHUD(now); updateAutoSettle(); refreshBuildPanel(); } catch (e){ fault('panels',e); } hudAt=now+200; }
 }
 
 /* The browser may take the drawing surface away (a graphics process reset: the page goes on, but every canvas comes back blank, and a map drawn once would stay
@@ -56,7 +58,7 @@ function frame(now: number){
 function recoverCanvases(){ recoverTerrain(); resetPeople(); resetGhosts(); resize(); }
 view.addEventListener('contextlost',e => { e.preventDefault(); });
 view.addEventListener('contextrestored',recoverCanvases);
-bindInput();
+bindInput(); setupAutoSettle(); setupTitle();
 new ResizeObserver(resize).observe(view);
 resize();
 newGame();

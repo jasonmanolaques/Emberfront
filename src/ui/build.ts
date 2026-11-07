@@ -91,9 +91,9 @@ function showTip(s: Structure, b: HTMLElement, four=false){
   const short=me ? price.map((n,g)=>n>me.stock[g] ? `${Math.ceil(n-me.stock[g])} more ${GOOD_NAME[g]}` : '').filter(Boolean).join(', ') : '';
   tip.innerHTML=`<span class="t1"></span><span></span><span class="t3"></span>${short?'<span class="short"></span>':''}`;
   const [t1,t2,t3,t4]=tip.children as unknown as HTMLElement[];
-  t1.textContent=four ? s.name+' ×4' : s.name; t2.textContent=four ? `Four ${s.name.toLowerCase()}s in a square of 2 by 2 plots, placed as four one after the other: each makes the next dearer. All or none. ${s.info}` : s.info; t3.textContent='Costs '+cost;
+  t1.textContent=four ? s.name+' ×4' : s.name; t2.textContent=four ? `Four in a 2×2 square, all or none. ${s.info}` : s.info; t3.textContent='Costs '+cost;
   if (t4) t4.textContent='You need '+short;
-  if (s.type===B_HOSPITAL && me && !hasMedics(me)){ t3.textContent='Needs the field medics research (400 points)'; }
+  if (s.type===B_HOSPITAL && me && !hasMedics(me)){ t3.textContent='Needs field medics research'; }
   tip.hidden=false;
   if (matchMedia('(max-width:640px)').matches){ tip.style.top=''; return; }
   tip.style.top=Math.max(0,b.offsetTop+b.offsetHeight/2-tip.offsetHeight/2)+'px';
