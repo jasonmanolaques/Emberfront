@@ -108,6 +108,9 @@ export interface Army {
   stand: boolean;                    // in a fight: it was holding its ground when it began (it stays; the other comes up to it)
   hitAt: number;                     // tick it last lost a man
   leader: number;                    // the id of the man who leads it, or -1
+  trail: number[];                   // marching: where the head of the column has been, newest first (pixels, x,y pairs): the ranks behind follow it
+  stuck: number;                     // marching: ticks without getting nearer the next waypoint (a way is looked for again after a while)
+  near: number;                      // marching: the least distance to the next waypoint so far
 }
 export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; isle?: number; seed?: number; }   // gold still to spend on this front (isle: a colony's, spent on that island's land only)
 /** A ship at sea (sim/naval.ts): sailing out, waiting off a coast, or sailing home to its naval base. */

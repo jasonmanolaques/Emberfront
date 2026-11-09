@@ -21,13 +21,15 @@
    The war ends when a holds every region it claimed (they are its), or by peace: a's occupied regions
    are then its, the rest go back. A kingdom that loses the region of its castle falls to the winner. */
 import { TW, TH, NT, NP, PW, TMULT, GAME_SPEED, WAGE, WAGE_IDLE, WAGE_ATTACK, B_CASTLE, B_CPART, isStructure } from '../core/constants';
-import { W, owner, occ, terr, isLand, isle, pType, pOwner, pCenter, pHp, type Human, type Nation, type Army } from './state';
+import { W, owner, occ, terr, isLand, isle, pType, pOwner, pCenter, pHp, pMain, type Human, type Nation, type Army } from './state';
 import { wear, CASTLE_MEND } from './defense';
 import { on } from './events';
 import { H_SOLDIER, indoors, switching, tileOf, pace, release, TASK_ROAM } from './population';
 import { units, unitAt, groupKeys, groupLead, maxHp, SOLDIER_DMG, MILITIA_HIT, type Unit } from './army';
 import { RG, region, holdsRegion, cedeRegion, occupyRegion, freeRegion, flagXY, CONTROL } from './regions';
 import { ignite } from './buildings';
+import { findWay, layRoads } from './roads';
+export { findWay };
 import { census } from './census';
 import { setOwner } from './territory';
 
@@ -49,10 +51,13 @@ export const OFFER_TICKS = 300;                   // a peace offer stands 30 s
 export const MAX_ALLIES = 3;
 const GRUDGE_TICKS = 900;                         // a kingdom claimed on in the last 90 s won't ally with its claimant
 const FILE_GAP = 2.8, RANK_GAP = 2.6;             // pixels between the files of a phalanx, and between its ranks
+export const MARCH_FILES = 10;                    // a marching column is at most 10 men across, the rest in ranks behind
+const HOLD_FILES = 14;                            // a phalanx standing or fighting is at most this wide
+const MARCH_GAP = 2.4;                            // pixels between the files of a marching column
 const ENGAGE_R = 26;                              // pixels between two hostile armies' front ranks at which they fight
 const GAP = 2.2;                                  // pixels between the two front ranks in a fight
 const FLAG_R = 16;                                // pixels from its flag an army holds a region
-export const ARMY_SP = 4.2;                       // pixels a second a phalanx marches (on open ground)
+export const ARMY_SP = 6;                         // pixels a second an army marches (on open ground)
 const SAFE_TICKS = 40*GAME_SPEED*10;              // an army retreating or going home is let go for 40 s
 const HEAL_TICKS = 30*GAME_SPEED*10;              // a wounded soldier at his barracks is whole again in 30 s
 
@@ -127,7 +132,7 @@ export function claimProblem(a: number, d: number, regions: number[]): string | 
 export function claim(a: number, d: number, regions: number[]){
   if (claimProblem(a,d,regions)) return false;
   const M=W.M;
-  W.claims.set(a*M+d,regions.slice()); W.aggr[a*M+d]=1; W.crisisAt[a*M+d]=W.tickN; W.grudge[d*M+a]=W.tickN;
+  W.claims.set(a*M+d,regions.slice()); W.aggr[a*M+d]=1; layRoads(regions); W.crisisAt[a*M+d]=W.tickN; W.grudge[d*M+a]=W.tickN;
   W.offers[a*M+d]=W.offers[d*M+a]=0;
   on.crisis(a,d);
   return true;
@@ -311,7 +316,7 @@ function syncArmies(){
       let x: Army | undefined;
       for (const q of u.plots){ const y=byPlot.get(q); if (y && !seen.has(y) && y.o===n.id){ x=y; break; } }
       if (!x) for (const q of plots){ const y=byPlot.get(q); if (y && !seen.has(y) && y.o===n.id){ x=y; break; } }
-      if (!x){ x={ id:u.key, o:n.id, plots, x:u.x, y:u.y+4, fx:0, fy:1, mode:A_HOME, order:O_NONE, goal:0, enemy:0, path:[], foe:-1, files:[], men:0, safe:0, stand:false, hitAt:-1e9, leader:-1 }; }
+      if (!x){ x={ id:u.key, o:n.id, plots, x:u.x, y:u.y+4, fx:0, fy:1, mode:A_HOME, order:O_NONE, goal:0, enemy:0, path:[], foe:-1, files:[], men:0, safe:0, stand:false, hitAt:-1e9, leader:-1, trail:[], stuck:0, near:Infinity }; }
       if (W.armies.some(y => y!==x && y.id===x!.id && seen.has(y))) x.id=u.key;   // (two with one name: the new one takes its lead's)
       x.plots=plots; seen.add(x); keep.push(x);
     }
@@ -328,7 +333,7 @@ function membersOf(x: Army): Human[] {
 }
 const fit = (h: Human) => h.hp>0 && !indoors(h) && !switching(h) && h.boat<0;
 /** How many files a phalanx of n men has: wide and shallow. */
-const filesFor = (n: number) => n<=0 ? 0 : Math.max(1,Math.min(n,Math.round(Math.sqrt(n*2.2))));
+const filesFor = (n: number, marching=false) => n<=0 ? 0 : Math.max(1,Math.min(n,marching ? MARCH_FILES : HOLD_FILES,Math.round(Math.sqrt(n*2.2))));
 /** Keeps x's files to its men: the fallen leave their file (the man behind steps up), newcomers join the shortest file at its back, and the files stay even. */
 function tidyFiles(x: Army, men: Human[]){
   const ids=new Set<number>(); for (const h of men) ids.add(h.id);
@@ -336,7 +341,7 @@ function tidyFiles(x: Army, men: Human[]){
   for (let i=0;i<x.files.length;i++){ x.files[i]=x.files[i].filter(id => ids.has(id) && !placed.has(id)); for (const id of x.files[i]) placed.add(id); }
   x.files=x.files.filter(f => f.length);
   const loose: number[]=[]; for (const h of men) if (!placed.has(h.id)) loose.push(h.id);
-  const F=filesFor(men.length);
+  const F=filesFor(men.length,x.mode===A_MARCH);
   while (x.files.length>F){ const f=x.files.length%2 ? x.files.pop()! : x.files.shift()!; loose.push(...f); }
   while (x.files.length<F) if (x.files.length%2) x.files.push([]); else x.files.unshift([]);
   for (const id of loose){ let s=0; for (let i=1;i<x.files.length;i++) if (x.files[i].length<x.files[s].length) s=i; x.files[s].push(id); }
@@ -347,98 +352,65 @@ function tidyFiles(x: Army, men: Human[]){
   }
   x.men=men.length;
 }
-/** The place of the man in file i, rank j of army x, in pixels. */
+/** The place of the man in file i, rank j of army x, in pixels: a phalanx standing square, or a marching column whose ranks follow the trail of its head. */
 function slotOf(x: Army, i: number, j: number): [number, number] {
-  const F=x.files.length, rx=-x.fy, ry=x.fx, s=(i-(F-1)/2)*FILE_GAP, b=j*RANK_GAP;
+  const F=x.files.length;
+  if (x.mode===A_MARCH && ranksAt.length>j){
+    const [px,py,dx,dy]=ranksAt[j], s=(i-(F-1)/2)*MARCH_GAP;
+    return [px-dy*s, py+dx*s];
+  }
+  const rx=-x.fy, ry=x.fx, s=(i-(F-1)/2)*FILE_GAP, b=j*RANK_GAP;
   return [x.x+rx*s-x.fx*b, x.y+ry*s-x.fy*b];
+}
+/** Where each rank of a marching column stands, and the way it faces: along the trail its head has left, a rank every RANK_GAP behind. (Worked out once a tick for the army being moved.) */
+let ranksAt: [number, number, number, number][]=[];
+function columnRanks(x: Army, ranks: number){
+  ranksAt=[];
+  const T=x.trail; let px=x.x, py=x.y, dx=x.fx, dy=x.fy, i=0, left=0;
+  for (let j=0;j<ranks;j++){
+    let need=j===0 ? 0 : RANK_GAP;
+    // walk back along the trail `need` pixels
+    while (need>1e-6){
+      if (left<=1e-6){
+        if (i+1>=T.length){ px-=dx*need; py-=dy*need; need=0; break; }   // (the trail runs out: straight back)
+        const qx=T[i], qy=T[i+1]; i+=2;
+        const L=Math.hypot(px-qx,py-qy); if (L<1e-6) continue;
+        dx=(px-qx)/L; dy=(py-qy)/L; left=L;
+      }
+      const st=Math.min(left,need); px-=dx*st; py-=dy*st; left-=st; need-=st;
+    }
+    ranksAt.push([px,py,dx,dy]);
+  }
 }
 /** Is pixel (x,y) on a castle (its walls: nobody walks across them)? */
 function onCastle(x: number, y: number){
   if (x<0 || y<0 || x>=TW*2 || y>=TH*2) return false;
   const q=((y/8)|0)*PW+((x/8)|0), ty=pType[q]; return ty===B_CASTLE || ty===B_CPART;
 }
-/** A man walks to (gx,gy) at his pace (quicker if he has fallen behind), over land and round a castle's walls. */
+/** A man walks to (gx,gy) at his pace (quicker if he has fallen behind), over land and water (he rows), and round a castle's walls: when they
+    stand in his way he heads for the corner of the castle that makes the shortest way round, so he never dithers along a wall. */
 function walk(h: Human, gx: number, gy: number, quick=1){
-  const dx=gx-h.x, dy=gy-h.y, d=Math.hypot(dx,dy); if (d<0.05) return;
-  const sp=pace(h)*(d>6 ? 1.6 : 1.1)*quick, st=Math.min(d,sp*0.1), ux=dx/d, uy=dy/d;
-  // straight on, or (a wall in the way) along it: sideways, whichever way gets him nearer
-  for (const [vx,vy] of [[ux,uy],[ux,0],[0,uy],[-uy,ux],[uy,-ux]]){
-    const L=Math.hypot(vx,vy); if (L<1e-6) continue;
-    const nx=h.x+vx/L*st, ny=h.y+vy/L*st;
-    if (onCastle(nx,ny) && !onCastle(h.x,h.y)) continue;
-    const t=tileOf(nx,ny); if (!isLand[t] && isLand[tileOf(h.x,h.y)]) continue;   // (a place over the water: he waits on the shore)
-    if (!mayStand(h,owner[t])) continue;
-    h.x=nx; h.y=ny; return;
+  let dx=gx-h.x, dy=gy-h.y, d=Math.hypot(dx,dy); if (d<0.05) return;
+  const sp=pace(h)*(d>6 ? 1.6 : 1.1)*quick, st=Math.min(d,sp*0.1);
+  let nx=h.x+dx/d*st, ny=h.y+dy/d*st;
+  if (onCastle(nx,ny) && !onCastle(h.x,h.y)){
+    const q=((ny/8)|0)*PW+((nx/8)|0), main=pType[q]===B_CASTLE ? q : pMain[q], e=1.2;
+    const X0=(main%PW)*8-e, Y0=((main/PW)|0)*8-e, X1=X0+16+2*e, Y1=Y0+16+2*e;
+    const corners: [number, number][]=[];
+    if (h.y<=Y0+e) corners.push([X0,Y0],[X1,Y0]);
+    if (h.y>=Y1-e) corners.push([X0,Y1],[X1,Y1]);
+    if (h.x<=X0+e) corners.push([X0,Y0],[X0,Y1]);
+    if (h.x>=X1-e) corners.push([X1,Y0],[X1,Y1]);
+    if (!corners.length) corners.push([X0,Y0],[X1,Y0],[X0,Y1],[X1,Y1]);
+    let cx=corners[0][0], cy=corners[0][1], best=Infinity;
+    for (const [x,y] of corners){ const c=Math.hypot(x-h.x,y-h.y)+Math.hypot(gx-x,gy-y); if (c<best){ best=c; cx=x; cy=y; } }
+    dx=cx-h.x; dy=cy-h.y; d=Math.hypot(dx,dy);
+    if (d<0.05) return;
+    const s2=Math.min(d,st); nx=h.x+dx/d*s2; ny=h.y+dy/d*s2;
+    if (onCastle(nx,ny)) return;
   }
-}
-
-/* ---------- the way there ---------- */
-let gCost=new Float32Array(0), gSeen=new Int32Array(0), gFrom=new Int32Array(0), gSeq=0;
-let heap=new Int32Array(0), heapK=new Float32Array(0);
-/** A way for kingdom o's army from pixel (sx,sy) to (gx,gy) over land: its own, unclaimed, its enemies' and allies' ground (a third kingdom's only if there is no other way); waypoints in pixels. */
-export function findWay(o: number, sx: number, sy: number, gx: number, gy: number): number[] {
-  const s=tileOf(sx,sy), g=tileOf(gx,gy);
-  if (gCost.length!==NT){ gCost=new Float32Array(NT); gSeen=new Int32Array(NT); gFrom=new Int32Array(NT); heap=new Int32Array(NT); heapK=new Float32Array(NT); }
-  // first the regions it passes through (a search over a few hundred regions), then the way over the tiles of those regions and their neighbours only
-  if (isle[s] && isle[g] && isle[s]!==isle[g]) return [gx,gy];   // (no way on foot)
-  const lane=corridor(o,region[s],region[g]);
-  if (lane){ const way=astar(o,s,g,0,0,TW-1,TH-1,lane); if (way) return way.concat([gx,gy]); }
-  for (const margin of [60, 1e9]){
-    const x0=Math.max(0,Math.min(s%TW,g%TW)-margin), x1=Math.min(TW-1,Math.max(s%TW,g%TW)+margin), y0=Math.max(0,Math.min((s/TW)|0,(g/TW)|0)-margin), y1=Math.min(TH-1,Math.max((s/TW)|0,(g/TW)|0)+margin);
-    const way=astar(o,s,g,x0,y0,x1,y1,null);
-    if (way) return way.concat([gx,gy]);
-  }
-  return [gx,gy];
-}
-/** The regions on the way from region a to region b for o's army (Dijkstra between their flags, a third kingdom's regions dearer), with their neighbours: or null. */
-function corridor(o: number, a: number, b: number): Uint8Array | null {
-  if (!a || !b) return null;
-  const n=RG.n, M=W.M, dist=new Float64Array(n).fill(Infinity), from=new Int32Array(n).fill(-1), done=new Uint8Array(n);
-  const fx=(r: number) => RG.flag[r]%TW, fy=(r: number) => (RG.flag[r]/TW)|0;
-  dist[a]=0;
-  for (;;){
-    let u=-1, bd=Infinity; for (let r=1;r<n;r++) if (!done[r] && dist[r]<bd){ bd=dist[r]; u=r; }
-    if (u<0 || u===b) break;
-    done[u]=1;
-    for (const v of RG.adj[u]){
-      const w=W.rOwner[v], third=w && w!==o && !W.atWar[o*M+w] && !W.ally[o*M+w] ? 3 : 1;
-      const nd=dist[u]+Math.hypot(fx(u)-fx(v),fy(u)-fy(v))*third;
-      if (nd<dist[v]){ dist[v]=nd; from[v]=u; }
-    }
-  }
-  if (!isFinite(dist[b])) return null;
-  const lane=new Uint8Array(n);
-  for (let r=b; r>=0; r=from[r]){ lane[r]=1; for (const q of RG.adj[r]) lane[q]=1; if (r===a) break; }
-  return lane;
-}
-function astar(o: number, s: number, g: number, x0: number, y0: number, x1: number, y1: number, lane: Uint8Array | null): number[] | null {
-  const stamp=++gSeq, gx=g%TW, gy=(g/TW)|0, M=W.M;
-  const cost=(t: number) => { const w=owner[t]; let c=TMULT[terr[t]] || 1; if (w && w!==o && !W.atWar[o*M+w] && !W.ally[o*M+w]) c*=3; return c; };
-  const h=(t: number) => { const dx=Math.abs(t%TW-gx), dy=Math.abs(((t/TW)|0)-gy); return (dx+dy-0.59*Math.min(dx,dy))*1.5; };   // (weighted: a little longer than the best way, found far quicker)
-  let n=0;
-  const push=(t: number, k: number) => { let i=n++; while (i>0){ const p=(i-1)>>1; if (heapK[p]<=k) break; heap[i]=heap[p]; heapK[i]=heapK[p]; i=p; } heap[i]=t; heapK[i]=k; };
-  const pop=() => { const top=heap[0], lt=heap[--n], lk=heapK[n]; let i=0; for (;;){ let c=2*i+1; if (c>=n) break; if (c+1<n && heapK[c+1]<heapK[c]) c++; if (heapK[c]>=lk) break; heap[i]=heap[c]; heapK[i]=heapK[c]; i=c; } heap[i]=lt; heapK[i]=lk; return top; };
-  gSeen[s]=stamp; gCost[s]=0; gFrom[s]=-1; push(s,h(s));
-  let found=false, steps=0;
-  while (n>0 && steps++<250000){
-    const c=pop(); if (c===g){ found=true; break; }
-    const cx=c%TW, cy=(c/TW)|0, base=gCost[c];
-    for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){
-      if (!dx && !dy) continue;
-      const nx=cx+dx, ny=cy+dy; if (nx<x0 || ny<y0 || nx>x1 || ny>y1) continue;
-      const k=ny*TW+nx; if (!isLand[k] && k!==g) continue;
-      if (lane && !lane[region[k]] && k!==g) continue;
-      if (dx && dy && (!isLand[cy*TW+nx] || !isLand[ny*TW+cx])) continue;   // (no cutting a corner of the sea)
-      const ng=base+cost(k)*(dx && dy ? 1.414 : 1);
-      if (gSeen[k]===stamp && gCost[k]<=ng) continue;
-      gSeen[k]=stamp; gCost[k]=ng; gFrom[k]=c; push(k,ng+h(k));
-    }
-  }
-  if (!found) return null;
-  const tiles: number[]=[]; for (let t=g; t>=0; t=gFrom[t]) tiles.push(t);
-  tiles.reverse();
-  const out: number[]=[]; for (let i=4;i<tiles.length-1;i+=4) out.push((tiles[i]%TW)*2+1, ((tiles[i]/TW)|0)*2+1);
-  return out;
+  if (!mayStand(h,owner[tileOf(nx,ny)])) return;
+  h.x=nx; h.y=ny;
 }
 
 /* ---------- orders ---------- */
@@ -450,7 +422,6 @@ export function armyProblem(o: number, id: number, order: string, r=0): string |
   if (x.mode===A_BATTLE) return 'It is fighting: it can only retreat or go home';
   if (x.mode===A_HOME && !membersOf(x).some(fit)) return 'Nobody of it is at home';
   if (!r || r>=RG.n) return 'Pick a region';
-  if (isle[tileOf(...homeOrHere(x))]!==RG.isle[r]) return 'It can\'t get there by land';
   const M=W.M, d=W.rOwner[r];
   if (W.armies.some(y => y!==x && y.o===o && y.goal===r && (y.order===O_ATTACK || y.order===O_DEFEND) && (y.men>0 || y.mode===A_MARCH))) return 'One army per region: another of yours is there';
   if (order==='attack'){
@@ -468,8 +439,6 @@ export function armyProblem(o: number, id: number, order: string, r=0): string |
   }
   return 'Unknown order';
 }
-/** Where x stands: in the field, or (at home) at its barracks' door. */
-function homeOrHere(x: Army): [number, number] { if (x.mode!==A_HOME) return [x.x, x.y]; const u=unitAt(x.id) ?? x.plots.map(q => unitAt(q)).find(v => !!v); return u ? [u.x, u.y-2] : [x.x, x.y]; }
 /** Gives army `id` of kingdom o an order (see the top of this file). */
 export function armyOrder(o: number, id: number, order: string, r=0){
   if (armyProblem(o,id,order,r)) return false;
@@ -493,7 +462,17 @@ function sendOut(x: Army, r: number, order: number, enemy: number){
   }
   x.order=order; x.goal=r; x.enemy=enemy; x.foe=-1; x.safe=0;
   const [fx,fy]=flagXY(r);
-  x.path=findWay(x.o,x.x,x.y,fx,fy); x.mode=A_MARCH;
+  x.path=findWay(x.o,x.x,x.y,fx,fy); startMarch(x);
+}
+/** x sets off along its new way: a column, its trail begun where it stands. */
+function startMarch(x: Army){ x.mode=A_MARCH; x.stuck=0; x.near=Infinity; if (!x.trail.length) x.trail=[x.x,x.y]; }
+/** Army `id` of kingdom o marches to pixel (x,y) and holds there, at peace or at war (tests, and the debug hook: no order of the game's does this). */
+export function moveArmy(o: number, id: number, px: number, py: number){
+  const x=armyById.get(id); if (!x || x.o!==o) return false;
+  if (x.mode===A_HOME){ let k=0; for (const h of membersOf(x)) if (fit(h) && h.war<0){ h.war=x.id; h.foe=-1; h.duel=-1; h.path=[]; h.task=TASK_ROAM; k++; } x.men=k; }
+  breakOff(x);
+  x.order=O_RETREAT; x.goal=0; x.enemy=0; x.path=findWay(o,x.x,x.y,px,py); startMarch(x);
+  return true;
 }
 /** x goes home to its barracks. */
 function sendHome(x: Army){
@@ -501,7 +480,7 @@ function sendHome(x: Army){
   breakOff(x);
   const [hx,hy]=homeSpot(x);
   x.order=O_RETURN; x.goal=0; x.enemy=0; x.safe=W.tickN+SAFE_TICKS;
-  x.path=findWay(x.o,x.x,x.y,hx,hy); x.mode=A_MARCH;
+  x.path=findWay(x.o,x.x,x.y,hx,hy); startMarch(x);
 }
 /** x breaks off its fight and falls back to the nearest region its kingdom holds (not occupied). */
 function retreat(x: Army){
@@ -511,7 +490,7 @@ function retreat(x: Army){
   if (!best){ sendHome(x); return; }
   const [fx,fy]=flagXY(best);
   x.order=O_RETREAT; x.goal=best; x.enemy=0; x.safe=W.tickN+SAFE_TICKS;
-  x.path=findWay(x.o,x.x,x.y,fx,fy); x.mode=A_MARCH;
+  x.path=findWay(x.o,x.x,x.y,fx,fy); startMarch(x);
   on.armyOrdered(x.o,x.id,'retreat',best);
 }
 /** x's fight is over for it: its foe goes back to what it was doing. */
@@ -560,12 +539,14 @@ function stepArmy(x: Army){
   tidyFiles(x,men);
   if (x.mode!==A_HOME && !men.length){ lost(x); return; }
   if (x.mode===A_HOME){
-    const [hx,hy,fx,fy]=homeSpot(x); x.x=hx; x.y=hy; x.fx=fx; x.fy=fy;
+    const [hx,hy,fx,fy]=homeSpot(x); x.x=hx; x.y=hy; x.fx=fx; x.fy=fy; x.trail.length=0;
     const heal=1/HEAL_TICKS;
     for (const h of men){ if (h.hp<maxHp(h)) h.hp=Math.min(maxHp(h),h.hp+maxHp(h)*heal); }
   } else if (x.mode===A_MARCH){
+    let ranks=0; for (const f of x.files) ranks=Math.max(ranks,f.length); columnRanks(x,ranks);
     march(x,men);
   }
+  if (x.mode===A_MARCH){ let ranks=0; for (const f of x.files) ranks=Math.max(ranks,f.length); columnRanks(x,ranks); }
   // the men to their places (in a battle, the front rank's fighters are moved by the fight)
   const busy=x.mode===A_BATTLE;
   for (let i=0;i<x.files.length;i++){
@@ -581,20 +562,32 @@ function stepArmy(x: Army){
     }
   }
 }
-/** The phalanx marches along its way, as fast as its men keep up. */
+/** The column marches along its way, as fast as its men keep up; its head leaves a trail the ranks behind follow. A column that gets no nearer
+    its next waypoint for a while looks for its way again from where it stands. */
 function march(x: Army, men: Human[]){
   if (!x.path.length){ arrive(x); return; }
   const gx=x.path[0], gy=x.path[1], dx=gx-x.x, dy=gy-x.y, d=Math.hypot(dx,dy);
-  // how far its men are from their places: a phalanx waits for its stragglers
-  let lag=0, k=0; for (let i=0;i<x.files.length;i++){ const h=byId.get(x.files[i][0]); if (h){ const [sx,sy]=slotOf(x,i,0); lag+=Math.hypot(h.x-sx,h.y-sy); k++; } }
+  // how far the heads of its files are from their places: a column waits a little for its stragglers, never stops for them
+  let lag=0, k=0; for (let i=0;i<x.files.length;i++){ const h=byId.get(x.files[i][0]); if (h && ranksAt.length){ const [sx,sy]=slotOf(x,i,0); lag+=Math.hypot(h.x-sx,h.y-sy); k++; } }
   lag/=Math.max(1,k);
-  const t=tileOf(x.x,x.y), tm=TMULT[terr[t]] || 1, sp=ARMY_SP/Math.sqrt(tm)*(lag>14 ? 0.25 : lag>7 ? 0.6 : 1)*0.1;
-  if (d<=sp || d<0.01){ x.x=gx; x.y=gy; x.path.splice(0,2); if (!x.path.length) arrive(x); return; }
+  const t=tileOf(x.x,x.y), tm=isLand[t] ? TMULT[terr[t]] || 1 : 1.6, sp=ARMY_SP/Math.sqrt(tm)*(lag>16 ? 0.5 : lag>8 ? 0.75 : 1)*0.1;
+  if (d<x.near-0.02){ x.near=d; x.stuck=0; } else if (++x.stuck>120){   // (no nearer for 12 s: the way is looked for again)
+    const fx=x.path[x.path.length-2], fy=x.path[x.path.length-1];
+    x.path=findWay(x.o,x.x,x.y,fx,fy); x.stuck=0; x.near=Infinity; return;
+  }
+  if (d<=sp || d<0.01){ x.x=gx; x.y=gy; x.path.splice(0,2); x.near=Infinity; x.stuck=0; trail(x); if (!x.path.length) arrive(x); return; }
   const ux=dx/d, uy=dy/d;
   x.x+=ux*sp; x.y+=uy*sp;
-  // it turns toward its way, a little at a time
-  const nx=x.fx*0.85+ux*0.15, ny=x.fy*0.85+uy*0.15, L=Math.hypot(nx,ny)||1; x.fx=nx/L; x.fy=ny/L;
+  x.fx=ux; x.fy=uy;
+  trail(x);
   void men;
+}
+/** The head of x's column marks where it has been (a point every pixel), as far back as its last rank needs. */
+function trail(x: Army){
+  const T=x.trail;
+  if (!T.length || Math.hypot(T[0]-x.x,T[1]-x.y)>=1){ T.unshift(x.x,x.y); }
+  let ranks=0; for (const f of x.files) ranks=Math.max(ranks,f.length);
+  const keep=Math.ceil(ranks*RANK_GAP+8)*2+4; if (T.length>keep) T.length=keep;
 }
 /** x has reached the end of its way. */
 function arrive(x: Army){

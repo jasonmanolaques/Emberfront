@@ -25,6 +25,7 @@ import { chatter, drawSpeech } from './speech';
 import { paintSmallFlag, flagImage } from './flags';
 import { allied, atWar, HIT_TICKS, claimsOf, claimProblem, armyOf, A_HOME } from '../sim/war';
 import { RG, region } from '../sim/regions';
+import { roadsAmong } from '../sim/roads';
 const RANKS = ['', 'Leader', 'General', 'Captain', 'Commander', 'Grand Marshal'];
 const rankFor = (size: number) => size<=5 ? 0 : size<=15 ? 1 : size<=30 ? 2 : size<=50 ? 3 : size<=80 ? 4 : 5;
 
@@ -314,6 +315,17 @@ function lightRegion(r: number, col: string, alpha: number, vx0: number, vy0: nu
 /** The regions the player has a stake in, lit: those claimed by or of the player (gold, pulsing), and while picking a claim, those picked (red) and those that can be picked next (faint gold). */
 function drawClaims(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
   const pulse=reduceMotion ? 0.7 : 0.55+0.35*Math.sin(now/240), M=W.M;
+  // the roads of the player's crises and wars: between the flags of the regions claimed and those touching them
+  const near=new Set<number>();
+  for (const [k,regs] of W.claims){ const a=(k/M)|0, d=k%M; if (a!==PLAYER && d!==PLAYER) continue; for (const r of regs){ near.add(r); for (const q of RG.adj[r]) near.add(q); } }
+  if (near.size){
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    for (const [w,col] of [[4,'rgba(40,26,14,.55)'],[2,'rgba(226,196,140,.9)']] as [number, string][]){
+      ctx.strokeStyle=col; ctx.lineWidth=w; ctx.setLineDash(w===2 ? [5,4] : []);
+      for (const r of roadsAmong(near)){ ctx.beginPath(); ctx.moveTo(r[0]*K,r[1]*K); for (let i=2;i<r.length;i+=2) ctx.lineTo(r[i]*K,r[i+1]*K); ctx.stroke(); }
+    }
+    ctx.setLineDash([]);
+  }
   for (const [k,regs] of W.claims){
     const a=(k/M)|0, d=k%M; if (a!==PLAYER && d!==PLAYER) continue;
     for (const r of regs) lightRegion(r, W.rOcc[r]===a ? '#ff8a5a' : '#ffd23f', pulse, vx0,vy0,vx1,vy1);

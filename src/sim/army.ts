@@ -17,6 +17,7 @@ import { on } from './events';
 import { R_INFANTRY } from './research';
 
 export const UNIT_SIZE = 5;                         // soldiers and armour racks per barracks module
+export const MAX_ARMY = 100;                        // men in one army at most: a barracks of more than 20 modules side by side is two armies
 export const SOLDIER_HP = [0, 16, 20, 30];          // by tier (twice what they were: longer fights)
 export const SOLDIER_DMG = [0, 1.5, 2.25, 3];       // a blow, by tier (half as much again)
 export const VILLAGER_HP = 8;
@@ -63,10 +64,11 @@ export function buildUnits(){
       if (unitOf.has(q0)) continue;
       const u: Unit={ key:q0, o:n.id, plots:[], cap:0, x:0, y:0, members:[], home:0, tiers:[0,0,0,0], stored:[0,0,0,0] };
       const todo=[q0]; unitOf.set(q0,u);
+      // (an army is at most MAX_ARMY men: the modules beyond that, side by side or not, make a new army)
       while (todo.length){
-        const q=todo.pop()!; u.plots.push(q);
+        const q=todo.shift()!; u.plots.push(q);
         const x=q%PW, y=(q/PW)|0;
-        for (const k of [y>0?q-PW:-1, x<PW-1?q+1:-1, y<PH-1?q+PW:-1, x>0?q-1:-1]) if (k>=0 && !unitOf.has(k) && standing(k,n.id)){ unitOf.set(k,u); todo.push(k); }
+        for (const k of [y>0?q-PW:-1, x<PW-1?q+1:-1, y<PH-1?q+PW:-1, x>0?q-1:-1]) if (k>=0 && !unitOf.has(k) && standing(k,n.id) && u.plots.length+todo.length<MAX_ARMY/UNIT_SIZE){ unitOf.set(k,u); todo.push(k); }
       }
       u.plots.sort((a,b) => a-b); u.key=u.plots[0]; u.cap=UNIT_SIZE*u.plots.length;
       [u.x,u.y]=frontOf(u.plots[(u.plots.length/2)|0]);
@@ -94,6 +96,7 @@ export function mergeArmies(o: number, a: number, b: number){
   const ua=unitOf.get(a), ub=unitOf.get(b); if (!ua || !ub || ua.o!==o || ub.o!==o || ua===ub) return false;
   const ka=groupKeys(o,a), kb=groupKeys(o,b);
   if (kb.length>1 || ka.includes(ub.key) || ka.length>MAX_MERGES) return false;
+  if (ka.reduce((k,key) => k+(unitOf.get(key)?.cap ?? 0),0)+ub.cap>MAX_ARMY) return false;   // (a merged army is at most MAX_ARMY men too)
   let g=W.groups.find(g => g.o===o && g.members.some(m => m.some(q => ua.plots.includes(q))));
   if (!g){ g={ o, members:[ua.plots.slice()] }; W.groups.push(g); }
   g.members.push(ub.plots.slice());
