@@ -239,6 +239,7 @@ export function navalSite(n: Nation, q: number, over: Over='none'): { orient: nu
 /** Why kingdom n can't put a `type` building with its top-left on plot q, or null if it can. With
     `over`, it may go over buildings of the kingdom's (they are pulled down), but not over one just like it. */
 export function placeProblem(n: Nation, q: number, type: number, over: Over='none'): string | null {
+  if (type===B_TOWER) return 'Watchtowers are out of use for now';
   if (type===B_NAVAL) return navalSite(n,q,over).problem;
   if (type===B_HOSPITAL && !hasMedics(n)) return 'Research field medics first';
   const [w,h]=SIZE[type] ?? [1,1];

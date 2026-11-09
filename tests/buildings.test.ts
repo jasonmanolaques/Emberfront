@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { MINTER_BONUS, TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_CARPENTER, B_FARM, B_BARRACKS, B_NAVAL, B_HOSPITAL, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, WAGE, WAGE_IDLE, GOLD_PER_TILE, TAX_PER_VILLAGER, LAND_TAX, STR_VILLAGER, STR_MILITIA, STR_SOLDIER } from '../src/core/constants';
 import { W, owner, isLand, pType, pCenter, pBuild, type Human } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick, incomeParts } from '../src/sim/sim';
-import { declare, escalate } from '../src/sim/war';
+import { claim, answer } from '../src/sim/war';
 import { listen } from '../src/sim/events';
 import { setOwner, tileCost } from '../src/sim/territory';
 import { STRUCTURES, structureOf, costFor, build, buildBlock, blockPlan, blockPlots, plotProblem, placeProblem } from '../src/sim/buildings';
@@ -92,7 +92,7 @@ describe('building costs and placement', () => {
     expect(pType[q]).toBe(B_FARM);
   });
 
-  it('places four farms or four watchtowers at once on a square of 2 by 2 plots: each dearer than the last, all or none', () => {
+  it('places four farms at once on a square of 2 by 2 plots: each dearer than the last, all or none', () => {
     start(12345, 0); expand(6);
     const blocks=freePlots().filter(q => blockPlots(q).every(k => k===q || freePlots().includes(k)) && q%PW<PW-1);
     expect(blocks.length).toBeGreaterThan(1);
@@ -117,8 +117,8 @@ describe('building costs and placement', () => {
     expect(me().stock).toEqual([0,0,0]);
     // and four towers the same way, on another block
     const q2=freePlots().find(k => blockPlots(k).every(j => !plotProblem(me(),j)) && k%PW<PW-1)!;
-    me().stock=[500,500,500]; expect(buildBlock(me(),q2,B_TOWER)).toBe(true);
-    expect(me().towers).toBe(4);
+    me().stock=[500,500,500]; expect(buildBlock(me(),q2,B_TOWER)).toBe(false);   // (watchtowers are out of use for now)
+    expect(me().towers).toBe(0);
     expect(buildBlock(me(),q2,B_MINTER)).toBe(false);   // (only farms and towers)
   });
 
@@ -172,7 +172,7 @@ describe('what the buildings do', () => {
     for (const h of patrol) expect(Math.hypot(h.x-cx, h.y-cy)).toBeLessThan(50);   // round the castle
   });
 
-  it('holds its fire at peace; at war it shoots enemy soldiers on its own land, 2 damage every 8 seconds, and not those outside', () => {
+  it.skip('holds its fire at peace; at war it shoots enemy soldiers on its own land, 2 damage every 8 seconds, and not those outside (watchtowers are out of use for now)', () => {
     start(12345, 1); expand(3);
     W.nations[2].nextThink=1e9;   // the bot stays out of it
     const tower=place(B_TOWER), [tx, ty]=frontOf(tower), ox=(tower%PW)*8+4;
@@ -191,7 +191,7 @@ describe('what the buildings do', () => {
     expect(shots).toHaveLength(0);
     // the enemy is at war with us, with both in the field; one comes onto our land, the other stays outside
     W.contact[2*W.M+1]=W.contact[1*W.M+2]=1;   // (neighbours, for the purpose)
-    expect(declare(2,1,2)).toBe(true); escalate(2,1,true);
+    void claim; void answer;
     raider.x=(inside%TW)*2+1; raider.y=((inside/TW)|0)*2+1.5; raider.hp=100;   // tough, so the castle's shots don't end the count
     run(340);
     const fromTower=shots.filter(s => s.from===ox);

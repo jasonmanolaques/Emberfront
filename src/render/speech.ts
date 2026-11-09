@@ -30,12 +30,7 @@ export function chatter(now: number){
   if (now-lastTalk<450) return;
   lastTalk=now;
   for (const [id,b] of bubbles) if (now-b.t0>SHOW_MS) bubbles.delete(id);
-  for (const c of W.campaigns){
-    if (!c.inspired || c.phase===2 || !c.members.length) continue;
-    let talking=0; for (const id of c.members) if (bubbles.has(id)) talking++;
-    if (talking>=2 || Math.random()>0.45) continue;
-    const id=pick(c.members); if (!bubbles.has(id)) say(id,pick(LINES.revenge),now);
-  }
+  // (armies march in silence: their leaders' calls come with their orders, game.ts)
 }
 
 /** Draws every bubble whose speaker is on screen (screen space; zoom and camera in render pixels). */

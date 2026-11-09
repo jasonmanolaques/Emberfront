@@ -176,8 +176,9 @@ describe('homeless people and beggars', () => {
     expect(me().homeless).toBe(homeless.length);
     const villagers=mine().filter(h => h.kind===H_VILLAGER && !h.beggar).length;
     expect(me().taxpayers).toBe(villagers-homeless.filter(h => h.kind===H_VILLAGER).length);
-    tick();   // income is worked out at the start of a tick, from the last tick's head count
-    expect(me().income).toBeCloseTo((TAX_PER_VILLAGER*me().taxpayers+LAND_TAX*me().tiles)*(1+0.1*me().minters), 9);
+    const tp=me().taxpayers, tl=me().tiles;
+    tick();   // income is worked out at the start of a tick, from the last tick's head count (and land: a region taken whole in the tick counts from the next)
+    expect(me().income).toBeCloseTo((TAX_PER_VILLAGER*tp+LAND_TAX*tl)*(1+0.1*me().minters), 9);
   });
 
   it('turns a villager homeless for a minute into a beggar who does no work', () => {

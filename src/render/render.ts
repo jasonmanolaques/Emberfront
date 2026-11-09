@@ -23,7 +23,10 @@ import { H_SOLDIER, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, TASK_F
 import { units, unitLabel } from '../sim/army';
 import { chatter, drawSpeech } from './speech';
 import { paintSmallFlag, flagImage } from './flags';
-import { allied, atWar, HIT_TICKS, RANKS, frontLines, bordersOf, F_PUSH, F_HOLD } from '../sim/war';
+import { allied, atWar, HIT_TICKS, claimsOf, claimProblem, armyOf, A_HOME } from '../sim/war';
+import { RG, region } from '../sim/regions';
+const RANKS = ['', 'Leader', 'General', 'Captain', 'Commander', 'Grand Marshal'];
+const rankFor = (size: number) => size<=5 ? 0 : size<=15 ? 1 : size<=30 ? 2 : size<=50 ? 3 : size<=80 ? 4 : 5;
 
 const PLANK='#d09a58';
 const INK='rgba(30,20,14,0.9)';
@@ -73,7 +76,12 @@ function flashOf(src: HTMLCanvasElement){
 function box(x: number, y: number, w: number, h: number, c: string){ ctx.fillStyle=INK; ctx.fillRect(x-1,y-1,w+2,h+2); ctx.fillStyle=c; ctx.fillRect(x,y,w,h); }
 
 /** Each army's leader (person id) and his rank. */
-function leaders(){ const m=new Map<number, number>(); for (const c of W.campaigns) if (c.leader>=0) m.set(c.leader,c.rank); return m; }
+/** Each army in the field's standard bearer (the man at the back of its middle file) and the rank its size gives him. */
+function leaders(){
+  const m=new Map<number, number>();
+  for (const x of W.armies){ if (x.mode===A_HOME || x.men<3 || !x.files.length) continue; const f=x.files[x.files.length>>1]; if (f.length) m.set(f[f.length-1],Math.max(1,rankFor(x.men))); }
+  return m;
+}
 /** The leader's standard on his back, his country's flag, and his rank in gold pips above it. */
 function drawStandard(o: number, rank: number, bx: number, fy: number, left: boolean, now: number){
   const x=left ? bx+4 : bx-1, wave=reduceMotion ? 0 : ((now/300)|0)&1;
@@ -89,38 +97,23 @@ function drawStandard(o: number, rank: number, bx: number, fy: number, left: boo
   ctx.fillStyle='#ffd23f'; for (let i=0;i<rank;i++) ctx.fillRect(px+1+i*2,fy-20,1,1);
 }
 
-/** The army the player has in hand: a gold ring at each of its soldiers' feet (a bigger one for
-    the leader). */
+/** The army the player has in hand: a gold ring at each of its soldiers' feet, and a dotted line along its way. */
 function drawSelection(now: number){
-  const c=client.selected>=0 ? W.campaigns.find(k => k.id===client.selected) : undefined;
-  if (c && c.leader>=0 && c.phase<2){
-    const pulse=reduceMotion ? 0 : ((now/300)|0)&1;
-    for (const p of W.humans){
-      if (p.war!==c.id || indoors(p)) continue;
-      const x=Math.round(p.x*K), y=Math.floor(p.y*K)+1, w=p.id===c.leader ? 6 : 4;
-      ctx.fillStyle=INK; ctx.fillRect(x-w-1,y-1,w*2+3,3); ctx.fillRect(x-w,y-2,w*2+1,5);
-      ctx.fillStyle=pulse ? '#ffe27a' : '#ffd23f'; ctx.fillRect(x-w,y-1,w*2+1,1); ctx.fillRect(x-w,y+1,w*2+1,1); ctx.fillRect(x-w,y,1,1); ctx.fillRect(x+w,y,1,1);
-    }
+  const x=client.selected>=0 ? armyOf(client.selected) : undefined; if (!x) return;
+  const pulse=reduceMotion ? 0 : ((now/300)|0)&1, ids=new Set(x.files.flat());
+  for (const p of W.humans){
+    if (!ids.has(p.id) || indoors(p)) continue;
+    const px=Math.round(p.x*K), py=Math.floor(p.y*K)+1, w=4;
+    ctx.fillStyle=INK; ctx.fillRect(px-w-1,py-1,w*2+3,3); ctx.fillRect(px-w,py-2,w*2+1,5);
+    ctx.fillStyle=pulse ? '#ffe27a' : '#ffd23f'; ctx.fillRect(px-w,py-1,w*2+1,1); ctx.fillRect(px-w,py+1,w*2+1,1); ctx.fillRect(px-w,py,1,1); ctx.fillRect(px+w,py,1,1);
+  }
+  if (x.path.length){
+    ctx.strokeStyle='rgba(255,226,122,.85)'; ctx.lineWidth=2; ctx.setLineDash([4,4]); ctx.beginPath(); ctx.moveTo(x.x*K,x.y*K);
+    for (let i=0;i<x.path.length;i+=2) ctx.lineTo(x.path[i]*K,x.path[i+1]*K);
+    ctx.stroke(); ctx.setLineDash([]);
   }
 }
 
-/** The landing zone a coast would give the armies the player has chosen, at the pointer: the stretch of coast (a tile a man) in gold,
-    the ground inland of it in red, and the ships in line off it, as they would lie. Worked out only when the pointer moves. */
-let lzKey='', lz: Zone | null=null;
-function drawLandingPreview(now: number){
-  const L=client.landing; if (!L || hover.tile<0) return;
-  const key=`${hover.tile}|${L.men}|${L.base}|${L.target}`;
-  if (key!==lzKey){ lzKey=key; const dock=dockTile(L.base); lz=dock>=0 ? landingZone(PLAYER,L.target,hover.tile,L.men,sea[dock]) : null; }
-  if (!lz) return;
-  drawZone(lz,'rgba(255,90,60,.30)','rgba(255,214,90,.7)');
-  const pulse=reduceMotion ? 1 : 0.7+0.3*Math.sin(now/200);
-  lz.rows.forEach((count,row) => { for (let slot=0;slot<count;slot++){
-    const t=offshore(lz!,row,slot,count), x=(t%TW)*RS+RS/2, y=((t/TW)|0)*RS+RS/2, c=lz!.coast[Math.min(lz!.coast.length-1,Math.floor((slot+0.5)*lz!.coast.length/count))];
-    const face=(c%TW)*RS>x ? 1 : -1;
-    ctx.globalAlpha=0.65*pulse; ctx.drawImage(shipSprite(PLAYER,face,SHIP_CREW,false,0),Math.round(x)-SHIP_W/2,Math.round(y)-SHIP_H+3); ctx.globalAlpha=1;
-  } });
-}
-/** A naval settlement being chosen: where the ship would put its settlers ashore for the land at the pointer (green), or the land that cannot be (red). */
 let spKey=-2, sp: SettlePlan | string | null=null;
 function drawSettlePreview(){
   const me=W.nations[PLAYER]; if (!me || hover.tile<0 || !isLand[hover.tile] || W.nations[PLAYER].gold<0) return;
@@ -299,41 +292,59 @@ function drawFallen(now: number, vx0: number, vy0: number, vx1: number, vy1: num
   ctx.globalAlpha=1;
 }
 
-/** The army being assigned: every stretch of border it could go to, faint, and the one under the pointer lit in gold. */
-function drawAssign(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
-  const A=client.assigning; if (!A) return;
-  const pulse=reduceMotion ? 0.6 : 0.5+0.5*Math.sin(now/180);
-  const paint = (tiles: number[], dark: string, fill: string, alpha: number) => {
-    ctx.fillStyle=dark; ctx.globalAlpha=1;
-    for (const t of tiles){ const x=(t%TW)*RS, y=((t/TW)|0)*RS; if (x<vx0-RS||y<vy0-RS||x>vx1||y>vy1) continue; ctx.fillRect(x-1,y-1,RS+2,RS+2); }
-    ctx.fillStyle=fill; ctx.globalAlpha=alpha;
-    for (const t of tiles){ const x=(t%TW)*RS, y=((t/TW)|0)*RS; if (x<vx0-RS||y<vy0-RS||x>vx1||y>vy1) continue; ctx.fillRect(x,y,RS,RS); }
-    ctx.globalAlpha=1;
-  };
-  const same = (b: { d: number; isle: number; sec: number }) => !!A.hot && b.d===A.hot.d && b.isle===A.hot.isle && b.sec===A.hot.sec;
-  for (const b of bordersOf(PLAYER)) if (!same(b)) paint(b.tiles,'rgba(14,10,8,0.35)','#ffffff',0.35);
-  const h=bordersOf(PLAYER).find(same);
-  if (h) paint(h.tiles,'rgba(14,10,8,0.7)','#ffd23f',0.65+0.3*pulse);
+/* ---------- regions: their flags, and the regions of a claim or a war lit up ---------- */
+const edges=new Map<number, number[]>(); let edgesFor: Int32Array | null=null;
+/** The tiles on the edge of region r (cached for the map). */
+function edgeOf(r: number){
+  if (edgesFor!==RG.tiles){ edges.clear(); edgesFor=RG.tiles; }
+  let e=edges.get(r); if (e) return e;
+  e=[];
+  for (let i=RG.start[r];i<RG.start[r+1];i++){ const t=RG.tiles[i], x=t%TW; if ((x>0 && region[t-1]!==r) || (x<TW-1 && region[t+1]!==r) || (t>=TW && region[t-TW]!==r) || (t+TW<TW*TH && region[t+TW]!==r)) e.push(t); }
+  edges.set(r,e); return e;
 }
-
-/** The general front of each war, so both sides can see where the line stands: the tiles of the line,
-    in the colour of the kingdom that holds it, brighter and pulsing while it attacks, steady while
-    it holds the border. */
-function drawFronts(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
-  const fronts=frontLines(); if (!fronts.length) return;
-  const pulse=reduceMotion ? 0.6 : 0.5+0.5*Math.sin(now/260);
-  for (const f of fronts){
-    const hex=W.nations[f.a].hex, push=f.state===F_PUSH, hold=f.state===F_HOLD;
-    // a bright core with a dark edge, so it reads on any ground
-    ctx.fillStyle='rgba(14,10,8,0.55)';
-    for (const t of f.tiles){ const x=(t%TW)*RS, y=((t/TW)|0)*RS; if (x<vx0-RS||y<vy0-RS||x>vx1||y>vy1) continue; ctx.fillRect(x-1,y-1,RS+2,RS+2); }
-    ctx.globalAlpha=push ? 0.55+0.4*pulse : hold ? 0.5 : 0.65;
-    ctx.fillStyle=hex;
-    for (const t of f.tiles){ const x=(t%TW)*RS, y=((t/TW)|0)*RS; if (x<vx0-RS||y<vy0-RS||x>vx1||y>vy1) continue; ctx.fillRect(x,y,RS,RS); }
-    ctx.globalAlpha=1;
+/** Lights the edge of region r: a dark rim and a coloured line. */
+function lightRegion(r: number, col: string, alpha: number, vx0: number, vy0: number, vx1: number, vy1: number){
+  const e=edgeOf(r);
+  ctx.fillStyle='rgba(14,10,8,0.55)'; ctx.globalAlpha=alpha;
+  for (const t of e){ const x=(t%TW)*RS, y=((t/TW)|0)*RS; if (x<vx0-RS||y<vy0-RS||x>vx1||y>vy1) continue; ctx.fillRect(x-1,y-1,RS+2,RS+2); }
+  ctx.fillStyle=col;
+  for (const t of e){ const x=(t%TW)*RS, y=((t/TW)|0)*RS; if (x<vx0-RS||y<vy0-RS||x>vx1||y>vy1) continue; ctx.fillRect(x,y,RS,RS); }
+  ctx.globalAlpha=1;
+}
+/** The regions the player has a stake in, lit: those claimed by or of the player (gold, pulsing), and while picking a claim, those picked (red) and those that can be picked next (faint gold). */
+function drawClaims(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
+  const pulse=reduceMotion ? 0.7 : 0.55+0.35*Math.sin(now/240), M=W.M;
+  for (const [k,regs] of W.claims){
+    const a=(k/M)|0, d=k%M; if (a!==PLAYER && d!==PLAYER) continue;
+    for (const r of regs) lightRegion(r, W.rOcc[r]===a ? '#ff8a5a' : '#ffd23f', pulse, vx0,vy0,vx1,vy1);
+  }
+  const C=client.claiming; if (!C) return;
+  for (const r of C.regions) lightRegion(r,'#ff5a46',0.6+0.3*pulse,vx0,vy0,vx1,vy1);
+  const hr=hover.tile>=0 ? region[hover.tile] : 0;
+  const can=(r: number) => !C.regions.includes(r) && !claimProblem(PLAYER,C.target,[...C.regions,r]);
+  const next=new Set<number>();
+  if (C.regions.length) for (const p of C.regions) for (const q of RG.adj[p]) { if (can(q)) next.add(q); }
+  else for (let r=1;r<RG.n;r++) if (W.rOwner[r]===C.target && can(r)) next.add(r);
+  for (const r of next) if (r!==hr) lightRegion(r,'#ffd23f',0.35,vx0,vy0,vx1,vy1);
+  if (hr && next.has(hr)) lightRegion(hr,'#ffffff',0.8,vx0,vy0,vx1,vy1);
+}
+/** Every region's flag on its pole, in its kingdom's colours, as high as it stands (a region being taken has it half down; an occupied one, none). */
+function drawFlags(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
+  const wave=reduceMotion ? 0 : ((now/400)|0)&1;
+  for (let r=1;r<RG.n;r++){
+    const o=W.rOwner[r], f=RG.flag[r]; if (!o || f<0) continue;
+    const x=(f%TW)*RS+2, gy=((f/TW)|0)*RS+RS;
+    if (x<vx0-12||gy<vy0||x>vx1+12||gy-20>vy1) continue;
+    ctx.fillStyle=INK; ctx.fillRect(x-1,gy-19,3,20);
+    ctx.fillStyle='#7a5634'; ctx.fillRect(x,gy-18,1,18);
+    ctx.fillStyle='#e8c860'; ctx.fillRect(x,gy-19,1,1);
+    if (W.rOcc[r]) continue;   // (occupied: the flag is down)
+    const h=W.rFlag[r], top=Math.round(gy-17+(1-h)*12);
+    ctx.fillStyle=INK; ctx.fillRect(x+1,top-1,8,6);
+    paintSmallFlag(ctx,W.nations[o].code,x+2,top,false);
+    ctx.fillStyle=INK; ctx.globalAlpha=0.3; ctx.fillRect(x+7,top+1+wave,1,2); ctx.globalAlpha=1;
   }
 }
-
 
 const DETAIL_CSS = 2.5;   // screen (CSS) pixels a map tile must cover for the picture's tiles to be drawn
 /** The tiles of the picture on screen, made if need be (MAKE_PER_FRAME at most, nearest the middle
@@ -399,8 +410,8 @@ export function render(now: number, dt: number){
     }
   }
 
-  drawFronts(now,vx0,vy0,vx1,vy1);
-  if (client.state==='play' && client.assigning) drawAssign(now,vx0,vy0,vx1,vy1);
+  if (client.state==='play') drawClaims(now,vx0,vy0,vx1,vy1);
+  drawFlags(now,vx0,vy0,vx1,vy1);
   drawInvasions();
 
   // people and armies, once close enough to tell them apart
@@ -470,8 +481,6 @@ export function render(now: number, dt: number){
       }
     } else if (client.state==='play' && client.settling){
       drawSettlePreview();
-    } else if (client.state==='play' && client.landing){
-      drawLandingPreview(now);
     } else if (client.state==='spawn'){
       const b=findBlock(hx,hy,0), bx=Math.round(hx/4)-1, by=Math.round(hy/4)-1;
       ctx.strokeStyle=b?'rgba(255,230,120,.95)':'rgba(255,90,70,.9)'; ctx.lineWidth=2*dpr/zoom;
@@ -518,16 +527,28 @@ export function render(now: number, dt: number){
       ctx.fillStyle=i===PLAYER ? '#ffe27a' : '#f2f5f8'; ctx.strokeText(text,sx,sy); ctx.fillText(text,sx,sy);
     }
   }
-  // each army's leader by rank, under his feet, once close enough
+  // each army in the field, its men under its standard, once close enough
   if (zs>=2.5){
     const fs=Math.round(11*dpr); ctx.font=`600 ${fs}px "Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif`; ctx.lineWidth=Math.max(2,fs*0.25);
-    for (const c of W.campaigns){
-      if (c.leader<0) continue;
-      const p=W.humans.find(h => h.id===c.leader); if (!p || p.hp<=0 || indoors(p)) continue;
+    for (const [id,rank] of leaders()){
+      const p=W.humans.find(h => h.id===id); if (!p || p.hp<=0 || indoors(p)) continue;
+      const x=W.armies.find(a => a.files.some(f => f.includes(id))); if (!x) continue;
       const sx=(p.x*K-camX)*zoom, sy=(p.y*K-camY)*zoom+3*zoom+fs*0.6;
       if (sx<-60||sy<-20||sx>w+60||sy>h+20) continue;
-      ctx.strokeStyle='rgba(8,14,22,.9)'; ctx.fillStyle=c.a===PLAYER ? '#ffe27a' : '#f2f5f8';
-      ctx.strokeText(RANKS[c.rank],sx,sy); ctx.fillText(RANKS[c.rank],sx,sy);
+      ctx.strokeStyle='rgba(8,14,22,.9)'; ctx.fillStyle=x.o===PLAYER ? '#ffe27a' : '#f2f5f8';
+      const t=`${RANKS[rank]} · ${x.men}`; ctx.strokeText(t,sx,sy); ctx.fillText(t,sx,sy);
+    }
+  }
+  // the names of the regions claimed in a crisis or war of the player's (and the one under the pointer while claiming)
+  if (zs>=0.35){
+    const fs=Math.round(Math.min(16,Math.max(11,zs*5))*dpr); ctx.font=`600 italic ${fs}px "Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif`; ctx.lineWidth=Math.max(2,fs*0.25);
+    const show=new Set<number>(); for (const [k,regs] of W.claims){ const a=(k/W.M)|0, d=k%W.M; if (a===PLAYER || d===PLAYER) for (const r of regs) show.add(r); }
+    if (client.claiming){ for (const r of client.claiming.regions) show.add(r); if (hover.tile>=0 && region[hover.tile]) show.add(region[hover.tile]); }
+    for (const r of show){
+      const f=RG.flag[r]; if (f<0) continue;
+      const sx=(((f%TW)*RS+2)-camX)*zoom, sy=((((f/TW)|0)*RS+RS)-camY)*zoom+fs*0.9;
+      if (sx<-120||sy<-20||sx>w+120||sy>h+20) continue;
+      ctx.strokeStyle='rgba(8,14,22,.9)'; ctx.fillStyle='#ffe9a8'; ctx.strokeText(RG.names[r],sx,sy); ctx.fillText(RG.names[r],sx,sy);
     }
   }
   // people talking, once close enough to see who

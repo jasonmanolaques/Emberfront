@@ -1,5 +1,6 @@
 // The sea: naval bases, ships, colonies, naval invasions.
 import { describe, it, expect } from 'vitest';
+import { setRegions } from '../src/sim/regions';
 import { TW, TH, NT, NP, PW, T_GRASS, T_WATER, B_NAVAL, B_HOUSE } from '../src/core/constants';
 import { W, owner, occ, isLand, isle, sea, terr, pBuild, pType, pSpan, ferry } from '../src/sim/state';
 import { newWorld, startMatch, tick, queueCommand } from '../src/sim/sim';
@@ -21,6 +22,7 @@ function world(rivals=0){
   W.landTiles=Int32Array.from({ length: NT }, (_, i) => i).filter(t => isLand[t]); W.landCount=W.landTiles.length;
   labelWorld();
   if (!startMatch((TH/2)*TW+TW/2-20, rivals)) throw new Error('no spawn');
+  setRegions(() => 0, []);   // (no regions: the shores and islands here are about settling, not about who controls what)
   for (const n of W.nations.slice(2)){ n.nextThink=1e9; n.nextWar=1e9; }
   // the mainland shore is the player's, to the channel
   const me=N(1);

@@ -154,7 +154,7 @@ export function armUp(n: Nation, switching: (h: Human) => boolean){
         let best: Human | undefined;
         for (const h of u.members){
           if (h.tier>=t || h.war>=0 || h.hp<=0 || switching(h)) continue;
-          if (!u.plots.some(q => { const [x,y]=frontOf(q); return (h.x-x)**2+(h.y-y)**2<RACK_R*RACK_R; })) continue;
+          if (!u.plots.some(q => { const [x,y]=frontOf(q); return (h.x-x)**2+(h.y-y)**2<RACK_R*RACK_R*4; })) continue;   // (at home: his army stands in front of its barracks)
           if (!best || h.tier<best.tier || (h.tier===best.tier && h.id<best.id)) best=h;
         }
         if (!best) break;

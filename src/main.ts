@@ -1,5 +1,6 @@
 /* ---------- Emberfront: boot & main loop ---------- */
 import { TW, TH, RW, RH, RS, NP, TICK, UI_SCALE } from './core/constants';
+import { RG, region, cedeRegion } from './sim/regions';
 import { W, owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, pHp } from './sim/state';
 import { findBlock, queueCommand } from './sim/sim';
 import { plotProblem, navalSite } from './sim/buildings';
@@ -70,11 +71,10 @@ function toSpawn(){ if (client.state!=='spawn'){ $('intro').hidden=true; $('scri
   spawnAt:(tx: number,ty: number)=>{ if (client.state==="play") return; toSpawn(); trySpawn(ty*TW+tx); },   // (once a match is under way, no second founding)
   randomSpawn:()=>{ toSpawn(); for (let i=0;i<500 && client.state==='spawn';i++){ const t=W.landTiles[(Math.random()*W.landTiles.length)|0]; const b=findBlock(t%TW,(t/TW)|0,0); if (b) trySpawn(t); } },
   run:(n: number)=>{ for (let i=0;i<n;i++) step(); }, attack:(t: number, r?: number)=>playerAttack(t,r), setSoldierShare, command:(c: unknown)=>queueCommand(c as never), get humans(){return W.humans;}, get cam(){return cam;},
-  get campaigns(){return W.campaigns;}, get W(){return W;},
+  get armies(){return W.armies;}, get W(){return W;}, get RG(){return RG;}, get region(){return region;}, cede:(r: number, o: number)=>cedeRegion(r,o),
   get shots(){return shots;},
   setHp:(q: number, v: number)=>{ pHp[q]=v; }, redraw:(q: number)=>drawPlotAndNeighbours(q), openArmy,
   newWorld:(seed?: number)=>newGame(seed), loadMap:(i: number)=>{ client.mapIndex=i; newGame(); },
   navalSites:()=>{ const n=W.nations[1], out: number[]=[]; if (n) for (let q=0;q<NP;q++) if (navalSite(n,q).orient>=0) out.push(q); return out; },
-  landing:(o: typeof client.landing)=>{ client.landing=o; },
   freePlots:()=>{ const n=W.nations[1], out: number[]=[]; if (n) for (let q=0;q<NP;q++) if (!plotProblem(n,q)) out.push(q); return out; },
-  dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, overview:ovBuf, attacks:W.attacks, campaigns:W.campaigns, tickN:W.tickN }) };
+  dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, overview:ovBuf, attacks:W.attacks, armies:W.armies, tickN:W.tickN }) };

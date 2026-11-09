@@ -38,7 +38,7 @@ import { homeScore, startSite, cancelSite, finishHouse, plotProblem } from './bu
 import { on } from './events';
 import { Field } from './field';
 import { medicStep, updateMedics, wound, isDoctorTask, hospitalStands, TASK_DOC_BACK, TASK_DOC_WAIT, TASK_DOC_HEAL } from './medics';
-import { updateWar, borderPoints, wageOf, reinforce, marchStep, guardStep, alarmStep, mayStand, spread, warringNow } from './war';
+import { updateWar, wageOf, guardStep, alarmStep, mayStand, warringNow, inPhalanx } from './war';
 import { FERRY_PACE, laneBox } from './naval';
 import { HOUSE_BEDS, R_HOUSING, R_TOWERS, MAX_TIER } from './research';
 import { SOLDIER_HP, VILLAGER_HP, MILITIA_HP, maxHp, buildUnits, station, armUp, armorWanted, units, unitAt, type Unit } from './army';
@@ -426,14 +426,9 @@ export function makeHuman(n: Nation, kind: number, x: number, y: number): Human 
 /** The barracks a new soldier of n comes out of: not one the enemy occupies, and of those the nearest the border where the fighting is (else the nearest the
     castle); -1, the capital, when every one is occupied, or while the capital is under siege. */
 function spawnPlot(n: Nation, barracks: number[]){
-  if (W.siege[n.id]>0) return -1;
   const free=barracks.filter(q => !occ[pCenter[q]]);
   if (!free.length) return -1;
-  const pts=borderPoints(n.id);
-  if (!pts.length){ const [cx,cy]=doorOf(n); return nearestPlot(free,cx,cy); }
-  let best=free[0], bd=Infinity;
-  for (const q of free){ const x=(q%PW)*4+2, y=((q/PW)|0)*4+2; let d=Infinity; for (const t of pts) d=Math.min(d,(t%TW-x)**2+((t/TW|0)-y)**2); if (d<bd || (d===bd && q<best)){ bd=d; best=q; } }
-  return best;
+  const [cx,cy]=doorOf(n); return nearestPlot(free,cx,cy);
 }
 function spawnHuman(n: Nation, kind: number, barracks: number[], militia=false){
   const [cx,cy]=doorOf(n), q=kind===H_SOLDIER && !militia ? spawnPlot(n,barracks) : -1, [x,y] = q>=0 ? frontOf(q) : [cx,cy];
@@ -485,7 +480,7 @@ function roomIn(n: Nation, mine: Human[]){
   return room;
 }
 /** True while all n's militia are called up to a front: they fight as they are, and nobody fills the barracks from them. */
-const reservesOut = (n: Nation) => W.campaigns.some(c => c.militia && c.all && c.a===n.id && c.phase<2);
+const reservesOut = (_n: Nation) => false;   // (militia stay at home: wars are fought by the armies)
 
 /** Moves the kingdom's headcount toward its requested share under arms. Free places in the barracks
     go to militia first, all of them at once to each barracks; then to villagers; once the barracks are
@@ -857,7 +852,6 @@ export function updatePopulation(){
   }
   updateMedics(reviveWounded);   // the wounded bleed, or heal in their beds
   buildUnits();  // which barracks stand, and their armies
-  updateWar();   // armies, watchtowers and who is fighting whom
   const groups: Human[][]=N.map(()=>[]);
   for (const h of H) groups[h.o].push(h);
   for (let i=1;i<N.length;i++){
@@ -884,9 +878,8 @@ export function updatePopulation(){
     armUp(n, switching);
     staffGuilds(n, mine);
   }
-  if (W.tickN%10===5) reinforce();   // soldiers at their barracks join its army in the field
-  for (const h of H) if (h.war>=0) marchStep(h); else step(h);
-  spread();   // fighters keep a little room between them
+  updateWar();   // the armies: crises, orders, marches, battles, flags (after the soldiers are stationed in their barracks' armies)
+  for (const h of H) if (!inPhalanx(h)) step(h);   // (the soldiers of an army stand in its phalanx: sim/war.ts moves them)
   // headcount after everyone has moved, so it matches what is on the map this tick
   for (const n of N){ n.villagers=0; n.soldiers=0; n.militia=0; n.called=0; n.wageS=0; n.wageM=0; n.training=0; n.beggars=0; n.homeless=0; n.unhoused=0; n.taxpayers=0; n.might=0; n.jobs[0]=n.jobs[1]=n.jobs[2]=n.jobs[3]=n.jobs[4]=0; n.studying=0; }
   for (const h of H){

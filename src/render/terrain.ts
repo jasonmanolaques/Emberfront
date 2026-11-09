@@ -9,6 +9,7 @@ import { TW, TH, NT, RS, PW, T_DEEP, T_WATER, T_SHALLOW, T_GRASS, T_DRY, T_FORES
 import { clamp, hexRGB, mixc, pack, type RGB } from '../core/util';
 import { W, owner, occ, terr, isLand, elev, road, pType, pMain, pOwner } from '../sim/state';
 import { styleOf } from './style';
+import { region } from '../sim/regions';
 import { CH, painters, resetTiles, tileOfPx, type Tile } from './tiles';
 
 export const SEA = '#173a57';   // the deep sea, also the colour behind the map
@@ -193,6 +194,7 @@ function ovPaint(t: number){
     if (f(-1,0) || f(1,0) || f(0,-1) || f(0,1)) c=n.bp;
     else { c=tint(c,n.ia,n.fr,n.fg,n.fb); if (occ[t]) c=mixP(c,styleOf(occ[t]).bp,0.45); }
   }
+  const rg=region[t]; if (rg && ((x>0 && isLand[t-1] && region[t-1]!==rg) || (y>0 && isLand[t-TW] && region[t-TW]!==rg))) c=mixP(c,REGION_LINE,0.28);   // (the regions' lines, faint)
   ovBuf[t]=c;
   if (x<ox0) ox0=x; if (x>ox1) ox1=x; if (y<oy0) oy0=y; if (y>oy1) oy1=y;
 }
@@ -205,6 +207,8 @@ export function ovPlot(q: number){
 function paintIn(c: Tile, t: number){
   const x=t%TW, y=(t/TW)|0, o=owner[t], i0=(y*RS-c.y0)*CH+x*RS-c.x0, base=c.base, wbuf=c.buf, RW=CH;
   dirtyTiles.add(c);
+  // the thin line between two regions: on the tile's left and top edges where the region changes (land on both sides)
+  const rg=region[t], rl=rg && x>0 && isLand[t-1] && region[t-1]!==rg, ru=rg && y>0 && isLand[t-TW] && region[t-TW]!==rg;
   if (!o){ for (let sy=0;sy<RS;sy++){ const i=i0+sy*RW; for (let sx=0;sx<RS;sx++) wbuf[i+sx]=base[i+sx]; } }
   else {
     const n=styleOf(o);
@@ -221,7 +225,11 @@ function paintIn(c: Tile, t: number){
       }
     }
   }
+  if (rl || ru){
+    for (let sy=0;sy<RS;sy++){ const i=i0+sy*RW; for (let sx=0;sx<RS;sx++) if ((rl && sx===0) || (ru && sy===0)) wbuf[i+sx]=mixP(wbuf[i+sx],REGION_LINE,0.5); }
+  }
 }
+const REGION_LINE=pack(26,18,12);
 /** Repaints tile t and its eight neighbours (their borders depend on it). */
 export function repaint(t: number){
   const x=t%TW, y=(t/TW)|0;

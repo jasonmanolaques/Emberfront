@@ -10,10 +10,9 @@ export const client = {
   lastVillageLog: -99,
   block: false,          // the building being placed goes four at a time (a 2 by 2 block of plots)
   placing: 0,            // building type being placed from the buildings panel, 0 when not placing
-  selected: -1,
+  selected: -1,          // the army (its id) the player has in hand
   settling: 0,           // a naval settlement is chosen (1; 0 when not choosing): the next click on land picks where the ship lands
-  assigning: null as null | { key: number; hot: null | { d: number; isle: number; sec: number; tiles: number[] } },   // choosing the border to station an army on (a barracks' key, or -2 for the militia); `hot` is the stretch lit under the pointer
-  landing: null as null | { target: number; base: number; units: number[]; men: number },   // choosing the coast of `target` to land `units` (men of them) on from naval base `base`
+  claiming: null as null | { target: number; regions: number[] },   // picking regions of `target`'s to claim (ui/diplomacy.ts)
   mapIndex: 0,           // which of MAPS (game.ts) is being played
   me: '',                // the country the player chose (core/countries.ts code)
   placement: 'real' as 'real' | 'random' | 'near',   // where the rivals are founded on a real map: at their capitals, at random, or at random but near each other

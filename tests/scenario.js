@@ -13,7 +13,7 @@
     const d = api.dump();
     const nat = api.nations.slice(1).map(n => NKEYS.map(k => String(n[k])).join(','));
     const att = d.attacks.map(A => [A.id,A.att,A.def,A.gold,A.front.length,A.done].join(','));
-    const camps = (d.campaigns || []).map(c => [c.id,c.a,c.d,+c.raid,+c.hostile,c.phase,c.members.length,c.bx.toFixed(3),c.by.toFixed(3)].join(','));
+    const camps = (d.armies || []).map(a => [a.id,a.o,a.mode,a.order,a.goal,a.men,a.x.toFixed(3),a.y.toFixed(3)].join(','));
     return {
       tick: d.tickN,
       simTime: String(api.simTime),

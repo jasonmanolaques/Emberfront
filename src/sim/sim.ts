@@ -14,7 +14,8 @@ import { toRuins, build, buildBlock, produce, resetHomes } from './buildings';
 import { scanContacts, census, censusStep } from './census';
 import { botThink } from './bots';
 import { updatePopulation, resetWalks, resetRooms, soldierMax } from './population';
-import { resetWar, declare, declareNaval, proposeAlliance, endWar, makePeace, setOffensive, armyOrder, armyFront, armyRecall, armyRedirect, assignArmy, deployArmies, deescalate, defend, callReserves } from './war';
+import { resetWar, proposeAlliance, endWar, makePeace, armyOrder, deescalate, claim, answer, armyOf, A_HOME } from './war';
+import { buildRegions, resetRegions, updateRegions } from './regions';
 import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
 import { labelWorld, allocIsles, resetNaval, updateNaval, queueShip, colonize } from './naval';
@@ -89,6 +90,7 @@ export function newWorld(seed: number, map='gen'){
   W.simTime=0; W.tickN=0; W.rushUntil=RUSH_TICKS;
   W.humans=[]; W.humanSeq=0; W.wounded=[];
   resetWar(1); resetStories(1); resetWalks(); labelWorld(); resetNaval(); resetHomes(); resetRooms();
+  buildRegions(W.map,seed); resetRegions(1);
 }
 
 /** Founds the player's capital near tile t and places the bot kingdoms: `rivals` of them, countries
@@ -113,7 +115,7 @@ export function startMatch(t: number, rivals: number | string[], me?: string, pl
   else for (let i=0;i<(rivals as number);i++) add(i+2,undefined,false);
   if (named) tellApart(N);
   W.M=N.length; W.contact=new Int32Array(W.M*W.M);
-  resetWar(W.M); resetStories(W.M); allocIsles();
+  resetWar(W.M); resetStories(W.M); allocIsles(); resetRegions(W.M);
   spawnNation(mine,b[0],b[1]);
   const caps=[mine.capTile];
   for (let i=2;i<W.M;i++){
@@ -199,7 +201,7 @@ function startReal(b: [number, number], rivals: number | string[], me?: string, 
   chosen.forEach((c,i) => N.push(makeNation(i+2,c.country,false)));
   if (Array.isArray(rivals)) tellApart(N);
   W.M=N.length; W.contact=new Int32Array(W.M*W.M);
-  resetWar(W.M); resetStories(W.M); allocIsles();
+  resetWar(W.M); resetStories(W.M); allocIsles(); resetRegions(W.M);
   spawnNation(meN,b[0],b[1]);
   // each at its capital, or as near it as there is room (close capitals push each other apart)
   chosen.forEach((c,i) => { const n=N[i+2], blk=findBlock(c.tile%TW,(c.tile/TW)|0,6); if (blk) spawnNation(n,blk[0],blk[1]); else n.alive=false; });
@@ -241,33 +243,19 @@ function applyCommand(c: Command){
     const n=W.nations[c.nation]; if (n){ if (c.block) buildBlock(n,c.plot,c.kind,'any'); else build(n,c.plot,c.kind,'any'); }   // the player may build over his own buildings
   } else if (c.type==='ally'){
     proposeAlliance(c.nation,c.target);
-  } else if (c.type==='war'){
-    if (c.naval) declareNaval(c.nation,c.target,c.units ?? c.soldiers ?? 0,c.naval.base,c.naval.coast);
-    else declare(c.nation,c.target,c.units ?? c.soldiers ?? 0,c.militia ?? 0,c.isle ?? 0);
-  } else if (c.type==='deploy'){
-    deployArmies(c.nation,c.target,c.units ?? 0,c.militia ?? 0,c.isle ?? 0);
-  } else if (c.type==='order'){
-    armyOrder(c.nation,c.camp,c.go);
-  } else if (c.type==='front'){
-    armyFront(c.nation,c.camp,c.isle);
-  } else if (c.type==='redirect'){
-    armyRedirect(c.nation,c.camp,c.target,c.isle ?? 0);
+  } else if (c.type==='claim'){
+    claim(c.nation,c.target,c.regions);
+  } else if (c.type==='answer'){
+    answer(c.nation,c.target,c.accept);
+  } else if (c.type==='army'){
+    armyOrder(c.nation,c.army,c.order,c.region ?? 0);
   } else if (c.type==='merge'){
-    mergeArmies(c.nation,c.a,c.b);
+    const x=armyOf(c.a), y=armyOf(c.b);   // (armies are merged and taken apart only at home)
+    if ((!x || x.mode===A_HOME) && (!y || y.mode===A_HOME)) mergeArmies(c.nation,c.a,c.b);
   } else if (c.type==='unmerge'){
-    unmergeArmies(c.nation,c.key);
-  } else if (c.type==='assign'){
-    assignArmy(c.nation,c.army,c.target,c.isle ?? 0,c.go,c.sec ?? 0);
-  } else if (c.type==='recall'){
-    armyRecall(c.nation,c.camp);
-  } else if (c.type==='offensive'){
-    setOffensive(c.nation,c.target,c.go);
+    const x=armyOf(c.key); if (!x || x.mode===A_HOME) unmergeArmies(c.nation,c.key);
   } else if (c.type==='deescalate'){
     deescalate(c.nation,c.target);
-  } else if (c.type==='defend'){
-    defend(c.nation,c.target,c.units,c.isle ?? 0);
-  } else if (c.type==='reserves'){
-    callReserves(c.nation,c.target,c.call);
   } else if (c.type==='endWar'){
     endWar(c.nation,c.target);
   } else if (c.type==='peace'){
@@ -311,6 +299,7 @@ export function tick(){
   updateResearch();
   updateNaval();
   updatePopulation();
+  updateRegions();
   updateStories();
   for (let i=1;i<N.length;i++){
     const n=N[i];

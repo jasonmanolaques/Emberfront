@@ -15,7 +15,7 @@ import { BALKANS, EUROPE, WORLD } from './maps';
 import { COUNTRIES, type Country } from '../core/countries';
 
 const C_BRIDGE=2, C_RANGE=3, C_HIGH=4, C_DESERT=5, C_PLATEAU=6, C_HILL=7;
-const DATA: Record<string, string> = { balkans: BALKANS, europe: EUROPE, 'europe-s': EUROPE, world: WORLD };
+export const DATA: Record<string, string> = { balkans: BALKANS, europe: EUROPE, 'europe-s': EUROPE, world: WORLD };
 export const REAL_MAPS = Object.keys(DATA);
 
 /** The stored grid of map `id`: the kind of ground on each tile. */
@@ -33,7 +33,7 @@ function decode(id: string){
   }
   return decodeRaw(DATA[id],NT);
 }
-function decodeRaw(s: string, n0: number){
+export function decodeRaw(s: string, n0: number){
   const code=new Uint8Array(n0); let t=0;
   for (const m of s.matchAll(/([A-H])([0-9a-z]+)/g)){ const k=m[1].charCodeAt(0)-65, n=parseInt(m[2],36); code.fill(k,t,t+n); t+=n; }
   return code;

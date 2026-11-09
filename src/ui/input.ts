@@ -12,15 +12,17 @@ import { $ } from './dom';
 import { newGame, nextMap, startGame, trySpawn, setSoldierShare, centerHome, setPaused } from '../game';
 import { openExpand, closeExpand, expandOpen } from './expand';
 import { placeAt, clickOwnBuilding, stopPlacing, toggleBuildPanel } from './build';
-import { openDiplomacy, closeDiplomacy, diplomacyOpen, closePop, chooseCoast, cancelLanding } from './diplomacy';
+import { openDiplomacy, closeDiplomacy, diplomacyOpen, closePop, claimClick, cancelClaim, confirmClaim } from './diplomacy';
 import { researchOpen, closeResearch } from './research';
 import { armyOpen, closeArmy } from './army';
 import { navalOpen, closeNaval } from './naval';
 import { hasLandOn } from '../sim/naval';
 import { navalSettleAt, cancelNavalSettle } from '../game';
-import { rightClick, deselect } from './command';
+import { rightClick, deselect, armyAt, selectArmy } from './command';
 import { nationsOpen, closeNations } from './nations';
-import { assignHover, assignClick, cancelAssign } from './assign';
+import { region, regionName, RG } from '../sim/regions';
+const regionLand = (r: number) => RG.land[r];
+import { claimsOf } from '../sim/war';
 
 interface Drag { sx: number; sy: number; lx: number; ly: number; moved: boolean; button: number; }
 const pointers=new Map<number,{x: number; y: number}>(); let drag: Drag | null=null, pinch: {d: number; mx: number; my: number} | null=null;
@@ -35,6 +37,11 @@ function updateTip(e: PointerEvent){
   let l3=TNAME[tr]+(!o && TMULT[tr]>1.05?` · settles ×${+TMULT[tr].toFixed(2)} slower`:'');
   if (o && o!==PLAYER) l3+=allied(PLAYER,o) ? ' · your ally' : atWar(PLAYER,o) ? ' · at war with you' : ' · click for diplomacy';
   if (occ[t]) l3+=` · occupied by ${occ[t]===PLAYER ? 'you' : W.nations[occ[t]].name}`;
+  const r=region[t];
+  if (r){
+    const c=W.rOwner[r], cl=c && c!==PLAYER && claimsOf(PLAYER,c).includes(r) ? ' · claimed by you' : c===PLAYER && [...W.claims.entries()].some(([k,v]) => k%W.M===PLAYER && v.includes(r)) ? ' · claimed by an enemy' : '';
+    l2=`${regionName(r)} · ${c ? (c===PLAYER ? 'your region' : W.nations[c].name+'\'s region') : `no flag yet (${Math.round(W.rCount[r*W.M+(o||0)]/Math.max(1,regionLand(r))*100)}% ${o ? 'theirs' : 'settled'})`}${cl}`;
+  }
   ui.tip.innerHTML=`<span class="t1"></span><span class="t2"></span><span class="t2"></span>`;
   ui.tip.children[0].textContent=l1; ui.tip.children[1].textContent=l2; ui.tip.children[2].textContent=l3;
   ui.tip.hidden=false;
@@ -56,10 +63,11 @@ function endPointer(e: PointerEvent){
       else if (client.state==='play'){
         const o=t>=0 ? owner[t] : 0;
         const wasOpen=expandOpen(); closeExpand();
-        if (client.assigning) assignClick(e.shiftKey);
+        const pick=!client.claiming && !client.settling && !client.placing ? armyAt(sx,sy) : undefined;
+        if (client.claiming) claimClick(t);
         else if (client.settling){ if (t>=0) navalSettleAt(t,e.clientX,e.clientY); }
-        else if (client.landing){ if (t>=0) chooseCoast(t); }
         else if (client.placing) placeAt(t);
+        else if (pick) selectArmy(pick.id);   // a soldier of ours: his army in hand
         else if (o && o!==PLAYER){ closeResearch(); closeArmy(); closeNaval(); openDiplomacy(o); }   // another kingdom: talk first
         else if (!clickOwnBuilding(t)){
           if (armyOpen()) closeArmy(); else if (navalOpen()) closeNaval(); else if (researchOpen()) closeResearch(); else if (diplomacyOpen()) closeDiplomacy();
@@ -75,8 +83,7 @@ export function bindInput(){
   view.addEventListener('contextmenu',e=>e.preventDefault());
   view.addEventListener('pointerdown',e=>{
     if (e.button===2 && client.placing){ stopPlacing(); return; }   // right-click stops placing
-    if (e.button===2 && client.assigning){ cancelAssign(); return; }
-    if (e.button===2 && client.landing){ cancelLanding(); return; }
+    if (e.button===2 && client.claiming){ cancelClaim(); return; }
     if (e.button===2 && client.settling){ cancelNavalSettle(); return; }
     view.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -101,7 +108,6 @@ export function bindInput(){
       if (drag.moved){ cam.x-=(e.clientX-drag.lx)*cam.dpr/cam.zoom; cam.y-=(e.clientY-drag.ly)*cam.dpr/cam.zoom; cam.anim=null; clampCam(); }
       drag.lx=e.clientX; drag.ly=e.clientY;
     }
-    if (client.assigning) assignHover(sx,sy);
     updateTip(e);
   });
   view.addEventListener('pointerup',endPointer);
@@ -127,8 +133,8 @@ export function bindInput(){
     else if (e.key===' ' && client.state==='play'){ e.preventDefault(); centerHome(); }
     else if (e.key==='p' || e.key==='P'){ if (client.state==='play') setPaused(!client.paused); }
     else if (e.key==='b' || e.key==='B'){ if (client.state==='play') toggleBuildPanel(); }
-    else if (e.key==='Escape' && client.assigning) cancelAssign();
-    else if (e.key==='Escape' && client.landing) cancelLanding();
+    else if (e.key==='Escape' && client.claiming) cancelClaim();
+    else if (e.key==='Enter' && client.claiming) confirmClaim();
     else if (e.key==='Escape' && client.settling) cancelNavalSettle();
     else if (e.key==='Escape' && nationsOpen()) closeNations();
     else if (e.key==='Escape' && client.selected>=0) deselect();   // let go of the army first

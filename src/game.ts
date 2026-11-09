@@ -19,7 +19,9 @@ import { resetLabels, resetGhosts, noteBlow, noteSwing, noteArrow } from './rend
 import { onStory } from './ui/story';
 import { resetPeople } from './render/people';
 import { resetSpeech, say, pick, LINES } from './render/speech';
-import { RANKS } from './sim/war';
+import { claimsOf } from './sim/war';
+import { regionName } from './sim/regions';
+const RANKS = ['', 'Leader', 'General', 'Captain', 'Commander', 'Grand Marshal'];
 import { setupBuildPanel, toggleBuildPanel } from './ui/build';
 import { ui, log, toast, showHUD, checkEnd, onEliminated, onCapitalFell, onBuildingPlaced } from './ui/hud';
 import { soldierMax } from './sim/population';
@@ -73,15 +75,33 @@ listen({
     else log(`${nm(a)} goes to war with ${nm(d)}`);
   },
   crisis: (a,d) => {
-    if (a===PLAYER) log(`Your armies mass on the border of ${nm(d)}: a crisis. In 30 seconds you can begin the offensive, or call it off before`,'good');
-    else if (d===PLAYER){ log(`${nm(a)} masses its armies on your border! Hold the border from the war bar: it is not war yet`,'bad'); toast(`Crisis: ${nm(a)} masses on your border`); }
-    else log(`Crisis: ${nm(a)} masses on the border of ${nm(d)}`);
+    const regs=claimsOf(a,d).map(regionName).join(', ');
+    if (a===PLAYER) log(`You claim ${regs} of ${nm(d)}: they give it up, or it is war`,'good');
+    else if (d===PLAYER){ log(`${nm(a)} claims your ${regs}! Give it up, or refuse and it is war (the war bar at the top)`,'bad'); toast(`${nm(a)} claims ${regs}`); }
+    else log(`${nm(a)} claims ${regs} of ${nm(d)}`);
+  },
+  claimsAnswered: (a,d,accept) => {
+    if (!accept) return;
+    if (a===PLAYER){ log(`${nm(d)} gives up your claims without a fight: the regions are yours`,'good'); toast(`${nm(d)} gives in`); }
+    else if (d===PLAYER) log(`You give up ${nm(a)}'s claims`);
+    else log(`${nm(d)} gives up ${nm(a)}'s claims`);
   },
   escalated: (a,d) => {
-    if (a===PLAYER) log(`War with ${nm(d)}! Your armies attack all along the front`,'good');
-    else if (d===PLAYER){ log(`${nm(a)} attacks: it is war!`,'bad'); toast(`${nm(a)} attacks: war!`); }
+    if (a===PLAYER){ log(`${nm(d)} refuses your claims: war! Select an army and right-click a claimed region beside your land to attack it`,'good'); toast(`War with ${nm(d)}`); }
+    else if (d===PLAYER){ log(`War with ${nm(a)}! Select an army and right-click one of the claimed regions to defend it`,'bad'); toast(`${nm(a)}: war!`); }
     else log(`${nm(a)} goes to war with ${nm(d)}`);
   },
+  battle: (a,b,x,y) => { if (a===PLAYER || b===PLAYER){ const o=a===PLAYER ? b : a; log(`Your army meets ${nm(o)}'s in battle`); floats.push({ x, y:y-8, text:'Battle!', t0:performance.now(), c:'#ffb27a' }); } },
+  regionTaken: (r,by,from) => {
+    const name=regionName(r);
+    if (by===PLAYER && W.rOcc[r]===PLAYER){ log(`Your army brings down the flag of ${name}: it is occupied`,'good'); toast(`${name} taken`); }
+    else if (from===PLAYER && W.rOcc[r]===by){ log(`${nm(by)} brings down your flag in ${name}: it is occupied`,'bad'); toast(`${name} lost`); }
+    else if (by===PLAYER){ log(`Your flag flies again over ${name}`,'good'); toast(`${name} won back`); }
+    else if (from===PLAYER) log(`${nm(by)} raises its flag again over ${name}`,'bad');
+  },
+  warWon: (a,d) => { if (a===PLAYER){ log(`You hold every region you claimed of ${nm(d)}: the war is won, they are yours`,'good'); toast('War won'); } else if (d===PLAYER){ log(`${nm(a)} holds every region it claimed: you lose them`,'bad'); toast('War lost'); } },
+  armyLost: (o,_id,r) => { if (o===PLAYER) log(`Your army${r ? ` in ${regionName(r)}` : ''} has nobody left standing: what is left of it is at its barracks`,'bad'); },
+  regionChanged: (r,o,prev) => { if (o===PLAYER && prev!==PLAYER && !W.rOcc[r]){ log(`${regionName(r)} is yours: your flag goes up over all of it`,'good'); } else if (prev===PLAYER && o!==PLAYER && o) log(`${regionName(r)} is now ${nm(o)}'s`,'bad'); },
   siege: (a,d,start) => {
     if (start){
       if (d===PLAYER){ log(`Your capital is under siege! ${nm(a)} has encircled it: your defenders fight to the bitter end`,'bad'); toast('Your capital is under siege'); }
@@ -91,9 +111,9 @@ listen({
     else if (a===PLAYER) log(`The siege of ${nm(d)}'s capital is over`);
   },
   deescalated: (a,d) => {
-    if (a===PLAYER) log(`You call the crisis with ${nm(d)} off: your armies head home`);
-    else if (d===PLAYER){ log(`${nm(a)} backs down: its armies leave your border`,'good'); toast(`${nm(a)} backs down`); }
-    else log(`${nm(a)} backs down from ${nm(d)}`);
+    if (a===PLAYER) log(`You take your claims on ${nm(d)} back`);
+    else if (d===PLAYER){ log(`${nm(a)} takes its claims on you back`,'good'); toast(`${nm(a)} backs down`); }
+    else log(`${nm(a)} takes back its claims on ${nm(d)}`);
   },
   defending: (o,e,k) => {
     if (o===PLAYER) log(`${k} of your soldiers march to hold your border with ${nm(e)}`,'good');

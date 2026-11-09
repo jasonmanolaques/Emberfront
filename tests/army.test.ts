@@ -8,7 +8,7 @@ import { build, placeProblem } from '../src/sim/buildings';
 import { H_SOLDIER, H_VILLAGER, REHIRE_TICKS, FORGE_TICKS, TASK_SMITH_FETCH, makeHuman, doorOf, frontOf } from '../src/sim/population';
 import { units, unitAt, UNIT_SIZE, SOLDIER_HP } from '../src/sim/army';
 import { R_INFANTRY } from '../src/sim/research';
-import { available } from '../src/sim/war';
+import { armiesOfNation } from '../src/sim/war';
 
 const me = () => W.nations[1];
 const mine = () => W.humans.filter(h => h.o === 1);
@@ -66,10 +66,10 @@ describe('barracks armies', () => {
     const b=place(B_BARRACKS);
     const men=soldiers(8); run(2);
     expect(men.filter(h => h.base>=0)).toHaveLength(5);
-    expect(available(me()).map(a => a.men.length)).toEqual([5]);   // only they can march
+    expect(armiesOfNation(1).map(a => a.home)).toEqual([5]);   // only they can march
     run(300);
     const [bx,by]=frontOf(b);
-    for (const h of men.filter(h => h.base>=0)) expect(Math.hypot(h.x-bx,h.y-by)).toBeLessThan(16);
+    for (const h of men.filter(h => h.base>=0)) expect(Math.hypot(h.x-bx,h.y-by)).toBeLessThan(24);   // (in its phalanx beside the barracks)
   });
 });
 

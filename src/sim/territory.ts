@@ -3,8 +3,8 @@ import { GAME_SPEED, TW, TH, NT, PW, PH, TMULT, B_TOWER, B_CASTLE, B_CPART, GOLD
 import { W, owner, occ, terr, isLand, isle, frontMark, pType, pOwner, pBurn, type Attack } from './state';
 import { on } from './events';
 import { ignite, captureBuilding } from './buildings';
+import { regionTile, regionHooks } from './regions';
 
-const SIEGE_LOCK_TICKS = 30*GAME_SPEED*10;   // (SIEGE_LOCK in sim/war.ts)
 export function touches(t: number, a: number){ const x=t%TW; return (x>0&&owner[t-1]===a)||(x<TW-1&&owner[t+1]===a)||(t>=TW&&owner[t-TW]===a)||(t<NT-TW&&owner[t+TW]===a); }
 function nCount(t: number, a: number){ const x=t%TW; return +(x>0&&owner[t-1]===a)+ +(x<TW-1&&owner[t+1]===a)+ +(t>=TW&&owner[t-TW]===a)+ +(t<NT-TW&&owner[t+TW]===a); }
 
@@ -47,6 +47,7 @@ export function setOwner(t: number, o: number, keep=false){
   if (occ[t]){ W.occCount[prev*W.M+occ[t]]--; occIsleAdd(t,prev,occ[t],-1); occ[t]=0; }   // changing hands ends any occupation
   recountEdges(t,prev,o);
   owner[t]=o;
+  regionTile(t,prev,o);
   if (W.isleOwn.length && isLand[t]){ const i=isle[t]*W.M; W.isleOwn[i+prev]--; W.isleOwn[i+o]++; }   // (the tiles each kingdom has on each landmass)
   const x=t%TW, y=(t/TW)|0;
   if (prev){ const P=W.nations[prev]; P.tiles--; P.sumX-=x; P.sumY-=y; }
@@ -74,7 +75,6 @@ function pushF(A: Attack, t: number){ if (owner[t]===A.def && isLand[t] && front
 
 export function stepAttack(A: Attack){
   if (!W.nations[A.att].alive){ A.done=true; return; }
-  if (W.siege[A.att]>0 && W.tickN-W.siege[A.att]<SIEGE_LOCK_TICKS) return;   // (a capital newly besieged cannot expand its border: the attack waits)
   if (A.def && !W.nations[A.def].alive){ finishAttack(A); return; }
   const F=A.front, srand=W.srand;
   let tries=Math.ceil(2+F.length*0.07);
@@ -115,3 +115,5 @@ function capitalFalls(id: number, by: number){
   for (const k of [q,q+1,q+PW,q+PW+1]) if (pType[k]===B_CASTLE||pType[k]===B_CPART) ignite(k);
   on.capitalFell(id,by);
 }
+
+regionHooks.setOwner=setOwner;

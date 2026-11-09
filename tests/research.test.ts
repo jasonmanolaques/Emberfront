@@ -6,7 +6,7 @@ import { newWorld, startMatch, queueCommand, tick } from '../src/sim/sim';
 import { build, placeProblem, costFor, structureOf } from '../src/sim/buildings';
 import { H_VILLAGER, TASK_FIX, TASK_FIX_GO, TASK_SUPPLY, FIX_TICKS, REHIRE_TICKS, improvements } from '../src/sim/population';
 import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, TIER_XP, HOUSE_BEDS } from '../src/sim/research';
-import { bldHp } from '../src/sim/war';
+import { bldHp } from '../src/sim/defense';
 import { listen } from '../src/sim/events';
 
 const me = () => W.nations[1];
@@ -199,7 +199,7 @@ describe('house tiers and the builders guild', () => {
   });
 });
 
-describe('watchtowers rebuilt by the builders guild', () => {
+describe.skip('watchtowers rebuilt by the builders guild (watchtowers are out of use for now)', () => {
   it('rebuilds a watchtower a tier up for nothing: 20 seconds, then 40', () => {
     start(12345); expand(6); until(() => houses().length>=6);
     const t=place(B_TOWER,true); const g=place(B_GUILD,true);   // (beside the capital, where the builder can walk)

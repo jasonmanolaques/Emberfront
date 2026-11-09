@@ -83,22 +83,8 @@
         <div><dt>Land</dt><dd id="dLand">0%</dd></div>
       </dl>
       <div class="drel" id="dRel">Neutral</div>
-      <div class="drow"><button id="dAlly">Propose alliance</button><button id="dWar" class="danger">Declare war…</button></div>
+      <div class="drow"><button id="dAlly">Propose alliance</button><button id="dWar" class="danger">Claim regions…</button></div>
       <p class="dnote" id="dNote"></p>
-    </div>
-    <div id="dWarView" hidden>
-      <div class="dsplit" id="dSplit"></div>
-      <div id="dNavalBox" hidden>
-        <label><span>Armies to send by sea</span><b id="dCommitVal">0</b></label>
-        <div id="dArmies" class="armies"></div>
-        <label><span>Naval bases</span><b id="dShips">0 ships ready</b></label>
-        <div id="dBases" class="armies"></div>
-        <div class="dsplit" id="dNavalInfo"></div>
-        <button id="dCoast" class="danger" title="Then point at the stretch of their coast to land on">Choose the coastline…</button>
-      </div>
-      <div class="drow"><button id="dAttack" class="danger" title="Mass the armies you have assigned to their border: a crisis, then war when you give the word. Needs a shared border and an army on it.">Attack</button><button id="dNaval" class="danger" title="Land an army from the sea. Needs a naval base with enough ships.">⚓ Naval invasion</button></div>
-      <p class="dnote" id="dWhy"></p>
-      <button id="dBack" class="ghost">← Back</button>
     </div>
   </section>
   <section id="army" class="plate" hidden aria-label="Barracks">
@@ -173,11 +159,6 @@
     <div class="dhead"><span class="dname">Armies</span><span class="tag" id="cmCount"></span><button id="cmRename" class="x" aria-label="Rename an army" aria-pressed="false" title="Rename an army">✎</button><button id="cmMerge" class="x" aria-label="Merge armies" aria-pressed="false" title="Merge armies: they take their orders together, as one group named after the first you pick">⛓</button><button id="cmFold" class="x" aria-label="Fold the list" aria-expanded="true" title="Fold the list">▾</button></div>
     <div id="cmList"></div>
   </section>
-  <section id="warPop" class="plate" hidden aria-label="Meet the army">
-    <div class="dhead"><span class="tag" id="wpTitle">An army is coming</span><button id="wpClose" class="x" aria-label="Close">×</button></div>
-    <div id="wpMenu" class="drow"><button id="wpPeace" title="Offer them peace. They answer depending on how they think the war is going.">Request peace</button></div>
-    <p class="dnote" id="wpNote">Send your armies to the border from the Armies list: <b>Assign border</b>, then point at the part of it to hold (or at the occupied land, to take it back).</p>
-  </section>
 
   <div id="expand" class="plate" hidden role="dialog" aria-label="Settle this land">
     <span class="tag" id="exTitle">Settle: spend of your gold</span>
@@ -185,6 +166,7 @@
   </div>
   <div id="log" aria-live="polite"><div id="rush" class="plate" hidden><b>Land rush</b> · settling costs 50% less for <span id="rushT">1:00</span></div></div>
   <div id="crash" class="plate" hidden role="alert"><span id="crashText"></span><button id="crashCopy" title="Copy the details to report">Copy details</button><button id="crashX" class="x" aria-label="Close">×</button></div>
+  <div id="claimBar" class="plate" hidden role="dialog" aria-label="Claim regions"><span id="cbText">Click a region to claim</span><div class="drow"><button id="cbGo" class="danger">Claim</button><button id="cbCancel" class="ghost">Cancel</button></div></div>
   <div id="banner" class="plate" hidden>Tap open land to found your capital</div>
   <div id="toast" class="plate" hidden></div>
   <div id="tip" class="plate" hidden></div>

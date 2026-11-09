@@ -5,7 +5,8 @@ import { PLAYER, PS, B_BARRACKS } from '../core/constants';
 import { W, pType, pOwner } from '../sim/state';
 import { unitAt, units, armorWanted, TIER_NAME, UNIT_SIZE } from '../sim/army';
 import { R_INFANTRY } from '../sim/research';
-import { RANKS, navalOf, F_GATHER, attacks, occOn, inCrisis } from '../sim/war';
+import { A_HOME, A_MARCH, A_HOLD, A_BATTLE, O_ATTACK, O_DEFEND, O_RETURN, O_RETREAT } from '../sim/war';
+import { regionName } from '../sim/regions';
 import { drawIcon } from '../render/sprites';
 import { styleOf } from '../render/style';
 import { armyName } from './armies';
@@ -26,22 +27,22 @@ export function openArmy(q: number){
 export function closeArmy(){ panel.hidden=true; plot=-1; }
 $('aClose').addEventListener('click', closeArmy);
 
-const nm = (id: number) => W.nations[id]?.name ?? 'the enemy';
-/** What this barracks' army is doing out there, and who leads it. */
+/** What this barracks' army is doing out there. */
 function fieldReport(key: number){
-  const c=W.campaigns.find(c => c.a===PLAYER && c.unit===key && c.phase<2);
-  if (!c) return 'At home';
-  const war=!!W.wars[c.a*W.M+c.d];
-  const what=c.naval>=0 && navalOf(c.a,c.d) ? `sailing to the coast of ${nm(c.d)}, aboard ship`
-    : war ? (attacks(c) ? (occOn(c.a,c.d,c.isle)>0 ? `retaking your land from ${nm(c.d)}` : `attacking ${nm(c.d)} along the front`) : `defending against ${nm(c.d)}, on the ground no tower reaches`)
-    : inCrisis(c.a,c.d) ? `massed on the border of ${nm(c.d)}: a crisis`
-    : c.deployed ? `deployed on the border of ${nm(c.d)}`
-    : c.mode===F_GATHER ? `gathering on the front with ${nm(c.d)}`
-    : `holding the border with ${nm(c.d)}`;
-  const who=c.leader>=0 ? `${RANKS[c.rank]}, ` : c.rank ? 'Leaderless, ' : '';
-  return `${who}${c.members.length} men ${what}`;
+  const x=W.armies.find(x => x.o===PLAYER && x.plots.includes(key));
+  return x ? armyStatus(x) : 'At home';
 }
-
+/** A line on what army x is doing. */
+export function armyStatus(x: import('../sim/state').Army){
+  const r=x.goal ? regionName(x.goal) : '', men=`${x.men} men`;
+  if (x.mode===A_HOME) return 'At home';
+  if (x.mode===A_BATTLE) return `${men} · in battle${r ? ` for ${r}` : ''}`;
+  if (x.order===O_RETURN) return `${men} · going home`;
+  if (x.order===O_RETREAT) return `${men} · retreating to ${r}`;
+  if (x.mode===A_MARCH) return `${men} · marching to ${x.order===O_ATTACK ? 'attack' : x.order===O_DEFEND ? 'defend' : ''} ${r}`;
+  if (x.mode===A_HOLD) return x.order===O_ATTACK ? `${men} · lowering the flag of ${r}` : x.order===O_DEFEND ? `${men} · holding ${r}` : `${men} · waiting for orders`;
+  return men;
+}
 const pieces = (n: number[]) => [3,2].filter(t => n[t]).map(t => `${n[t]} ${TIER_NAME[t]}`).join(' · ') || 'none';
 
 /** Brings the panel up to date (cheap; skipped while it is closed). */

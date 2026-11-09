@@ -84,44 +84,30 @@ export interface Human {
   fx: number; fy: number;            // ...and where they stand, in pixels (slot: how far along the line)
   boat: number;                      // soldiers of a naval invasion: the ship that carries them (they are out of sight while aboard), or -1
 }
-/** An army in the field: an attack (holding its part of a front, and pushing it on when the offensive
-    is on), or an army defending a border. */
 /** A field marshal's command: armies merged into one order group. Each member is the barracks plots of one army as last seen; the first is the lead, whose name the group takes. */
 export interface Group { o: number; members: number[][]; }
 /** A soldier who fell wounded, not dead: he lies where he fell until a doctor carries him to a hospital (sim/medics.ts), or he bleeds out. */
 export interface Wounded { id: number; o: number; h: Human; x: number; y: number; left: number; medic: number; carried: boolean; hosp: number; bed: number; heal: number; }
-export interface Campaign {
-  id: number; a: number; d: number;  // attacker, defender
-  hostile: boolean;                  // still fighting: false once peace is made and the army walks home
-  members: number[];                 // ids of the soldiers still in it, rebuilt each tick
-  front: boolean;                    // an attack, or an army defending a border: its men stand on the front of its kingdom's offensive (sim/front.ts)
-  militia: boolean;                  // militia (no barracks of their own): sent with an attack, or called up as reserves to a front
-  all: boolean;                      // militia on a front: every one at home was called up, and those raised meanwhile follow
-  phase: number;                     // 0 mustering, 1 out (marching, or on the front), 2 going home
-  bx: number; by: number;            // the banner, in pixels
-  dx: number; dy: number;            // marching direction (unit)
-  rx: number; ry: number;            // rally point while mustering
-  goal: number;                      // the tile the banner heads for
-  field: Field; fieldAt: number;     // steps to the goal (or home) over land the army may cross, -1 = no way (sim/field.ts); tick it was worked out
-  started: number; startSoldiers: number; startTiles: number;   // tick it began, with how many soldiers, and the defender's land then
-  stall: number;                     // ticks the banner has waited for stragglers
-  why: string;                       // why it is going home: 'recall', 'peace', 'cut', 'done', 'won'
-  unit: number;                      // the barracks (a plot of it) whose army this is, or -1
-  inspired: boolean;                 // a counter-attack: thirsty for revenge, it hits harder and marches faster
-  leader: number;                    // id of the soldier leading it, or -1 (none for 5 or fewer, or he fell)
-  rank: number;                      // the leader's rank by the army's size when it set out (RANKS in war.ts; 0 none)
-  mode: number;                      // its offensive's state (F_* in war.ts)
-  naval: number;                     // an army put ashore from ships: the invasion it belongs to, else -1
-  isle: number;                      // the landmass of the enemy's land it is on the front of (a landmass id: sim/naval.ts), or 0: the whole border
-  dig: number;                       // ticks the army has held its place on defence, counting toward entrenching (DIG_TICKS)
-  dug: boolean;                      // the army is entrenched: its men are too
-  sec: number;                       // which part of that border: 0 all of it, a set of compass sectors (bits 0-7: by bearing from their castle), 256 the siege of their capital (SEC_SIEGE in sim/front.ts)
-  attack: boolean;                   // its order at war: attack (true) or defend (false: fall back out of reach of the enemy's towers and hold the line there)
-  ordered: boolean;                  // the order was given by someone (not the default for the side it fights on)
-  placed: number;                    // the line its men were last placed on: 0 none yet, 1 the attack line, 2 the line of the defence
-  deployed: boolean;                 // put on the border in peacetime, as a precaution (a crisis called off leaves it there)
-  waiting: number[];                 // an army whose front is across the sea: its new soldiers at the naval base, waiting for a ship with a full load
-  hitAt: number;                     // tick one of its soldiers was last hit
+/** An army: the soldiers of a barracks (or of an order group of barracks) in one phalanx (sim/war.ts). At home it stands in
+    front of its barracks; sent out, it marches to a region's flag, holds it, and fights any enemy army that comes at it. */
+export interface Army {
+  id: number;                        // the key of its lead barracks when it was formed (it keeps it)
+  o: number;
+  plots: number[];                   // the barracks plots of its armies, as last seen (it is found again by any of them)
+  x: number; y: number;              // the middle of its front rank, in pixels
+  fx: number; fy: number;            // the way it faces (a unit vector)
+  mode: number;                      // A_HOME, A_MARCH, A_HOLD, A_BATTLE (sim/war.ts)
+  order: number;                     // what it was told: O_NONE, O_ATTACK, O_DEFEND, O_RETURN, O_RETREAT (sim/war.ts)
+  goal: number;                      // the region it was sent to (0 none)
+  enemy: number;                     // the kingdom its order is against (0 none)
+  path: number[];                    // its way, waypoints in pixels (x,y pairs)
+  foe: number;                       // the army it is fighting (id), or -1
+  files: number[][];                 // its men in the field by file, the front rank first in each
+  men: number;                       // men in the field
+  safe: number;                      // tick before which no enemy army takes it on (it is retreating, or going home)
+  stand: boolean;                    // in a fight: it was holding its ground when it began (it stays; the other comes up to it)
+  hitAt: number;                     // tick it last lost a man
+  leader: number;                    // the id of the man who leads it, or -1
 }
 export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; isle?: number; seed?: number; }   // gold still to spend on this front (isle: a colony's, spent on that island's land only)
 /** A ship at sea (sim/naval.ts): sailing out, waiting off a coast, or sailing home to its naval base. */
@@ -165,22 +151,15 @@ export type Command =
   | { type: 'colonize'; nation: number; tile: number; ratio: number }   // send a ship to colonize the landmass of this unclaimed tile, with this share of the treasury
   | { type: 'ship'; nation: number; plot: number }                   // build a ship at this naval base
   | { type: 'ally'; nation: number; target: number }                  // propose an alliance
-  | { type: 'war'; nation: number; target: number; naval?: { base: number; coast: number }; soldiers?: number; units?: number[]; militia?: number; isle?: number }   // units: barracks plots, each army marches on its own; militia: how many of the militia at home go too
+  | { type: 'claim'; nation: number; target: number; regions: number[] }   // a crisis: claims on these regions of target's, which it may give up or fight for
+  | { type: 'answer'; nation: number; target: number; accept: boolean }  // the answer to target's claims on us: give them up, or war
   | { type: 'endWar'; nation: number; target: number }                // offer peace
   | { type: 'peace'; nation: number; target: number }                 // accept the target's peace offer
   | { type: 'research'; nation: number; topic: number }               // study this topic next (R_* in research.ts)
-  | { type: 'offensive'; nation: number; target: number; go: boolean }   // attack along the front (in a crisis: go to war), or hold the front
-  | { type: 'deescalate'; nation: number; target: number }            // call off the crisis our massed armies started: everyone goes home
-  | { type: 'deploy'; nation: number; target: number; units?: number[]; militia?: number; isle?: number }   // put armies on the border in peace, ready for a crisis
-  | { type: 'order'; nation: number; camp: number; go: boolean }   // an army at war attacks (go) or defends
-  | { type: 'front'; nation: number; camp: number; isle: number }   // an army goes to the border on that landmass
-  | { type: 'redirect'; nation: number; camp: number; target: number; isle?: number }   // an army out on a border, not committed, goes to another kingdom's border
+  | { type: 'deescalate'; nation: number; target: number }            // withdraw our claims on target before it answers
   | { type: 'merge'; nation: number; a: number; b: number }   // army b (a barracks' key) joins army a's order group; a leads and gives it its name
   | { type: 'unmerge'; nation: number; key: number }          // army key's order group is dissolved
-  | { type: 'assign'; nation: number; army: number; target: number; isle?: number; sec?: number; go?: boolean }   // station an army (a barracks' key, or -2 for the militia) on the border with a kingdom, wherever it is now
-  | { type: 'recall'; nation: number; camp: number }   // an army at the border in peace or crisis goes home
-  | { type: 'defend'; nation: number; target: number; units: number[]; isle?: number }   // send armies to stand on our side of the border with target
-  | { type: 'reserves'; nation: number; target: number; call: boolean };  // call the militia up to the front against target, or send them home
+  | { type: 'army'; nation: number; army: number; order: 'attack' | 'defend' | 'return' | 'retreat'; region?: number };   // an order to an army (by id)
 
 export let elev = new Float32Array(NT), moist = new Float32Array(NT);
 // resources: at most one per tile (R_* in resources.ts), harvests left, claimed by a villager
@@ -221,7 +200,8 @@ export const W = {
   commands: [] as Command[], simTime: 0, tickN: 0, rushUntil: 0,   // rushUntil: the tick the land rush (settling at half price) ends
   prand: Math.random as Rng,         // separate stream for people, so they never shift the territory game's randomness
   humans: [] as Human[], humanSeq: 0,
-  campaigns: [] as Campaign[], campSeq: 0,
+  armies: [] as Army[],              // every kingdom's armies (sim/war.ts)
+  claims: new Map<number, number[]>(),   // [a*M+d] the regions a claims of d's: in a crisis, and the war fought for them
   ally: new Uint8Array(1),           // [a*M+b] 1 if allied (both ways)
   atWar: new Uint8Array(1),          // [a*M+b] 1 while any campaign runs between them, rebuilt each tick
   grudge: new Int32Array(1),         // [a*M+b] tick b last went to war against a
@@ -247,4 +227,8 @@ export const W = {
   groups: [] as Group[],             // armies merged into order groups (sim/army.ts)
   isleOwn: new Int32Array(0),        // [isle*M+o] tiles of o's on that island (and every landmass: sim/naval.ts)
   isleCount: 0,
+  rOwner: new Uint8Array(1),         // [region] the kingdom that controls it (sim/regions.ts), 0 none
+  rFlag: new Float32Array(1),        // [region] how high its flag stands, 0 to 1 (down: occupied)
+  rOcc: new Uint8Array(1),           // [region] the kingdom that occupies it in a war, 0 none
+  rCount: new Int32Array(1),         // [region*M+o] its land tiles o owns
 };
