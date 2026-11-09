@@ -11,6 +11,7 @@ export interface SimEvents {
   eliminated(id: number, by: number): void;
   roleChanged(x: number, y: number, kind: number): void;   // someone left the capital as a villager or soldier
   towerShot(x0: number, y0: number, x1: number, y1: number, killed: boolean, victim: number): void;   // a watchtower or castle hit someone
+  arrowShot(x0: number, y0: number, x1: number, y1: number, killed: boolean, victim: number): void;   // an archer's arrow hit someone
   produced(q: number, id: number, good: number, amount: number): void;   // a plantation, quarry or copper mine delivered
   warBegan(a: number, d: number): void;                        // a sent an army against d (more armies to a war)
   crisis(a: number, d: number): void;                          // a massed its armies on d's border: a crisis, not yet a war
@@ -62,7 +63,7 @@ export const on: SimEvents = {
   regionChanged: noop, claimsChanged: noop, battleRoll: noop, regionTaken: noop, claimsAnswered: noop, armyOrdered: noop, armyLost: noop, battle: noop, warWon: noop,
   tileChanged: noop, plotChanged: noop, roadBuilt: noop, plotIgnited: noop,
   buildingPlaced: noop, capitalFell: noop, eliminated: noop, roleChanged: noop,
-  towerShot: noop, produced: noop,
+  towerShot: noop, arrowShot: noop, produced: noop,
   warBegan: noop, crisis: noop, escalated: noop, siege: noop, deescalated: noop, defending: noop, reserves: noop, armyHome: noop, armyGone: noop, peaceOffered: noop, peaceRefused: noop, peaceMade: noop,
   allied: noop, allyRefused: noop, allianceBroken: noop, annexed: noop, hit: noop, bldHit: noop,
   died: noop, occupied: noop, counterReady: noop, swing: noop, story: noop, researched: noop, upgraded: noop, builderHired: noop, invasionSails: noop, shipBuilt: noop, colonyBound: noop, colonyFounded: noop, forged: noop, armored: noop, deserted: noop, order: noop,

@@ -1,5 +1,5 @@
 /* ---------- territory & combat ---------- */
-import { GAME_SPEED, TW, TH, NT, PW, PH, TMULT, B_TOWER, B_CASTLE, B_CPART, GOLD_PER_TILE, RUSH_COST, isStructure } from '../core/constants';
+import { GAME_SPEED, TW, TH, NT, PW, PH, TMULT, B_TOWER, B_CASTLE, B_CPART, B_BARRACKS, GOLD_PER_TILE, RUSH_COST, isStructure } from '../core/constants';
 import { W, owner, occ, terr, isLand, isle, frontMark, pType, pOwner, pBurn, type Attack } from './state';
 import { on } from './events';
 import { ignite, captureBuilding } from './buildings';
@@ -55,7 +55,7 @@ export function setOwner(t: number, o: number, keep=false){
   on.tileChanged(t,o);
   if ((x&3)===2 && (y&3)===2){
     const q=(y>>2)*PW+(x>>2), ty=pType[q];
-    if (isStructure(ty) && pOwner[q]!==o && pBurn[q]<=0){ if (keep && o) captureBuilding(q,o); else ignite(q); }
+    if (isStructure(ty) && pOwner[q]!==o && pBurn[q]<=0){ if (keep && o && ty!==B_BARRACKS) captureBuilding(q,o); else ignite(q); }   // (barracks never change hands: they burn, so a kingdom's army is only what its own barracks raise)
   }
   if (prev){ const Pn=W.nations[prev]; if (t===Pn.capTile) capitalFalls(prev,o); if (Pn.tiles<=0 && Pn.alive) eliminate(prev,o); }
 }

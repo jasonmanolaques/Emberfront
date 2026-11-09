@@ -23,6 +23,7 @@ import { nationsOpen, closeNations } from './nations';
 import { region, regionName, RG } from '../sim/regions';
 const regionLand = (r: number) => RG.land[r];
 import { claimsOf } from '../sim/war';
+import { fortTier, capitalIn } from '../sim/buildings';
 
 interface Drag { sx: number; sy: number; lx: number; ly: number; moved: boolean; button: number; }
 const pointers=new Map<number,{x: number; y: number}>(); let drag: Drag | null=null, pinch: {d: number; mx: number; my: number} | null=null;
@@ -40,7 +41,8 @@ function updateTip(e: PointerEvent){
   const r=region[t];
   if (r){
     const c=W.rOwner[r], cl=c && c!==PLAYER && claimsOf(PLAYER,c).includes(r) ? ' · claimed by you' : c===PLAYER && [...W.claims.entries()].some(([k,v]) => k%W.M===PLAYER && v.includes(r)) ? ' · claimed by an enemy' : '';
-    l2=`${regionName(r)} · ${c ? (c===PLAYER ? 'your region' : W.nations[c].name+'\'s region') : `no flag yet (${Math.round(W.rCount[r*W.M+(o||0)]/Math.max(1,regionLand(r))*100)}% ${o ? 'theirs' : 'settled'})`}${cl}`;
+    const ft=fortTier(r), fort=!ft ? '' : capitalIn(r) ? ' · capital: defends itself as a tier 4 fort' : ` · fort, tier ${ft}`;
+    l2=`${regionName(r)} · ${c ? (c===PLAYER ? 'your region' : W.nations[c].name+'\'s region') : `no flag yet (${Math.round(W.rCount[r*W.M+(o||0)]/Math.max(1,regionLand(r))*100)}% ${o ? 'theirs' : 'settled'}: more than half takes it)`}${cl}${fort}`;
   }
   ui.tip.innerHTML=`<span class="t1"></span><span class="t2"></span><span class="t2"></span>`;
   ui.tip.children[0].textContent=l1; ui.tip.children[1].textContent=l2; ui.tip.children[2].textContent=l3;

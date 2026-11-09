@@ -444,6 +444,15 @@ export function render(now: number, dt: number){
     const s=shots[i], age=Math.max(0,now-s.t0);
     const x0=s.x0*K, y0=s.y0*K, x1=s.x1*K, y1=s.y1*K, L=Math.hypot(x1-x0,y1-y0)||1, fly=Math.min(700,220+L*6);
     if (age>fly+260){ shots.splice(i,1); continue; }
+    if (s.small){   // an archer's arrow: a thin dark shaft with a pale head, on a low arc; a tiny fleck where it lands
+      if (age<fly){
+        const lift=Math.min(6,L*0.18), at=(k: number): [number, number] => [x0+(x1-x0)*k, y0+(y1-y0)*k-Math.sin(k*Math.PI)*lift];
+        const k=age/fly, [x,y]=at(k), [px,py]=at(Math.max(0,k-0.06)), X=Math.floor(x), Y=Math.floor(y);
+        ctx.fillStyle='#3a2a1c'; ctx.fillRect(Math.floor(px),Math.floor(py),1,1); ctx.fillRect(Math.floor((px+x)/2),Math.floor((py+y)/2),1,1);
+        ctx.fillStyle='#e8e4d8'; ctx.fillRect(X,Y,1,1);
+      } else if (age<fly+160){ ctx.globalAlpha=1-(age-fly)/160; ctx.fillStyle=s.kill ? '#ff3b2b' : '#d8d0c0'; ctx.fillRect(Math.floor(x1),Math.floor(y1),1,1); ctx.globalAlpha=1; }
+      continue;
+    }
     if (age<120){ ctx.globalAlpha=1-age/120; ctx.fillStyle='#fff2b0'; ctx.fillRect(Math.floor(x0)-1,Math.floor(y0)-1,3,3); ctx.globalAlpha=1; }
     if (age<fly){
       const at=(k: number): [number, number] => [x0+(x1-x0)*k, y0+(y1-y0)*k-Math.sin(k*Math.PI)*Math.min(14,L*0.25)];

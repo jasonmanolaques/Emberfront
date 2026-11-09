@@ -402,8 +402,17 @@ export function fortSpot(r: number){
   }
   spots.set(r,best); return best;
 }
-/** The tier of region r's fort (the best of its four towers), 0 if it has none standing. */
-export function fortTier(r: number){
+/** The kingdom whose castle stands in region r (its capital's region), or 0. */
+export function capitalIn(r: number){
+  if (!r) return 0;
+  for (let i=1;i<W.nations.length;i++){ const n=W.nations[i]; if (n.alive && n.capTile>=0 && region[n.capTile]===r) return i; }
+  return 0;
+}
+export const CAPITAL_TIER = 4;   // a capital's region defends itself like a fort of tier 4 (no upkeep: the castle is its fort)
+/** How region r defends itself: a capital's region as a fort of tier 4, else the tier of its fort (0 if none). */
+export const fortTier = (r: number) => capitalIn(r) ? CAPITAL_TIER : builtTier(r);
+/** The tier of region r's built fort (the best of its four towers), 0 if it has none standing. */
+export function builtTier(r: number){
   const q=fortSpot(r); if (q<0) return 0;
   let t=0;
   for (const k of blockPlots(q)){ if (pType[k]!==B_TOWER || pBurn[k]>0) return 0; t=Math.max(t,pTier[k] || 1); }
@@ -413,7 +422,8 @@ export function fortTier(r: number){
 export function fortProblem(n: Nation, r: number): string | null {
   if (!r) return 'Pick a region';
   if (W.rOwner[r]!==n.id || W.rOcc[r]) return 'Only in a region of yours (flag up, not occupied)';
-  if (fortTier(r)) return 'This region has its fort';
+  if (capitalIn(r)) return 'A capital\'s region needs no fort: it defends itself like a fort of tier 4';
+  if (builtTier(r)) return 'This region has its fort';
   const q=fortSpot(r); if (q<0) return 'No room round its flag for a fort';
   for (const k of blockPlots(q)){ const ty=pType[k===pMain[k] || pType[k]!==B_PART ? k : pMain[k]]; if (ty===B_CASTLE || ty===B_CPART) return 'The castle stands there'; if (owner[pCenter[k]]!==n.id) return 'The ground there is not yours'; }
   const s=structureOf(B_TOWER)!; if (!canAfford(n,s)) return 'Not enough materials';

@@ -6,7 +6,7 @@ import { fmt } from '../core/util';
 import { W } from '../sim/state';
 import { client } from '../client';
 import { queueCommand } from '../sim/sim';
-import { allied, atWar, allyProblem, warProblem, claimProblem, claimsProblem, claimable, inCrisis, crisisWait, claimsOf, attackerIn, began, menAgainst, OFFER_TICKS, MAX_CLAIMS, P_GOALS } from '../sim/war';
+import { allied, atWar, allyProblem, warProblem, claimProblem, claimsProblem, claimable, inCrisis, crisisWait, claimsOf, attackerIn, began, claimsCapital, menAgainst, OFFER_TICKS, MAX_CLAIMS, P_GOALS } from '../sim/war';
 import { RG, region, regionName } from '../sim/regions';
 import { toast } from './hud';
 import { flagCSS } from '../render/flags';
@@ -137,7 +137,8 @@ export function updateWarChips(){
       acts=`<button class="fword" data-o="${f.o}" data-act="calm" title="Take your claims back">Take back</button>`;
     } else if (f.crisis){
       line=`${esc(nameOf(f.a))} claims your ${names} · ${secs(crisisWait(f.a,f.d))} s to answer`;
-      acts=`<button class="fword" data-o="${f.o}" data-act="give" title="Give the regions up: they are theirs at once, with no blood shed">Give up</button><button class="fword go" data-o="${f.o}" data-act="refuse" title="Refuse: it is war for these regions">Refuse · war</button>`;
+      const capital=claimsCapital(f.a,f.d);
+      acts=(capital ? `<button class="fword" disabled title="They claim your capital's region: it can't be given up, only fought for">Give up</button>` : `<button class="fword" data-o="${f.o}" data-act="give" title="Give the regions up: they are theirs at once, with no blood shed">Give up</button>`)+`<button class="fword go" data-o="${f.o}" data-act="refuse" title="Refuse: it is war for these regions">Refuse · war</button>`;
     } else {
       // both sides may have war goals: the player's on them, and theirs on the player
       const mine=claimsOf(PLAYER,f.o), theirs=claimsOf(f.o,PLAYER), held=(o: number, regs: number[]) => regs.filter(r => W.rOcc[r]===o).length;

@@ -90,7 +90,7 @@ describe('regions', () => {
     expect(none/land).toBeLessThan(0.01);   // (only small islands belong to none)
   });
 
-  it('go whole to a kingdom that owns more than 60% of one: the others are pushed out, their buildings burn', () => {
+  it('go whole to a kingdom that owns more than half of one (51%): the others are pushed out, their buildings burn', () => {
     world();
     const [bx,by]=blockOf(N(1).capTile), r=regionAt(bx+2,by);
     expect(region[N(2).capTile]).not.toBe(r);
@@ -110,6 +110,18 @@ describe('regions', () => {
     expect(W.rFlag[r]).toBe(1);
     expect(tiles.every(t => owner[t]===1)).toBe(true);
     expect(pBurn[qq]>0 || pOwner[qq]!==2).toBe(true);
+  });
+
+  it('go to a 55% holder over a 45% one: a majority is enough, all the land need not be settled', () => {
+    world();
+    const [bx,by]=blockOf(N(1).capTile), r=regionAt(bx+2,by);
+    const tiles=RG.tiles.slice(RG.start[r],RG.start[r+1]), L=tiles.length;
+    expect(CONTROL).toBeCloseTo(0.51);
+    let k=0;
+    for (;k<L*0.45;k++) setOwner(tiles[k],2);
+    for (;k<L;k++) setOwner(tiles[k],1);   // (about 55%)
+    updateRegions();
+    expect(W.rOwner[r]).toBe(1);
   });
 
   it('with another kingdom\'s castle in it can\'t be taken from that kingdom', () => {
@@ -433,7 +445,7 @@ describe('archers', () => {
     world(); const { home, theirs }=lands(1);
     const a=army(1,25,home,0,15), d=army(2,15,theirs[0]);
     war(1,2,theirs);
-    let shots=0; listen({ towerShot: () => { shots++; } });
+    let shots=0; listen({ arrowShot: () => { shots++; } });
     armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
     until(() => a.mode===A_BATTLE, 4000);
     shots=0; run(ARROW_TICKS);
@@ -502,8 +514,10 @@ describe('orders', () => {
 
 describe('forts', () => {
   it('stand round a region\'s flag, four watchtowers for 15 wood, 50 stone and 15 copper, one a region; 1.5 gold a second a tier', () => {
-    world(); const { home }=lands(1);
+    world(); const { home: castle }=lands(1);
     const n=N(1); n.stock=[15,50,15];
+    expect(buildFort(n,castle)).toBe(false);   // (a capital's region defends itself as a tier 4 fort)
+    const [bx,by]=blockOf(n.capTile), home=regionAt(bx,by+1); cedeRegion(home,1); census();
     expect(buildFort(n,home)).toBe(true);
     expect(n.stock).toEqual([0,0,0]);
     expect(fortTier(home)).toBe(1);
@@ -553,6 +567,58 @@ describe('forts held by the occupier', () => {
     listen({ towerShot: () => {} });
     expect(t).toBeGreaterThan(CAPTURE_TICKS*1.8*0.9);   // (a tier 2 fort: 80% slower, now against its builder)
     expect(shots.length).toBeGreaterThan(3);
+  });
+});
+
+describe('taking regions', () => {
+  it('a region occupied loses its barracks: they burn, and the occupier gains no army from them', () => {
+    world(); const { home, theirs }=lands(1);
+    const b=army(2,5,theirs[0]), bq=b.plots[0];
+    const a=army(1,20,home);
+    war(1,2,theirs);
+    armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => W.rOcc[theirs[0]]===1 || !W.wars[1*M()+2], CAPTURE_TICKS*4);
+    expect(pType[bq]!==B_BARRACKS || pBurn[bq]>0).toBe(true);
+    expect(pOwner[bq]).not.toBe(1);
+  });
+
+  it('a region given up in a peace hands over its buildings, but not its barracks: they burn', () => {
+    world(); const { theirs }=lands(1);
+    const b=army(2,5,theirs[0]), bq=b.plots[0];
+    war(1,2,theirs);
+    expect(giveGoals(2,1)).toBe(true);
+    expect(W.rOwner[theirs[0]]).toBe(1);
+    expect(pType[bq]===B_BARRACKS && pOwner[bq]===1 && pBurn[bq]<=0).toBe(false);
+  });
+
+  it('a capital\'s region is never given up: not in a crisis, not in a peace; it defends itself as a fort of tier 4, for nothing', () => {
+    world();
+    const [bx,by]=blockOf(N(2).capTile), bh=regionAt(bx,by); cedeRegion(bh,2);
+    const mine=RG.adj[bh][0]; cedeRegion(mine,1); census();
+    const other=RG.adj[bh].find(r => r!==mine && !RG.adj[mine].includes(r) && r!==region[N(1).capTile])!; cedeRegion(other,2); census();
+    expect(fortTier(bh)).toBe(4); expect(FORT_DMG[4]).toBe(16);
+    run(12); expect(fortUpkeep(2)).toBe(0);
+    // claimed in a crisis: it can't be given up (a bot refuses, the player's Give up is refused too)
+    expect(claim(1,2,[bh])).toBe(true);
+    expect(answer(2,1,true)).toBe(false);
+    expect(inCrisis(1,2)).toBe(true);
+    expect(answer(2,1,false)).toBe(true);
+    // at war: giving the war goals up hands over the rest, not the capital's region
+    expect(setClaims(1,2,[bh,other])).toBe(true);
+    expect(giveGoals(2,1)).toBe(true);
+    expect(W.rOwner[bh]).toBe(2); expect(W.rOwner[other]).toBe(1);
+    expect(N(2).alive).toBe(true);
+  });
+
+  it('a bot that loses one battle doesn\'t give up a chain of regions: it yields its war goals only once most are taken', () => {
+    world(); const { home, theirs }=lands(3);
+    const a=army(1,40,home), d=army(2,8,theirs[0]);
+    const B=N(2); B.nextThink=0; B.nextWar=1e9; B.nextOffer=0;
+    war(1,2,theirs);
+    armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => W.rOcc[theirs[0]]===1 || !W.wars[1*M()+2], CAPTURE_TICKS*6);
+    run(1200);
+    expect(W.rOwner[theirs[1]]).toBe(2); expect(W.rOwner[theirs[2]]).toBe(2);   // (whatever it offered: the rest are still its)
   });
 });
 
@@ -660,10 +726,10 @@ describe('peace', () => {
     world();
     const [bx,by]=blockOf(N(2).capTile), bh=regionAt(bx,by); cedeRegion(bh,2);
     const mine=RG.adj[bh][0]; cedeRegion(mine,1); census();
-    const a=army(1,16,mine);
+    const a=army(1,60,mine);   // (a capital holds out like a fort of tier 4: 2.6 times as long, and its arrows do 16)
     war(1,2,[bh]);
     armyOrder(1,a.id,'attack',bh);
-    until(() => !N(2).alive || !W.wars[1*M()+2], CAPTURE_TICKS*6);
+    until(() => !N(2).alive || !W.wars[1*M()+2], CAPTURE_TICKS*8);
     expect(N(2).alive).toBe(false);
     expect(owner[N(2).capTile]===1 || N(2).capTile<0).toBe(true);
     void pType; void (null as unknown as Human);

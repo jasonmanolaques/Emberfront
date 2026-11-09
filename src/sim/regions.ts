@@ -17,7 +17,7 @@ import { DATA, decodeRaw } from './realmap';
 import { REGION_DATA } from './regiondata';
 import { on } from './events';
 
-export const CONTROL = 0.6;   // share of a region's land a kingdom must own to take the whole of it
+export const CONTROL = 0.51;   // share of a region's land a kingdom must own (more than this) to take the whole of it: a majority
 
 export let region = new Uint16Array(NT);   // the region of each tile (0: none)
 /** The regions of the map: index 0 is "none". */

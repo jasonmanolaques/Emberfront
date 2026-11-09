@@ -20,14 +20,14 @@
    him in his file steps up. The army left with nobody standing has lost; its men at home are its depot.
    The war ends when a holds every region it claimed (they are its), or by peace: a's occupied regions
    are then its, the rest go back. A kingdom that loses the region of its castle falls to the winner. */
-import { TW, TH, NT, NP, PW, TMULT, GAME_SPEED, WAGE, WAGE_IDLE, WAGE_ATTACK, B_CASTLE, B_CPART, isStructure } from '../core/constants';
-import { W, owner, occ, terr, isLand, isle, pType, pOwner, pCenter, pHp, pMain, type Human, type Nation, type Army } from './state';
+import { TW, TH, NT, NP, PW, TMULT, GAME_SPEED, WAGE, WAGE_IDLE, WAGE_ATTACK, B_CASTLE, B_CPART, B_BARRACKS, isStructure } from '../core/constants';
+import { W, owner, occ, terr, isLand, isle, pType, pOwner, pCenter, pHp, pMain, pBurn, type Human, type Nation, type Army } from './state';
 import { wear, CASTLE_MEND } from './defense';
 import { on } from './events';
 import { H_SOLDIER, indoors, switching, tileOf, pace, release, TASK_ROAM } from './population';
 import { units, unitAt, groupKeys, groupLead, maxHp, SOLDIER_DMG, MILITIA_HIT, ARCHER_SHARE, type Unit } from './army';
 import { RG, region, holdsRegion, cedeRegion, occupyRegion, freeRegion, flagXY, CONTROL } from './regions';
-import { ignite, fortTier, fortSpot } from './buildings';
+import { ignite, fortTier, fortSpot, builtTier, capitalIn } from './buildings';
 import { findWay } from './roads';
 export { findWay };
 import { census } from './census';
@@ -49,7 +49,7 @@ export const ROLL_TICKS = 3*GAME_SPEED*10;        // every 3 s on the clock each
 export const ROLL_MOD = 0.2;                      // a 6 is +20% to the blows of its line, a 1 is -20%, a 3 even
 export const BATTLE_DMG = 2;                      // blows in a battle line land twice as hard as a soldier's blow elsewhere: a line fight is brutal
 export const FORT_SLOW = 0.4;                     // each tier of a region's fort makes its capture (and its retaking) 40% slower
-export const FORT_DMG = [0, 2, 4, 8];             // what a fort's shot does, by tier (one every ROLL_TICKS, at a man of an army attacking the region)
+export const FORT_DMG = [0, 2, 4, 8, 16];         // what a fort's shot does, by tier (one every ROLL_TICKS, at a man of an army attacking the region); 4: a capital's region
 export const FORT_UPKEEP = 1.5;                   // gold a second a fort costs, a tier
 export const P_WHITE = 1, P_GOALS = 2;            // peace offers: white peace (all back as it was), or the war goals (each side gets the claimed regions it holds)
 export const MAX_CLAIMS = 4;                      // regions one crisis may claim
@@ -86,7 +86,7 @@ let upkeep=new Float64Array(1);                 // per nation: what its forts co
 export const fortUpkeep = (o: number) => upkeep[o] ?? 0;
 function countForts(){
   if (upkeep.length!==W.M) upkeep=new Float64Array(W.M); else upkeep.fill(0);
-  for (let r=1;r<RG.n;r++){ const t=fortTier(r); if (!t) continue; const o=pOwner[fortSpot(r)]; if (o) upkeep[o]+=FORT_UPKEEP*t; }
+  for (let r=1;r<RG.n;r++){ const t=builtTier(r); if (!t) continue; const o=pOwner[fortSpot(r)]; if (o) upkeep[o]+=FORT_UPKEEP*t; }   // (a capital's defence costs nothing)
 }
 /** Is h moved by his army (in its phalanx), not on his own? */
 export const inPhalanx = (h: Human) => led.has(h.id);
@@ -159,6 +159,7 @@ export function claim(a: number, d: number, regions: number[]){
 /** d answers a's claims: gives the regions up (they are a's, no blood shed), or refuses (war). */
 export function answer(d: number, a: number, accept: boolean){
   if (!inCrisis(a,d)) return false;
+  if (accept && claimsCapital(a,d)) return false;   // (a capital's region is never given up: only taken)
   if (accept){
     const regs=claimsOf(a,d), D=W.nations[d];
     W.claims.delete(a*W.M+d); W.aggr[a*W.M+d]=0;
@@ -171,6 +172,8 @@ export function answer(d: number, a: number, accept: boolean){
   on.claimsAnswered(a,d,false);
   return true;
 }
+/** Do a's claims on d include d's capital region (which d can't give up, in a crisis or a peace)? */
+export const claimsCapital = (a: number, d: number) => { const D=W.nations[d]; return !!D && D.capTile>=0 && claimsOf(a,d).includes(region[D.capTile]); };
 /** a takes its claims on d back before d has answered. */
 export function deescalate(a: number, d: number){
   if (!inCrisis(a,d)) return;
@@ -229,7 +232,8 @@ export function makePeace(a: number, b: number, goals=false, all=0){
   for (const [x,y] of [[a,b],[b,a]]){
     const regs=W.claims.get(x*M+y); if (!regs) continue;
     W.claims.delete(x*M+y);
-    if (goals) gains.push([x,y,regs.filter(r => W.rOwner[r]===y && (x===all || W.rOcc[r]===x))]);
+    const Y=W.nations[y], capR=Y && Y.capTile>=0 ? region[Y.capTile] : -1;   // (a capital's region is never given up: it changes hands only if taken)
+    if (goals) gains.push([x,y,regs.filter(r => W.rOwner[r]===y && ((x===all && r!==capR) || W.rOcc[r]===x))]);
   }
   for (const [x,y,won] of gains){
     for (const r of won) if (W.rOcc[r]) freeRegion(r);
@@ -320,6 +324,7 @@ export function annex(loser: number, winner: number){
   for (let q=0;q<NP;q++){
     if (pOwner[q]!==loser) continue;
     if (pType[q]===B_CASTLE || pType[q]===B_CPART) continue;
+    if (pType[q]===B_BARRACKS){ ignite(q); continue; }   // (its barracks burn: the winner's army is only what its own barracks raise)
     if (isStructure(pType[q])) pOwner[q]=winner;
     on.plotChanged(q);
   }
@@ -528,7 +533,7 @@ function volley(x: Army){
     const e=pool[i]; if (e.hp<=0) continue;
     e.hp-=ARROW_DMG; e.by=x.o;
     if (e.hp<=0){ W.kills[x.o*W.M+e.o]++; y.hitAt=W.tickN; }
-    on.towerShot(h.x,h.y-3,e.x,e.y-2,e.hp<=0,e.id);
+    on.arrowShot(h.x,h.y-3,e.x,e.y-2,e.hp<=0,e.id);
   }
 }
 /** Why army `id` of kingdom o can't take this order, or null. */
@@ -655,6 +660,7 @@ export function updateWar(){
 /** A bot answers claims on it: it gives up the regions only to a kingdom far stronger than it, and only a few of them. */
 function botAccepts(D: Nation, a: number){
   const A=W.nations[a], regs=claimsOf(a,D.id).length;
+  if (claimsCapital(a,D.id)) return false;
   return A.strength>D.strength*(2+regs*0.4) && W.srand()<0.8;
 }
 /** One tick of army x: the men of its phalanx to their places, and the phalanx on its way. */
@@ -844,7 +850,7 @@ function flags(){
       const a=foes[0].o; if (W.rOcc[r]===a) continue;
       let men=0; for (const x of foes) men+=x.men;
       W.rFlag[r]-=rate(men,a);
-      if (W.rFlag[r]<=0){ W.rFlag[r]=0; occupyRegion(r,a); on.regionTaken(r,a,d); checkVictory(a,d); }
+      if (W.rFlag[r]<=0){ W.rFlag[r]=0; razeBarracks(r,d); occupyRegion(r,a); on.regionTaken(r,a,d); checkVictory(a,d); }
     } else if (own.length){
       let men=0; for (const x of own) men+=x.men;
       W.rFlag[r]=Math.min(1,W.rFlag[r]+rate(men,d));
@@ -866,10 +872,19 @@ function fortsFire(){
   }
   for (const [r,t] of targets){
     if (!t.length) continue;
-    const e=t[(W.prand()*t.length)|0], tier=fortTier(r), q=fortSpot(r), holder=W.rOcc[r] || W.rOwner[r];
+    const e=t[(W.prand()*t.length)|0], tier=fortTier(r), cap=capitalIn(r), q=cap ? W.nations[cap].capPlot : fortSpot(r), holder=W.rOcc[r] || W.rOwner[r];   // (a capital's arrows fly from its castle)
     const was=e.hp; e.hp-=FORT_DMG[tier] ?? 2; e.by=holder;
     if (was>0 && e.hp<=0) W.kills[holder*M+e.o]++;
     on.towerShot((q%PW)*8+8,((q/PW)|0)*8+4,e.x,e.y-2,e.hp<=0,e.id);
+  }
+}
+/** The barracks of o's in region r burn (a region taken: its barracks are lost, so nobody's army grows from what it captures). */
+export function razeBarracks(r: number, o: number){
+  const seen=new Set<number>();
+  for (let i=RG.start[r];i<RG.start[r+1];i++){
+    const t=RG.tiles[i], x=t%TW, y=(t/TW)|0, q=(y>>2)*PW+(x>>2);
+    if (seen.has(q)) continue; seen.add(q);
+    if (pType[q]===B_BARRACKS && pOwner[q]===o && pBurn[q]<=0 && region[pCenter[q]]===r) ignite(q);
   }
 }
 /** a holds every region it claimed of d's: the war is won, and they are its. */

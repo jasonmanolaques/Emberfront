@@ -51,9 +51,9 @@ export function updateEffects(dt: number, vx0: number, vy0: number, vx1: number,
 }
 
 /* watchtower arrows */
-export interface Shot { x0: number; y0: number; x1: number; y1: number; t0: number; kill: boolean; }
+export interface Shot { x0: number; y0: number; x1: number; y1: number; t0: number; kill: boolean; small: boolean; }   // small: an archer's arrow
 export const shots: Shot[]=[];
-export function addShot(x0: number, y0: number, x1: number, y1: number, kill: boolean){ shots.push({x0,y0,x1,y1,t0:performance.now(),kill}); if (shots.length>300) shots.shift(); }
+export function addShot(x0: number, y0: number, x1: number, y1: number, kill: boolean, small=false){ shots.push({x0,y0,x1,y1,t0:performance.now(),kill,small}); if (shots.length>400) shots.shift(); }
 
 /* blows landing in a fight */
 export interface Hit { x: number; y: number; t0: number; kill: boolean; }

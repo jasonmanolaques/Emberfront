@@ -435,12 +435,12 @@ function botWar(n: Nation){
     const look=outlook(n,o), age=warAge(id,o);
     if (began(id,o)){
       const held=heldShare(id,o);
-      if (attackerIn(o,id) && (look<-0.9 || heldShare(o,id)>=0.75)){ giveGoals(id,o); continue; }   // (the defender's counter-attack goes badly for it)
+      if (attackerIn(o,id) && yields(n,o,look)) continue;
       if (held>=0.6 && look>-0.2){ endWar(id,o,P_GOALS); n.nextOffer=W.simTime+30; }
       else if (age>=600 && look<-0.4){ endWar(id,o,P_WHITE); n.nextOffer=W.simTime+30; }
       else if (look>0.5 && held>=0.5 && srand()<0.3){ const more=moreClaims(id,o); if (more) setClaims(id,o,[...claimsOf(id,o),more]); }
     } else {
-      if (attackerIn(o,id) && (look<-0.9 || heldShare(o,id)>=0.75)){ giveGoals(id,o); continue; }
+      if (attackerIn(o,id) && yields(n,o,look)) continue;
       if (counter(n,o,look,age)) continue;
       if (age>=600 && look<-0.3 && !taken(id,o)){ endWar(id,o,P_WHITE); n.nextOffer=W.simTime+30; }
     }
@@ -483,6 +483,15 @@ function fortify(n: Nation){
     if (s2>bs){ bs=s2; best=r; }
   }
   if (best) buildFort(n,best);
+}
+/** Bot n, at war with o (who claims regions of n's), gives in when it has to: it gives o its war goals only once o holds most of them (three
+    in four) and the war goes against it; losing badly before that, it offers peace on what each side holds (o keeps what it has taken, no more).
+    One lost battle never hands over a chain of regions. True when it did. */
+function yields(n: Nation, o: number, look: number){
+  const id=n.id;
+  if (heldShare(o,id)>=0.75 && look<-0.3){ giveGoals(id,o); return true; }
+  if (look<-0.9 && taken(o,id)>0){ endWar(id,o,P_GOALS); n.nextOffer=W.simTime+30; return true; }
+  return false;
 }
 /** How many of a's claims on d a occupies. */
 const taken = (a: number, d: number) => { let k=0; for (const r of claimsOf(a,d)) if (W.rOcc[r]===a) k++; return k; };
