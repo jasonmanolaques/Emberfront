@@ -113,6 +113,9 @@ export interface Army {
   near: number;                      // marching: the least distance to the next waypoint so far
   roll: number;                      // in a battle: the die its line rolled last (1 to 6, 3 even), 0 none
   rollAt: number;                    // tick of that roll
+  coming: number[];                  // reinforcements on their way to it from its barracks (ids): they join its ranks at the back on arrival
+  via: number[];                     // the way the reinforcements take (pixels), and the tick it was worked out
+  viaAt: number;
 }
 export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; isle?: number; seed?: number; }   // gold still to spend on this front (isle: a colony's, spent on that island's land only)
 /** A ship at sea (sim/naval.ts): sailing out, waiting off a coast, or sailing home to its naval base. */
@@ -166,7 +169,7 @@ export type Command =
   | { type: 'deescalate'; nation: number; target: number }            // withdraw our claims on target before it answers
   | { type: 'merge'; nation: number; a: number; b: number }   // army b (a barracks' key) joins army a's order group; a leads and gives it its name
   | { type: 'unmerge'; nation: number; key: number }          // army key's order group is dissolved
-  | { type: 'army'; nation: number; army: number; order: 'attack' | 'defend' | 'station' | 'return' | 'retreat'; region?: number };   // an order to an army (by id): 'station' and 'defend' are one order (to a region of its own)
+  | { type: 'army'; nation: number; army: number; order: 'attack' | 'defend' | 'station' | 'return' | 'retreat' | 'reinforce'; region?: number };   // an order to an army (by id): 'station' and 'defend' are one order (to a region of its own)
 
 export let elev = new Float32Array(NT), moist = new Float32Array(NT);
 // resources: at most one per tile (R_* in resources.ts), harvests left, claimed by a villager

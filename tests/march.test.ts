@@ -11,7 +11,7 @@ import { H_SOLDIER, makeHuman } from '../src/sim/population';
 import { units, MAX_ARMY } from '../src/sim/army';
 import { RG, region, setRegions, cedeRegion, flagXY } from '../src/sim/regions';
 import { moveArmy, armyOrder, ARMY_SP, MARCH_FILES, A_HOME, A_MARCH, A_HOLD } from '../src/sim/war';
-import { findWay, layRoads, road } from '../src/sim/roads';
+import { findWay } from '../src/sim/roads';
 
 const N = (i: number) => W.nations[i];
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
@@ -101,18 +101,18 @@ describe('marching', () => {
     until(() => a.mode===A_HOME, 6000);
   });
 
-  it('follows the roads laid between the flags of the regions on its way', () => {
+  it('takes a smooth way across the regions: no zigzag between their flags, never back the way it came', () => {
     world(); const a=army(10);
     const [bx,by]=[((N(1).capTile%TW)/S)|0, ((((N(1).capTile/TW)|0))/S)|0];
-    const far=regionAt(bx+4,by);
-    layRoads([regionAt(bx+1,by)]);
-    const [fx,fy]=flagXY(far), way=findWay(1,a.x,a.y,fx,fy);
-    // the flags of the regions in between are on the way
-    for (let k=1;k<4;k++){ const [x,y]=flagXY(regionAt(bx+k,by)); let best=1e9; for (let i=0;i<way.length;i+=2) best=Math.min(best,Math.hypot(way[i]-x,way[i+1]-y)); expect(best).toBeLessThan(3); }
-    expect(road(regionAt(bx+1,by),regionAt(bx+2,by)).length).toBeGreaterThan(4);
+    const far=regionAt(bx+4,by+1), [fx,fy]=flagXY(far), way=findWay(1,a.x,a.y,fx,fy);
+    // on flat ground: every step of the way is nearer the goal than the last, and the way is hardly longer than a straight line
+    let len=0, px=a.x, py=a.y;
+    for (let i=0;i<way.length;i+=2){ const d0=Math.hypot(fx-px,fy-py), d1=Math.hypot(fx-way[i],fy-way[i+1]); expect(d1).toBeLessThanOrEqual(d0+1e-6); len+=Math.hypot(way[i]-px,way[i+1]-py); px=way[i]; py=way[i+1]; }
+    expect(len).toBeLessThan(Math.hypot(fx-a.x,fy-a.y)*1.05);
     const r=march(a,fx,fy);
     expect(r.at).toBeLessThan(1); expect(r.far).toBe(0);
   });
+
 });
 
 describe('the size of an army', () => {

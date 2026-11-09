@@ -1,4 +1,5 @@
 /* ---------- buildings panel: pick a building, then click your land to place it ---------- */
+import { region } from '../sim/regions';
 import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_PART, B_NAVAL } from '../core/constants';
 import type { Nation } from '../sim/state';
 import { W, owner, pType, pTier, pOwner, pMain } from '../sim/state';
@@ -9,7 +10,7 @@ import { openResearch } from './research';
 import { openArmy } from './army';
 import { openNaval, closeNaval } from './naval';
 import { queueCommand } from '../sim/sim';
-import { STRUCTURES, canAfford, costFor, placeProblem, structureOf, SIZE, BLOCKABLE, blockPlan, type Structure } from '../sim/buildings';
+import { STRUCTURES, canAfford, costFor, placeProblem, structureOf, SIZE, BLOCKABLE, blockPlan, fortProblem, fortSpot, type Structure } from '../sim/buildings';
 import { GOOD_NAME } from '../sim/resources';
 import { client } from '../client';
 import { drawIcon } from '../render/sprites';
@@ -132,6 +133,12 @@ export function toggleBuildPanel(open?: boolean, cat=category){
 export function placeAt(t: number){
   const me=W.nations[PLAYER], s=structureOf(client.placing); if (!me || !s || t<0) return;
   const q=((t/TW|0)>>2)*PW+((t%TW)>>2);
+  if (s.type===B_TOWER){   // a watchtower: the fort of the region clicked, round its flag
+    const r=region[t], why=fortProblem(me,r);
+    if (why){ toast(why); if (why.startsWith('Not enough')) stopPlacing(); return; }
+    queueCommand({ type:'build', nation:PLAYER, plot:fortSpot(r), kind:B_TOWER });
+    return;
+  }
   if (client.block){
     const plan=blockPlan(me,q,s.type,'any');
     if (plan.problem){ toast(plan.problem); if (plan.problem.startsWith('Not enough')) stopPlacing(); return; }

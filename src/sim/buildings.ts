@@ -9,6 +9,7 @@ import { TW, PW, PH, NP, T_FOREST, B_CARPENTER, B_EMPTY, B_HOUSE, B_FARM, B_TOWE
 import { W, owner, occ, terr, isLand, isle, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pAband, pMain, pHp, pTier, pSpan, pArmor, pIn, type Nation } from './state';
 import { R_GATHER, hasMedics } from './research';
 import { on } from './events';
+import { RG, region } from './regions';
 
 function igniteOne(q: number){ if (pBurn[q]>0) return; pBurn[q]=2.5+W.srand()*2.5; W.burning.push(q); on.plotIgnited(q); }
 /** Sets plot q on fire; a building that covers several plots goes up in flames all together. */
@@ -145,7 +146,7 @@ export const PRODUCES: Record<number, [number, number[]]> = { [B_PLANTATION]: [0
 export const STRUCTURES: Structure[] = [
   { type: B_FARM,     name: 'Farm',        cost: [5,2,0], info: 'Villagers arrive 3% sooner.' },
   { type: B_BARRACKS, name: 'Barracks',    cost: [5,5,0], info: 'Trains soldiers: an army of 5. Joined barracks make bigger armies.' },
-  { type: B_TOWER,    name: 'Watchtower',  cost: [2,5,1], info: 'Shoots enemies in war. Click it to call guards.' },
+  { type: B_TOWER,    name: 'Watchtower',  cost: [15,50,15], info: 'A fort of four towers round a region\'s flag: slows its capture, shoots its attackers.' },
   { type: B_MINTER,   name: 'Coin minter', cost: [5,5,5], info: '+5% gold income.' },
   { type: B_PLANTATION, name: 'Plantation', cost: [10,0,0], info: '+2 wood every 30 s. Joined ones give more (needs research).' },
   { type: B_QUARRY,     name: 'Stone quarry', cost: [5,10,0], info: '+2 stone every 30 s. Joined ones give more (needs research).' },
@@ -167,7 +168,7 @@ export const RISE: Record<number, number> = { [B_FARM]: 0.05, [B_TOWER]: 0.05, [
 function ownedFor(n: Nation, type: number){
   if (type===B_FARM) return n.farms;
   if (type===B_MINTER) return n.minters;
-  if (type===B_TOWER) return n.towers;
+  if (type===B_TOWER) return Math.floor(n.towers/4);   // (a fort is four towers)
   if (type===B_GUILD) return n.guilds;
   if (type===B_NAVAL) return n.navals;
   if (type===B_BARRACKS) return n.barracks;
@@ -239,7 +240,7 @@ export function navalSite(n: Nation, q: number, over: Over='none'): { orient: nu
 /** Why kingdom n can't put a `type` building with its top-left on plot q, or null if it can. With
     `over`, it may go over buildings of the kingdom's (they are pulled down), but not over one just like it. */
 export function placeProblem(n: Nation, q: number, type: number, over: Over='none'): string | null {
-  if (type===B_TOWER) return 'Watchtowers are out of use for now';
+  if (type===B_TOWER) return 'Watchtowers stand as a fort round a region\'s flag: pick the region';
   if (type===B_NAVAL) return navalSite(n,q,over).problem;
   if (type===B_HOSPITAL && !hasMedics(n)) return 'Research field medics first';
   const [w,h]=SIZE[type] ?? [1,1];
@@ -288,7 +289,7 @@ export function build(n: Nation, q: number, type: number, over: Over='none'){
 /* ---------- four at a time ----------
    A farm or a watchtower can be placed as a block of four: a square of 2 by 2 plots, built as four single ones in turn (each dearer than the last by
    the usual rise), all or none. */
-export const BLOCKABLE=[B_FARM, B_TOWER];
+export const BLOCKABLE=[B_FARM];   // (watchtowers go only as a region's fort: buildFort)
 export const blockPlots = (q: number) => [q, q+1, q+PW, q+PW+1];
 /** What four of `type` cost one after the other (each farm or tower owned makes the next dearer), and why not, if they can't go on the block of plots at q. */
 export function blockPlan(n: Nation, q: number, type: number, over: Over='any'): { cost: number[]; problem: string | null } {
@@ -368,3 +369,55 @@ export function joinGatherers(n: Nation){
   }
 }
 
+
+/* ---------- forts: four watchtowers round a region's flag ----------
+   A watchtower is built only as a fort: a square of four towers (2 by 2 plots) round the flag of a region of its kingdom's, one fort a
+   region. It is never burned down by an army and stands in nobody's way; it fortifies the region (sim/war.ts: slower capture, and it
+   shoots the region's attackers), working for whoever holds the region, its occupier too. */
+const spots=new Map<number, number>(); let spotsFor: Int32Array | null=null;
+/** The top-left plot of the fort of region r: the 2×2 block of plots nearest its flag that lies on buildable land of the region (-1 if none). */
+export function fortSpot(r: number){
+  if (spotsFor!==RG.tiles){ spots.clear(); spotsFor=RG.tiles; }
+  const known=spots.get(r); if (known!==undefined) return known;
+  const f=RG.flag[r]; let best=-1;
+  if (f>=0){
+    const fx=f%TW, fy=(f/TW)|0, bx0=Math.round(fx/4)-1, by0=Math.round(fy/4)-1;
+    let bd=Infinity;
+    for (let dy=-3;dy<=3;dy++) for (let dx=-3;dx<=3;dx++){
+      const bx=bx0+dx, by=by0+dy; if (bx<0 || by<0 || bx+1>=PW || by+1>=PH) continue;
+      const q=by*PW+bx;
+      if (!blockPlots(q).every(k => pBuild[k] && region[pCenter[k]]===r)) continue;
+      const d=dx*dx+dy*dy; if (d<bd){ bd=d; best=q; }
+    }
+  }
+  spots.set(r,best); return best;
+}
+/** The tier of region r's fort (the best of its four towers), 0 if it has none standing. */
+export function fortTier(r: number){
+  const q=fortSpot(r); if (q<0) return 0;
+  let t=0;
+  for (const k of blockPlots(q)){ if (pType[k]!==B_TOWER || pBurn[k]>0) return 0; t=Math.max(t,pTier[k] || 1); }
+  return t;
+}
+/** Why kingdom n can't build a fort in region r, or null. */
+export function fortProblem(n: Nation, r: number): string | null {
+  if (!r) return 'Pick a region';
+  if (W.rOwner[r]!==n.id || W.rOcc[r]) return 'Only in a region of yours (flag up, not occupied)';
+  if (fortTier(r)) return 'This region has its fort';
+  const q=fortSpot(r); if (q<0) return 'No room round its flag for a fort';
+  for (const k of blockPlots(q)){ const ty=pType[k===pMain[k] || pType[k]!==B_PART ? k : pMain[k]]; if (ty===B_CASTLE || ty===B_CPART) return 'The castle stands there'; if (owner[pCenter[k]]!==n.id) return 'The ground there is not yours'; }
+  const s=structureOf(B_TOWER)!; if (!canAfford(n,s)) return 'Not enough materials';
+  return null;
+}
+/** Kingdom n builds the fort of region r: four watchtowers round its flag, over whatever of its own stands there. */
+export function buildFort(n: Nation, r: number){
+  if (fortProblem(n,r)) return false;
+  const s=structureOf(B_TOWER)!, q=fortSpot(r);
+  costFor(n,s).forEach((c,g) => n.stock[g]-=c);
+  for (const k of blockPlots(q)){
+    for (const m of underneath(k,B_TOWER)) demolish(m);
+    placeBuilding(k,n.id,B_TOWER,false);
+    countUp(n,B_TOWER);
+  }
+  return true;
+}

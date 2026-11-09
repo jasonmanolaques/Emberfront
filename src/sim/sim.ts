@@ -1,8 +1,8 @@
 /* ---------- simulation entry points: worlds, matches, commands, ticks ----------
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
-import { TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, kingdomLimit, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, TAX_PER_TIER, RUSH_TICKS, RUSH_LAND_TAX, LAND_TAX, MINTER_BONUS, WAGE, } from '../core/constants';
+import { B_TOWER, TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, kingdomLimit, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, TAX_PER_TIER, RUSH_TICKS, RUSH_LAND_TAX, LAND_TAX, MINTER_BONUS, WAGE, } from '../core/constants';
 import { mulberry32 } from '../core/rng';
-import { W, resizeGrid, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pIn, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
+import { W, resizeGrid, pCenter, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pIn, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
 import { genMap } from './mapgen';
 import { genRealMap, capitalsOn, REAL_MAPS } from './realmap';
@@ -10,12 +10,13 @@ import { VIEWS } from './mapview';
 import { COUNTRIES, MAJOR, countryByCode, colourGap, type Country } from '../core/countries';
 import { setOwner, stepAttack, launch, touches } from './territory';
 import { mergeArmies, unmergeArmies } from './army';
-import { toRuins, build, buildBlock, produce, resetHomes } from './buildings';
+import { toRuins, build, buildBlock, buildFort, produce, resetHomes } from './buildings';
 import { scanContacts, census, censusStep } from './census';
 import { botThink } from './bots';
 import { updatePopulation, resetWalks, resetRooms, soldierMax } from './population';
+import { fortUpkeep } from './war';
 import { resetWar, proposeAlliance, endWar, acceptPeace, giveGoals, setClaims, armyOrder, deescalate, claim, answer, armyOf, A_HOME, P_GOALS, P_WHITE } from './war';
-import { buildRegions, resetRegions, updateRegions } from './regions';
+import { buildRegions, resetRegions, updateRegions, region } from './regions';
 import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
 import { labelWorld, allocIsles, resetNaval, updateNaval, queueShip, colonize } from './naval';
@@ -240,7 +241,7 @@ function applyCommand(c: Command){
     const n=W.nations[c.nation]; if (!n || !n.alive) return;
     n.draftAll=c.on; if (!c.on) n.soldierShare=Math.min(n.soldierShare,soldierMax(n));   // (locked again: the limit slides back to the free villagers)
   } else if (c.type==='build'){
-    const n=W.nations[c.nation]; if (n){ if (c.block) buildBlock(n,c.plot,c.kind,'any'); else build(n,c.plot,c.kind,'any'); }   // the player may build over his own buildings
+    const n=W.nations[c.nation]; if (n){ if (c.kind===B_TOWER) buildFort(n,region[pCenter[c.plot]] ?? 0); else if (c.block) buildBlock(n,c.plot,c.kind,'any'); else build(n,c.plot,c.kind,'any'); }   // (a watchtower: the fort of the region clicked)   // the player may build over his own buildings
   } else if (c.type==='ally'){
     proposeAlliance(c.nation,c.target);
   } else if (c.type==='claim'){
@@ -280,7 +281,7 @@ export const taxRate = (n: Nation) => TAX_PER_VILLAGER+TAX_PER_TIER*Math.max(0,n
 export function incomeParts(n: Nation){
   let lost=0; for (let b=1;b<W.M;b++) lost+=W.occCount[n.id*W.M+b];   // (land the enemy occupies pays no tax)
   const tax=taxRate(n)*n.taxpayers, land=LAND_TAX*(W.tickN<W.rushUntil ? RUSH_LAND_TAX : 1)*Math.max(0,n.tiles-lost), boost=(tax+land)*MINTER_BONUS*n.minters;
-  return { tax, land, boost, soldiers:n.wageS, militia:n.wageM };
+  return { tax, land, boost, soldiers:n.wageS, militia:n.wageM, towers:fortUpkeep(n.id) };
 }
 export const grossIncome = (n: Nation) => { const p=incomeParts(n); return p.tax+p.land+p.boost; };
 export function tick(){
@@ -291,7 +292,7 @@ export function tick(){
   // 10% to them, less the soldiers' wages (militia are paid only while called up); the treasury can go below zero
   for (let i=1;i<N.length;i++){
     const n=N[i]; if (!n.alive) continue;
-    n.income=grossIncome(n)-n.wageS-n.wageM; n.gold+=n.income*TICK;   // only housed, working villagers pay
+    n.income=grossIncome(n)-n.wageS-n.wageM-fortUpkeep(n.id); n.gold+=n.income*TICK;   // only housed, working villagers pay
   }
   for (const A of W.attacks) if (!A.done) stepAttack(A);
   if (W.tickN%2===0) W.attacks=W.attacks.filter(A=>!A.done);

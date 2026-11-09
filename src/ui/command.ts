@@ -7,7 +7,7 @@
 import { K, PLAYER } from '../core/constants';
 import { W, type Army } from '../sim/state';
 import { queueCommand } from '../sim/sim';
-import { armyProblem, armyOf, claimsOf, A_HOME } from '../sim/war';
+import { armyProblem, armyOf, claimsOf, waiting, A_HOME } from '../sim/war';
 import { region, regionName } from '../sim/regions';
 import { units, unitAt, groupKeys, groupLead, MAX_MERGES } from '../sim/army';
 import { client } from '../client';
@@ -51,8 +51,8 @@ const btn = (act: string, label: string, attrs: string, opts: { off?: boolean; t
 /** The orders under the open row. */
 function orders(x: Army){
   const hint='Right-click a region on the map: one of yours (or an ally\'s) to station the army there, in peace or war; one you claimed in a war, beside ground you hold, to attack it. Home garrisons it at its barracks, for less upkeep.';
-  const ret=armyProblem(PLAYER,x.id,'retreat'), home=armyProblem(PLAYER,x.id,'return');
-  return `<p class="dnote">${hint}</p><div class="ato2">${btn('retreat','↩ Retreat',`data-id="${x.id}"`,{ off:!!ret, title: ret ?? 'Break off and fall back to the nearest region you hold' })}${btn('home','🏠 Home',`data-id="${x.id}"`,{ off:!!home, title: home ?? 'Back to its barracks: its men heal, and are paid less' })}</div>`;
+  const ret=armyProblem(PLAYER,x.id,'retreat'), home=armyProblem(PLAYER,x.id,'return'), rein=armyProblem(PLAYER,x.id,'reinforce'), w=waiting(x);
+  return `<p class="dnote">${hint}</p><div class="ato2">${btn('retreat','↩ Retreat',`data-id="${x.id}"`,{ off:!!ret, title: ret ?? 'Break off and fall back to the nearest region you hold' })}${btn('home','🏠 Home',`data-id="${x.id}"`,{ off:!!home, title: home ?? 'Back to its barracks: its men heal, and are paid less' })}${btn('reinforce',`⇪ Reinforce${w ? ' · '+w : ''}`,`data-id="${x.id}"`,{ off:!!rein, title: rein ?? 'Its men waiting at the barracks (new recruits, the healed) march up to it and join its ranks at the back, in a fight too' })}</div>`;
 }
 function members(ms: number[]){
   const lines=ms.map((k,i) => { const u=unitAt(k), me=W.nations[PLAYER];
@@ -87,6 +87,7 @@ export function refreshCommand(){
   for (const el of list.querySelectorAll<HTMLElement>('[data-live]')){ const x=armyOf(+el.dataset.live!); if (x) el.textContent=status(x); }
   for (const el of list.querySelectorAll<HTMLButtonElement>('button[data-act="retreat"]')){ const why=armyProblem(PLAYER,+el.dataset.id!,'retreat'); el.disabled=!!why; }
   for (const el of list.querySelectorAll<HTMLButtonElement>('button[data-act="home"]')){ const why=armyProblem(PLAYER,+el.dataset.id!,'return'); el.disabled=!!why; }
+  for (const el of list.querySelectorAll<HTMLButtonElement>('button[data-act="reinforce"]')){ const x=armyOf(+el.dataset.id!); const why=armyProblem(PLAYER,+el.dataset.id!,'reinforce'); el.disabled=!!why; const w=x ? waiting(x) : 0; el.textContent=`⇪ Reinforce${w ? ' · '+w : ''}`; }
 }
 
 list.addEventListener('click', e => {
@@ -101,6 +102,7 @@ list.addEventListener('click', e => {
   if (act==='unmerge'){ queueCommand({ type:'unmerge', nation:PLAYER, key:+b.dataset.k! }); html=''; return; }
   if (act==='retreat') queueCommand({ type:'army', nation:PLAYER, army:+b.dataset.id!, order:'retreat' });
   else if (act==='home') queueCommand({ type:'army', nation:PLAYER, army:+b.dataset.id!, order:'return' });
+  else if (act==='reinforce') queueCommand({ type:'army', nation:PLAYER, army:+b.dataset.id!, order:'reinforce' });
   html='';
 });
 function saveName(){

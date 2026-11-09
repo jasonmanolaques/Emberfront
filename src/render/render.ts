@@ -7,7 +7,7 @@ import { TW, TH, RW, RH, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD
 import { clamp, fmt } from '../core/util';
 import { W, owner, isLand, sea, pType, pTimer, pBurn, type Human } from '../sim/state';
 import { findBlock } from '../sim/sim';
-import { placeProblem, structureOf, canAfford, navalSite, blockPlan, SIZE, PRODUCE_TICKS, dims } from '../sim/buildings';
+import { placeProblem, structureOf, canAfford, navalSite, blockPlan, fortProblem, fortSpot, SIZE, PRODUCE_TICKS, dims } from '../sim/buildings';
 import { client, reduceMotion } from '../client';
 import { view, ctx, cam, stepCamAnim } from './camera';
 import { ovC, flushWorld, SEA } from './terrain';
@@ -25,7 +25,6 @@ import { chatter, drawSpeech } from './speech';
 import { paintSmallFlag, flagImage } from './flags';
 import { allied, atWar, HIT_TICKS, claimsOf, claimProblem, armyOf, A_HOME } from '../sim/war';
 import { RG, region } from '../sim/regions';
-import { roadsAmong } from '../sim/roads';
 const RANKS = ['', 'Leader', 'General', 'Captain', 'Commander', 'Grand Marshal'];
 const rankFor = (size: number) => size<=5 ? 0 : size<=15 ? 1 : size<=30 ? 2 : size<=50 ? 3 : size<=80 ? 4 : 5;
 
@@ -315,17 +314,6 @@ function lightRegion(r: number, col: string, alpha: number, vx0: number, vy0: nu
 /** The regions the player has a stake in, lit: those claimed by or of the player (gold, pulsing), and while picking a claim, those picked (red) and those that can be picked next (faint gold). */
 function drawClaims(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
   const pulse=reduceMotion ? 0.7 : 0.55+0.35*Math.sin(now/240), M=W.M;
-  // the roads of the player's crises and wars: between the flags of the regions claimed and those touching them
-  const near=new Set<number>();
-  for (const [k,regs] of W.claims){ const a=(k/M)|0, d=k%M; if (a!==PLAYER && d!==PLAYER) continue; for (const r of regs){ near.add(r); for (const q of RG.adj[r]) near.add(q); } }
-  if (near.size){
-    ctx.lineCap='round'; ctx.lineJoin='round';
-    for (const [w,col] of [[4,'rgba(40,26,14,.55)'],[2,'rgba(226,196,140,.9)']] as [number, string][]){
-      ctx.strokeStyle=col; ctx.lineWidth=w; ctx.setLineDash(w===2 ? [5,4] : []);
-      for (const r of roadsAmong(near)){ ctx.beginPath(); ctx.moveTo(r[0]*K,r[1]*K); for (let i=2;i<r.length;i+=2) ctx.lineTo(r[i]*K,r[i+1]*K); ctx.stroke(); }
-    }
-    ctx.setLineDash([]);
-  }
   for (const [k,regs] of W.claims){
     const a=(k/M)|0, d=k%M; if (a!==PLAYER && d!==PLAYER) continue;
     for (const r of regs) lightRegion(r, W.rOcc[r]===a ? '#ff8a5a' : '#ffd23f', pulse, vx0,vy0,vx1,vy1);
@@ -482,7 +470,14 @@ export function render(now: number, dt: number){
       const q=(hy>>2)*PW+(hx>>2), me=W.nations[PLAYER], s=structureOf(client.placing);
       const ok=!!me && !!s && canAfford(me,s) && !placeProblem(me,q,client.placing,'any');
       const turned=client.placing===B_NAVAL && !!me && navalSite(me,q,'any').orient===1, [fw,fh]=turned ? [2,4] : SIZE[client.placing] ?? [1,1];   // (a naval base turns to fit)
-      if (client.block && me){   // four at a time: a square of 2 by 2 plots
+      if (client.placing===B_TOWER && me){   // a watchtower: the fort round the flag of the region under the pointer
+        const r=region[hover.tile], fq=r ? fortSpot(r) : -1, good=fq>=0 && !fortProblem(me,r);
+        if (fq>=0){
+          const px=(fq%PW)*PS, py=((fq/PW)|0)*PS;
+          ctx.globalAlpha=0.7; for (let i=0;i<4;i++) ctx.drawImage(ghostOf(B_TOWER),px+(i%2)*PS,py+((i/2)|0)*PS); ctx.globalAlpha=1;
+          ctx.strokeStyle=good?'rgba(143,227,155,.95)':'rgba(255,90,70,.9)'; ctx.lineWidth=2*dpr/zoom; ctx.strokeRect(px,py,2*PS,2*PS);
+        }
+      } else if (client.block && me){   // four at a time: a square of 2 by 2 plots
         const plan=blockPlan(me,q,client.placing,'any'), good=!plan.problem;
         ctx.globalAlpha=0.7; for (let i=0;i<4;i++) ctx.drawImage(ghostOf(client.placing),((hx>>2)+(i%2))*PS,((hy>>2)+((i/2)|0))*PS); ctx.globalAlpha=1;
         ctx.strokeStyle=good?'rgba(143,227,155,.95)':'rgba(255,90,70,.9)'; ctx.lineWidth=2*dpr/zoom;

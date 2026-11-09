@@ -63,7 +63,7 @@ describe('goods with nothing on the map to gather', () => {
     me().minters=5; me().guilds=3;
     expect(costFor(me(),structureOf(B_MINTER)!)).toEqual(structureOf(B_MINTER)!.cost.map(c => Math.round(c*1.5)));
     expect(costFor(me(),structureOf(B_GUILD)!)).toEqual(structureOf(B_GUILD)!.cost.map(c => Math.round(c*1.3)));
-    me().towers=0; expect(costFor(me(),structureOf(B_TOWER)!)).toEqual(structureOf(B_TOWER)!.cost);   // each watchtower makes the next 5% dearer
-    me().towers=10; expect(costFor(me(),structureOf(B_TOWER)!)).toEqual(structureOf(B_TOWER)!.cost.map(c => c ? Math.round(c*1.5) : 0));
+    me().towers=0; expect(costFor(me(),structureOf(B_TOWER)!)).toEqual(structureOf(B_TOWER)!.cost);   // each fort makes the next 5% dearer
+    me().towers=40; expect(costFor(me(),structureOf(B_TOWER)!)).toEqual(structureOf(B_TOWER)!.cost.map(c => c ? Math.round(c*1.5) : 0));   // (40 towers: ten forts of four)
   });
 });

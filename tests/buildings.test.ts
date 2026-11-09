@@ -44,7 +44,7 @@ describe('building costs and placement', () => {
   it('costs what the design says', () => {
     expect(structureOf(B_FARM)!.cost).toEqual([5,2,0]);
     expect(structureOf(B_BARRACKS)!.cost).toEqual([5,5,0]);
-    expect(structureOf(B_TOWER)!.cost).toEqual([2,5,1]);
+    expect(structureOf(B_TOWER)!.cost).toEqual([15,50,15]);   // (a fort of four towers round a region's flag)
     expect(structureOf(B_MINTER)!.cost).toEqual([5,5,5]);
     expect(structureOf(B_PLANTATION)!.cost).toEqual([10,0,0]);
     expect(structureOf(B_QUARRY)!.cost).toEqual([5,10,0]);

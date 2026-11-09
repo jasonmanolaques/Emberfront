@@ -39,9 +39,9 @@ describe('prices', () => {
     n.farms=0;
     for (const s of STRUCTURES) if (RISE[s.type]) expect(costFor(n,s).every(c => Number.isInteger(c))).toBe(true);
   });
-  it('round to the nearest whole good: a 2 wood tower is not 3 wood after one', () => {
+  it('round to the nearest whole good: a 15 wood fort is 16 wood after one', () => {
     const n=me(), t=structureOf(B_TOWER)!;
-    n.towers=1; expect(costFor(n,t)).toEqual(t.cost.map(c => Math.round(c*1.05)));
+    n.towers=4; expect(costFor(n,t)).toEqual(t.cost.map(c => Math.round(c*1.05)));   // (a fort is four towers)
     n.towers=0;
   });
 });

@@ -27,8 +27,8 @@ import { on } from './events';
 import { H_SOLDIER, indoors, switching, tileOf, pace, release, TASK_ROAM } from './population';
 import { units, unitAt, groupKeys, groupLead, maxHp, SOLDIER_DMG, MILITIA_HIT, type Unit } from './army';
 import { RG, region, holdsRegion, cedeRegion, occupyRegion, freeRegion, flagXY, CONTROL } from './regions';
-import { ignite } from './buildings';
-import { findWay, layRoads } from './roads';
+import { ignite, fortTier, fortSpot } from './buildings';
+import { findWay } from './roads';
 export { findWay };
 import { census } from './census';
 import { setOwner } from './territory';
@@ -48,6 +48,9 @@ export const CAPTURE_TICKS = 30*GAME_SPEED*10;    // an invader sitting alone in
 export const ROLL_TICKS = 3*GAME_SPEED*10;        // every 3 s on the clock each side of a battle rolls a die for its line
 export const ROLL_MOD = 0.2;                      // a 6 is +20% to the blows of its line, a 1 is -20%, a 3 even
 export const BATTLE_DMG = 2;                      // blows in a battle line land twice as hard as a soldier's blow elsewhere: a line fight is brutal
+export const FORT_SLOW = 0.4;                     // each tier of a region's fort makes its capture (and its retaking) 40% slower
+export const FORT_DMG = [0, 2, 4, 8];             // what a fort's shot does, by tier (one every ROLL_TICKS, at a man of an army attacking the region)
+export const FORT_UPKEEP = 1.5;                   // gold a second a fort costs, a tier
 export const P_WHITE = 1, P_GOALS = 2;            // peace offers: white peace (all back as it was), or the war goals (the claimed regions to the attacker)
 export const MAX_CLAIMS = 4;                      // regions one crisis may claim
 export const OFFER_TICKS = 300;                   // a peace offer stands 30 s
@@ -74,6 +77,13 @@ let warring = new Uint8Array(1);                // per nation: at war with anyon
 const led = new Set<number>();                  // soldiers moved by their army this tick
 let soldiersOf: Human[][] = [];                 // per nation: soldiers out of doors and alive
 export const armyOf = (id: number) => armyById.get(id);
+let upkeep=new Float64Array(1);                 // per nation: what its forts cost a second (worked out every 10 ticks)
+/** What kingdom o's forts cost it a second: FORT_UPKEEP a tier. */
+export const fortUpkeep = (o: number) => upkeep[o] ?? 0;
+function countForts(){
+  if (upkeep.length!==W.M) upkeep=new Float64Array(W.M); else upkeep.fill(0);
+  for (let r=1;r<RG.n;r++){ const t=fortTier(r); if (!t) continue; const o=pOwner[fortSpot(r)]; if (o) upkeep[o]+=FORT_UPKEEP*t; }
+}
 /** Is h moved by his army (in its phalanx), not on his own? */
 export const inPhalanx = (h: Human) => led.has(h.id);
 /** Kingdom n's soldiers out of doors and alive, as of this tick. */
@@ -134,7 +144,7 @@ export function claimProblem(a: number, d: number, regions: number[]): string | 
 export function claim(a: number, d: number, regions: number[]){
   if (claimProblem(a,d,regions)) return false;
   const M=W.M;
-  W.claims.set(a*M+d,regions.slice()); W.aggr[a*M+d]=1; layRoads(regions); W.crisisAt[a*M+d]=W.tickN; W.grudge[d*M+a]=W.tickN;
+  W.claims.set(a*M+d,regions.slice()); W.aggr[a*M+d]=1; W.crisisAt[a*M+d]=W.tickN; W.grudge[d*M+a]=W.tickN;
   W.offers[a*M+d]=W.offers[d*M+a]=0;
   on.crisis(a,d);
   return true;
@@ -238,7 +248,7 @@ export function claimsProblem(a: number, d: number, regions: number[]): string |
 export function setClaims(a: number, d: number, regions: number[]){
   if (claimsProblem(a,d,regions)) return false;
   for (const r of claimsOf(a,d)) if (!regions.includes(r) && W.rOcc[r]===a) freeRegion(r);
-  W.claims.set(a*W.M+d,regions.slice()); layRoads(regions);
+  W.claims.set(a*W.M+d,regions.slice());
   W.offers[a*W.M+d]=0; W.offers[d*W.M+a]=0;   // (the terms changed: offers made are off)
   on.claimsChanged(a,d);
   checkVictory(a,d);
@@ -350,7 +360,7 @@ function syncArmies(){
       let x: Army | undefined;
       for (const q of u.plots){ const y=byPlot.get(q); if (y && !seen.has(y) && y.o===n.id){ x=y; break; } }
       if (!x) for (const q of plots){ const y=byPlot.get(q); if (y && !seen.has(y) && y.o===n.id){ x=y; break; } }
-      if (!x){ x={ id:u.key, o:n.id, plots, x:u.x, y:u.y+4, fx:0, fy:1, mode:A_HOME, order:O_NONE, goal:0, enemy:0, path:[], foe:-1, files:[], men:0, safe:0, stand:false, hitAt:-1e9, leader:-1, trail:[], stuck:0, near:Infinity, roll:0, rollAt:0 }; }
+      if (!x){ x={ id:u.key, o:n.id, plots, x:u.x, y:u.y+4, fx:0, fy:1, mode:A_HOME, order:O_NONE, goal:0, enemy:0, path:[], foe:-1, files:[], men:0, safe:0, stand:false, hitAt:-1e9, leader:-1, trail:[], stuck:0, near:Infinity, roll:0, rollAt:0, coming:[], via:[], viaAt:-1e9 }; }
       if (W.armies.some(y => y!==x && y.id===x!.id && seen.has(y))) x.id=u.key;   // (two with one name: the new one takes its lead's)
       x.plots=plots; seen.add(x); keep.push(x);
     }
@@ -453,6 +463,7 @@ export function armyProblem(o: number, id: number, order: string, r=0): string |
   const x=armyById.get(id); if (!x || x.o!==o) return 'That army is gone';
   if (order==='return'){ if (x.mode===A_HOME && !x.men) return 'It is at home'; return null; }
   if (order==='retreat'){ if (x.mode===A_HOME) return 'It is at home'; if (x.order===O_RETREAT) return 'It is retreating'; return null; }
+  if (order==='reinforce'){ if (x.mode===A_HOME) return 'It is at home: its men are all with it'; if (!waiting(x)) return 'Nobody of it waits at its barracks'; return null; }
   if (x.mode===A_BATTLE) return 'It is fighting: it can only retreat or go home';
   if (x.mode===A_HOME && !membersOf(x).some(fit)) return 'Nobody of it is at home';
   if (!r || r>=RG.n) return 'Pick a region';
@@ -477,6 +488,7 @@ export function armyOrder(o: number, id: number, order: string, r=0){
   const x=armyById.get(id)!;
   if (order==='return'){ sendHome(x); return true; }
   if (order==='retreat'){ retreat(x); return true; }
+  if (order==='reinforce'){ reinforce(x); return true; }
   const M=W.M, d=W.rOwner[r];
   let enemy=0;
   if (order==='attack') enemy=d;
@@ -550,6 +562,7 @@ export function updateWar(){
   }
   // each castle mends itself, 2 blows a second
   for (let i=1;i<N.length;i++){ const n=N[i], q=n.capPlot; if (!n.alive || n.capTile<0 || pHp[q]<=0) continue; const was=wear(q); pHp[q]=Math.max(0,pHp[q]-CASTLE_MEND); if (wear(q)!==was) on.plotChanged(q); }
+  if (W.tickN%10===1) countForts();
   syncArmies();
   led.clear();
   for (const x of W.armies) stepArmy(x);
@@ -557,6 +570,7 @@ export function updateWar(){
   for (const x of W.armies) if (x.mode===A_BATTLE && x.foe>=0 && x.id<x.foe){ const y=armyById.get(x.foe); if (y) fight(x,y); }
   for (const x of W.armies) if (x.mode===A_BATTLE && (x.foe<0 || !armyById.has(x.foe))){ x.foe=-1; x.mode=x.path.length ? A_MARCH : A_HOLD; }
   if (W.tickN%5===0) flags();
+  if (W.tickN%ROLL_TICKS===11) fortsFire();
   if (W.tickN%20===7) secondWave();
 }
 /** A bot answers claims on it: it gives up the regions only to a kingdom far stronger than it, and only a few of them. */
@@ -567,9 +581,11 @@ function botAccepts(D: Nation, a: number){
 /** One tick of army x: the men of its phalanx to their places, and the phalanx on its way. */
 function stepArmy(x: Army){
   const all=membersOf(x);
-  const men=x.mode===A_HOME ? all.filter(h => fit(h) && h.war<0) : all.filter(h => h.war===x.id && h.hp>0 && !indoors(h));
+  if (x.coming.length) bringUp(x);
+  const coming=new Set(x.coming);
+  const men=x.mode===A_HOME ? all.filter(h => fit(h) && h.war<0) : all.filter(h => h.war===x.id && h.hp>0 && !indoors(h) && !coming.has(h.id));
   tidyFiles(x,men);
-  if (x.mode!==A_HOME && !men.length){ lost(x); return; }
+  if (x.mode!==A_HOME && !men.length){ if (x.coming.length) breakOff(x); else { lost(x); return; } }   // (nobody left in the ranks, but more on the way: it waits for them)
   if (x.mode===A_HOME){
     const [hx,hy,fx,fy]=homeSpot(x); x.x=hx; x.y=hy; x.fx=fx; x.fy=fy; x.trail.length=0;
     const heal=1/HEAL_TICKS;
@@ -594,6 +610,33 @@ function stepArmy(x: Army){
     }
   }
 }
+/** The reinforcements of army x on their way: each follows the way from the barracks to the army (worked out again, for all of them, every few
+    seconds once a man has come to its end with the army moved on); one who reaches it joins its ranks at the back, a fight or not. */
+function bringUp(x: Army){
+  if (x.mode===A_HOME){ for (const id of x.coming){ const h=byId.get(id); if (h && h.war===x.id){ h.war=-1; h.path=[]; } } x.coming=[]; return; }   // (the army is home: they are too)
+  const keep: number[]=[];
+  for (const id of x.coming){
+    const h=byId.get(id); if (!h || h.hp<=0 || h.war!==x.id || indoors(h)) continue;
+    led.add(h.id); if (h.cool>0) h.cool--;
+    if (Math.hypot(h.x-x.x,h.y-x.y)<18){ h.path=[]; continue; }   // (there: into the ranks)
+    if (!h.path.length){
+      if (!x.via.length || W.tickN-x.viaAt>60 || Math.hypot(x.via[x.via.length-2]-x.x,x.via[x.via.length-1]-x.y)>20){ x.via=findWay(x.o,h.x,h.y,x.x,x.y); x.viaAt=W.tickN; }
+      h.path=x.via.slice();
+    }
+    const tx=h.path[0], ty=h.path[1];
+    if (Math.hypot(tx-h.x,ty-h.y)<1.2) h.path.splice(0,2); else walk(h,tx,ty,1.3);
+    keep.push(id);
+  }
+  x.coming=keep;
+}
+/** Army x's men waiting at its barracks set out to join it where it is. */
+function reinforce(x: Army){
+  for (const h of membersOf(x)) if (fit(h) && h.war<0){ h.war=x.id; h.foe=-1; h.duel=-1; h.path=[]; h.task=TASK_ROAM; x.coming.push(h.id); }
+  x.via=[]; x.viaAt=-1e9;
+  on.armyOrdered(x.o,x.id,'reinforce',x.goal);
+}
+/** How many of army x's men wait at its barracks (they would answer a reinforce order). */
+export const waiting = (x: Army) => x.mode===A_HOME ? 0 : membersOf(x).filter(h => fit(h) && h.war<0).length;
 /** The column marches along its way, as fast as its men keep up; its head leaves a trail the ranks behind follow. A column that gets no nearer
     its next waypoint for a while looks for its way again from where it stands. */
 function march(x: Army, men: Human[]){
@@ -625,7 +668,8 @@ function trail(x: Army){
 function arrive(x: Army){
   if (x.order===O_RETURN){
     x.mode=A_HOME; x.order=O_NONE; x.goal=0; x.enemy=0; x.foe=-1; x.safe=0;
-    for (const h of membersOf(x)) if (h.war===x.id){ h.war=-1; h.foe=-1; h.duel=-1; }
+    for (const h of membersOf(x)) if (h.war===x.id){ h.war=-1; h.foe=-1; h.duel=-1; h.path=[]; }
+    x.coming=[];
     return;
   }
   x.mode=A_HOLD;
@@ -674,7 +718,7 @@ function fight(x: Army, y: Army){
   const fa=front(x), fb=front(y), off=(fa.length-fb.length)/2, taken=new Set<number>(), spare: Human[]=[];
   for (let i=0;i<fa.length;i++){
     const j=Math.round(i-off), h=fa[i].h, e=j>=0 && j<fb.length ? fb[j].h : undefined;
-    if (e){ taken.add(e.id); taken.add(h.id); duelStep(h,e); } else spare.push(h);
+    if (e){ taken.add(e.id); taken.add(h.id); bind(h,e); duelStep(h,e,true); } else spare.push(h);
   }
   for (let j=0;j<fb.length;j++){ const h=fb[j].h; if (!taken.has(h.id)) spare.push(h); }
   for (const h of spare){
@@ -682,14 +726,20 @@ function fight(x: Army, y: Army){
     const p=partner(h);
     let e: Human | undefined=p && !taken.has(p.id) ? p : undefined;
     if (!e){ let bd=Infinity; for (const f of foe.files) for (const id of f){ if (taken.has(id)) continue; const c=byId.get(id); if (!c || c.hp<=0 || partner(c)) continue; const dd=(c.x-h.x)**2+(c.y-h.y)**2; if (dd<bd){ bd=dd; e=c; } } }
-    if (e){ taken.add(e.id); taken.add(h.id); duelStep(h,e); }
-    else { const k=own.files.findIndex(f => f[0]===h.id); const [sx,sy]=slotOf(own,k,0); walk(h,sx,sy); }
+    if (e){ taken.add(e.id); taken.add(h.id); bind(h,e); duelStep(h,e,foe.files.some(f => f[0]===e!.id)); }
+    else { unbind(h); const k=own.files.findIndex(f => f[0]===h.id); const [sx,sy]=slotOf(own,k,0); walk(h,sx,sy); }
   }
 }
-/** Two men of the front ranks fight: each steps up to the other and strikes when he can reach. */
-function duelStep(h: Human, e: Human){
+/** The fight pairs h with e, one on one: any duel either was in with somebody else is over (the pairing of the lines is what counts, so nobody
+    stands idle held by a duel that has moved on). */
+function bind(h: Human, e: Human){
+  for (const [m,o] of [[h,e],[e,h]] as [Human, Human][]){ if (m.duel>=0 && m.duel!==o.id){ const p=byId.get(m.duel); if (p && p.duel===m.id) p.duel=-1; } m.duel=o.id; }
+}
+function unbind(h: Human){ if (h.duel<0) return; const p=byId.get(h.duel); if (p && p.duel===h.id) p.duel=-1; h.duel=-1; }
+/** Two men fight: each steps up to the other (a man taken on in the ranks behind holds his place) and strikes when he can reach. */
+function duelStep(h: Human, e: Human, both=true){
   const d=Math.hypot(e.x-h.x,e.y-h.y);
-  if (d>MELEE_R*0.85){ walk(h,e.x,e.y); walk(e,h.x,h.y); }
+  if (d>MELEE_R*0.85){ walk(h,e.x,e.y,1.4); if (both) walk(e,h.x,h.y,1.4); }
   if (Math.hypot(e.x-h.x,e.y-h.y)<=MELEE_R){ strike(h,e); strike(e,h); }
 }
 
@@ -709,20 +759,39 @@ function flags(){
     const d=W.rOwner[r]; if (!d) continue;
     const own=list.filter(x => x.o===d), foes=list.filter(x => x.o!==d && W.atWar[x.o*W.M+d] && claimsOf(x.o,d).includes(r));
     if (own.length && foes.length) continue;
-    const rate=(_men: number) => 5/CAPTURE_TICKS;
+    const tier=fortTier(r), holder=W.rOcc[r] || d;   // (a fort works for whoever holds the region: its occupier too)
+    const rate=(_men: number, side=0) => 5/CAPTURE_TICKS/(side!==holder ? 1+FORT_SLOW*tier : 1);
     if (foes.length){
       const a=foes[0].o; if (W.rOcc[r]===a) continue;
       let men=0; for (const x of foes) men+=x.men;
-      W.rFlag[r]-=rate(men);
+      W.rFlag[r]-=rate(men,a);
       if (W.rFlag[r]<=0){ W.rFlag[r]=0; occupyRegion(r,a); on.regionTaken(r,a,d); checkVictory(a,d); }
     } else if (own.length){
       let men=0; for (const x of own) men+=x.men;
-      W.rFlag[r]=Math.min(1,W.rFlag[r]+rate(men));
+      W.rFlag[r]=Math.min(1,W.rFlag[r]+rate(men,d));
       if (W.rFlag[r]>=1 && W.rOcc[r]){ const a=W.rOcc[r]; freeRegion(r); W.rFlag[r]=1; on.regionTaken(r,d,a); }
     }
   }
   // a flag nobody stands at, half lowered, slowly goes back up
   for (let r=1;r<RG.n;r++) if (!W.rOcc[r] && W.rOwner[r] && W.rFlag[r]<1 && !at.has(r) && !fighting.has(r)) W.rFlag[r]=Math.min(1,W.rFlag[r]+1/CAPTURE_TICKS);
+}
+/** Every ROLL_TICKS each region's fort shoots a man, picked at random, of the armies in the region at war with whoever holds it. */
+function fortsFire(){
+  const M=W.M, targets=new Map<number, Human[]>();
+  for (const x of W.armies){
+    if (x.mode===A_HOME || !x.men) continue;
+    const r=region[tileOf(x.x,x.y)]; if (!r) continue;
+    const holder=W.rOcc[r] || W.rOwner[r]; if (!holder || !W.atWar[x.o*M+holder] || !fortTier(r)) continue;
+    let t=targets.get(r); if (!t){ t=[]; targets.set(r,t); }
+    for (const f of x.files) for (const id of f){ const h=byId.get(id); if (h && h.hp>0) t.push(h); }
+  }
+  for (const [r,t] of targets){
+    if (!t.length) continue;
+    const e=t[(W.prand()*t.length)|0], tier=fortTier(r), q=fortSpot(r), holder=W.rOcc[r] || W.rOwner[r];
+    const was=e.hp; e.hp-=FORT_DMG[tier] ?? 2; e.by=holder;
+    if (was>0 && e.hp<=0) W.kills[holder*M+e.o]++;
+    on.towerShot((q%PW)*8+8,((q/PW)|0)*8+4,e.x,e.y-2,e.hp<=0,e.id);
+  }
 }
 /** a holds every region it claimed of d's: the war is won, and they are its. */
 function checkVictory(a: number, d: number){

@@ -248,6 +248,7 @@ button.pick #pcName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;wh
 #cmList .ato{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-top:2px}
 #cmList .ato i.flag{width:15px;height:10px}
 #cmList .ato2{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+#cmList .ato2 .ao:nth-child(3):last-child{grid-column:1/-1}
 #cmList .ao{padding:4px 8px;font-size:12px;text-align:left}
 #cmList .ao[aria-pressed=true]{color:var(--gold);border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-d),2px 2px 0 var(--ink)}
 #cmList .ao.atk[aria-pressed=true]{color:#f0b8a8;border-color:#b5483a;box-shadow:0 0 0 2px #5a2820,2px 2px 0 var(--ink)}

@@ -5,8 +5,9 @@ import { launch } from './territory';
 import { grossIncome } from './sim';
 import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, R_MEDICS, TOPICS, MAX_TIER, setStudy, maxed, hasMedics } from './research';
 import { UNIT_SIZE, units } from './army';
-import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, anyWithin, isEnemyLand, type Over } from './buildings';
+import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, anyWithin, isEnemyLand, structureOf, fortTier, fortProblem, buildFort, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, standingTower, WALL_MIN, WALL_MAX } from './fort';
+import { waiting, FORT_UPKEEP } from './war';
 import { allied, atWar, ready, endWar, refusePeace, acceptPeace, giveGoals, setClaims, P_GOALS, P_WHITE, wantsPeace, outlook, warAge, claim, claimable, claimsOf, attackerIn, besideHeld, armyOrder, armyProblem, armyMembers, armyOf, MAX_CLAIMS, A_HOME, A_HOLD, A_BATTLE, O_ATTACK, O_DEFEND, O_NONE, O_RETREAT } from './war';
 import { RG, flagXY } from './regions';
 import type { Army } from './state';
@@ -346,7 +347,8 @@ function husband(id: number){
       if (f && f.men>=4 && x.men<f.men*0.45 && x.order!==O_RETREAT) armyOrder(id,x.id,'retreat');
       continue;
     }
-    if (x.mode===A_HOLD && strengthOf(x)<0.35 && (x.order!==O_DEFEND || x.men<MIN_ARMY)) armyOrder(id,x.id,'return');
+    if (x.mode===A_HOLD && strengthOf(x)<0.35 && (x.order!==O_DEFEND || x.men<MIN_ARMY) && waiting(x)<MIN_ARMY) armyOrder(id,x.id,'return');
+    else if (x.enemy && waiting(x)>=MIN_ARMY && !x.coming.length) armyOrder(id,x.id,'reinforce');   // (at war: the men waiting at the barracks go up to it)
     if (x.mode===A_HOLD && x.order===O_NONE && x.enemy===0 && !W.armies.some(y => y.o===id && y.enemy) ) armyOrder(id,x.id,'return');
   }
 }
@@ -411,6 +413,7 @@ function botWar(n: Nation){
   }
   husband(id);
   deploy(n);
+  fortify(n);
   let busy=false;
   for (let o=1;o<M;o++){
     if (o===id || !W.nations[o].alive) continue;
@@ -453,6 +456,26 @@ function botWar(n: Nation){
   if (regs.length && claim(id,best,regs)) n.nextWar=W.simTime+120;
 }
 void O_NONE;
+/** A bot fortifies its border: now and then, with the stone and the income for it, a fort in a region of its own beside a neighbour that is not its ally
+    (one claimed of it in a war first, then those facing the strongest neighbour), one region in four at most. */
+function fortify(n: Nation){
+  const id=n.id, M=W.M;
+  if (W.tickN%300!==(id*11)%300) return;
+  const s=structureOf(B_TOWER)!, cost=costFor(n,s);
+  if (!canAfford(n,s) || n.stock[1]<cost[1]+10 || n.income<FORT_UPKEEP*2) return;
+  let mine=0, forts=0; for (let r=1;r<RG.n;r++) if (W.rOwner[r]===id){ mine++; if (fortTier(r)) forts++; }
+  if (forts>=Math.max(1,Math.floor(mine/4))) return;
+  const claimed=new Set<number>(); for (const [k,regs] of W.claims) if (k%M===id) for (const r of regs) claimed.add(r);
+  let best=0, bs=-1;
+  for (let r=1;r<RG.n;r++){
+    if (W.rOwner[r]!==id || W.rOcc[r] || fortTier(r) || fortProblem(n,r)) continue;
+    let s2=0; for (const q of RG.adj[r]){ const o=W.rOwner[q]; if (o && o!==id && !allied(id,o)) s2=Math.max(s2,1+W.nations[o].strength/Math.max(1,n.strength)); }
+    if (!s2) continue;
+    if (claimed.has(r)) s2+=10;
+    if (s2>bs){ bs=s2; best=r; }
+  }
+  if (best) buildFort(n,best);
+}
 /** The share of a's claims on d that a occupies. */
 function heldShare(a: number, d: number){ const regs=claimsOf(a,d); return regs.length ? regs.filter(r => W.rOcc[r]===a).length/regs.length : 0; }
 /** One more region of d's for a winning attacker a to claim: beside its claims or ground it holds; 0 if none (or it claims 6 already). */

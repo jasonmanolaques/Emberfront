@@ -13,7 +13,11 @@ import { H_SOLDIER, makeHuman, doorOf } from '../src/sim/population';
 import { maxHp } from '../src/sim/army';
 import { RG, region, setRegions, cedeRegion, updateRegions, CONTROL } from '../src/sim/regions';
 import { claim, claimProblem, answer, inCrisis, armyProblem, armyOrder, armyOf, makePeace, offerPeace, acceptPeace, giveGoals, setClaims, claimsProblem, claimsOf, wageOf, diceFactor, CRISIS_TICKS, CAPTURE_TICKS, ROLL_TICKS, MAX_CLAIMS, P_GOALS, A_HOME, A_MARCH, A_HOLD, A_BATTLE, O_DEFEND, partner } from '../src/sim/war';
-import { WAGE, WAGE_IDLE } from '../src/core/constants';
+import { WAGE, WAGE_IDLE, B_TOWER } from '../src/core/constants';
+import { buildFort, fortTier, fortSpot } from '../src/sim/buildings';
+import { pTier } from '../src/sim/state';
+import { waiting, fortUpkeep, FORT_DMG } from '../src/sim/war';
+import { incomeParts } from '../src/sim/sim';
 
 const N = (i: number) => W.nations[i];
 const M = () => W.M;
@@ -335,6 +339,101 @@ describe('armies in peace and war', () => {
     expect(mine.length).toBeGreaterThanOrEqual(5); expect(theirsR.length).toBeGreaterThanOrEqual(5);
     for (let i=1;i<mine.length;i++) expect(mine[i].t-mine[i-1].t).toBe(ROLL_TICKS);
     expect(rolls.every(r => r.r>=1 && r.r<=6)).toBe(true);
+  });
+});
+
+describe('battle lines', () => {
+  it('two lines that meet fight all along: nearly every man of the front rank is in a duel, none idle for long', () => {
+    world(); const { home, theirs }=lands(1);
+    const a=army(1,40,home), d=army(2,40,theirs[0]);
+    war(1,2,theirs);
+    armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => a.mode===A_BATTLE, 4000);
+    run(60);   // (the lines close)
+    let sum=0, k=0;
+    for (let i=0;i<200 && a.men>8 && d.men>8;i++){
+      tick();
+      const fronts=Math.min(a.files.length,d.files.length), duels=W.humans.filter(h => h.hp>0 && partner(h)).length/2;
+      sum+=duels/fronts; k++;
+    }
+    expect(sum/k).toBeGreaterThan(0.85);   // (on average at least 85% of the narrower front is fighting, man to man)
+  });
+
+  it('are reinforced from the barracks: the men waiting there march up and join the back of the phalanx, in a fight too', () => {
+    world(); const { home, theirs }=lands(1);
+    const a=army(1,10,home), d=army(2,30,theirs[0]);
+    war(1,2,theirs);
+    armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => a.mode===A_BATTLE, 4000);
+    expect(armyProblem(1,a.id,'reinforce')).toMatch(/Nobody/);
+    // ten new recruits at its barracks
+    const q=a.plots[0], n=N(1); n.stock=[100,100,100];
+    for (const k of [q+2,q+3]) build(n,k,B_BARRACKS);
+    for (let i=0;i<10;i++){ const h=makeHuman(n,H_SOLDIER,(q%PW)*8+4+i%5,((q/PW)|0)*8+10); W.humans.push(h); }
+    run(5);
+    const x=armyOf(a.id)!;
+    expect(waiting(x)).toBeGreaterThanOrEqual(5);
+    const before=x.men+x.coming.length;
+    expect(armyOrder(1,x.id,'reinforce')).toBe(true);
+    expect(x.coming.length).toBeGreaterThan(0);
+    until(() => x.coming.length===0 || x.mode===A_HOME, 3000);
+    expect(x.mode===A_HOME || x.men>=before-10).toBe(true);   // (they joined its ranks: it may have lost men meanwhile)
+  });
+});
+
+describe('forts', () => {
+  it('stand round a region\'s flag, four watchtowers for 15 wood, 50 stone and 15 copper, one a region; 1.5 gold a second a tier', () => {
+    world(); const { home }=lands(1);
+    const n=N(1); n.stock=[15,50,15];
+    expect(buildFort(n,home)).toBe(true);
+    expect(n.stock).toEqual([0,0,0]);
+    expect(fortTier(home)).toBe(1);
+    const q=fortSpot(home); expect([q,q+1,q+PW,q+PW+1].every(k => pType[k]===B_TOWER)).toBe(true);
+    n.stock=[100,100,100]; expect(buildFort(n,home)).toBe(false);   // (one a region)
+    run(12); expect(fortUpkeep(1)).toBeCloseTo(1.5); expect(incomeParts(n).towers).toBeCloseTo(1.5);
+    for (const k of [q,q+1,q+PW,q+PW+1]) pTier[k]=3; run(12);
+    expect(fortTier(home)).toBe(3); expect(fortUpkeep(1)).toBeCloseTo(4.5);
+  });
+
+  it('slow the capture of their region by 40% a tier, and shoot its attackers for 2, 4 and 8 every 3 seconds; they work for the occupier too', () => {
+    for (const tier of [1,3]){
+      world(); const { home, theirs }=lands(1);
+      const n2=N(2); n2.stock=[100,100,100]; expect(buildFort(n2,theirs[0])).toBe(true);
+      const q=fortSpot(theirs[0]); for (const k of [q,q+1,q+PW,q+PW+1]) pTier[k]=tier;
+      const a=army(1,30,home);
+      for (const h of W.humans) if (h.war===a.id || h.o===1) h.hp=1e6;   // (they don't die of the shots: the time is what is measured)
+      war(1,2,theirs);
+      const shots: number[]=[]; listen({ towerShot: () => shots.push(W.tickN) });
+      armyOrder(1,a.id,'attack',theirs[0]);
+      until(() => a.mode===A_HOLD, 3000);
+      const t=until(() => W.rOcc[theirs[0]]===1 || W.rOwner[theirs[0]]===1, CAPTURE_TICKS*4);
+      listen({ towerShot: () => {} });
+      expect(t).toBeGreaterThan(CAPTURE_TICKS*(1+0.4*tier)*0.9); expect(t).toBeLessThan(CAPTURE_TICKS*(1+0.4*tier)*1.1);
+      expect(shots.length).toBeGreaterThan(3);
+      for (let i=1;i<shots.length;i++) expect(shots[i]-shots[i-1]).toBe(ROLL_TICKS);
+      expect(FORT_DMG[tier]).toBe(tier===1 ? 2 : 8);
+    }
+  });
+});
+
+describe('forts held by the occupier', () => {
+  it('slow the defender who comes to take its region back, and shoot at him', () => {
+    world(); const { home, theirs }=lands(2);
+    const n2=N(2); n2.stock=[100,100,100]; expect(buildFort(n2,theirs[0])).toBe(true);
+    const q=fortSpot(theirs[0]); for (const k of [q,q+1,q+PW,q+PW+1]) pTier[k]=2;
+    const a=army(1,30,home), d=army(2,20,theirs[1]);
+    for (const h of W.humans) if (h.o===1 || h.o===2) h.hp=1e6;
+    war(1,2,theirs);
+    armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => W.rOcc[theirs[0]]===1, CAPTURE_TICKS*5);
+    armyOrder(1,a.id,'return'); until(() => a.mode===A_HOME, 4000);
+    const shots: number[]=[]; listen({ towerShot: (_x,_y,_x1,_y1,_k,v) => { const h=W.humans.find(h => h.id===v); if (h && h.o===2) shots.push(W.tickN); } });
+    armyOrder(2,d.id,'defend',theirs[0]);
+    until(() => d.mode===A_HOLD, 3000);
+    const t=until(() => !W.rOcc[theirs[0]], CAPTURE_TICKS*5);
+    listen({ towerShot: () => {} });
+    expect(t).toBeGreaterThan(CAPTURE_TICKS*1.8*0.9);   // (a tier 2 fort: 80% slower, now against its builder)
+    expect(shots.length).toBeGreaterThan(3);
   });
 });
 

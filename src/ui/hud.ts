@@ -35,6 +35,7 @@ export function updateHUD(now: number){
   ui.meTax.textContent=signed(parts.tax); ui.meLandTax.textContent=signed(parts.land);
   ui.meBoostRow.hidden=!me.minters; ui.meBoost.textContent=signed(parts.boost);
   ui.meSoldCost.textContent=signed(-parts.soldiers); ui.meSoldCost.classList.toggle('neg',parts.soldiers>0);
+  { const row=document.getElementById('meTowerCostRow'), dd=document.getElementById('meTowerCost'); if (row && dd){ row.hidden=!parts.towers; dd.textContent=signed(-parts.towers); dd.classList.toggle('neg',parts.towers>0); } }
   ui.meMilCostRow.hidden=!me.called; ui.meMilCost.textContent=signed(-parts.militia); ui.meMilCost.classList.toggle('neg',parts.militia>0);
   ui.meLand.textContent=(me.tiles/landCount*100).toFixed(1)+'%';
   ui.meHouses.textContent=String(me.houses);
