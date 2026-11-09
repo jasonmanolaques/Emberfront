@@ -102,59 +102,32 @@ describe('population', () => {
     expect(me().soldiers).toBe(count(H_SOLDIER));
   });
 
-  it('spawns newcomers as soldiers at the barracks while the kingdom is short of them and the barracks has room', () => {
-    run(10*E); setShare(0.42);   // 4 of 10, and 5 of 11: the newcomer is the fifth, with room for him
-    soon(() => switching().length===4);
+  it('spawns every newcomer as a villager at the castle: soldiers are trained at a barracks', () => {
+    run(10*E); setShare(0.42);
     while (mine().length < 11) tick();
-    const newest = mine().reduce((a, b) => a.id > b.id ? a : b), [bx, by] = frontOf(barracks);
-    expect(newest.kind).toBe(H_SOLDIER);
-    expect(newest.militia).toBe(false);
-    expect(newest.task).toBe(TASK_ROAM);   // born a soldier, no detour to train
-    expect(Math.hypot(newest.x-bx, newest.y-by)).toBeLessThan(15);   // came out of the barracks, not the capital
+    const newest = mine().reduce((a, b) => a.id > b.id ? a : b), [dx, dy] = doorOf(W.nations[1]);
+    expect(newest.kind).toBe(H_VILLAGER);
+    expect(Math.hypot(newest.x-dx, newest.y-dy)).toBeLessThan(6);   // out of the castle's gate
   });
 
-  it('trains the rest as militia at the castle once the barracks are full: unpaid, and paying no tax', () => {
-    run(10*E); { const prog=me().humanProg; me().humanProg=-1e9; for (let i=0;i<800 && mine().some(h => h.home>=0);i++) tick(); me().humanProg=prog; }   // (a new villager takes 15 s to build his home: wait for the builders, so that all can be called at once)
+  it('trains only as many soldiers as the barracks have room for: no militia in peace, the rest stay villagers', () => {
+    run(10*E); { const prog=me().humanProg; me().humanProg=-1e9; for (let i=0;i<800 && mine().some(h => h.home>=0);i++) tick(); me().humanProg=prog; }
     setShare(1);
-    soon(() => switching().length>=8);
+    soon(() => switching().length>=5);
     expect(switching().filter(h => h.to===T_SOLDIER)).toHaveLength(5);   // the barracks' room
-    const cap = switching().filter(h => h.to===T_MILITIA), [dx, dy] = doorOf(W.nations[1]);
-    expect(cap.length).toBeGreaterThanOrEqual(3);
-    expect(cap.every(h => Math.hypot(h.tx-dx, h.ty-dy) < 1)).toBe(true);   // to the castle gate
+    expect(switching().filter(h => h.to===T_MILITIA)).toHaveLength(0);
     const due=W.nations[1].humanProg; W.nations[1].humanProg=-1e9;
     settle(); W.nations[1].humanProg=due;
     const n=W.nations[1];
-    expect(n.soldiers-n.militia).toBe(5);   // the barracks full of trained soldiers...
-    expect(n.militia).toBeGreaterThanOrEqual(4);   // ...and the rest militia (a beggar can't be recruited)
-    expect(mine().filter(h => h.militia).every(h => h.base<0 && h.hp===MILITIA_HP)).toBe(true);
-    const was=n.taxpayers; tick(); expect(n.taxpayers).toBe(was);
-    expect(n.income).toBeCloseTo(grossIncome(n)-5*WAGE_IDLE, 6);   // only the 5 in the barracks are paid
-    while (mine().length < 11) tick();
-    const newest = mine().reduce((a, b) => a.id > b.id ? a : b);
-    expect([newest.kind, newest.militia]).toEqual([H_SOLDIER, true]);   // born a militiaman, at the castle
-    expect(Math.hypot(newest.x-dx, newest.y-dy)).toBeLessThan(3);
+    expect(n.soldiers).toBe(5); expect(n.militia).toBe(0);
+    void MILITIA_HP; void grossIncome; void WAGE_IDLE;
   });
 
-  it('without a barracks, trains everyone under arms at the castle as militia', () => {
+  it('without a barracks, trains nobody: there are no soldiers, and no militia in peace', () => {
     start(12345, 0, false);
-    run(10*E); setShare(0.5);
-    soon(() => switching().length>0);
-    const [dx, dy] = doorOf(me());
-    expect(switching().every(h => h.to===T_MILITIA && Math.hypot(h.tx-dx, h.ty-dy) < 1)).toBe(true);
-    me().humanProg=-1e9; settle();
-    expect(me().soldiers).toBe(Math.round(0.5*mine().length));
-    expect(me().militia).toBe(me().soldiers);
-    expect(mine().filter(h => h.kind===H_SOLDIER).every(h => h.militia && h.hp===MILITIA_HP)).toBe(true);
-  });
-
-  it('counts a born soldier toward the target, so one fewer villager has to convert', () => {
-    run(10*E); setShare(0.5);
-    // the 11th human is due next tick; at 50% of 11 the kingdom wants 6 soldiers
-    run(E-1); tick();
-    expect(mine()).toHaveLength(11);
-    settle();
-    expect(count(H_SOLDIER)).toBe(6);
-    expect(count(H_VILLAGER)).toBe(5);
+    run(10*E); setShare(0.5); run(200);
+    expect(switching()).toHaveLength(0);
+    expect(me().soldiers).toBe(0);
   });
 
   it('turns soldiers back into villagers when the share is lowered', () => {
@@ -242,7 +215,7 @@ describe('population with bots', () => {
     start(987654321, 9); setShare(0.3); run(1500); const a = snapshot();
     const owners = new Set(W.humans.map(h => h.o));
     expect(owners.size).toBeGreaterThan(5);
-    expect(W.humans.some(h => h.o !== 1 && h.kind === H_SOLDIER)).toBe(true);
+    expect(W.humans.every(h => h.o === 1 || h.kind !== H_SOLDIER || W.nations[h.o].barracks>0)).toBe(true);   // (soldiers only where barracks trained them)
     start(987654321, 9); setShare(0.3); run(1500);
     expect(snapshot()).toBe(a);
   });

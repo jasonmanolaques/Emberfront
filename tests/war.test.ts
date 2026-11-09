@@ -9,14 +9,16 @@ import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
 import { build, placeProblem } from '../src/sim/buildings';
 import { labelWorld, allocIsles } from '../src/sim/naval';
-import { H_SOLDIER, makeHuman, doorOf } from '../src/sim/population';
+import { H_SOLDIER, makeHuman, doorOf, HUMAN_EVERY } from '../src/sim/population';
 import { maxHp } from '../src/sim/army';
 import { RG, region, setRegions, cedeRegion, updateRegions, occupyRegion, CONTROL } from '../src/sim/regions';
 import { claim, claimProblem, answer, inCrisis, armyProblem, armyOrder, armyOf, makePeace, offerPeace, acceptPeace, giveGoals, setClaims, claimsProblem, claimsOf, wageOf, diceFactor, CRISIS_TICKS, CAPTURE_TICKS, ROLL_TICKS, MAX_CLAIMS, P_GOALS, A_HOME, A_MARCH, A_HOLD, A_BATTLE, O_DEFEND, partner } from '../src/sim/war';
 import { WAGE, WAGE_IDLE, B_TOWER, B_ARCHERY } from '../src/core/constants';
 import { buildFort, fortTier, fortSpot } from '../src/sim/buildings';
 import { pTier } from '../src/sim/state';
-import { waiting, fortUpkeep, FORT_DMG, began, outlook, ARROW_TICKS, ARROW_DMG, RALLY_TICKS, ARCHER_WAGE } from '../src/sim/war';
+import { waiting, fortUpkeep, FORT_DMG, began, outlook, ARROW_TICKS, ARROW_DMG, RALLY_TICKS, ARCHER_WAGE, siteOf } from '../src/sim/war';
+import { pHp } from '../src/sim/state';
+import { bldHp } from '../src/sim/defense';
 import { unitAt, SOLDIER_HP, SOLDIER_DMG } from '../src/sim/army';
 import { pArch, pArmor } from '../src/sim/state';
 import { incomeParts } from '../src/sim/sim';
@@ -619,6 +621,49 @@ describe('taking regions', () => {
     until(() => W.rOcc[theirs[0]]===1 || !W.wars[1*M()+2], CAPTURE_TICKS*6);
     run(1200);
     expect(W.rOwner[theirs[1]]).toBe(2); expect(W.rOwner[theirs[2]]).toBe(2);   // (whatever it offered: the rest are still its)
+  });
+});
+
+describe('sieges', () => {
+  /** The bot's castle region, a region of the player's beside it, an army of k there, and war for the castle region. */
+  const siege = (k: number) => {
+    world();
+    const [bx,by]=blockOf(N(2).capTile), bh=regionAt(bx,by); cedeRegion(bh,2);
+    const mine=RG.adj[bh][0]; cedeRegion(mine,1); census();
+    const a=army(1,k,mine);
+    war(1,2,[bh]);
+    return { a, bh, q:N(2).capPlot };
+  };
+  it('a capital\'s region has no flag: an army attacking it marches to the castle and storms it, many men at once, and the castle falls with its kingdom', () => {
+    expect(CAPTURE_TICKS).toBe(20*GAME_SPEED*10);
+    const { a, bh, q }=siege(40);
+    const [gx,gy]=siteOf(bh), [fx,fy]=[(RG.flag[bh]%TW)*2, ((RG.flag[bh]/TW)|0)*2];
+    expect(Math.hypot(gx-fx,gy-fy)).toBeGreaterThan(0);   // (to the gate, not to a flag)
+    N(2).humanProg=-1e9;   // (no militia: the walls alone)
+    armyOrder(1,a.id,'attack',bh);
+    until(() => W.siege[2]===1 && pHp[q]>0, 4000);
+    expect(W.rFlag[bh]).toBe(1);   // (the flag never moves)
+    run(80);
+    let striking=0; for (const h of W.humans) if (h.o===1 && h.war===a.id && h.cool>0) striking++;
+    expect(striking).toBeGreaterThan(5);   // (the castle is fought by many at once, not one on one)
+    until(() => !N(2).alive, Math.ceil(bldHp(q)/2)*10+4000);
+    expect(N(2).alive).toBe(false);
+    expect(W.wars[1*M()+2]).toBe(0);
+  });
+
+  it('while its capital is besieged a kingdom\'s newcomers come out of the gate as militia and fight the besiegers; in peace after, they go back to work', () => {
+    const { a, bh }=siege(20);
+    armyOrder(1,a.id,'attack',bh);
+    until(() => W.siege[2]===1, 4000);
+    const was=new Set(W.humans.map(h => h.id));
+    for (let i=0;i<600;i++){ N(2).humanProg=Math.max(N(2).humanProg,HUMAN_EVERY); tick(); if (W.humans.some(h => h.o===2 && !was.has(h.id) && h.militia && h.duel>=0)) break; }
+    const fresh=W.humans.filter(h => h.o===2 && !was.has(h.id));
+    expect(fresh.length).toBeGreaterThan(0);
+    expect(fresh.every(h => h.kind===H_SOLDIER && h.militia)).toBe(true);
+    expect(fresh.some(h => h.duel>=0)).toBe(true);   // (in the fight: one on one with a besieger)
+    // peace: the siege is over, and the militia (no barracks to train at) go back to being villagers
+    makePeace(1,2); N(2).humanProg=-1e9;
+    until(() => !W.humans.some(h => h.o===2 && h.militia && h.hp>0), 3000);
   });
 });
 

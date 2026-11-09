@@ -41,7 +41,7 @@ function updateTip(e: PointerEvent){
   const r=region[t];
   if (r){
     const c=W.rOwner[r], cl=c && c!==PLAYER && claimsOf(PLAYER,c).includes(r) ? ' · claimed by you' : c===PLAYER && [...W.claims.entries()].some(([k,v]) => k%W.M===PLAYER && v.includes(r)) ? ' · claimed by an enemy' : '';
-    const ft=fortTier(r), fort=!ft ? '' : capitalIn(r) ? ' · capital: defends itself as a tier 4 fort' : ` · fort, tier ${ft}`;
+    const ft=fortTier(r), fort=!ft ? '' : capitalIn(r) ? ' · capital: no flag; taken only by storming its castle, which shoots like a tier 4 fort' : ` · fort, tier ${ft}`;
     l2=`${regionName(r)} · ${c ? (c===PLAYER ? 'your region' : W.nations[c].name+'\'s region') : `no flag yet (${Math.round(W.rCount[r*W.M+(o||0)]/Math.max(1,regionLand(r))*100)}% ${o ? 'theirs' : 'settled'}: more than half takes it)`}${cl}${fort}`;
   }
   ui.tip.innerHTML=`<span class="t1"></span><span class="t2"></span><span class="t2"></span>`;

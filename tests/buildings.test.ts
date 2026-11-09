@@ -160,18 +160,17 @@ describe('what the buildings do', () => {
     expect(n.income).toBeCloseTo((TAX_PER_VILLAGER*n.taxpayers+LAND_TAX*n.tiles)*1.1, 9);
   });
 
-  it('keeps its army of 5 waiting at the barracks; soldiers with no room patrol the city', () => {
+  it('keeps its army of 5 waiting at the barracks; nobody is trained beyond its room', () => {
     start(12345, 0); expand(4);
     const b=place(B_BARRACKS);
     run(10*E); queueCommand({ type: 'soldiers', nation: 1, share: 0.6 }); run(600);
     const [bx, by]=frontOf(b), soldiers=mine().filter(h => h.kind===H_SOLDIER && !switching(h));
-    expect(soldiers.length).toBeGreaterThan(6);
+    expect(soldiers.length).toBe(5);
     run(100);
-    const army=soldiers.filter(h => h.base>=0), patrol=soldiers.filter(h => h.base<0);
+    const army=soldiers.filter(h => h.base>=0);
     expect(army).toHaveLength(5);
     for (const h of army) expect(Math.hypot(h.x-bx, h.y-by)).toBeLessThan(20);
-    const [cx, cy]=doorOf(me());
-    for (const h of patrol) expect(Math.hypot(h.x-cx, h.y-cy)).toBeLessThan(50);   // round the castle
+    void doorOf;
   });
 
   it.skip('holds its fire at peace; at war it shoots enemy soldiers on its own land, 2 damage every 8 seconds, and not those outside (watchtowers are out of use for now)', () => {

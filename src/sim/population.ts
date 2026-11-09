@@ -510,6 +510,12 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
   }
   let spare=0; for (const k of room.values()) spare+=Math.max(0,k);
   spare=Math.max(0,spare-forMilitia);   // what is left once the militia have their places
+  // militia are raised only to defend a besieged capital: once the siege is over, those the barracks have no room for stay round the castle
+  // while the kingdom is at war (to fight the next siege), and in peace go back to work
+  if (!W.siege[n.id] && !warringNow(n.id) && n.capTile>=0){
+    let left=militia.length-forMilitia;
+    for (const h of militia){ if (left<=0) break; if (switching(h)) continue; if (sendToTrain(h,n.capPlot,T_VILLAGER)) left--; }
+  }
   let diff=Math.round(n.soldierShare*mine.length)-armed(mine);
   if (!diff) return;
   if (diff>0 && n.gold<0) return;   // nobody signs up while there is no money for wages
@@ -524,17 +530,18 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
       if (!diff) return;
       let plot=-1;
       if (spare>0){ let bd=Infinity; for (const [u,k] of room) if (k>0){ const q=nearestPlot(u.plots,h.x,h.y), [x,y]=frontOf(q), e=(h.x-x)**2+(h.y-y)**2; if (e<bd){ bd=e; plot=q; } } }
-      if (plot>=0){ if (sendToTrain(h,plot,T_SOLDIER)){ const u=unitAt(plot)!; room.set(u,room.get(u)!-1); spare--; diff--; } }
-      else if (n.capTile>=0 && sendToTrain(h,n.capPlot,T_MILITIA)) diff--;
+      if (plot<0) break;   // (no room left in any barracks: soldiers are trained only there)
+      if (sendToTrain(h,plot,T_SOLDIER)){ const u=unitAt(plot)!; room.set(u,room.get(u)!-1); spare--; diff--; }
     }
-    // the lock is on and the free villagers are used up: the professionals are called up too, at once, as militia (the reserve unit: they rest in houses, are called to fronts like the rest)
-    if (diff>0 && n.draftAll){
-      const pros=mine.filter(h => h.kind===H_VILLAGER && !h.beggar && h.work>=0 && !switching(h) && h.war<0).sort((a,b) => a.id-b.id);
+    // the lock is on and the free villagers are used up: the professionals leave their work to train too, while the barracks have room
+    if (diff>0 && n.draftAll && spare>0){
+      const pros=mine.filter(h => h.kind===H_VILLAGER && !h.beggar && h.work>=0 && !switching(h) && h.war<0).sort((a,b) => away(a)-away(b) || a.id-b.id);
       for (const h of pros){
-        if (diff<=0) break;
-        release(h); h.work=-1; h.load=0; h.make=0; h.dest=-1; h.fix=-1;
-        h.sp+=SPEED_UP[T_MILITIA]-SPEED_UP[T_VILLAGER]; h.kind=H_SOLDIER; h.militia=true; h.tier=1; h.base=-1; h.post=-1; h.hp=maxHp(h);
-        backToRoam(h); diff--;
+        if (diff<=0 || spare<=0) break;
+        let plot=-1, bd=Infinity; for (const [u,k] of room) if (k>0){ const q=nearestPlot(u.plots,h.x,h.y), [x,y]=frontOf(q), e=(h.x-x)**2+(h.y-y)**2; if (e<bd){ bd=e; plot=q; } }
+        if (plot<0) break;
+        h.work=-1; h.load=0; h.make=0; h.dest=-1; h.fix=-1;
+        if (sendToTrain(h,plot,T_SOLDIER)){ const u=unitAt(plot)!; room.set(u,room.get(u)!-1); spare--; diff--; }
       }
     }
     return;
@@ -864,11 +871,10 @@ export function updatePopulation(){
     const barracks=barracksOf(n);
     if (n.capTile>=0 && (n.humanProg+=humanRate(n,mine.length))>=HUMAN_EVERY){
       n.humanProg-=HUMAN_EVERY;
-      // newcomers fill the ranks first while the kingdom is short of soldiers (if it has a barracks):
-      // a soldier while a barracks has room the militia aren't taking, else (or with no barracks) a militiaman
-      const soldier = n.gold>=0 && armed(mine)<Math.round(n.soldierShare*(mine.length+1));
-      let room=0; if (soldier){ for (const k of roomIn(n,mine).values()) room+=Math.max(0,k); if (!reservesOut(n)) room-=mine.filter(h => homeMilitia(h) && h.post<0).length; }
-      spawnHuman(n, soldier ? H_SOLDIER : H_VILLAGER, barracks, soldier && room<=0);
+      // every newcomer is a villager, who trains at a barracks to be a soldier (balance); only while the capital is besieged does he come out
+      // of its gate a militiaman, straight into the fight for it (sim/war.ts guardStep)
+      const besieged=W.siege[n.id]>0;
+      spawnHuman(n, besieged ? H_SOLDIER : H_VILLAGER, barracks, besieged);
       mine.push(H[H.length-1]);
     }
     payroll(n, mine);

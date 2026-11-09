@@ -131,7 +131,7 @@ describe('scholars and the call-up', () => {
     expect(professionals(n)).toBeGreaterThanOrEqual(1);
     expect(soldierMax(n)).toBeLessThan(1);
   });
-  it('with the lock open the professionals are called up as militia', () => {
+  it('with the lock open the professionals leave their work to train at a barracks with room (none without)', () => {
     roomy();
     const n=me(); n.stock=[50,50,50]; const [q]=near(); expect(build(n,q,B_RESEARCH)).toBe(true);
     for (let i=0;i<8000 && !W.humans.some(h => h.o===1 && h.work===q);i++) tick();
@@ -139,8 +139,12 @@ describe('scholars and the call-up', () => {
     queueCommand({ type: 'draftAll', nation: 1, on: true });
     queueCommand({ type: 'soldiers', nation: 1, share: 1 });
     run(400);
+    expect(scholar.kind).toBe(H_VILLAGER); expect(scholar.work).toBe(q);   // (no barracks: nobody is called up)
+    const plots=near().filter(k => k!==q); let k=0; n.stock=[500,500,500];
+    for (const p of plots){ if (k>=8) break; if (build(n,p,B_BARRACKS)) k++; }
+    run(1200);
     expect(scholar.kind).toBe(H_SOLDIER);
-    expect(scholar.militia).toBe(true);
+    expect(scholar.militia).toBe(false);
     expect(scholar.work).toBe(-1);
   });
   it('a carpenter walks back to his workshop for materials after each house', () => {

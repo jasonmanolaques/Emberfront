@@ -5,9 +5,10 @@
    out (a map tile under DETAIL_CSS screen pixels), from the overview, one pixel a map tile. */
 import { TW, TH, RW, RH, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY, B_HOSPITAL, B_RESEARCH, B_NAVAL } from '../core/constants';
 import { clamp, fmt } from '../core/util';
-import { W, owner, isLand, sea, pType, pTimer, pBurn, type Human } from '../sim/state';
+import { W, owner, isLand, sea, pType, pTimer, pBurn, pHp, type Human } from '../sim/state';
 import { findBlock } from '../sim/sim';
-import { placeProblem, structureOf, canAfford, navalSite, blockPlan, fortProblem, fortSpot, SIZE, PRODUCE_TICKS, dims } from '../sim/buildings';
+import { placeProblem, structureOf, canAfford, navalSite, blockPlan, fortProblem, fortSpot, capitalIn, SIZE, PRODUCE_TICKS, dims } from '../sim/buildings';
+import { bldHp } from '../sim/defense';
 import { client, reduceMotion } from '../client';
 import { view, ctx, cam, stepCamAnim } from './camera';
 import { ovC, flushWorld, SEA } from './terrain';
@@ -341,6 +342,7 @@ function drawFlags(now: number, vx0: number, vy0: number, vx1: number, vy1: numb
   const wave=reduceMotion ? 0 : ((now/400)|0)&1;
   for (let r=1;r<RG.n;r++){
     const o=W.rOwner[r], f=RG.flag[r]; if (!o || f<0) continue;
+    if (capitalIn(r)) continue;   // (a capital's region has no flag: its castle stands for it)
     const x=(f%TW)*RS+2, gy=((f/TW)|0)*RS+RS;
     if (x<vx0-12||gy<vy0||x>vx1+12||gy-20>vy1) continue;
     ctx.fillStyle=INK; ctx.fillRect(x-1,gy-19,3,20);
@@ -351,6 +353,15 @@ function drawFlags(now: number, vx0: number, vy0: number, vx1: number, vy1: numb
     ctx.fillStyle=INK; ctx.fillRect(x+1,top-1,8,6);
     paintSmallFlag(ctx,W.nations[o].code,x+2,top,false);
     ctx.fillStyle=INK; ctx.globalAlpha=0.3; ctx.fillRect(x+7,top+1+wave,1,2); ctx.globalAlpha=1;
+  }
+  // a castle under siege: how much of it still stands, in a bar over its keep
+  for (let i=1;i<W.nations.length;i++){
+    const n=W.nations[i]; if (!n.alive || n.capTile<0 || !W.siege[i]) continue;
+    const q=n.capPlot, x=(q%PW)*8*K, y=((q/PW)|0)*8*K-6; if (x<vx0-40||y<vy0-10||x>vx1+40||y>vy1+10) continue;
+    const w=Math.round(16*K), left=Math.max(0,1-pHp[q]/bldHp(q));
+    ctx.fillStyle=INK; ctx.fillRect(x-1,y-1,w+2,5);
+    ctx.fillStyle='#5a1a14'; ctx.fillRect(x,y,w,3);
+    ctx.fillStyle=left>0.5 ? '#7fd06a' : left>0.25 ? '#ffd23f' : '#ff5a3c'; ctx.fillRect(x,y,Math.round(w*left),3);
   }
 }
 

@@ -22,9 +22,9 @@
    are then its, the rest go back. A kingdom that loses the region of its castle falls to the winner. */
 import { TW, TH, NT, NP, PW, TMULT, GAME_SPEED, WAGE, WAGE_IDLE, WAGE_ATTACK, B_CASTLE, B_CPART, B_BARRACKS, isStructure } from '../core/constants';
 import { W, owner, occ, terr, isLand, isle, pType, pOwner, pCenter, pHp, pMain, pBurn, type Human, type Nation, type Army } from './state';
-import { wear, CASTLE_MEND } from './defense';
+import { wear, bldHp, CASTLE_MEND } from './defense';
 import { on } from './events';
-import { H_SOLDIER, indoors, switching, tileOf, pace, release, TASK_ROAM } from './population';
+import { H_SOLDIER, indoors, switching, tileOf, pace, release, doorOf, TASK_ROAM } from './population';
 import { units, unitAt, groupKeys, groupLead, maxHp, SOLDIER_DMG, MILITIA_HIT, ARCHER_SHARE, type Unit } from './army';
 import { RG, region, holdsRegion, cedeRegion, occupyRegion, freeRegion, flagXY, CONTROL } from './regions';
 import { ignite, fortTier, fortSpot, builtTier, capitalIn } from './buildings';
@@ -44,7 +44,7 @@ export const A_HOME = 0, A_MARCH = 1, A_HOLD = 2, A_BATTLE = 3;   // an army: at
 export const O_NONE = 0, O_ATTACK = 1, O_DEFEND = 2, O_RETURN = 3, O_RETREAT = 4;
 export const CRISIS_TICKS = 30*GAME_SPEED*10;     // the defender's time to answer claims: 30 s on the clock, then it is war
 const BOT_ANSWER = 4*GAME_SPEED*10;               // a bot answers within 4 s
-export const CAPTURE_TICKS = 30*GAME_SPEED*10;    // an invader sitting alone in a region brings its flag down in 30 s on the clock; its owner's army raises it as fast
+export const CAPTURE_TICKS = 20*GAME_SPEED*10;    // an invader sitting alone in a region brings its flag down in 20 s on the clock; its owner's army raises it as fast (a capital's region has no flag: it is besieged)
 export const ROLL_TICKS = 3*GAME_SPEED*10;        // every 3 s on the clock each side of a battle rolls a die for its line
 export const ROLL_MOD = 0.2;                      // a 6 is +20% to the blows of its line, a 1 is -20%, a 3 even
 export const BATTLE_DMG = 2;                      // blows in a battle line land twice as hard as a soldier's blow elsewhere: a line fight is brutal
@@ -503,6 +503,11 @@ function walk(h: Human, gx: number, gy: number, quick=1){
 }
 
 /* ---------- orders ---------- */
+/** Where an army sent to region r goes: its flag, or in a capital's region (which has none) before the castle's gate. */
+export function siteOf(r: number): [number, number] {
+  const c=capitalIn(r); if (!c) return flagXY(r);
+  const [gx,gy]=doorOf(W.nations[c]); return [gx,gy+6];
+}
 /** The army of o's other than x sent to hold region r (attacking or defending it), if any. */
 const holderOf = (o: number, x: Army, r: number) => W.armies.find(y => y!==x && y.o===o && y.goal===r && (y.order===O_ATTACK || y.order===O_DEFEND) && (y.men>0 || y.mode===A_MARCH));
 /** Armies on standby: each waits while the army of its kingdom's fighting in its region fights on; once that one is beaten or falls back it
@@ -587,7 +592,7 @@ function sendOut(x: Army, r: number, order: number, enemy: number){
     x.men=k;
   }
   x.order=order; x.goal=r; x.enemy=enemy; x.foe=-1; x.safe=0;
-  const [fx,fy]=flagXY(r);
+  const [fx,fy]=siteOf(r);
   x.path=findWay(x.o,x.x,x.y,fx,fy); startMarch(x);
 }
 /** x sets off along its new way: a column, its trail begun where it stands. */
@@ -646,6 +651,7 @@ export function updateWar(){
   for (let i=1;i<N.length;i++){ const n=N[i], q=n.capPlot; if (!n.alive || n.capTile<0 || pHp[q]<=0) continue; const was=wear(q); pHp[q]=Math.max(0,pHp[q]-CASTLE_MEND); if (wear(q)!==was) on.plotChanged(q); }
   if (W.tickN%10===1) countForts();
   syncArmies();
+  findSieges();
   led.clear();
   for (const x of W.armies) stepArmy(x);
   if (W.tickN%5===0) engage();
@@ -680,6 +686,7 @@ function stepArmy(x: Army){
     march(x,men);
   }
   if (x.mode===A_MARCH){ let ranks=0; for (const f of x.files) ranks=Math.max(ranks,f.length); columnRanks(x,ranks); }
+  if (besieging(x)){ for (const f of x.files) for (const id of f){ const h=byId.get(id); if (h){ led.add(h.id); if (h.cool>0) h.cool--; } } siegeStep(x); return; }
   // the men to their places (in a battle, the front rank's fighters are moved by the fight)
   const busy=x.mode===A_BATTLE;
   for (let i=0;i<x.files.length;i++){
@@ -840,7 +847,7 @@ function flags(){
     let a=at.get(r); if (!a){ a=[]; at.set(r,a); } a.push(x);
   }
   for (const [r,list] of at){
-    if (fighting.has(r)) continue;
+    if (fighting.has(r) || capitalIn(r)) continue;   // (a capital's region has no flag: it is taken by a siege of its castle)
     const d=W.rOwner[r]; if (!d) continue;
     const own=list.filter(x => x.o===d), foes=list.filter(x => x.o!==d && W.atWar[x.o*W.M+d] && claimsOf(x.o,d).includes(r));
     if (own.length && foes.length) continue;
@@ -877,6 +884,90 @@ function fortsFire(){
     if (was>0 && e.hp<=0) W.kills[holder*M+e.o]++;
     on.towerShot((q%PW)*8+8,((q/PW)|0)*8+4,e.x,e.y-2,e.hp<=0,e.id);
   }
+}
+/* ---------- sieges: a capital's region has no flag; its castle is stormed ----------
+   An army attacking a capital's region marches to the castle's gate and, standing there with no battle on, storms it: its spearmen
+   spread round the walls and strike them all at once (the castle is the one enemy many men fight together, not one on one), its
+   archers shoot the castle's defenders, or the walls. The castle shoots back as a fort of tier 4, and mends 2 blows a second.
+   While a capital is besieged every newcomer comes out of its gate as a militiaman, to fight the besiegers (sim/population.ts);
+   the militia kept round the castle at war fight too (guardStep). When its blows are spent the castle falls, and the kingdom
+   with it, to the besieger. */
+export const SIEGE_R = 30;   // pixels from the castle's middle within which an attacker counts as besieging it
+const castleXY = (n: Nation): [number, number] => { const q=n.capPlot; return [(q%PW)*8+8, ((q/PW)|0)*8+8]; };
+/** Is army x storming a castle: attacking a capital's region, standing before its castle, with no battle on? */
+function besieging(x: Army){
+  if (x.mode!==A_HOLD || x.order!==O_ATTACK || !x.men) return false;
+  const c=capitalIn(x.goal); if (!c || !W.atWar[x.o*W.M+c]) return false;
+  const [cx,cy]=castleXY(W.nations[c]); return Math.hypot(x.x-cx,x.y-cy)<SIEGE_R;
+}
+/** Which kingdoms' capitals are under siege this tick, and by whom (W.siege: the besieger's id, 0 none): an army at war with a kingdom,
+    in its capital's region and near its castle, fighting or storming. */
+function findSieges(){
+  W.siege.fill(0);
+  for (const x of W.armies){
+    if (x.mode===A_HOME || x.mode===A_MARCH || !x.men) continue;
+    const r=region[tileOf(x.x,x.y)], c=capitalIn(r); if (!c || c===x.o || !W.atWar[x.o*W.M+c]) continue;
+    const [cx,cy]=castleXY(W.nations[c]); if (Math.hypot(x.x-cx,x.y-cy)<SIEGE_R*1.5) W.siege[c]=x.o;
+  }
+}
+/** One tick of army x storming the castle: each spearman goes to his place round the walls (or fights the militiaman who has taken him on)
+    and strikes; the archers stand back and shoot, every ARROW_TICKS, at a defender near the castle or else the walls. */
+function siegeStep(x: Army){
+  const c=capitalIn(x.goal), C=W.nations[c], q=C.capPlot, [cx,cy]=castleXY(C);
+  const men: Human[]=[]; for (const f of x.files) for (const id of f){ const h=byId.get(id); if (h && h.hp>0) men.push(h); }
+  const spears=men.filter(h => !h.arch), archers=men.filter(h => h.arch);
+  const foes=(soldiersOf[c] ?? []).filter(e => e.hp>0 && e.war<0 && Math.hypot(e.x-cx,e.y-cy)<SIEGE_R*1.5);
+  const ring=(i: number, n: number, R: number): [number, number] => {   // a place on a square round the castle, i of n
+    const t=(i+0.5)/n*4, side=t|0, f=t-side, a=-R+2*R*f;
+    return side===0 ? [cx+a,cy-R] : side===1 ? [cx+R,cy+a] : side===2 ? [cx-a,cy+R] : [cx-R,cy-a];
+  };
+  for (let i=0;i<spears.length;i++){
+    const h=spears[i];
+    const p=h.duel>=0 ? byId.get(h.duel) : undefined;
+    if (p && p.hp>0 && p.duel===h.id && Math.hypot(p.x-h.x,p.y-h.y)<DUEL_R){ duelStep(h,p,false); continue; }   // (a defender has taken him on: one on one)
+    if (h.duel>=0) unbind(h);
+    const [sx,sy]=ring(i,spears.length,9.5); walk(h,sx,sy);
+    if (Math.hypot(sx-h.x,sy-h.y)<2 && h.cool<=0){
+      h.cool=HIT_TICKS; on.swing(h.id,-1);
+      if (W.prand()<HIT_CHANCE){ pHp[q]+=HIT_DMG[h.tier]*(1+((W.prand()*3|0)-1)*STRIKE_SWING); on.hit(sx+(cx-sx)*0.3,sy+(cy-sy)*0.3-2,false,-1,h.id); }
+    }
+  }
+  for (let i=0;i<archers.length;i++){
+    const h=archers[i], [sx,sy]=ring(i,archers.length,17); walk(h,sx,sy);
+    if ((W.tickN+h.id*7)%ARROW_TICKS) continue;
+    const e=foes.length ? foes[(W.prand()*foes.length)|0] : undefined;
+    if (e){ e.hp-=ARROW_DMG; e.by=x.o; if (e.hp<=0) W.kills[x.o*W.M+e.o]++; on.arrowShot(h.x,h.y-3,e.x,e.y-2,e.hp<=0,e.id); }
+    else { pHp[q]+=ARROW_DMG; on.arrowShot(h.x,h.y-3,cx+(W.prand()-0.5)*10,cy-4,false,-1); }
+  }
+  if (W.tickN%10===0) on.plotChanged(q);
+  if (pHp[q]>=bldHp(q)) castleFalls(c,x.o);
+}
+/** The castle of kingdom d is stormed by a: the war is won, and the kingdom falls to a. */
+function castleFalls(d: number, a: number){
+  on.warWon(a,d);
+  annex(d,a);
+  on.peaceMade(a,d);
+}
+/** Kingdom o's soldiers outside an army (militia): with its capital besieged, each goes for the nearest besieger nobody of his is fighting
+    (one on one) and fights him; at war otherwise, they keep round the castle (their roaming does). True while he is busy with it. */
+export function guardStep(h: Human): boolean {
+  const a=W.siege[h.o]; if (!a || h.war>=0 || h.hp<=0) return false;
+  const n=W.nations[h.o]; if (n.capTile<0) return false;
+  const [cx,cy]=castleXY(n);
+  let e=h.duel>=0 ? byId.get(h.duel) : undefined;
+  if (!e || e.hp<=0 || e.duel!==h.id){
+    if (h.duel>=0) unbind(h);
+    e=undefined; let bd=Infinity;
+    for (const c of soldiersOf[a] ?? []){
+      if (c.hp<=0 || c.war<0 || Math.hypot(c.x-cx,c.y-cy)>SIEGE_R*1.6) continue;
+      const p=partner(c); if (p && p!==h) continue;
+      const d=(c.x-h.x)**2+(c.y-h.y)**2; if (d<bd){ bd=d; e=c; }
+    }
+    if (!e) return false;
+    bind(h,e);
+  }
+  duelStep(h,e,false);
+  return true;
 }
 /** The barracks of o's in region r burn (a region taken: its barracks are lost, so nobody's army grows from what it captures). */
 export function razeBarracks(r: number, o: number){
@@ -948,7 +1039,6 @@ export function strike(h: Human, e: Human){
 /** The villagers of kingdom o near (x,y) rising as a mob: there are no mobs in this war (sim/story.ts asks). */
 export function raiseMob(_o: number, _x: number, _y: number, _r: number, _dry=false){ return 0; }
 /** A soldier not in a phalanx (militia) or a villager: nothing to do in a war of armies. */
-export function guardStep(_h: Human): boolean { return false; }
 export function alarmStep(_h: Human): boolean { return false; }
 /** How many of o's soldiers would answer a call: none (militia stay at home). */
 export const callableCount = (_n: number) => 0;
