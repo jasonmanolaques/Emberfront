@@ -1,6 +1,6 @@
 /* ---------- buildings panel: pick a building, then click your land to place it ---------- */
 import { region } from '../sim/regions';
-import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_PART, B_NAVAL } from '../core/constants';
+import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_PART, B_NAVAL, B_ARCHERY } from '../core/constants';
 import type { Nation } from '../sim/state';
 import { W, owner, pType, pTier, pOwner, pMain } from '../sim/state';
 import { R_HOUSING, R_INFANTRY, hasMedics } from '../sim/research';
@@ -21,14 +21,14 @@ import { $ } from './dom';
 const panel=$('buildPanel'), list=$('buildList'), tip=$('btip'), title=$('buildTitle');
 /** The building menus on the right: what each holds. */
 export const CATEGORIES = [
-  { id:'urban',     name:'Urban development',   types:[B_FARM, B_GUILD, B_CARPENTER, B_MINTER, B_HOSPITAL] },
-  { id:'military',  name:'Military',            types:[B_BARRACKS, B_TOWER, B_SMITHY, B_NAVAL] },
+  { id:'urban',     name:'Urban development',   types:[B_FARM, B_GUILD, B_CARPENTER, B_MINTER, B_HOSPITAL, B_TOWER] },
+  { id:'military',  name:'Military',            types:[B_BARRACKS, B_ARCHERY, B_SMITHY, B_NAVAL] },   // (every kind of barracks)
   { id:'resources', name:'Resource buildings',  types:[B_PLANTATION, B_QUARRY, B_COPPERMINE] },
   { id:'society',   name:'Society advancement', types:[B_RESEARCH] },
 ];
 let category='urban';   // the menu showing, or the last one opened
 const ICO=['wood','stone','copper'];
-const owned = (n: Nation, type: number) => type===B_FARM ? n.farms : type===B_BARRACKS ? n.barracks : type===B_TOWER ? n.towers : type===B_MINTER ? n.minters
+const owned = (n: Nation, type: number) => type===B_FARM ? n.farms : type===B_BARRACKS ? n.barracks-n.archeries : type===B_ARCHERY ? n.archeries : type===B_TOWER ? n.towers : type===B_MINTER ? n.minters
   : type===B_PLANTATION ? n.plantations : type===B_QUARRY ? n.quarries : type===B_COPPERMINE ? n.copperMines : type===B_RESEARCH ? n.labs : type===B_GUILD ? n.guilds : type===B_SMITHY ? n.smithies : type===B_CARPENTER ? n.carpenters : type===B_HOSPITAL ? n.hospitals : type===B_NAVAL ? n.navals : 0;
 const rows=new Map<number, HTMLButtonElement>();   // by type; a block of four by type+BLOCK
 const BLOCK=1000;

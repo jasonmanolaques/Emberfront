@@ -43,7 +43,14 @@ const MILITIA = [
   ['....','.hh.','hhse','tlll','ltll','bbtT','.ll.','.ff.'],
   ['....','.hh.','hhse','tlll','ltll','bbtT','l..l','f..f'],
 ];
-const TIERS = [MILITIA, ARCHAIC, SOLDIER, HEAVY];   // (tier 0: militia)
+// archers: a hood of green wool over a leather jerkin, a quiver on the back (drawn below)
+const ARCHER = [
+  ['.kk.','kkse','.ss.','jjja','jjjK','bbbK','.aa.','.ff.'],
+  ['.kk.','kkse','.ss.','jjja','jjjK','bbbK','a..a','f..f'],
+  ['....','.kk.','kkse','jjja','jjjK','bbbK','.aa.','.ff.'],
+  ['....','.kk.','kkse','jjja','jjjK','bbbK','a..a','f..f'],
+];
+const TIERS = [MILITIA, ARCHAIC, SOLDIER, HEAVY, ARCHER];   // (tier 0: militia; 4: an archer)
 const BEGGAR = [
   ['....','.hh.','hse.','gggs','gGgg','gGg.','.l..','.ff.'],
   ['....','.hh.','hse.','gggs','gGgg','gGg.','.l.l','f..f'],
@@ -66,13 +73,16 @@ export function personSprite(o: number, kind: number, look: number, frame: numbe
   if (left){ c=flipped(personSprite(o,kind,look,frame,false,wound,tier)); cache.set(key,c); return c; }
   const n=styleOf(o), skin=look&3, hair=(look>>2)&3;
   const pal: Pal = { h:HAIR[hair], s:SKIN[skin], a:SKIN_D[skin], e:'#2a1c14', t:n.roof, T:n.roofD, b:'#5a3c22', l:'#6a4a30', f:'#2e241c',
-    m:'#aeb7c0', M:'#7d8790', c:'#8d949b', C:'#6c737a', g:'#8a8476', G:'#6a645a', P:'#d4dbe1', Q:'#8e99a4' };
+    m:'#aeb7c0', M:'#7d8790', c:'#8d949b', C:'#6c737a', g:'#8a8476', G:'#6a645a', P:'#d4dbe1', Q:'#8e99a4', k:'#4f6b34', j:'#8a6238', K:n.roofD };
   if (kind===2){ pal.s='#c7c49a'; pal.e='#4a4a3a'; pal.l='#5a5348'; }
   if ((kind===1 && wound===2) || (kind!==1 && wound>0)){ pal.s='#d8b8a0'; }   // pale from losing blood
   const top = kind===1 && wound===2 ? 1 : 0;   // the dying soldier's head has sunk a row
   const body = kind===1 ? TIERS[tier] : kind===2 ? BEGGAR : VILLAGER;
   c=sprite(CW,CH,ctx=>{
     const P=(x: number, y: number, w: number, h: number, col: string) => { ctx.fillStyle=col; ctx.fillRect(BODY_X+x,FEET_Y-7+y,w,h); };
+    if (kind===1 && tier===4){   // the quiver on his back, its fletchings showing
+      P(-1,2+top,1,4,'#6a4424'); P(-1,1+top,1,1,'#f0ece0'); P(-2,1+top,1,1,'#c0302a');
+    }
     if (kind===1 && tier===3){   // the kite shield, slung on the far arm
       P(-2,3+top,2,3,n.roof); P(-2,3+top,2,1,n.roofL); P(-1,6+top,1,1,n.roofD); P(-2,4+top,1,1,'#e8d27a');
     }
@@ -82,7 +92,17 @@ export function personSprite(o: number, kind: number, look: number, frame: numbe
     if (kind===1 && wound>=1){ B(3,4); B(3,5,BLOOD_D); B(1,top,'#5d656c'); B(0,3+top,pal.a); }   // a wound in the side, a dented helmet, torn mail
     if (kind===1 && wound===2){ B(0,4); B(0,5,BLOOD_D); B(2,2+top); B(1,6); B(2,7); }           // blood down the mail, on the face and legs
     if (kind!==1 && wound>=1){ B(2,2); B(1,1); B(0,5,BLOOD_D); B(3,4); B(1,6); }                  // a cut face, a bloody hand and shirt
-    if (kind===1){
+    if (kind===1 && tier===4){
+      const wood='#8a5a2c', str='#e8e0c8';
+      if (frame===2){   // in the melee: a short knife thrust forward, the bow slung
+        ctx.fillStyle='#c9cdd1'; ctx.fillRect(BODY_X+4,FEET_Y-4,2,1); ctx.fillStyle=pal.s; ctx.fillRect(BODY_X+3,FEET_Y-4,1,1);
+        ctx.fillStyle=wood; ctx.fillRect(BODY_X-1,FEET_Y-6,1,5);
+      } else {          // the bow held before him, strung
+        ctx.fillStyle=wood; ctx.fillRect(BODY_X+6,FEET_Y-8,1,6); ctx.fillRect(BODY_X+5,FEET_Y-9,1,1); ctx.fillRect(BODY_X+5,FEET_Y-2,1,1);
+        ctx.fillStyle=str; ctx.fillRect(BODY_X+5,FEET_Y-8,1,6);
+        ctx.fillStyle=pal.s; ctx.fillRect(BODY_X+4,FEET_Y-5,2,1);   // his hand on the grip
+      }
+    } else if (kind===1){
       // a crest on the helmet; the heavy helm's plume stands taller
       if (tier===2){ ctx.fillStyle=n.roof; ctx.fillRect(BODY_X+1,FEET_Y-8+top,2,1); }
       if (tier===3){ ctx.fillStyle=n.roof; ctx.fillRect(BODY_X+1,FEET_Y-9+top,2,2); ctx.fillStyle=n.roofL; ctx.fillRect(BODY_X+1,FEET_Y-9+top,1,1); }
@@ -124,5 +144,21 @@ export function corpseSprite(o: number, kind: number, look: number, tier=1, clea
   const ctx=c.getContext('2d')!; ctx.translate(c.width,0); ctx.rotate(Math.PI/2); ctx.drawImage(s,0,0);
   cache.set(key,c);
   return c;
+}
+/** A horse for a rider (reinforcements ride up to their army): bay, with a dark mane and tail and a saddle cloth in the kingdom's colour;
+    frame 0 or 1 for its stride. Its back (where the rider's feet go) is HORSE_BACK rows above its hooves. */
+export const HORSE_BACK = 5;
+const HORSE = [
+  ['.......hh.','t.....mhhe','tbbkkbbhh.','.bbbbbbbh.','.bbbbbbb..','.l.l..l.l.','.f.f..f.f.'],
+  ['.......hh.','t.....mhhe','tbbkkbbhh.','.bbbbbbbh.','.bbbbbbb..','..l.l.l..l','..f.f.f..f'],
+];
+export function horseSprite(o: number, frame: number, left: boolean): HTMLCanvasElement {
+  const key='horse|'+o+'|'+frame+'|'+(+left);
+  let c=cache.get(key); if (c) return c;
+  if (left){ c=flipped(horseSprite(o,frame,false)); cache.set(key,c); return c; }
+  const n=styleOf(o);
+  const pal: Pal={ b:'#8a5630', h:'#8a5630', e:'#1c140e', m:'#3a2416', t:'#3a2416', l:'#6a4024', f:'#2a1c14', k:n.roof };
+  c=sprite(12,9,ctx => rows(ctx,1,1,HORSE[frame&1],pal), n.outline);
+  cache.set(key,c); return c;
 }
 export function resetPeople(){ cache.clear(); }

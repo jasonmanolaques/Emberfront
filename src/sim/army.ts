@@ -10,9 +10,12 @@
    and heavy armour (tier 3). The blacksmith forges armour once infantry research allows it and
    carries it to the barracks; a soldier of that barracks who comes by takes the best piece on the
    racks that beats what he wears, and his old armour is thrown away. Reinforced armour comes
-   first, for every rack of the barracks; only then heavy armour, which replaces it. */
+   first, for every rack of the barracks; only then heavy armour, which replaces it.
+   Archer barracks (barracks plots marked in pArch) join the others like any barracks: each of their modules makes 5 of the army's places
+   archers' places. A soldier takes a spearman's or an archer's place as he joins his army, whichever it is shorter of; archers have half a
+   spearman's hit points and blows, wear no armour, and stand at the back of the phalanx, shooting (sim/war.ts). */
 import { PW, PH, B_BARRACKS } from '../core/constants';
-import { W, occ, pType, pOwner, pBurn, pCenter, pArmor, type Human, type Nation } from './state';
+import { W, occ, pType, pOwner, pBurn, pCenter, pArmor, pArch, type Human, type Nation } from './state';
 import { on } from './events';
 import { R_INFANTRY } from './research';
 
@@ -37,21 +40,24 @@ export interface Unit {
   x: number; y: number;  // where its army gathers: in front of its middle module, in pixels
   members: Human[];      // soldiers of its army, home or away
   home: number;          // of them, at the barracks (not out on campaign)
-  tiers: number[];       // members by tier [_, I, II, III]
+  tiers: number[];       // members by tier [_, I, II, III] (archers are tier I and counted there too)
+  archCap: number;       // of its room, the archers' places (5 for each archer barracks module)
+  archers: number;       // of its members, archers
   stored: number[];      // armour on the racks by tier [_, _, II, III]
 }
 export let units: Unit[][] = [];                    // per kingdom, rebuilt every tick
 const unitOf = new Map<number, Unit>();             // barracks plot -> its unit
 export const unitAt = (q: number) => unitOf.get(q);
-export const maxHp = (h: Human) => (h.kind!==H_SOLDIER ? VILLAGER_HP : h.militia ? MILITIA_HP : SOLDIER_HP[h.tier]*2**h.lead)*(h.fury ? 1.25 : 1)*(h.dug ? 1.15 : 1);   // an army's leader: doubled for each rank; one spawned in a siege, a quarter more
+export const ARCHER_SHARE = 0.5;                    // an archer's hit points and blows, of a tier I spearman's
+export const maxHp = (h: Human) => (h.kind!==H_SOLDIER ? VILLAGER_HP : h.militia ? MILITIA_HP : SOLDIER_HP[h.arch ? 1 : h.tier]*(h.arch ? ARCHER_SHARE : 1)*2**h.lead)*(h.fury ? 1.25 : 1)*(h.dug ? 1.15 : 1);   // an army's leader: doubled for each rank; one spawned in a siege, a quarter more
 const frontOf = (q: number): [number, number] => [(q%PW)*8+4, ((q/PW)|0)*8+7.5];
 /** Does o's barracks q stand and work: not burning, and not on ground the enemy occupies (it raises no soldiers and trains none there). */
 const standing = (q: number, o: number) => pType[q]===B_BARRACKS && pOwner[q]===o && pBurn[q]<=0 && !occ[pCenter[q]];
 
 /** "4/5 · 3 I · 1 II · 1 III": the army's living soldiers (at home or away) over its room, then the army by tier. */
 export function unitLabel(u: Unit){
-  const t=[1,2,3].filter(k => u.tiers[k]).map(k => `${u.tiers[k]} ${TIER_NAME[k]}`);
-  return [`${u.members.length}/${u.cap}`, ...t].join(' · ');
+  const t=[1,2,3].map(k => k===1 ? u.tiers[1]-u.archers : u.tiers[k]).map((c,i) => c>0 ? `${c} ${TIER_NAME[i+1]}` : '').filter(Boolean);
+  return [`${u.members.length}/${u.cap}`, ...t, ...(u.archCap ? [`${u.archers}/${u.archCap} archers`] : [])].join(' · ');
 }
 
 /** Joins every kingdom's standing barracks plots into barracks (4-neighbours). */
@@ -62,7 +68,7 @@ export function buildUnits(){
     const plots=n.blds.filter(q => standing(q,n.id)).sort((a,b) => a-b);
     for (const q0 of plots){
       if (unitOf.has(q0)) continue;
-      const u: Unit={ key:q0, o:n.id, plots:[], cap:0, x:0, y:0, members:[], home:0, tiers:[0,0,0,0], stored:[0,0,0,0] };
+      const u: Unit={ key:q0, o:n.id, plots:[], cap:0, x:0, y:0, members:[], home:0, tiers:[0,0,0,0], stored:[0,0,0,0], archCap:0, archers:0 };
       const todo=[q0]; unitOf.set(q0,u);
       // (an army is at most MAX_ARMY men: the modules beyond that, side by side or not, make a new army)
       while (todo.length){
@@ -70,7 +76,7 @@ export function buildUnits(){
         const x=q%PW, y=(q/PW)|0;
         for (const k of [y>0?q-PW:-1, x<PW-1?q+1:-1, y<PH-1?q+PW:-1, x>0?q-1:-1]) if (k>=0 && !unitOf.has(k) && standing(k,n.id) && u.plots.length+todo.length<MAX_ARMY/UNIT_SIZE){ unitOf.set(k,u); todo.push(k); }
       }
-      u.plots.sort((a,b) => a-b); u.key=u.plots[0]; u.cap=UNIT_SIZE*u.plots.length;
+      u.plots.sort((a,b) => a-b); u.key=u.plots[0]; u.cap=UNIT_SIZE*u.plots.length; u.archCap=UNIT_SIZE*u.plots.filter(k => pArch[k]).length;
       [u.x,u.y]=frontOf(u.plots[(u.plots.length/2)|0]);
       for (const k of u.plots){ u.stored[2]+=pArmor[2][k]; u.stored[3]+=pArmor[3][k]; }
       units[n.id].push(u);
@@ -128,7 +134,8 @@ export function station(n: Nation, mine: Human[], switching: (h: Human) => boole
     if (h.kind!==H_SOLDIER || h.base<0) continue;
     const u=unitOf.get(h.base);
     if (!u || u.o!==n.id || u.members.length>=u.cap){ h.base=-1; continue; }   // his barracks is gone or has shrunk
-    u.members.push(h);
+    if (h.arch ? u.archers>=u.archCap : u.members.length-u.archers>=u.cap-u.archCap){ if (h.war<0){ h.base=-1; continue; } }   // (no place of his kind left: he joins anew, as what is wanted; one away with the army stays till he is back)
+    u.members.push(h); if (h.arch) u.archers++;
   }
   // new recruits go to the army that has lost the most compared to its size (its free places over its room), one at a time,
   // so the armies are made up evenly and the one bled hardest first
@@ -139,7 +146,11 @@ export function station(n: Nation, mine: Human[], switching: (h: Human) => boole
     for (const u of U){ const s=(u.cap-u.members.length)/u.cap; if (s>bs+1e-9){ bs=s; best=u; } }
     if (!best) break;
     h.base=best.plots[best.members.length%best.plots.length];   // spread along the modules
-    best.members.push(h); joined.push(h);
+    // a spearman's place or an archer's, whichever the army is shorter of (for its size)
+    const archGap=best.archCap ? (best.archCap-best.archers)/best.archCap : 0, infCap=best.cap-best.archCap, infGap=infCap ? (infCap-(best.members.length-best.archers))/infCap : 0;
+    const arch=archGap>infGap;
+    if (arch!==h.arch){ const was=maxHp(h); h.arch=arch; if (arch) h.tier=1; h.hp=Math.max(1,Math.min(maxHp(h),h.hp*maxHp(h)/Math.max(1,was))); }   // (an archer wears no armour)
+    best.members.push(h); if (h.arch) best.archers++; joined.push(h);
   }
   for (const u of U){
     u.home=0; u.tiers=[0,0,0,0];
@@ -156,7 +167,7 @@ export function armUp(n: Nation, switching: (h: Human) => boolean){
       while (u.stored[t]>0){
         let best: Human | undefined;
         for (const h of u.members){
-          if (h.tier>=t || h.war>=0 || h.hp<=0 || switching(h)) continue;
+          if (h.arch || h.tier>=t || h.war>=0 || h.hp<=0 || switching(h)) continue;   // (archers wear no armour)
           if (!u.plots.some(q => { const [x,y]=frontOf(q); return (h.x-x)**2+(h.y-y)**2<RACK_R*RACK_R*4; })) continue;   // (at home: his army stands in front of its barracks)
           if (!best || h.tier<best.tier || (h.tier===best.tier && h.id<best.id)) best=h;
         }
@@ -174,8 +185,9 @@ export function armUp(n: Nation, switching: (h: Human) => boolean){
     as research allows); `pending` counts pieces already being made for it. Returns 0, 2 or 3. */
 export function armorWanted(n: Nation, u: Unit, pending: number[]){
   const top=n.tier[R_INFANTRY]; if (top<2) return 0;
+  const racks=u.cap-u.archCap;   // (the archers' places want no armour)
   const has2=u.tiers[2]+u.tiers[3]+u.stored[2]+u.stored[3]+pending[2]+pending[3];
-  if (has2<u.cap) return 2;
-  if (top>=3 && u.tiers[3]+u.stored[3]+pending[3]<u.cap) return 3;
+  if (has2<racks) return 2;
+  if (top>=3 && u.tiers[3]+u.stored[3]+pending[3]<racks) return 3;
   return 0;
 }

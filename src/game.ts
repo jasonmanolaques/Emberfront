@@ -100,6 +100,10 @@ listen({
     else if (from===PLAYER) log(`${nm(by)} raises its flag again over ${name}`,'bad');
   },
   warWon: (a,d) => { if (a===PLAYER){ log(`You hold every region you claimed of ${nm(d)}: the war is won, they are yours`,'good'); toast('War won'); } else if (d===PLAYER){ log(`${nm(a)} holds every region it claimed: you lose them`,'bad'); toast('War lost'); } },
+  armyOrdered: (o,_id,order,r) => { if (o!==PLAYER) return;
+    if (order==='standby') log(`An army stands by for ${regionName(r)}: it marches in if the army fighting there is beaten or falls back`);
+    else if (order==='stand down') log(`The army on standby for ${regionName(r)} stands down: the fight there is over`);
+    else if (order==='retreat') log(`Your army falls back to ${regionName(r)}: it rallies for 30 s before it takes orders again`,'bad'); },
   armyLost: (o,_id,r) => { if (o===PLAYER) log(`Your army${r ? ` in ${regionName(r)}` : ''} has nobody left standing: what is left of it is at its barracks`,'bad'); },
   regionChanged: (r,o,prev) => { if (o===PLAYER && prev!==PLAYER && !W.rOcc[r]){ log(`${regionName(r)} is yours: your flag goes up over all of it`,'good'); } else if (prev===PLAYER && o!==PLAYER && o) log(`${regionName(r)} is now ${nm(o)}'s`,'bad'); },
   siege: (a,d,start) => {

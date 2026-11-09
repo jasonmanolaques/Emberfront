@@ -1,7 +1,7 @@
 /* ---------- barracks panel: opened by clicking a barracks ----------
    Its army (at the barracks over its room, and away), the army by tier, and the armour: worn by
    its soldiers and waiting on the racks, and what the blacksmith is doing about it. */
-import { PLAYER, PS, B_BARRACKS } from '../core/constants';
+import { PLAYER, PS, B_BARRACKS, GAME_SPEED } from '../core/constants';
 import { W, pType, pOwner } from '../sim/state';
 import { unitAt, units, armorWanted, TIER_NAME, UNIT_SIZE } from '../sim/army';
 import { R_INFANTRY } from '../sim/research';
@@ -35,6 +35,11 @@ function fieldReport(key: number){
 /** A line on what army x is doing. */
 export function armyStatus(x: import('../sim/state').Army){
   const r=x.goal ? regionName(x.goal) : '', men=`${x.men} men`;
+  const wait=x.rally>W.tickN ? ` · rallying, ${Math.ceil((x.rally-W.tickN)/(GAME_SPEED*10))} s` : '';
+  const sb=x.next ? ` · on standby for ${regionName(x.next.r)}` : '';
+  return armyLine(x,r,men)+wait+sb;
+}
+function armyLine(x: import('../sim/state').Army, r: string, men: string){
   if (x.mode===A_HOME) return 'At home';
   if (x.mode===A_BATTLE) return `${men} · in battle${r ? ` for ${r}` : ''}`;
   if (x.order===O_RETURN) return `${men} · going home`;
@@ -55,10 +60,10 @@ export function refreshArmy(){
   $('aAway').textContent=String(u.members.length-u.home);
   $('aMods').textContent=String(u.plots.length);
   $('aField').textContent=fieldReport(u.key);
-  $('aTiers').textContent=[1,2,3].map(t => `${u.tiers[t]} ${TIER_NAME[t]}`).join(' · ');
+  $('aTiers').textContent=[1,2,3].map(t => `${t===1 ? u.tiers[1]-u.archers : u.tiers[t]} ${TIER_NAME[t]}`).join(' · ')+(u.archCap ? ` · ${u.archers}/${u.archCap} archers` : '');
   $('aWorn').textContent=pieces(u.tiers);
   $('aRacks').textContent=pieces(u.stored);
-  $('aFree').textContent=String(Math.max(0,u.cap-u.tiers[2]-u.tiers[3]-u.stored[2]-u.stored[3]));
+  $('aFree').textContent=String(Math.max(0,u.cap-u.archCap-u.tiers[2]-u.tiers[3]-u.stored[2]-u.stored[3]));
   const want=armorWanted(me,u,[0,0,0,0]);
   $('aSmith').textContent = me.tier[R_INFANTRY]<2 ? 'Research infantry to forge armour for this army.'
     : !me.smithies ? 'Build a blacksmith to forge armour for this army.'
@@ -67,6 +72,6 @@ export function refreshArmy(){
     : 'Every rack is filled with the best armour you have researched.';
   const patrol=W.humans.filter(h => h.o===PLAYER && h.kind===1 && h.base<0).length;
   $('aNote').textContent=(patrol ? `${patrol} soldier${patrol>1?'s have':' has'} no room in a barracks and patrol${patrol>1?'':'s'} the city, defending only. ` : '')
-    +`Build barracks beside this one to grow its army: ${UNIT_SIZE} more soldiers and racks each.`
+    +`Build barracks beside this one to grow its army: ${UNIT_SIZE} more spearmen and racks each, or archer barracks: ${UNIT_SIZE} more archers each (no armour; they shoot from behind the spearmen).`
     +((units[PLAYER]?.length ?? 0)>1 ? ' Barracks apart from each other march as separate armies.' : '');
 }

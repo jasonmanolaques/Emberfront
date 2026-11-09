@@ -25,7 +25,7 @@ import { W, owner, occ, terr, isLand, isle, pType, pOwner, pCenter, pHp, pMain, 
 import { wear, CASTLE_MEND } from './defense';
 import { on } from './events';
 import { H_SOLDIER, indoors, switching, tileOf, pace, release, TASK_ROAM } from './population';
-import { units, unitAt, groupKeys, groupLead, maxHp, SOLDIER_DMG, MILITIA_HIT, type Unit } from './army';
+import { units, unitAt, groupKeys, groupLead, maxHp, SOLDIER_DMG, MILITIA_HIT, ARCHER_SHARE, type Unit } from './army';
 import { RG, region, holdsRegion, cedeRegion, occupyRegion, freeRegion, flagXY, CONTROL } from './regions';
 import { ignite, fortTier, fortSpot } from './buildings';
 import { findWay } from './roads';
@@ -65,6 +65,10 @@ const GAP = 2.2;                                  // pixels between the two fron
 export const ARMY_SP = 6;                         // pixels a second an army marches (on open ground)
 const SAFE_TICKS = 40*GAME_SPEED*10;              // an army retreating or going home is let go for 40 s
 const HEAL_TICKS = 30*GAME_SPEED*10;              // a wounded soldier at his barracks is whole again in 30 s
+export const ARROW_TICKS = 4*GAME_SPEED*10;       // an archer behind the front rank shoots an arrow every 4 s on the clock in a battle
+export const ARROW_DMG = 1;                       // ...that does 1 damage
+export const ARCHER_WAGE = 1.1;                   // an archer is paid a tenth more than a spearman (0.33 a second in the field)
+export const RALLY_TICKS = 30*GAME_SPEED*10;      // an army that retreats rallies for 30 s on the clock, taking no orders
 
 export const allied = (a: number, b: number) => a!==b && W.ally[a*W.M+b]===1;
 export const atWar = (a: number, b: number) => W.atWar[a*W.M+b]===1;
@@ -109,8 +113,9 @@ export function mayStand(h: Human, o: number){
 export function wageOf(h: Human){
   if (h.kind!==H_SOLDIER || h.militia) return 0;
   const a=h.war>=0 ? armyById.get(h.war) : undefined;
-  if (!a) return WAGE_IDLE;
-  return a.mode===A_BATTLE || a.order===O_ATTACK ? WAGE_ATTACK : WAGE;
+  const k=h.arch ? ARCHER_WAGE : 1;
+  if (!a) return WAGE_IDLE*k;
+  return (a.mode===A_BATTLE || a.order===O_ATTACK ? WAGE_ATTACK : WAGE)*k;
 }
 
 /* ---------- claims and crises ---------- */
@@ -366,7 +371,7 @@ function syncArmies(){
       let x: Army | undefined;
       for (const q of u.plots){ const y=byPlot.get(q); if (y && !seen.has(y) && y.o===n.id){ x=y; break; } }
       if (!x) for (const q of plots){ const y=byPlot.get(q); if (y && !seen.has(y) && y.o===n.id){ x=y; break; } }
-      if (!x){ x={ id:u.key, o:n.id, plots, x:u.x, y:u.y+4, fx:0, fy:1, mode:A_HOME, order:O_NONE, goal:0, enemy:0, path:[], foe:-1, files:[], men:0, safe:0, stand:false, hitAt:-1e9, leader:-1, trail:[], stuck:0, near:Infinity, roll:0, rollAt:0, coming:[], via:[], viaAt:-1e9 }; }
+      if (!x){ x={ id:u.key, o:n.id, plots, x:u.x, y:u.y+4, fx:0, fy:1, mode:A_HOME, order:O_NONE, goal:0, enemy:0, path:[], foe:-1, files:[], men:0, safe:0, stand:false, hitAt:-1e9, leader:-1, trail:[], stuck:0, near:Infinity, roll:0, rollAt:0, coming:[], via:[], viaAt:-1e9, rally:0, next:null }; }
       if (W.armies.some(y => y!==x && y.id===x!.id && seen.has(y))) x.id=u.key;   // (two with one name: the new one takes its lead's)
       x.plots=plots; seen.add(x); keep.push(x);
     }
@@ -384,21 +389,50 @@ function membersOf(x: Army): Human[] {
 const fit = (h: Human) => h.hp>0 && !indoors(h) && !switching(h) && h.boat<0;
 /** How many files a phalanx of n men has: wide and shallow. */
 const filesFor = (n: number, marching=false) => n<=0 ? 0 : Math.max(1,Math.min(n,marching ? MARCH_FILES : HOLD_FILES,Math.round(Math.sqrt(n*2.2))));
-/** Keeps x's files to its men: the fallen leave their file (the man behind steps up), newcomers join the shortest file at its back, and the files stay even. */
+/** Keeps x's files to its men: the fallen leave their file (the man behind steps up), newcomers join the shortest file at its back, and the files stay even.
+    Spearmen hold the front and archers stand behind them: the spearmen are spread evenly over the files, each file has its spearmen at its head,
+    and a file whose spearmen have all fallen takes one over from a file with more (a man changes places with an archer), so archers come to the
+    front only when there are no spearmen left to stand there. With few spearmen the phalanx is narrower and deeper (as wide as its spearmen,
+    but no less than half its usual width), so archers stand behind a front of spears. */
+const isArcher = (id: number) => byId.get(id)?.arch===true;
 function tidyFiles(x: Army, men: Human[]){
   const ids=new Set<number>(); for (const h of men) ids.add(h.id);
   const placed=new Set<number>();
   for (let i=0;i<x.files.length;i++){ x.files[i]=x.files[i].filter(id => ids.has(id) && !placed.has(id)); for (const id of x.files[i]) placed.add(id); }
   x.files=x.files.filter(f => f.length);
   const loose: number[]=[]; for (const h of men) if (!placed.has(h.id)) loose.push(h.id);
-  const F=filesFor(men.length,x.mode===A_MARCH);
+  let spears=0; for (const h of men) if (!h.arch) spears++;
+  let F=filesFor(men.length,x.mode===A_MARCH);
+  if (spears>0 && spears<men.length && spears<F) F=Math.max(spears,Math.ceil(F/2));
   while (x.files.length>F){ const f=x.files.length%2 ? x.files.pop()! : x.files.shift()!; loose.push(...f); }
   while (x.files.length<F) if (x.files.length%2) x.files.push([]); else x.files.unshift([]);
-  for (const id of loose){ let s=0; for (let i=1;i<x.files.length;i++) if (x.files[i].length<x.files[s].length) s=i; x.files[s].push(id); }
+  const spearsIn=(f: number[]) => { let k=0; for (const id of f) if (!isArcher(id)) k++; return k; };
+  loose.sort((a,b) => +isArcher(a)-+isArcher(b));   // (spearmen placed first)
+  for (const id of loose){
+    let s=0;
+    if (isArcher(id)){ for (let i=1;i<x.files.length;i++) if (x.files[i].length<x.files[s].length) s=i; }
+    else { for (let i=1;i<x.files.length;i++){ const a=spearsIn(x.files[i]), b=spearsIn(x.files[s]); if (a<b || (a===b && x.files[i].length<x.files[s].length)) s=i; } }
+    x.files[s].push(id);
+  }
   for (let k=0;k<50 && x.files.length>1;k++){
     let lo=0, hi=0; for (let i=1;i<x.files.length;i++){ if (x.files[i].length<x.files[lo].length) lo=i; if (x.files[i].length>x.files[hi].length) hi=i; }
     if (x.files[hi].length-x.files[lo].length<2) break;
-    x.files[lo].push(x.files[hi].pop()!);
+    const f=x.files[hi]; let j=f.length-1; for (let t=f.length-1;t>=0;t--) if (isArcher(f[t])){ j=t; break; }   // (an archer moves over if there is one)
+    x.files[lo].push(f.splice(j,1)[0]);
+  }
+  if (spears && spears<men.length){
+    // the spearmen spread evenly over the files: a spearman changes places with an archer of the file shortest of them
+    for (let k=0;k<60;k++){
+      let lo=0, hi=0, slo=Infinity, shi=-1;
+      for (let i=0;i<x.files.length;i++){ const c=spearsIn(x.files[i]); if (c<slo){ slo=c; lo=i; } if (c>shi){ shi=c; hi=i; } }
+      if (shi-slo<2) break;
+      const A=x.files[hi], B=x.files[lo];
+      let si=-1; for (let t=A.length-1;t>=0;t--) if (!isArcher(A[t])){ si=t; break; }
+      const ai=B.findIndex(isArcher);
+      if (ai>=0){ const s=A[si]; A[si]=B[ai]; B[ai]=s; } else B.push(A.splice(si,1)[0]);
+    }
+    // in each file the spearmen stand at its head, the archers behind (each keeping his order)
+    for (let i=0;i<x.files.length;i++){ const f=x.files[i]; let sorted=true; for (let t=1;t<f.length;t++) if (isArcher(f[t-1]) && !isArcher(f[t])){ sorted=false; break; } if (!sorted) x.files[i]=[...f.filter(id => !isArcher(id)), ...f.filter(isArcher)]; }
   }
   x.men=men.length;
 }
@@ -464,9 +498,43 @@ function walk(h: Human, gx: number, gy: number, quick=1){
 }
 
 /* ---------- orders ---------- */
+/** The army of o's other than x sent to hold region r (attacking or defending it), if any. */
+const holderOf = (o: number, x: Army, r: number) => W.armies.find(y => y!==x && y.o===o && y.goal===r && (y.order===O_ATTACK || y.order===O_DEFEND) && (y.men>0 || y.mode===A_MARCH));
+/** Armies on standby: each waits while the army of its kingdom's fighting in its region fights on; once that one is beaten or falls back it
+    marches in with its order, and once that one has won, it stands down. */
+function standby(){
+  for (const x of W.armies){
+    const q=x.next; if (!q || x.mode===A_BATTLE) continue;
+    const busy=holderOf(x.o,x,q.r);
+    if (busy && busy.mode===A_BATTLE) continue;
+    x.next=null;
+    if (busy || armyProblem(x.o,x.id,q.order,q.r)){ on.armyOrdered(x.o,x.id,'stand down',q.r); continue; }
+    armyOrder(x.o,x.id,q.order,q.r);
+  }
+}
+/** Army x's archers behind the front rank shoot: each every ARROW_TICKS (each at his own moment), at a man of the army x is fighting picked at
+    random, the front ranks a little likelier (the first rank three times, the second twice as likely as those behind). */
+function volley(x: Army){
+  const y=armyById.get(x.foe); if (!y) return;
+  let pool: Human[] | null=null, weight: number[]=[], total=0;
+  for (const f of x.files) for (let j=1;j<f.length;j++){
+    const h=byId.get(f[j]); if (!h || !h.arch || h.hp<=0 || (W.tickN+h.id*7)%ARROW_TICKS) continue;
+    if (!pool){
+      pool=[];
+      for (const g of y.files) for (let k=0;k<g.length;k++){ const e=byId.get(g[k]); if (!e || e.hp<=0) continue; const w=k===0 ? 3 : k===1 ? 2 : 1; pool.push(e); weight.push(w); total+=w; }
+    }
+    if (!total) return;
+    let pick=W.prand()*total, i=0; while (i<pool.length-1 && pick>=weight[i]){ pick-=weight[i]; i++; }
+    const e=pool[i]; if (e.hp<=0) continue;
+    e.hp-=ARROW_DMG; e.by=x.o;
+    if (e.hp<=0){ W.kills[x.o*W.M+e.o]++; y.hitAt=W.tickN; }
+    on.towerShot(h.x,h.y-3,e.x,e.y-2,e.hp<=0,e.id);
+  }
+}
 /** Why army `id` of kingdom o can't take this order, or null. */
 export function armyProblem(o: number, id: number, order: string, r=0): string | null {
   const x=armyById.get(id); if (!x || x.o!==o) return 'That army is gone';
+  if (x.rally>W.tickN) return `It is rallying after its retreat: ${Math.ceil((x.rally-W.tickN)/(GAME_SPEED*10))} s before it takes orders`;
   if (order==='return'){ if (x.mode===A_HOME && !x.men) return 'It is at home'; return null; }
   if (order==='retreat'){ if (x.mode===A_HOME) return 'It is at home'; if (x.order===O_RETREAT) return 'It is retreating'; return null; }
   if (order==='reinforce'){ if (x.mode===A_HOME) return 'It is at home: its men are all with it'; if (!waiting(x)) return 'Nobody of it waits at its barracks'; return null; }
@@ -474,16 +542,17 @@ export function armyProblem(o: number, id: number, order: string, r=0): string |
   if (x.mode===A_HOME && !membersOf(x).some(fit)) return 'Nobody of it is at home';
   if (!r || r>=RG.n) return 'Pick a region';
   const M=W.M, d=W.rOwner[r];
-  if (W.armies.some(y => y!==x && y.o===o && y.goal===r && (y.order===O_ATTACK || y.order===O_DEFEND) && (y.men>0 || y.mode===A_MARCH))) return 'One army per region: another of yours is there';
+  const busy=holderOf(o,x,r);
+  if (busy && busy.mode!==A_BATTLE) return 'One army per region: another of yours is there';   // (one fighting there: this one waits on standby)
   if (order==='attack'){
     if (!d || !W.wars[o*M+d] || !claimsOf(o,d).includes(r)) return 'Only the regions you claimed in a war can be attacked';
-    if (W.rOcc[r]===o) return 'You hold it already';
+    if (W.rOcc[r]===o) return 'You hold it already: station an army there to keep it';
     if (!besideHeld(o,r)) return 'Take the claimed region before it first: it must border ground you hold';
     return null;
   }
   if (order==='defend' || order==='station'){
     if (!d) return 'Nobody holds that region: armies are stationed in regions of yours (or your allies\')';
-    if (d!==o && !allied(o,d)) return 'Armies are stationed only in regions of yours (or your allies\')';
+    if (d!==o && !allied(o,d) && W.rOcc[r]!==o) return 'Armies are stationed only in regions of yours (or your allies\'), and in regions you occupy';
     return null;
   }
   return 'Unknown order';
@@ -493,11 +562,13 @@ export function armyOrder(o: number, id: number, order: string, r=0){
   if (armyProblem(o,id,order,r)) return false;
   const x=armyById.get(id)!;
   if (order==='return'){ sendHome(x); return true; }
-  if (order==='retreat'){ retreat(x); return true; }
+  if (order==='retreat'){ retreat(x); x.rally=W.tickN+RALLY_TICKS; return true; }   // (its morale broken: it takes no orders while it rallies)
   if (order==='reinforce'){ reinforce(x); return true; }
+  x.next=null;
+  if (holderOf(o,x,r)){ x.next={ order, r }; on.armyOrdered(o,x.id,'standby',r); return true; }   // (another of ours is fighting there: this one stands by to take its place)
   const M=W.M, d=W.rOwner[r];
   let enemy=0;
-  if (order==='attack') enemy=d;
+  if (order==='attack' || W.rOcc[r]===o) enemy=d;   // (stationed in a region it occupies: it keeps it from its owner)
   else for (let a=1;a<M;a++) if (W.wars[a*M+d] && claimsOf(a,d).includes(r)){ enemy=a; break; }
   sendOut(x,r,order==='attack' ? O_ATTACK : O_DEFEND,enemy);
   on.armyOrdered(o,x.id,order==='attack' ? 'attack' : 'defend',r);
@@ -574,7 +645,9 @@ export function updateWar(){
   for (const x of W.armies) stepArmy(x);
   if (W.tickN%5===0) engage();
   for (const x of W.armies) if (x.mode===A_BATTLE && x.foe>=0 && x.id<x.foe){ const y=armyById.get(x.foe); if (y) fight(x,y); }
+  for (const x of W.armies) if (x.mode===A_BATTLE && x.foe>=0) volley(x);
   for (const x of W.armies) if (x.mode===A_BATTLE && (x.foe<0 || !armyById.has(x.foe))){ x.foe=-1; x.mode=x.path.length ? A_MARCH : A_HOLD; }
+  if (W.tickN%10===3) standby();
   if (W.tickN%5===0) flags();
   if (W.tickN%ROLL_TICKS===11) fortsFire();
   if (W.tickN%20===7) secondWave();
@@ -630,7 +703,7 @@ function bringUp(x: Army){
       h.path=x.via.slice();
     }
     const tx=h.path[0], ty=h.path[1];
-    if (Math.hypot(tx-h.x,ty-h.y)<1.2) h.path.splice(0,2); else walk(h,tx,ty,1.3);
+    if (Math.hypot(tx-h.x,ty-h.y)<1.2) h.path.splice(0,2); else walk(h,tx,ty,1.8);   // (on horseback: quicker than the march)
     keep.push(id);
   }
   x.coming=keep;
@@ -852,7 +925,7 @@ export function strike(h: Human, e: Human){
     const roll=1+((W.prand()*3|0)-1)*STRIKE_SWING;
     const line=h.war>=0 ? armyById.get(h.war) : undefined, fighting=line && line.mode===A_BATTLE;
     const dice=fighting && line.roll ? diceFactor(line.roll) : 1;
-    e.hp-=(h.kind!==H_SOLDIER ? MILITIA_DMG : h.militia ? MILITIA_HIT : HIT_DMG[h.tier])*roll*dice*(fighting ? BATTLE_DMG : 1);
+    e.hp-=(h.kind!==H_SOLDIER ? MILITIA_DMG : h.militia ? MILITIA_HIT : h.arch ? HIT_DMG[1]*ARCHER_SHARE : HIT_DMG[h.tier])*roll*dice*(fighting ? BATTLE_DMG : 1);
     e.by=h.o; if (was>0 && e.hp<=0){ W.kills[h.o*W.M+e.o]++; const x=e.war>=0 ? armyById.get(e.war) : undefined; if (x) x.hitAt=W.tickN; }
     on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id);
   }

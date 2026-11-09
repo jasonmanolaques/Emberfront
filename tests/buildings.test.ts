@@ -56,7 +56,7 @@ describe('building costs and placement', () => {
     expect(structureOf(B_SMITHY)!.cost).toEqual([10,15,5]);
     expect(structureOf(B_NAVAL)!.cost).toEqual([15,5,0]);
     expect(structureOf(B_HOSPITAL)!.cost).toEqual([15,25,10]);
-    expect(STRUCTURES).toHaveLength(13);
+    expect(STRUCTURES).toHaveLength(14);
     expect(structureOf(B_CARPENTER)!.cost).toEqual([50,20,5]);
   });
 

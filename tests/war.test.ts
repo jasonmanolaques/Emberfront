@@ -13,10 +13,12 @@ import { H_SOLDIER, makeHuman, doorOf } from '../src/sim/population';
 import { maxHp } from '../src/sim/army';
 import { RG, region, setRegions, cedeRegion, updateRegions, occupyRegion, CONTROL } from '../src/sim/regions';
 import { claim, claimProblem, answer, inCrisis, armyProblem, armyOrder, armyOf, makePeace, offerPeace, acceptPeace, giveGoals, setClaims, claimsProblem, claimsOf, wageOf, diceFactor, CRISIS_TICKS, CAPTURE_TICKS, ROLL_TICKS, MAX_CLAIMS, P_GOALS, A_HOME, A_MARCH, A_HOLD, A_BATTLE, O_DEFEND, partner } from '../src/sim/war';
-import { WAGE, WAGE_IDLE, B_TOWER } from '../src/core/constants';
+import { WAGE, WAGE_IDLE, B_TOWER, B_ARCHERY } from '../src/core/constants';
 import { buildFort, fortTier, fortSpot } from '../src/sim/buildings';
 import { pTier } from '../src/sim/state';
-import { waiting, fortUpkeep, FORT_DMG, began, outlook } from '../src/sim/war';
+import { waiting, fortUpkeep, FORT_DMG, began, outlook, ARROW_TICKS, ARROW_DMG, RALLY_TICKS, ARCHER_WAGE } from '../src/sim/war';
+import { unitAt, SOLDIER_HP, SOLDIER_DMG } from '../src/sim/army';
+import { pArch, pArmor } from '../src/sim/state';
 import { incomeParts } from '../src/sim/sim';
 
 const N = (i: number) => W.nations[i];
@@ -49,18 +51,19 @@ function lands(east=2){
   census();
   return { home, theirs };
 }
-/** k soldiers for kingdom o in an army of their own: barracks modules (5 men each) built side by side in region r. */
-function army(o: number, k: number, r: number, spot=0): Army {
-  const n=N(o), mods=Math.ceil(k/5), cx=RG.tiles[RG.start[r]+((RG.start[r+1]-RG.start[r])>>1)];
+/** k soldiers for kingdom o in an army of their own: barracks modules (5 men each) built side by side in region r; `archers` of them archers
+    (archer barracks modules after the spearmen's, in the same row: one barracks, one army). */
+function army(o: number, k: number, r: number, spot=0, archers=0): Army {
+  const n=N(o), spearMods=Math.ceil((k-archers)/5), mods=spearMods+Math.ceil(archers/5), cx=RG.tiles[RG.start[r]+((RG.start[r+1]-RG.start[r])>>1)];
   const q0=((((cx/TW)|0)>>2))*PW+((cx%TW)>>2)+spot*3*PW;
   n.gold=1e6;   // (wages paid: unpaid soldiers lay down their arms)
   const plots: number[]=[];
-  for (let i=0;plots.length<mods && i<40;i++){ const q=q0+(i%6)+((i/6)|0)*PW; n.stock=[100,100,100]; if (!placeProblem(n,q,B_BARRACKS) && build(n,q,B_BARRACKS)) plots.push(q); }
+  for (let i=0;plots.length<mods && i<40;i++){ const q=q0+(i%6)+((i/6)|0)*PW; n.stock=[100,100,100]; if (!placeProblem(n,q,B_BARRACKS) && build(n,q,plots.length<spearMods ? B_BARRACKS : B_ARCHERY)) plots.push(q); }
   if (plots.length<mods) throw new Error('no room for barracks');
   const [x,y]=[(plots[0]%PW)*8+4, ((plots[0]/PW)|0)*8+9];
   for (let i=0;i<k;i++){ const h=makeHuman(n,H_SOLDIER,x+(i%5)-2,y+((i/5)|0)); W.humans.push(h); }
   n.soldierShare=1;
-  run(3);
+  census(); run(3);   // (a full count: the census counted a slice at a time, maybe before these barracks stood)
   const a=W.armies.find(a => a.o===o && a.plots.includes(plots[0]));
   if (!a) throw new Error('no army');
   return a;
@@ -252,9 +255,11 @@ describe('armies', () => {
     until(() => a.mode===A_BATTLE, 4000);
     expect(armyOrder(1,a.id,'retreat')).toBe(true);
     expect(a.mode).toBe(A_MARCH); expect(d.mode).not.toBe(A_BATTLE);
+    expect(armyProblem(1,a.id,'return')).toMatch(/rallying/);   // (its morale broken: no orders for 30 s)
     until(() => a.mode===A_HOLD, 3000);
     expect(region[(((a.y/2)|0)*TW+((a.x/2)|0))]).toBe(home);
     run(100); expect(a.mode).toBe(A_HOLD);   // (let go: not taken on again)
+    until(() => !armyProblem(1,a.id,'return'), RALLY_TICKS);
     // home: back to the barracks, the men no longer in the field
     expect(armyOrder(1,a.id,'return')).toBe(true);
     until(() => a.mode===A_HOME, 3000);
@@ -378,6 +383,120 @@ describe('battle lines', () => {
     expect(x.coming.length).toBeGreaterThan(0);
     until(() => x.coming.length===0 || x.mode===A_HOME, 3000);
     expect(x.mode===A_HOME || x.men>=before-10).toBe(true);   // (they joined its ranks: it may have lost men meanwhile)
+  });
+});
+
+describe('archers', () => {
+  it('train in archer barracks, which join any barracks beside them into one army: 2 of spearmen and 1 of archers make 15 men, 5 of them archers', () => {
+    world(); const { home }=lands(1);
+    const a=army(1,15,home,0,5), u=unitAt(a.id)!;
+    expect(u.cap).toBe(15); expect(u.archCap).toBe(5);
+    expect(W.armies.filter(x => x.o===1)).toHaveLength(1);
+    const men=u.members, archers=men.filter(h => h.arch);
+    expect(archers).toHaveLength(5);
+    expect(u.plots.filter(q => pArch[q])).toHaveLength(1);
+    // half a spearman's hit points and blows, no armour; paid a tenth more
+    const s=men.find(h => !h.arch)!, b=archers[0];
+    expect(maxHp(b)).toBe(SOLDIER_HP[1]/2); expect(maxHp(s)).toBe(SOLDIER_HP[1]);
+    expect(wageOf(b)).toBeCloseTo(wageOf(s)*ARCHER_WAGE,9);
+    // armour on the racks goes to the spearmen only
+    pArmor[2][u.plots[0]]+=15; run(30);
+    expect(archers.every(h => h.tier===1)).toBe(true);
+    expect(men.filter(h => !h.arch).every(h => h.tier===2)).toBe(true);
+    void SOLDIER_DMG;
+  });
+
+  it('any mix makes one army: 6 archer barracks beside 2 of spearmen give 30 archers and 10 spearmen', () => {
+    world(); const { home }=lands(1);
+    const a=army(1,40,home,0,30), u=unitAt(a.id)!;
+    expect(u.cap).toBe(40); expect(u.archers).toBe(30); expect(u.members.length-u.archers).toBe(10);
+  });
+
+  it('stand behind the spearmen: the head of every file is a spearman while there are spearmen enough, and a file that loses its spearmen takes one from another', () => {
+    world(); const { home, theirs }=lands(1);
+    const a=army(1,40,home,0,30);
+    war(1,2,theirs); armyOrder(1,a.id,'attack',theirs[0]);
+    run(50);
+    const arch=(id: number) => W.humans.find(h => h.id===id)!.arch;
+    const F=a.files.length; expect(F).toBeLessThanOrEqual(10);
+    expect(a.files.every(f => !arch(f[0]))).toBe(true);
+    for (const f of a.files){ const k=f.findIndex(arch); if (k>=0) expect(f.slice(k).every(arch)).toBe(true); }   // (spearmen at the head, archers behind)
+    // the spearmen of one file fall: another file's spare spearman takes the head
+    const f0=a.files[0], spears=f0.filter(id => !arch(id));
+    for (const id of spears) W.humans.find(h => h.id===id)!.hp=0;
+    run(3);
+    const alive=W.humans.filter(h => h.o===1 && h.war===a.id && h.hp>0 && !h.arch).length;
+    expect(a.files.filter(f => !arch(f[0])).length).toBe(Math.min(a.files.length,alive));
+  });
+
+  it('shoot from the ranks behind in a battle: an arrow each every 4 seconds for 1 damage, at the enemy army only', () => {
+    world(); const { home, theirs }=lands(1);
+    const a=army(1,25,home,0,15), d=army(2,15,theirs[0]);
+    war(1,2,theirs);
+    let shots=0; listen({ towerShot: () => { shots++; } });
+    armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => a.mode===A_BATTLE, 4000);
+    shots=0; run(ARROW_TICKS);
+    const behind=a.files.reduce((k,f) => k+f.slice(1).filter(id => W.humans.find(h => h.id===id)?.arch).length,0);
+    expect(behind).toBeGreaterThan(5);
+    expect(shots).toBeGreaterThanOrEqual(behind-2); expect(shots).toBeLessThanOrEqual(15);
+    expect(ARROW_DMG).toBe(1);
+    // no shots without a fight
+    world(); const l2=lands(1); army(1,15,l2.home,0,10);
+    shots=0; run(ARROW_TICKS*2); expect(shots).toBe(0);
+  });
+});
+
+describe('orders', () => {
+  it('an army that retreats rallies for 30 seconds: it takes no orders until then', () => {
+    world(); const { home, theirs }=lands(1);
+    const a=army(1,10,home), d=army(2,30,theirs[0]);
+    war(1,2,theirs);
+    armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => a.mode===A_BATTLE, 4000);
+    expect(armyOrder(1,a.id,'retreat')).toBe(true);
+    const t0=W.tickN;
+    expect(armyOrder(1,a.id,'return')).toBe(false);
+    expect(armyProblem(1,a.id,'station',home)).toMatch(/rallying/);
+    until(() => !armyProblem(1,a.id,'return'), RALLY_TICKS+5);
+    expect(W.tickN-t0).toBeGreaterThanOrEqual(RALLY_TICKS-1);
+  });
+
+  it('a second army sent where one of ours is fighting stands by, and marches in when the first is beaten', () => {
+    world(); const { home, theirs }=lands(1);
+    const a=army(1,5,home), b=army(1,15,home,1), d=army(2,25,theirs[0]);
+    war(1,2,theirs);
+    armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => a.mode===A_BATTLE, 4000);
+    expect(armyProblem(1,b.id,'attack',theirs[0])).toBeNull();
+    expect(armyOrder(1,b.id,'attack',theirs[0])).toBe(true);
+    expect(b.next).toEqual({ order:'attack', r:theirs[0] }); expect(b.mode).toBe(A_HOME);
+    until(() => b.mode!==A_HOME, 6000);   // (the first is beaten: the second marches in)
+    expect(a.mode).toBe(A_HOME); expect(b.goal).toBe(theirs[0]); expect(b.next).toBeNull();
+  });
+
+  it('the defender may queue the next army for a region it defends the same way', () => {
+    world(); const { home, theirs }=lands(2);
+    const a=army(1,30,home), d1=army(2,5,theirs[0]), d2=army(2,15,theirs[1]);
+    war(1,2,theirs);
+    armyOrder(2,d1.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => d1.mode===A_BATTLE, 4000);
+    expect(armyOrder(2,d2.id,'defend',theirs[0])).toBe(true);
+    expect(d2.next?.r).toBe(theirs[0]);
+    until(() => d2.goal===theirs[0], 6000);
+  });
+
+  it('an attacker is stationed in a region it occupies, to keep it: the owner can\'t raise the flag while it stands there', () => {
+    world(); const { home, theirs }=lands(2);
+    const a=army(1,15,home);
+    war(1,2,[theirs[0],theirs[1]]);
+    occupyRegion(theirs[0],1);
+    expect(armyProblem(1,a.id,'station',theirs[0])).toBeNull();
+    expect(armyProblem(1,a.id,'attack',theirs[0])).toMatch(/hold it already/);
+    expect(armyOrder(1,a.id,'station',theirs[0])).toBe(true);
+    expect(a.enemy).toBe(2);
+    until(() => a.mode===A_HOLD, 4000);
+    expect(W.rOcc[theirs[0]]).toBe(1);
   });
 });
 

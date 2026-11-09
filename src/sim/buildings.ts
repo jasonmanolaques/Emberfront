@@ -5,8 +5,8 @@
    at tier 3 four of a kind in a square join into one of 2×2 (tier 3); a joined building makes far
    more than its parts did apart. ---------- */
 import { plannedWall } from './fort';
-import { TW, PW, PH, NP, T_FOREST, B_CARPENTER, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_NAVAL, TH, isStructure } from '../core/constants';
-import { W, owner, occ, terr, isLand, isle, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pAband, pMain, pHp, pTier, pSpan, pArmor, pIn, type Nation } from './state';
+import { TW, PW, PH, NP, T_FOREST, B_CARPENTER, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_NAVAL, B_ARCHERY, TH, isStructure } from '../core/constants';
+import { W, owner, occ, terr, isLand, isle, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pAband, pMain, pHp, pTier, pSpan, pArmor, pIn, pArch, type Nation } from './state';
 import { R_GATHER, hasMedics } from './research';
 import { on } from './events';
 import { RG, region } from './regions';
@@ -27,7 +27,7 @@ export function captureBuilding(q: number, o: number){
   if (!N.blds.includes(main)) N.blds.push(main);
   for (const h of W.humans) if (h.o===prev){ if (h.rest===main) h.rest=-1; if (h.home===main) h.home=-1; if (h.work===main) h.work=-1; if (h.site===main) h.site=-1; if (h.post===main) h.post=-1; }
 }
-export function toRuins(q: number){ pSpan[q]=0; pType[q]=B_RUINS; pOwner[q]=0; pVar[q]=(W.srand()*8)|0; pBurn[q]=0; pTimer[q]=35+W.srand()*30; pAband[q]=0; pHp[q]=0; pTier[q]=0; pArmor[2][q]=pArmor[3][q]=0; on.plotChanged(q); }
+export function toRuins(q: number){ pSpan[q]=0; pArch[q]=0; pType[q]=B_RUINS; pOwner[q]=0; pVar[q]=(W.srand()*8)|0; pBurn[q]=0; pTimer[q]=35+W.srand()*30; pAband[q]=0; pHp[q]=0; pTier[q]=0; pArmor[2][q]=pArmor[3][q]=0; on.plotChanged(q); }
 
 export function isBld(ty: number){ return isStructure(ty) || ty===B_CASTLE || ty===B_CPART; }
 function nbBuildings(q: number, id: number){
@@ -73,7 +73,7 @@ function connectRoad(q: number, id: number, far: boolean){
 function placeBuilding(q: number, id: number, type: number, isNew: boolean){
   if (type===B_EMPTY) return;
   pType[q]=type; pOwner[q]=id; pVar[q]=(W.srand()*(type===B_HOUSE ? 18 : 3))|0;   // (a house: one of 3 shapes, in one of 3 colourings)
-   pTimer[q]=0; pAband[q]=0; pHp[q]=0; pTier[q]=type===B_HOUSE || type===B_TOWER ? 1 : 0; pSpan[q]=0; pArmor[2][q]=pArmor[3][q]=0;
+   pTimer[q]=0; pAband[q]=0; pHp[q]=0; pTier[q]=type===B_HOUSE || type===B_TOWER ? 1 : 0; pSpan[q]=0; pArmor[2][q]=pArmor[3][q]=0; pArch[q]=0;
   on.plotChanged(q);
   const n=W.nations[id]; n.bCount++;
   if (type!==B_FARM) connectRoad(q,id,isNew);
@@ -145,7 +145,8 @@ export const PRODUCE_TICKS = 300;   // 30 s
 export const PRODUCES: Record<number, [number, number[]]> = { [B_PLANTATION]: [0,[0,2,5,15]], [B_QUARRY]: [1,[0,2,5,15]], [B_COPPERMINE]: [2,[0,1,3,10]] };
 export const STRUCTURES: Structure[] = [
   { type: B_FARM,     name: 'Farm',        cost: [5,2,0], info: 'Villagers arrive 3% sooner.' },
-  { type: B_BARRACKS, name: 'Barracks',    cost: [5,5,0], info: 'Trains soldiers: an army of 5. Joined barracks make bigger armies.' },
+  { type: B_BARRACKS, name: 'Barracks',    cost: [5,5,0], info: 'Trains 5 spearmen. Barracks side by side, of either kind, make one army.' },
+  { type: B_ARCHERY,  name: 'Archer barracks', cost: [8,5,0], info: 'Trains 5 archers: they shoot from behind the spearmen. Joins any barracks beside it into one army.' },
   { type: B_TOWER,    name: 'Watchtower',  cost: [15,50,15], info: 'A fort of four towers round a region\'s flag: slows its capture, shoots its attackers.' },
   { type: B_MINTER,   name: 'Coin minter', cost: [5,5,5], info: '2×1 plots. +5% gold income.' },
   { type: B_PLANTATION, name: 'Plantation', cost: [10,0,0], info: '+2 wood every 30 s. Joined ones give more (needs research).' },
@@ -163,7 +164,7 @@ STRUCTURES.push(CARPENTER_STRUCTURE);
 export const structureOf = (type: number) => STRUCTURES.find(s => s.type===type);
 const countOf = (n: Nation, ty: number) => ty===B_PLANTATION ? n.plantations : ty===B_QUARRY ? n.quarries : n.copperMines;
 /** How much dearer each building of a kind its kingdom already has makes the next one (a share of the base price). */
-export const RISE: Record<number, number> = { [B_FARM]: 0.05, [B_TOWER]: 0.05, [B_MINTER]: 0.1, [B_GUILD]: 0.1, [B_RESEARCH]: 0.2, [B_BARRACKS]: 0.05, [B_SMITHY]: 0.05, [B_NAVAL]: 0.1, [B_CARPENTER]: 0.1, [B_PLANTATION]: 0.1, [B_QUARRY]: 0.1, [B_COPPERMINE]: 0.1 };
+export const RISE: Record<number, number> = { [B_FARM]: 0.05, [B_TOWER]: 0.05, [B_MINTER]: 0.1, [B_GUILD]: 0.1, [B_RESEARCH]: 0.2, [B_BARRACKS]: 0.05, [B_ARCHERY]: 0.05, [B_SMITHY]: 0.05, [B_NAVAL]: 0.1, [B_CARPENTER]: 0.1, [B_PLANTATION]: 0.1, [B_QUARRY]: 0.1, [B_COPPERMINE]: 0.1 };
 /** How many of kingdom n's buildings of `type` there are for pricing: gathering buildings count by the plots they cover (four joined are four). */
 function ownedFor(n: Nation, type: number){
   if (type===B_FARM) return n.farms;
@@ -171,7 +172,8 @@ function ownedFor(n: Nation, type: number){
   if (type===B_TOWER) return Math.floor(n.towers/4);   // (a fort is four towers)
   if (type===B_GUILD) return n.guilds;
   if (type===B_NAVAL) return n.navals;
-  if (type===B_BARRACKS) return n.barracks;
+  if (type===B_BARRACKS) return n.barracks-n.archeries;
+  if (type===B_ARCHERY) return n.archeries;
   let k=0; for (const q of n.blds) if (pType[q]===type) k+=[1,2,4][pSpan[q]] ?? 1;
   return Math.max(k,countOf(n,type));
 }
@@ -240,6 +242,7 @@ export function navalSite(n: Nation, q: number, over: Over='none'): { orient: nu
 /** Why kingdom n can't put a `type` building with its top-left on plot q, or null if it can. With
     `over`, it may go over buildings of the kingdom's (they are pulled down), but not over one just like it. */
 export function placeProblem(n: Nation, q: number, type: number, over: Over='none'): string | null {
+  if (type===B_ARCHERY) type=B_BARRACKS;   // (an archer barracks stands like any barracks)
   if (type===B_TOWER) return 'Watchtowers stand as a fort round a region\'s flag: pick the region';
   if (type===B_NAVAL) return navalSite(n,q,over).problem;
   if (type===B_HOSPITAL && !hasMedics(n)) return 'Research field medics first';
@@ -260,7 +263,8 @@ export function demolish(q: number){
   const m=mainOf(q), ty=pType[m], o=pOwner[m], n=W.nations[o];
   const plots=ty===B_SITE ? [m] : cover(m);
   for (const k of plots){
-    pType[k]=B_EMPTY; pOwner[k]=0; pMain[k]=0; pTimer[k]=0; pAband[k]=0; pHp[k]=0; pTier[k]=0; pSpan[k]=0; pArmor[2][k]=pArmor[3][k]=0;
+    if (ty===B_BARRACKS && pArch[k] && n) n.archeries=Math.max(0,n.archeries-1);
+    pType[k]=B_EMPTY; pOwner[k]=0; pMain[k]=0; pTimer[k]=0; pAband[k]=0; pHp[k]=0; pTier[k]=0; pSpan[k]=0; pArmor[2][k]=pArmor[3][k]=0; pArch[k]=0;
     on.plotChanged(k);
   }
   if (!n) return;
@@ -276,6 +280,12 @@ export function build(n: Nation, q: number, type: number, over: Over='none'){
   const s=structureOf(type);
   if (!s || !n.alive || !canAfford(n,s) || placeProblem(n,q,type,over)) return false;
   costFor(n,s).forEach((c,g) => n.stock[g]-=c);
+  if (type===B_ARCHERY){   // an archer barracks: a barracks plot marked for archers
+    for (const m of underneath(q,B_BARRACKS)) demolish(m);
+    placeBuilding(q,n.id,B_BARRACKS,false); pArch[q]=1; on.plotChanged(q);
+    countUp(n,B_BARRACKS); n.archeries++;
+    return true;
+  }
   const orient=type===B_NAVAL ? navalSite(n,q,over).orient : 0;
   for (const m of underneath(q,type,orient)) demolish(m);
   for (const k of footprint(q,type,orient).slice(1)){ pType[k]=B_PART; pOwner[k]=n.id; pMain[k]=q; pBurn[k]=0; pAband[k]=0; }

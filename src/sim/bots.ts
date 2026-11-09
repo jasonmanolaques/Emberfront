@@ -1,5 +1,5 @@
 /* ---------- bots ---------- */
-import { B_EMPTY, B_RUINS, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_HOUSE, PW, PH, NP, WAGE } from '../core/constants';
+import { B_EMPTY, B_RUINS, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_HOUSE, B_ARCHERY, PW, PH, NP, WAGE } from '../core/constants';
 import { W, isle, pType, pOwner, pAband, type Nation } from './state';
 import { launch } from './territory';
 import { grossIncome } from './sim';
@@ -30,7 +30,7 @@ export const stuck = (n: Nation) => beggarProblem(n) && !W.contact[n.id*W.M] && 
 const spareHomes = (n: Nation) => !beggarProblem(n) && (n.abandoned>0 || n.beds>=n.villagers+n.soldiers+n.beggars+3);
 /** How many of n's plots stand empty. */
 const emptyPlots = (n: Nation) => { let k=0; for (const q of n.plots) if (pType[q]===B_EMPTY || pType[q]===B_RUINS) k++; return k; };
-const TOWN = [B_BARRACKS, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER];   // workshops: inside the wall
+const TOWN = [B_BARRACKS, B_ARCHERY, B_MINTER, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER];   // workshops: inside the wall
 /** What a bot builds before anything else, while it has too few: the stockpile only comes from the
     gathering buildings, so wood first (a plantation pays for itself in 2 and a half minutes), then
     stone and copper, and a research station to join them into bigger ones. It saves up for these. */
@@ -71,7 +71,7 @@ function wishlist(n: Nation, exposed: boolean){
   for (const q of n.blds) if (pType[q]===B_TOWER && pOwner[q]===n.id && !wallNeighbours(q,n.id)) outposts++;
   if (!n.barracks && n.soldierShare>0) w.push(B_BARRACKS);
   // room in the barracks for the army it keeps (new modules join the old, making one bigger army)
-  else if (n.soldiers>n.barracks*UNIT_SIZE-2 && n.barracks<2+(n.tiles/400|0)) w.push(B_BARRACKS);
+  else if (n.soldiers>n.barracks*UNIT_SIZE-2 && n.barracks<2+(n.tiles/400|0)) w.push(n.archeries*3<n.barracks-1 ? B_ARCHERY : B_BARRACKS);   // (about one module in three for archers, beside the spearmen's)
   // the capital is the heart of a kingdom: its wall of watchtowers comes first, and only once that
   // stands (adequately) does a bot spread towers to its borders, as lone outposts facing its neighbours
   // (watchtowers are off for now: no wall, no outposts)
@@ -215,7 +215,7 @@ function gathererPlot(n: Nation, type: number){
   return best;
 }
 function pickPlot(n: Nation, type: number){
-  if (type===B_BARRACKS){ const q=barracksPlot(n); if (q>=0) return q; }
+  if (type===B_BARRACKS || type===B_ARCHERY){ const q=barracksPlot(n); if (q>=0) return q; }
   if (GATHERERS.includes(type)){ const q=gathererPlot(n,type); if (q>=0) return q; }
   const srand=W.srand, cap=n.capPlot; let best=-1, bs=-Infinity;
   for (let k=0;k<24 && n.plots.length;k++){
@@ -259,7 +259,7 @@ function botBuild(n: Nation, exposed: boolean){
   for (const type of wishlist(n,exposed)){
     const s=STRUCTURES.find(s=>s.type===(type===WALL ? B_TOWER : type))!;
     if (saving && s.cost[1]>0) continue;
-    if (type!==B_BARRACKS && type!==WALL && s.cost.some((c,g) => c>0 && hold[g])) continue;   // (barracks and the capital's wall are never put off for the gatherers: they are cheap; any gatherer waits for the one before it)
+    if (type!==B_BARRACKS && type!==B_ARCHERY && type!==WALL && s.cost.some((c,g) => c>0 && hold[g])) continue;   // (barracks and the capital's wall are never put off for the gatherers: they are cheap; any gatherer waits for the one before it)
     if (!canAfford(n,s)){
       if (type===WALL && danger(n,exposed)) saving=true;
       if (first.includes(type)) costFor(n,s).forEach((c,g) => { if (c>0) hold[g]=true; });

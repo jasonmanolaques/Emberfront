@@ -7,7 +7,7 @@
 import { K, PLAYER } from '../core/constants';
 import { W, type Army } from '../sim/state';
 import { queueCommand } from '../sim/sim';
-import { armyProblem, armyOf, claimsOf, waiting, A_HOME } from '../sim/war';
+import { armyProblem, armyOf, claimsOf, waiting, A_HOME, A_BATTLE } from '../sim/war';
 import { region, regionName } from '../sim/regions';
 import { units, unitAt, groupKeys, groupLead, MAX_MERGES } from '../sim/army';
 import { client } from '../client';
@@ -50,7 +50,7 @@ const btn = (act: string, label: string, attrs: string, opts: { off?: boolean; t
 
 /** The orders under the open row. */
 function orders(x: Army){
-  const hint='Right-click a region on the map: one of yours (or an ally\'s) to station the army there, in peace or war; one you claimed in a war, beside ground you hold, to attack it. Home garrisons it at its barracks, for less upkeep.';
+  const hint='Right-click a region on the map: one of yours (or an ally\'s), or one you occupy, to station the army there, in peace or war; one you claimed in a war, beside ground you hold, to attack it. Where another of your armies is fighting, it waits on standby and marches in if that one is beaten or falls back. A retreating army rallies for 30 s before it takes orders. Home garrisons it at its barracks, for less upkeep.';
   const ret=armyProblem(PLAYER,x.id,'retreat'), home=armyProblem(PLAYER,x.id,'return'), rein=armyProblem(PLAYER,x.id,'reinforce'), w=waiting(x);
   return `<p class="dnote">${hint}</p><div class="ato2">${btn('retreat','↩ Retreat',`data-id="${x.id}"`,{ off:!!ret, title: ret ?? 'Break off and fall back to the nearest region you hold' })}${btn('home','🏠 Home',`data-id="${x.id}"`,{ off:!!home, title: home ?? 'Back to its barracks: its men heal, and are paid less' })}${btn('reinforce',`⇪ Reinforce${w ? ' · '+w : ''}`,`data-id="${x.id}"`,{ off:!!rein, title: rein ?? 'Its men waiting at the barracks (new recruits, the healed) march up to it and join its ranks at the back, in a fight too' })}</div>`;
 }
@@ -132,9 +132,10 @@ export function rightClick(sx: number, sy: number){
   const t=tileAt(sx,sy), r=t>=0 ? region[t] : 0;
   if (!r){ const y=armyAt(sx,sy); if (y) selectArmy(y.id); else deselect(); return; }
   const d=W.rOwner[r];
-  const order=d && d!==PLAYER && claimsOf(PLAYER,d).includes(r) ? 'attack' : 'station';
+  const order=d && d!==PLAYER && claimsOf(PLAYER,d).includes(r) && W.rOcc[r]!==PLAYER ? 'attack' : 'station';   // (a region we occupy: the army is stationed there, to keep it)
   const why=armyProblem(PLAYER,x.id,order,r);
   if (why){ const y=armyAt(sx,sy); if (y && y!==x){ selectArmy(y.id); return; } toast(why); return; }
   queueCommand({ type:'army', nation:PLAYER, army:x.id, order, region:r });
-  toast(`${rowName(x)}: ${order==='attack' ? 'attack' : 'to'} ${regionName(r)}`);
+  const fighting=W.armies.some(y => y!==x && y.o===PLAYER && y.goal===r && y.mode===A_BATTLE);
+  toast(fighting ? `${rowName(x)}: on standby for ${regionName(r)}, to march in if the army fighting there is beaten or falls back` : `${rowName(x)}: ${order==='attack' ? 'attack' : 'to'} ${regionName(r)}`);
 }

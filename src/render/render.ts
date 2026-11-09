@@ -15,7 +15,7 @@ import { drawIcon, drawWorking, BIG } from './sprites';
 import './nature';   // (it paints the trees into the picture's tiles)
 import { CH, MAKE_PER_FRAME, tileAt, makeTile, nextFrame, tileCols, tileRows, frame, type Tile } from './tiles';
 import { styleOf } from './style';
-import { personSprite, corpseSprite, woundStage, BODY_X, FEET_Y } from './people';
+import { personSprite, corpseSprite, woundStage, horseSprite, HORSE_BACK, BODY_X, FEET_Y } from './people';
 import { FL, flT, flO, flTime, fx, ppx, ppy, plife, pmax, pkind, psize, floats, glints, shots, hits, corpses, drips, addDrip, CORPSE_MS, DRIP_MS, updateEffects } from './effects';
 import { shipSprite, drawBoat, resetShips, SHIP_W, SHIP_H } from './ships';
 import { landingZone, offshore, dockTile, settlePlan, type Zone, type SettlePlan } from '../sim/naval';
@@ -149,6 +149,7 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
   const nextX = new Map<number, number>(), nextY = new Map<number, number>();
   const step = reduceMotion ? 0 : ((now/170)|0)&1;
   // draw from the back row forward, so people nearer the bottom of the screen stand in front
+  const riding = new Set<number>(); for (const x of W.armies) for (const id of x.coming) riding.add(id);   // (reinforcements ride up to their army)
   const list = W.humans.filter(p => !indoors(p) && p.x*K>=vx0-8 && p.y*K>=vy0-4 && p.x*K<=vx1+8 && p.y*K<=vy1+16).sort((a,b) => a.y-b.y || a.id-b.id);
   for (const p of list){
     const rx=p.x*K, ry=p.y*K, ox=lastX.get(p.id), oy=lastY.get(p.id);
@@ -183,8 +184,14 @@ function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: num
       let b=bleeding.get(p.id); if (!b){ b=[now,0]; bleeding.set(p.id,b); }
       if (moving && now-b[0]<TRAIL_MS && now-b[1]>DROP_MS){ b[1]=now; addDrip(p.x+(Math.random()-0.5)*0.8,p.y); }
     } else bleeding.delete(p.id);
-    const spr = personSprite(p.o,kind,look,frame,left,wound,p.militia ? 0 : p.tier || 1);
-    const bx = Math.round(rx+px)-2, fy = Math.floor(ry+py)+1;   // body's left column, and its feet row
+    const spr = personSprite(p.o,kind,look,frame,left,wound,p.militia ? 0 : p.arch ? 4 : p.tier || 1);
+    const bx = Math.round(rx+px)-2;
+    let fy = Math.floor(ry+py)+1;   // body's left column, and its feet row
+    if (riding.has(p.id) && isLand[((p.y/2)|0)*TW+((p.x/2)|0)]){   // on horseback: the horse beneath him, his feet on its back
+      const hs=horseSprite(p.o,reduceMotion ? 0 : ((now/120+p.id)|0)&1,left);
+      ctx.drawImage(hs,bx+2-6,fy-hs.height+1);
+      fy-=HORSE_BACK;
+    }
     if (!isLand[((p.y/2)|0)*TW+((p.x/2)|0)]) drawBoat(ctx,bx+2,fy+1,left ? -1 : 1,reduceMotion ? 0 : ((now/500+p.id)|0)&1);   // on a sea lane: in a small boat
     const sx = left ? bx-(spr.width-BODY_X-4) : bx-BODY_X;
     ctx.drawImage(spr, sx, fy-FEET_Y);

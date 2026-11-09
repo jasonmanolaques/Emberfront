@@ -1,6 +1,6 @@
 /* ---------- census: contacts, counts, labels (once per second) ---------- */
 import { TW, TH, NP, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_NAVAL } from '../core/constants';
-import { W, owner, occ, isLand, pType, pOwner, pBuild, pCenter, pBurn, pTimer, pTier } from './state';
+import { W, owner, occ, isLand, pType, pOwner, pBuild, pCenter, pBurn, pTimer, pTier, pArch } from './state';
 import { HOUSE_BEDS } from './research';
 import { on } from './events';
 import { isBld, joinGatherers } from './buildings';
@@ -21,8 +21,8 @@ export function scanContacts(withSums: boolean){
   if (withSums) for (let i=1;i<N.length;i++){ N[i].sumX=sx[i]; N[i].sumY=sy[i]; }
 }
 /** One nation's building tally, built while the count is under way. */
-interface Tally { plots: number[]; blds: number[]; houses: number; farms: number; towers: number; mines: number; barracks: number; minters: number; plantations: number; quarries: number; copperMines: number; labs: number; guilds: number; smithies: number; hospitals: number; carpenters: number; navals: number; beds: number; bCount: number; }
-const newTally = (): Tally => ({ plots:[], blds:[], houses:0, farms:0, towers:0, mines:0, barracks:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, hospitals:0, carpenters:0, navals:0, beds:0, bCount:0 });
+interface Tally { plots: number[]; blds: number[]; houses: number; farms: number; towers: number; mines: number; barracks: number; archeries: number; minters: number; plantations: number; quarries: number; copperMines: number; labs: number; guilds: number; smithies: number; hospitals: number; carpenters: number; navals: number; beds: number; bCount: number; }
+const newTally = (): Tally => ({ plots:[], blds:[], houses:0, farms:0, towers:0, mines:0, barracks:0, archeries:0, minters:0, plantations:0, quarries:0, copperMines:0, labs:0, guilds:0, smithies:0, hospitals:0, carpenters:0, navals:0, beds:0, bCount:0 });
 let tallies: Tally[] = [];
 /** The plots from q0 up to (not including) q1: each owner's plots to build on, and its buildings, into the tallies. */
 function tally(q0: number, q1: number){
@@ -36,7 +36,7 @@ function tally(q0: number, q1: number){
       const T=tallies[pOwner[q]];
       T.bCount++; if (ty!==B_CPART && ty!==B_PART) T.blds.push(q);
       if (ty===B_HOUSE){ T.houses++; T.beds+=HOUSE_BEDS[pTier[q]]; } else if (ty===B_FARM) T.farms++; else if (ty===B_TOWER) T.towers++; else if (ty===B_MINE) T.mines++;
-      else if (ty===B_BARRACKS) T.barracks++; else if (ty===B_MINTER) T.minters++;
+      else if (ty===B_BARRACKS){ T.barracks++; if (pArch[q]) T.archeries++; } else if (ty===B_MINTER) T.minters++;
       else if (ty===B_PLANTATION) T.plantations++; else if (ty===B_QUARRY) T.quarries++; else if (ty===B_COPPERMINE) T.copperMines++;
       else if (ty===B_RESEARCH) T.labs++; else if (ty===B_GUILD) T.guilds++; else if (ty===B_SMITHY) T.smithies++; else if (ty===B_HOSPITAL) T.hospitals++; else if (ty===B_CARPENTER) T.carpenters++; else if (ty===B_NAVAL) T.navals++;
     }
@@ -63,7 +63,7 @@ function commit(){
   for (let i=1;i<N.length;i++){
     const n=N[i], T=tallies[i];
     [n.plots,T.plots]=[T.plots,n.plots]; [n.blds,T.blds]=[T.blds,n.blds];
-    n.houses=T.houses; n.farms=T.farms; n.towers=T.towers; n.mines=T.mines; n.barracks=T.barracks; n.minters=T.minters; n.plantations=T.plantations; n.quarries=T.quarries; n.copperMines=T.copperMines; n.labs=T.labs; n.guilds=T.guilds; n.smithies=T.smithies; n.hospitals=T.hospitals; n.carpenters=T.carpenters; n.navals=T.navals; n.beds=T.beds; n.bCount=T.bCount;
+    n.houses=T.houses; n.farms=T.farms; n.towers=T.towers; n.mines=T.mines; n.barracks=T.barracks; n.archeries=T.archeries; n.minters=T.minters; n.plantations=T.plantations; n.quarries=T.quarries; n.copperMines=T.copperMines; n.labs=T.labs; n.guilds=T.guilds; n.smithies=T.smithies; n.hospitals=T.hospitals; n.carpenters=T.carpenters; n.navals=T.navals; n.beds=T.beds; n.bCount=T.bCount;
   }
   for (let i=1;i<N.length;i++) if (N[i].alive) joinGatherers(N[i]);   // what research now lets join up
   for (let i=1;i<N.length;i++){

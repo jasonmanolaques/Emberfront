@@ -13,6 +13,7 @@ export interface Nation {
   tiles: number; alive: boolean; capTile: number; capPlot: number;
   plots: number[]; blds: number[]; bCount: number;
   houses: number; farms: number; towers: number; mines: number; barracks: number; minters: number;
+  archeries: number;                 // of its barracks plots, those that are archer barracks (pArch)
   plantations: number; quarries: number; copperMines: number; labs: number; guilds: number; smithies: number; hospitals: number; carpenters: number; navals: number; jobs: number[]; studying: number; unhoused: number; draftAll: boolean;   // labs: research stations; navals: naval bases
   fleet: number;                     // ships docked and ready (any naval base's: they are the kingdom's)
   beds: number;                      // people the houses can hold: a hovel 1, a stone house 2, a manor 3
@@ -78,6 +79,7 @@ export interface Human {
   load: number;                      // blacksmiths: carrying 1 copper, or armour of tier 2 or 3 (0 = nothing)
   make: number;                      // blacksmiths: tier of the armour the current job is for (0 = no job)
   dest: number;                      // blacksmiths: plot of the barracks the armour is for, or -1
+  arch: boolean;                     // soldiers: an archer (half the hit points and blows of a spearman, shoots from the ranks behind in a battle)
   lead: number;                      // soldiers leading an army: their rank (RANKS in war.ts), doubling their hit points each rank; 0 otherwise
   fk: number;                        // soldiers on a front (sim/front.ts): the offensive it belongs to (attacker*M+defender), or -1
   line: number;                      // ...their rank there: 0 the front rank, 1 the rank behind it, …
@@ -116,6 +118,8 @@ export interface Army {
   coming: number[];                  // reinforcements on their way to it from its barracks (ids): they join its ranks at the back on arrival
   via: number[];                     // the way the reinforcements take (pixels), and the tick it was worked out
   viaAt: number;
+  rally: number;                     // tick until which it rallies after a retreat, its morale broken: it takes no orders
+  next: { order: string; r: number } | null;   // an order on standby: carried out once the army of ours fighting in that region is beaten or falls back
 }
 export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; isle?: number; seed?: number; }   // gold still to spend on this front (isle: a colony's, spent on that island's land only)
 /** A ship at sea (sim/naval.ts): sailing out, waiting off a coast, or sailing home to its naval base. */
@@ -186,6 +190,7 @@ export let occ = new Uint8Array(NT);      // a kingdom's land held by an enemy a
 export let pHp = new Float32Array(NP);     // damage a building has taken (multi-plot buildings keep theirs on the main plot)
 export let pArmor = [new Uint8Array(0), new Uint8Array(0), new Uint8Array(NP), new Uint8Array(NP)];   // barracks: armour of tier 2 and 3 stored there
 export let pTier = new Uint8Array(NP);   // houses: 1 hovel, 2 stone house, 3 manor; watchtowers 1-3 (0 for anything else)
+export let pArch = new Uint8Array(NP);   // barracks plots that are archer barracks (1)
 export let pSpan = new Uint8Array(NP);   // plantations, quarries, copper mines (main plot): 0 one plot, 1 two side by side, 2 a 2×2 block
 function placeCentres(){ for (let q=0;q<NP;q++){ const px=q%PW, py=(q/PW)|0; pCenter[q]=(py*4+2)*TW+px*4+2; } }
 placeCentres();
@@ -199,7 +204,7 @@ export function resizeGrid(w: number, h: number){
   pType=new Uint8Array(NP); pOwner=new Uint8Array(NP); pVar=new Uint8Array(NP); pBuild=new Uint8Array(NP);
   pMain=new Int32Array(NP); pCenter=new Int32Array(NP); pBurn=new Float32Array(NP); pTimer=new Float32Array(NP);
   pAband=new Uint8Array(NP); pIn=new Uint8Array(NP); pHp=new Float32Array(NP); pArmor=[new Uint8Array(0), new Uint8Array(0), new Uint8Array(NP), new Uint8Array(NP)];
-  pTier=new Uint8Array(NP); pSpan=new Uint8Array(NP);
+  pTier=new Uint8Array(NP); pSpan=new Uint8Array(NP); pArch=new Uint8Array(NP);
   placeCentres();
 }
 
