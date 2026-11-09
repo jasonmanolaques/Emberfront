@@ -51,6 +51,17 @@ export function castleCutOff(d: number){
   return true;
 }
 
+/** Is d's castle enclosed by ground that `a` occupies: cut off, and some of the ring beside it held by a (not by another attacker, nor won back by d)? Only then has a a siege. */
+export function castleEnclosedBy(a: number, d: number){
+  if (!castleCutOff(d)) return false;
+  const D=W.nations[d], q=D.capPlot, x0=(q%PW)*4, y0=((q/PW)|0)*4;
+  for (let y=y0-1;y<=y0+8;y++) for (let x=x0-1;x<=x0+8;x++){
+    if (x<0 || y<0 || x>=TW || y>=TH || (x>=x0 && x<x0+8 && y>=y0 && y<y0+8)) continue;
+    if (owner[y*TW+x]===d && occ[y*TW+x]===a) return true;
+  }
+  return false;
+}
+
 /* ---------- parts of a border ----------
    A border can be fought along as a whole, or a part of it at a time: the border is cut into compass sectors by the bearing of its tiles from the
    defender's castle (1 east, 2 south-east … 8 north-east), and there is the siege of the capital, which is the stretch of border in the way to the castle. */
@@ -69,10 +80,10 @@ export function sectorOf(d: number, t: number){
 }
 /** The tiles of border `all` that belong to part `sec` of it. The siege's are the walls of the castle, and only once the castle stands inside the occupation zone (cut off):
     until then there is no siege, and no way to it but the front. */
-export function partOf(d: number, all: number[], sec: number){
+export function partOf(a: number, d: number, all: number[], sec: number){
   if (!sec) return all;
   if (sec!==SEC_SIEGE) return all.filter(t => (sec & (1<<(sectorOf(d,t)-1)))!==0);
-  return castleCutOff(d) ? all.filter(t => underCastle(d,t)) : [];
+  return castleEnclosedBy(a,d) ? all.filter(t => underCastle(d,t)) : [];
 }
 
 /** Works out the front of a's attack on d (`only`: just the border on that landmass, else all of it; `sec`: just that part of it). The castle can't be taken, only broken: the line runs
@@ -111,7 +122,7 @@ export function lineOf(a: number, d: number, original=false, preset?: number[], 
   if (!pset && !all.length && mates.length){ slices=false; scan(D, t => own[t]===d && !oc[t]); }
   if (!original && !pset && W.occCount[a*W.M+d]>0) scan(A, t => own[t]===a && oc[t]===d);
   if (only){ let k=0; for (const t of all) if (isle[t]===only) all[k++]=t; all.length=k; }   // (only the border on that landmass)
-  if (sec && !pset){ const part=partOf(d,all,sec); all.length=0; all.push(...part); }   // (and only that part of it)
+  if (sec && !pset){ const part=partOf(a,d,all,sec); all.length=0; all.push(...part); }   // (and only that part of it)
   const open=all.filter(t => !underCastle(d,t)), walls=all.filter(t => underCastle(d,t));
   // The castle surrounded: nothing of theirs left beside it. The armies stop pushing the border and only break the castle.
   const island=walls.length>0 && castleCutOff(d);
@@ -300,7 +311,7 @@ export function deploy(F: Front, all: Human[], side: number, key: number, ok: (t
     const files=size<=5 ? 1 : Math.ceil(Math.sqrt(size-1));
     group.forEach((h,r) => {
       // a man who held a slot moves toward his share of the line a little at a time (a man falling does not send everyone running along the line): the others close up slowly
-      const old=h.fk===key && h.slot>=0 ? Math.min(F.len,h.slot) : u, slot=old+Math.max(-SHIFT,Math.min(SHIFT,u-old));
+      const old=h.fk===key && h.slot>=0 && h.line<RESERVE_LINE ? Math.min(F.len,h.slot) : u, slot=old+Math.max(-SHIFT,Math.min(SHIFT,u-old));
       const [,,bx,by]=pointAt(F,slot);
       let [x,y]=placeAt(F,slot,side,r ? 1+((r-1)/files|0) : 0,ok);
       if (r && files>1){

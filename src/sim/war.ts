@@ -36,7 +36,7 @@ import { census } from './census';
 import { BLD_HP, bldHp, wear, towerTier, castleTier, TOWER_RELOADS, TOWER_DMGS, CASTLE_MEND, wallOf, wallTower, walledFor, buildWalls, resetWalls } from './defense';
 import { SOLDIER_DMG, MILITIA_HIT, SOLDIER_HP, MILITIA_HP, VILLAGER_HP, units, unitAt, groupKeys, type Unit } from './army';
 import { Field } from './field';
-import { lineOf, deploy, RESERVE_LINE, placeAt, indexAt, holds, enemyOf, underCastle, castleCutOff, partOf, sectorOf, originOf, SEC_SIEGE, type Front } from './front';
+import { lineOf, deploy, RESERVE_LINE, placeAt, indexAt, holds, enemyOf, underCastle, castleCutOff, castleEnclosedBy, partOf, sectorOf, originOf, SEC_SIEGE, type Front } from './front';
 import { landingZone, offshore, landingTile, seaPaths, seaNearest, dockTile, shipById, launchShip, recall, navalHooks, basesOf, baseWater, SHIP_SP, CONVOY_SPEED, SHIP_CAP, INV_SAIL, INV_READY, INV_LAND, INV_DONE, SHIP_WAIT, SHIP_BACK } from './naval';
 import { H_SOLDIER, TASK_ROAM, TASK_BOAT, TOWER_RANGE, maxHp, REGEN, pace, onCastle, release, backToRoam, frontOf, doorOf, barracksOf, switching, indoors, tileOf, homeMilitia } from './population';
 
@@ -218,7 +218,7 @@ const DIRS8 = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
 const jobs=new Map<number, number>();
 const DETAIL = 3;   // men sent after each such tower
 export function resetWar(M: number){
-  jobs.clear();
+  jobs.clear(); noRoute.clear();
   W.campaigns=[]; W.campSeq=0;
   W.ally=new Uint8Array(M*M); W.atWar=new Uint8Array(M*M); W.offers=new Int32Array(M*M); W.grudge=new Int32Array(M*M).fill(-1e9);
   W.wars=new Uint8Array(M*M); W.aggr=new Uint8Array(M*M); W.warSince=new Int32Array(M*M); W.occCount=new Int32Array(M*M); W.lost=new Uint8Array(M*M); W.ready=new Int32Array(M*M); W.groups=[]; W.offensive=new Uint8Array(M*M); W.siege=new Int32Array(M); W.siegeBy=new Uint8Array(M); W.kills=new Int32Array(M*M); W.stall=new Int32Array(M*M); W.lastNet=new Int32Array(M*M);
@@ -1237,7 +1237,7 @@ export function bordersOf(a: number): Border[] {
       for (const g of groups.values()) out.push({ d, isle:i, sec:g.mask===255 ? 0 : g.mask, tiles:g.tiles });
     }
     // the siege of the capital: offered where the capital lies on a landmass of the border (the ring is what is drawn)
-    if (D.capTile>=0 && castleCutOff(d) && [...by.keys()].includes(isle[D.capTile])){   // (only once the castle stands inside the occupation zone)
+    if (D.capTile>=0 && castleEnclosedBy(a,d) && [...by.keys()].includes(isle[D.capTile])){   // (only once the castle stands inside the occupation zone)
       const [cx,cy]=originOf(d), ring: number[]=[];
       for (let k=0;k<48;k++){ const x=Math.round(cx+Math.cos(k/48*Math.PI*2)*SIEGE_RING), y=Math.round(cy+Math.sin(k/48*Math.PI*2)*SIEGE_RING); if (x>=0&&y>=0&&x<tw&&y<th) ring.push(y*tw+x); }
       sieges.push({ d, isle:isle[D.capTile], sec:SEC_SIEGE, tiles:ring });
@@ -1253,7 +1253,7 @@ export const SIEGE_RING = 9;   // tiles from the castle's middle: the ring drawn
 export function assignProblem(a: number, key: number, d: number, sec=0): string | null {
   const why=warProblem(a,d); if (why) return why;
   if (sec===SEC_SIEGE && !(W.nations[d].capTile>=0)) return 'They have no capital';
-  if (sec===SEC_SIEGE && !castleCutOff(d)) return 'Their capital is not inside your occupied zone yet';
+  if (sec===SEC_SIEGE && !castleEnclosedBy(a,d)) return 'Their capital is not inside your occupied zone yet';
   const mil=key===-2;
   const c=W.campaigns.find(k => k.a===a && k.front && k.phase<2 && (mil ? k.militia : k.unit===key && !k.militia));
   if (c && c.naval>=0) return 'It is at sea, on an invasion';
@@ -2240,20 +2240,26 @@ function heldWay(c: Campaign, ax: number, ay: number, bx: number, by: number){
   for (let i=1;i<=n;i++){ const k=i/n; if (!holds(c.a,c.d,tileOf(ax+(bx-ax)*k,ay+(by-ay)*k))) return false; }
   return true;
 }
+const noRoute=new Map<number, number>();   // man id → the tick before which a search for a way over held ground is not tried again
 /** A man of the front goes to his place: straight if the way is all ground his side holds, else by a way over it, never across the enemy's ground (a corner of the line, a bay). */
 function toPlace(h: Human, c: Campaign){
   const gx=h.fx, gy=h.fy, d=Math.hypot(gx-h.x,gy-h.y);
   if (d<=0.25){ if (h.path.length) h.path=[]; return; }
   if (!holds(c.a,c.d,tileOf(gx,gy)) || d>80){ moveTo(h,c,gx,gy,0.2); return; }   // (a place off the ground his side holds, or far: as he marches)
   let tx=gx, ty=gy;
-  if (h.path.length>=2 && (h.id+W.tickN)%10===0 && heldWay(c,h.x,h.y,gx,gy)) h.path=[];
-  if (!h.path.length && !heldWay(c,h.x,h.y,gx,gy)) h.path=routeHeld(h,c,gx,gy);
+  const straight=heldWay(c,h.x,h.y,gx,gy);
+  if (straight && h.path.length && (h.id+W.tickN)%10===0) h.path=[];
+  const plan=() => {   // (a search that finds no way is not tried again for a while: the man goes as he marches)
+    if ((noRoute.get(h.id) ?? 0)>W.tickN) return [] as number[];
+    const w=routeHeld(h,c,gx,gy); if (!w.length){ noRoute.set(h.id,W.tickN+25); if (noRoute.size>4096) noRoute.clear(); } return w;
+  };
+  if (!h.path.length && !straight) h.path=plan();
   if (h.path.length>=2){
-    const n=h.path.length; if (Math.hypot(h.path[n-2]-gx,h.path[n-1]-gy)>4){ h.path=routeHeld(h,c,gx,gy); }
+    const n=h.path.length; if (Math.hypot(h.path[n-2]-gx,h.path[n-1]-gy)>2) h.path=plan();   // (the place has moved: a way to where it is now)
     if (h.path.length>2 && Math.hypot(h.path[0]-h.x,h.path[1]-h.y)<1.2) h.path.splice(0,2);
     if (h.path.length>=2){ tx=h.path[0]; ty=h.path[1]; } else { moveTo(h,c,gx,gy,0.2); return; }
-  } else if (!heldWay(c,h.x,h.y,gx,gy)){ moveTo(h,c,gx,gy,0.2); return; }   // (no way over held ground at all: as he marches)
-  const dx=tx-h.x, dy=ty-h.y, dd=Math.hypot(dx,dy); if (dd<1e-6) return;
+  } else if (!straight){ moveTo(h,c,gx,gy,0.2); return; }   // (no way over held ground at all: as he marches)
+  const dx=tx-h.x, dy=ty-h.y, dd=Math.hypot(dx,dy); if (dd<1e-6){ if (h.path.length) h.path.splice(0,2); return; }
   const st=Math.min(dd,pace(h)*TICK), nx=h.x+dx/dd*st, ny=h.y+dy/dd*st;
   if (!mayStand(h,owner[tileOf(nx,ny)])) return;
   wallStep(h,nx,ny);

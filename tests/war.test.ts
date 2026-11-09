@@ -1046,7 +1046,7 @@ describe('crisis', () => {
     expect(W.offensive[2*M()+1]).toBe(F_HOLD);                 // it holds, and may strike back
     run(150);                                                  // (the men out beyond the line come back to it)
     for (let i=0;i<300;i++){ tick();   // ...and goes on holding on its own side of the border, out of reach of their watchtowers, until it is told to attack
-      for (const h of W.humans) if (h.o===2 && h.war>=0 && h.kind===H_SOLDIER){ const t=((h.y/2)|0)*TW+((h.x/2)|0); expect(owner[t]===1 && !occ[t]).toBe(false); }
+      for (const h of W.humans) if (h.o===2 && h.war>=0 && h.kind===H_SOLDIER){ const t=((h.y/2)|0)*TW+((h.x/2)|0); expect(owner[t]===1 && !occ[t] && h.duel<0).toBe(false); }   // (a man in a duel at the line may stand a step across it: the blow reaches across)
     }
     expect(W.offensive[2*M()+1]).toBe(F_HOLD);
     queueCommand({ type:'offensive', nation:2, target:1, go:true }); tick();

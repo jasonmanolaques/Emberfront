@@ -7,7 +7,7 @@ import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, R_MEDICS,
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, anyWithin, isEnemyLand, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, standingTower, WALL_MIN, WALL_MAX } from './fort';
-import { SEC_SIEGE, MIN_GAP, lineOf, castleCutOff } from './front';
+import { SEC_SIEGE, MIN_GAP, lineOf, castleEnclosedBy } from './front';
 import { allied, atWar, assignArmy, frontIsles, ready, available, declare, endWar, offerPeace, refusePeace, makePeace, wantsPeace, outlook, warAge, setOffensive, menOn, frontIds, stalled, defend, defendProblem, reservesOf, reservesProblem, callReserves, F_PUSH, F_HOLD } from './war';
 
 const WALL = -1;   // a tower of the town wall, in a wishlist
@@ -378,7 +378,11 @@ function botWar(n: Nation){
   if (W.tickN%100===id%100) for (let o=1;o<M;o++){
     if (o===id || !W.nations[o].alive || !W.wars[id*M+o]) continue;
     const D=W.nations[o];
-    if (D.capTile<0 || !castleCutOff(o)) continue;
+    if (D.capTile<0) continue;
+    if (!castleEnclosedBy(id,o)){   // (the castle is not inside this bot's zone, or no longer: the armies on the ring go back to the front)
+      for (const c of W.campaigns) if (c.a===id && c.d===o && c.front && c.phase<2 && c.naval<0 && !c.militia && c.unit>=0 && c.sec===SEC_SIEGE) assignArmy(id,c.unit,o,0,true,0);
+      continue;
+    }
     const cap=isle[D.capTile], ring=lineOf(id,o,false,undefined,cap,SEC_SIEGE);
     const all=W.campaigns.filter(c => c.a===id && c.d===o && c.front && c.phase<2 && c.naval<0 && !c.militia && c.unit>=0 && c.isle===cap);
     const onSiege=all.filter(c => c.sec===SEC_SIEGE).reduce((k,c) => k+c.members.length,0), total=all.reduce((k,c) => k+c.members.length,0);

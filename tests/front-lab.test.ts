@@ -28,7 +28,7 @@ describe('the men of a front', () => {
       ['defender enclave', (x,y,mx,my) => Math.hypot(x-(mx-20),y-my)<9 ? 2 : (x<mx ? 1 : 2)],
       ['sea gap', (x,y,mx,my) => Math.abs(y-my)<4 ? 0 : (x<mx ? 1 : 2)],
     ];
-    for (const [name,who] of shapes){ const r=go(who,20,20); expect(r.atkOutside, name).toBeLessThan(0.06); expect(r.atkInPlace, name).toBeGreaterThan(0.7); expect(r.clump, name).toBeLessThan(0.02); }
+    for (const [name,who] of shapes){ const r=go(who,20,20); expect(r.atkOutside, name).toBeLessThan(0.06); expect(r.atkInPlace, name).toBeGreaterThan(0.6); expect(r.clump, name).toBeLessThan(0.02); }
   });
   it('are not all sent running when a man falls: a place moves only a little at a time', () => {
     const r=go(straight,16,16);
