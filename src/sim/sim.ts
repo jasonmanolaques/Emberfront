@@ -14,7 +14,7 @@ import { toRuins, build, buildBlock, produce, resetHomes } from './buildings';
 import { scanContacts, census, censusStep } from './census';
 import { botThink } from './bots';
 import { updatePopulation, resetWalks, resetRooms, soldierMax } from './population';
-import { resetWar, proposeAlliance, endWar, makePeace, armyOrder, deescalate, claim, answer, armyOf, A_HOME } from './war';
+import { resetWar, proposeAlliance, endWar, acceptPeace, giveGoals, setClaims, armyOrder, deescalate, claim, answer, armyOf, A_HOME, P_GOALS, P_WHITE } from './war';
 import { buildRegions, resetRegions, updateRegions } from './regions';
 import { resetStories, updateStories } from './story';
 import { R_HOUSING, R_TAXES, setStudy, updateResearch } from './research';
@@ -257,9 +257,13 @@ function applyCommand(c: Command){
   } else if (c.type==='deescalate'){
     deescalate(c.nation,c.target);
   } else if (c.type==='endWar'){
-    endWar(c.nation,c.target);
+    endWar(c.nation,c.target,c.kind==='goals' ? P_GOALS : P_WHITE);
+  } else if (c.type==='giveGoals'){
+    giveGoals(c.nation,c.target);
+  } else if (c.type==='claims'){
+    setClaims(c.nation,c.target,c.regions);
   } else if (c.type==='peace'){
-    const M=W.M; if (c.target>0 && c.target<M && W.offers[c.target*M+c.nation]) makePeace(c.nation,c.target);
+    if (c.target>0 && c.target<W.M) acceptPeace(c.nation,c.target);
   } else if (c.type==='research'){
     const n=W.nations[c.nation]; if (n && n.alive) setStudy(n,c.topic);
   }

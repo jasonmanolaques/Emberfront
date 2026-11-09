@@ -50,8 +50,7 @@ const btn = (act: string, label: string, attrs: string, opts: { off?: boolean; t
 
 /** The orders under the open row. */
 function orders(x: Army){
-  const war=W.claims.size>0 && [...W.claims.keys()].some(k => W.wars[k] && (((k/W.M)|0)===PLAYER || k%W.M===PLAYER));
-  const hint=war ? 'Right-click a claimed region on the map: theirs beside your land to attack it, yours to defend it.' : 'Armies are sent only in a war: to the regions claimed in it.';
+  const hint='Right-click a region on the map: one of yours (or an ally\'s) to station the army there, in peace or war; one you claimed in a war, beside ground you hold, to attack it. Home garrisons it at its barracks, for less upkeep.';
   const ret=armyProblem(PLAYER,x.id,'retreat'), home=armyProblem(PLAYER,x.id,'return');
   return `<p class="dnote">${hint}</p><div class="ato2">${btn('retreat','↩ Retreat',`data-id="${x.id}"`,{ off:!!ret, title: ret ?? 'Break off and fall back to the nearest region you hold' })}${btn('home','🏠 Home',`data-id="${x.id}"`,{ off:!!home, title: home ?? 'Back to its barracks: its men heal, and are paid less' })}</div>`;
 }
@@ -131,9 +130,9 @@ export function rightClick(sx: number, sy: number){
   const t=tileAt(sx,sy), r=t>=0 ? region[t] : 0;
   if (!r){ const y=armyAt(sx,sy); if (y) selectArmy(y.id); else deselect(); return; }
   const d=W.rOwner[r];
-  const order=d && d!==PLAYER && claimsOf(PLAYER,d).includes(r) ? 'attack' : 'defend';
+  const order=d && d!==PLAYER && claimsOf(PLAYER,d).includes(r) ? 'attack' : 'station';
   const why=armyProblem(PLAYER,x.id,order,r);
   if (why){ const y=armyAt(sx,sy); if (y && y!==x){ selectArmy(y.id); return; } toast(why); return; }
   queueCommand({ type:'army', nation:PLAYER, army:x.id, order, region:r });
-  toast(`${rowName(x)}: ${order==='attack' ? 'attack' : 'defend'} ${regionName(r)}`);
+  toast(`${rowName(x)}: ${order==='attack' ? 'attack' : 'to'} ${regionName(r)}`);
 }

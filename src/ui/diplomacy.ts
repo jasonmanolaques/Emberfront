@@ -6,7 +6,7 @@ import { fmt } from '../core/util';
 import { W } from '../sim/state';
 import { client } from '../client';
 import { queueCommand } from '../sim/sim';
-import { allied, atWar, allyProblem, warProblem, claimProblem, claimable, inCrisis, crisisWait, claimsOf, attackerIn, menAgainst, OFFER_TICKS, MAX_CLAIMS } from '../sim/war';
+import { allied, atWar, allyProblem, warProblem, claimProblem, claimsProblem, claimable, inCrisis, crisisWait, claimsOf, attackerIn, menAgainst, OFFER_TICKS, MAX_CLAIMS, P_GOALS } from '../sim/war';
 import { RG, region, regionName } from '../sim/regions';
 import { toast } from './hud';
 import { flagCSS } from '../render/flags';
@@ -59,6 +59,13 @@ export function startClaim(o: number){
   closeDiplomacy();
   bar.hidden=false; refreshClaimBar();
 }
+/** At war, begins changing the player's claims on `o`: the regions claimed now are picked, and any of theirs can be added or let go (at least one stays). */
+export function editClaims(o: number){
+  if (!attackerIn(PLAYER,o)) return;
+  client.claiming={ target:o, regions:claimsOf(PLAYER,o).slice(), war:true };
+  closeDiplomacy();
+  bar.hidden=false; refreshClaimBar();
+}
 export function cancelClaim(){ client.claiming=null; bar.hidden=true; }
 /** A click on map tile t while picking: the region there is added (or, if it is picked already, it and those after it are let go). */
 export function claimClick(t: number){
@@ -66,6 +73,11 @@ export function claimClick(t: number){
   const r=t>=0 ? region[t] : 0;
   if (!r){ toast('That land is in no region'); return; }
   const i=C.regions.indexOf(r);
+  if (C.war){   // (at war: any region of theirs, added or let go one by one; one at least stays)
+    if (i>=0){ if (C.regions.length<=1){ toast('Keep at least one claim: the war needs one'); return; } C.regions.splice(i,1); }
+    else { if (W.rOwner[r]!==C.target){ toast(`${regionName(r)} is not ${W.nations[C.target].name}'s`); return; } C.regions.push(r); }
+    refreshClaimBar(); return;
+  }
   if (i>=0){ C.regions.splice(i); refreshClaimBar(); return; }
   const next=[...C.regions,r], why=claimProblem(PLAYER,C.target,next);
   if (why){ toast(W.rOwner[r]!==C.target ? `${regionName(r)} is not ${W.nations[C.target].name}'s` : why); return; }
@@ -73,6 +85,7 @@ export function claimClick(t: number){
 }
 export function confirmClaim(){
   const C=client.claiming; if (!C || !C.regions.length) return;
+  if (C.war){ const why=claimsProblem(PLAYER,C.target,C.regions); if (why){ toast(why); return; } queueCommand({ type:'claims', nation:PLAYER, target:C.target, regions:C.regions.slice() }); cancelClaim(); return; }
   const why=claimProblem(PLAYER,C.target,C.regions); if (why){ toast(why); return; }
   if (allied(PLAYER,C.target)) return;
   queueCommand({ type:'claim', nation:PLAYER, target:C.target, regions:C.regions.slice() });
@@ -82,6 +95,11 @@ function refreshClaimBar(){
   const C=client.claiming; if (!C){ bar.hidden=true; return; }
   const n=W.nations[C.target]; if (!n?.alive){ cancelClaim(); return; }
   const first=claimable(PLAYER,C.target).length;
+  if (C.war){
+    $('cbText').innerHTML=`War goals against ${esc(n.name)}: <b>${C.regions.map(r => esc(regionName(r))).join(', ')}</b> · click any region of theirs to add it, a claimed one to let it go`;
+    ($('cbGo') as HTMLButtonElement).textContent='Set war goals'; ($('cbGo') as HTMLButtonElement).disabled=!C.regions.length; return;
+  }
+  ($('cbGo') as HTMLButtonElement).textContent='Claim';
   $('cbText').innerHTML = C.regions.length
     ? `Claim of ${esc(n.name)}: <b>${C.regions.map(r => esc(regionName(r))).join(', ')}</b>${C.regions.length<MAX_CLAIMS ? ' · click a region beside these to add it' : ''}`
     : first ? `Click a region of ${esc(n.name)}'s beside one of yours (lit in gold) to claim it` : `${esc(n.name)} has no region beside one you control`;
@@ -89,7 +107,7 @@ function refreshClaimBar(){
 }
 
 /* ---------- the war bar: one chip per crisis or war ---------- */
-interface Row { o: number; a: number; d: number; war: boolean; crisis: boolean; theyOffer: boolean; iOffer: boolean; }
+interface Row { o: number; a: number; d: number; war: boolean; crisis: boolean; theyOffer: boolean; iOffer: boolean; theyGoals: boolean; myGoals: boolean; }
 function rows(){
   const M=W.M, out: Row[]=[];
   for (let o=1;o<M;o++){
@@ -101,7 +119,7 @@ function rows(){
     else if (inCrisis(o,PLAYER)){ a=o; d=PLAYER; }
     else continue;
     const at=W.offers[o*M+PLAYER];
-    out.push({ o, a, d, war, crisis:!war, theyOffer:!!at && W.tickN-at<=OFFER_TICKS, iOffer:!!W.offers[PLAYER*M+o] });
+    out.push({ o, a, d, war, crisis:!war, theyOffer:!!at && W.tickN-at<=OFFER_TICKS, iOffer:!!W.offers[PLAYER*M+o], theyGoals:W.offerKind[o*M+PLAYER]===P_GOALS, myGoals:W.offerKind[PLAYER*M+o]===P_GOALS });
   }
   return out;
 }
@@ -122,9 +140,12 @@ export function updateWarChips(){
     } else {
       const held=regs.filter(r => W.rOcc[r]===f.a).length, mine=menAgainst(PLAYER,f.o), theirs=menAgainst(f.o,PLAYER);
       line=`War with ${esc(nameOf(f.o))} for ${names} · ${held}/${regs.length} taken · ${mine} of yours in the field, ${theirs} of theirs`;
-      acts = f.theyOffer ? `<button class="fword go" data-o="${f.o}" data-act="peace" title="Accept their peace: what ${f.a===PLAYER ? 'you' : 'they'} hold of the claims is ${f.a===PLAYER ? 'yours' : 'theirs'}, the rest goes back">Accept peace</button>`
-        : f.iOffer ? `<button class="fword" disabled>Peace offered…</button>`
-        : `<button class="fword" data-o="${f.o}" data-act="end" title="Offer peace: the regions taken stay with whoever took them">Offer peace</button>`;
+      const b=(act: string, label: string, title: string, cls='') => `<button class="fword ${cls}" data-o="${f.o}" data-act="${act}" title="${title}">${label}</button>`;
+      const offer=f.theyOffer ? (f.theyGoals ? `<span class="fnote">They demand their war goals</span>` : b('peace','Accept white peace','Peace as it was before the war: every occupied region is free again, nothing changes hands','go')) : '';
+      const offered=f.iOffer ? `<button class="fword" disabled>${f.myGoals ? 'War goals demanded…' : 'White peace offered…'}</button>` : '';
+      if (f.a===PLAYER) acts=offer+b('claims','✎ War goals','Add claims on any of their regions, or let them go down to one: the war needs one')
+        +(offered || b('goals','Demand war goals','They give you every region you claim, and it is peace')+b('white','Offer white peace','Peace as it was before the war: every occupied region is free again'));
+      else acts=offer+b('give','Give war goals',`Peace: ${esc(nameOf(f.a))} gets every region it claims`)+(offered || b('white','Offer white peace','Peace as it was before the war: every occupied region is free again'));
     }
     return `<div class="front" data-o="${f.o}"><div class="fhead"><span class="chip war${f.theyOffer || (f.crisis && f.d===PLAYER) ? ' offer' : ''}"><i class="flag" style="${flagCSS(W.nations[f.a].code)}"></i>${line}</span><button class="x fclose" data-o="${f.o}" aria-label="Close this bar" title="Close this bar (it comes back with the next war or crisis)">×</button></div><div class="fwords">${acts}</div></div>`;
   }).join('');
@@ -148,7 +169,10 @@ export function setupDiplomacy(){
     else if (act==='give') queueCommand({ type:'answer', nation:PLAYER, target:o, accept:true });
     else if (act==='refuse') queueCommand({ type:'answer', nation:PLAYER, target:o, accept:false });
     else if (act==='peace') queueCommand({ type:'peace', nation:PLAYER, target:o });
-    else if (act==='end') queueCommand({ type:'endWar', nation:PLAYER, target:o });
+    else if (act==='white') queueCommand({ type:'endWar', nation:PLAYER, target:o, kind:'white' });
+    else if (act==='goals') queueCommand({ type:'endWar', nation:PLAYER, target:o, kind:'goals' });
+    else if (act==='give') queueCommand({ type:'giveGoals', nation:PLAYER, target:o });
+    else if (act==='claims'){ editClaims(o); return; }
     lastChips=''; b.disabled=true;
   });
 }

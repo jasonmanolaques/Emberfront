@@ -12,7 +12,8 @@ import { labelWorld, allocIsles } from '../src/sim/naval';
 import { H_SOLDIER, makeHuman, doorOf } from '../src/sim/population';
 import { maxHp } from '../src/sim/army';
 import { RG, region, setRegions, cedeRegion, updateRegions, CONTROL } from '../src/sim/regions';
-import { claim, claimProblem, answer, inCrisis, armyProblem, armyOrder, armyOf, makePeace, offerPeace, CRISIS_TICKS, CAPTURE_TICKS, MAX_CLAIMS, A_HOME, A_MARCH, A_HOLD, A_BATTLE, O_DEFEND, partner } from '../src/sim/war';
+import { claim, claimProblem, answer, inCrisis, armyProblem, armyOrder, armyOf, makePeace, offerPeace, acceptPeace, giveGoals, setClaims, claimsProblem, claimsOf, wageOf, diceFactor, CRISIS_TICKS, CAPTURE_TICKS, ROLL_TICKS, MAX_CLAIMS, P_GOALS, A_HOME, A_MARCH, A_HOLD, A_BATTLE, O_DEFEND, partner } from '../src/sim/war';
+import { WAGE, WAGE_IDLE } from '../src/core/constants';
 
 const N = (i: number) => W.nations[i];
 const M = () => W.M;
@@ -183,13 +184,14 @@ describe('armies', () => {
     for (const h of men) expect(h.hp).toBeCloseTo(maxHp(h),5);
   });
 
-  it('are sent only at war, to claimed regions: theirs beside ground we hold to attack, ours to defend; one army a region', () => {
+  it('attack only claimed regions beside ground we hold, at war; are stationed in any region of ours; one army a region', () => {
     world(); const { home, theirs }=lands(2);
     const a=army(1,10,home), b=army(1,10,home,-3);
     expect(armyProblem(1,a.id,'attack',theirs[0])).toMatch(/claimed in a war/);
     war(1,2,theirs);
     expect(armyProblem(1,a.id,'attack',theirs[1])).toMatch(/border ground you hold/);
-    expect(armyProblem(1,a.id,'defend',home)).toMatch(/claimed in a war on you/);
+    expect(armyProblem(1,a.id,'station',home)).toBeNull();                  // (a region of our own: always)
+    expect(armyProblem(1,a.id,'station',theirs[0])).toMatch(/stationed only in regions of yours/);
     expect(armyProblem(1,a.id,'attack',theirs[0])).toBeNull();
     expect(armyOrder(1,a.id,'attack',theirs[0])).toBe(true);
     expect(armyProblem(1,b.id,'attack',theirs[0])).toMatch(/One army per region/);
@@ -267,19 +269,117 @@ describe('armies', () => {
   });
 });
 
+describe('armies in peace and war', () => {
+  it('are stationed in any region of their own in peace, paid the field wage there; home garrisons them for less', () => {
+    world(); const { home }=lands(1);
+    const [bx,by]=blockOf(N(1).capTile), other=regionAt(bx,by+1); cedeRegion(other,1); census();
+    const a=army(1,10,home);
+    expect(armyOrder(1,a.id,'station',other)).toBe(true);
+    until(() => a.mode===A_HOLD, 3000);
+    expect(region[(((a.y/2)|0)*TW+((a.x/2)|0))]).toBe(other);
+    const man=W.humans.find(h => h.war===a.id)!; expect(wageOf(man)).toBe(WAGE);
+    armyOrder(1,a.id,'return'); until(() => a.mode===A_HOME, 3000);
+    expect(wageOf(man)).toBe(WAGE_IDLE);
+  });
+
+  it('bring a flag down in 30 seconds sitting in the region, whatever their size; the owner raises it again as fast', () => {
+    for (const k of [5, 40]){
+      world(); const { home, theirs }=lands(1);
+      const a=army(1,k,home);
+      war(1,2,theirs);
+      armyOrder(1,a.id,'attack',theirs[0]);
+      until(() => a.mode===A_HOLD, 3000);
+      const t=until(() => W.rOcc[theirs[0]]===1 || W.rOwner[theirs[0]]===1, CAPTURE_TICKS*2);   // (the only claim taken: the war is won, the region handed over at once)
+      expect(t).toBeGreaterThan(CAPTURE_TICKS*0.9); expect(t).toBeLessThan(CAPTURE_TICKS*1.1);
+    }
+  });
+
+  it('attack two border regions at once with two armies, each beside ground we hold', () => {
+    world(); const [bx,by]=blockOf(N(1).capTile), home=regionAt(bx,by); cedeRegion(home,1);
+    const e=regionAt(bx+1,by), s2=regionAt(bx,by+1);
+    for (const r of [e,s2]){ if (region[N(2).capTile]===r) return; cedeRegion(r,2); }
+    census();
+    const a=army(1,10,home), b=army(1,10,home,-3);
+    war(1,2,[e]); expect(setClaims(1,2,[e,s2])).toBe(true);   // (the crisis claims a chain; at war, any region of theirs may be added)
+    expect(armyOrder(1,a.id,'attack',e)).toBe(true);
+    expect(armyOrder(1,b.id,'attack',s2)).toBe(true);
+    until(() => W.rOcc[e]===1 && W.rOcc[s2]===1 || !W.wars[1*M()+2], CAPTURE_TICKS*4);
+    expect(W.rOwner[e]).toBe(1); expect(W.rOwner[s2]).toBe(1);   // (both taken: the war is won)
+  });
+
+  it('fight with the whole front rank at once, every man one on one, the wider army\'s spare men round the flank', () => {
+    world(); const { home, theirs }=lands(1);
+    const a=army(1,60,home), d=army(2,20,theirs[0]);
+    war(1,2,theirs);
+    armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => a.mode===A_BATTLE, 4000);
+    run(40);
+    let most=0;
+    for (let i=0;i<60;i++){ tick(); const n=W.humans.filter(h => h.hp>0 && partner(h)).length/2; most=Math.max(most,n); }
+    expect(most).toBeGreaterThanOrEqual(Math.min(a.files.length,d.men)-2);   // (as many duels as the wider front can find men for, bar a man or two still stepping up)
+    expect(most).toBeGreaterThan(d.files.length);                              // (more than the narrow front alone: its rear ranks are flanked)
+  });
+
+  it('roll a die for each line every 3 seconds: 1 is -20%, 3 even, 6 is +20%', () => {
+    expect(diceFactor(1)).toBeCloseTo(0.8); expect(diceFactor(3)).toBe(1); expect(diceFactor(6)).toBeCloseTo(1.2); expect(diceFactor(2)).toBeCloseTo(0.9);
+    world(); const { home, theirs }=lands(1);
+    const a=army(1,20,home), d=army(2,20,theirs[0]);
+    war(1,2,theirs);
+    const rolls: { id: number; t: number; r: number }[]=[];
+    listen({ battleRoll: (_o,id,r) => rolls.push({ id, t:W.tickN, r }) });
+    armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => a.mode===A_BATTLE, 4000);
+    run(ROLL_TICKS*6);
+    listen({ battleRoll: () => {} });
+    const mine=rolls.filter(r => r.id===a.id), theirsR=rolls.filter(r => r.id===d.id);
+    expect(mine.length).toBeGreaterThanOrEqual(5); expect(theirsR.length).toBeGreaterThanOrEqual(5);
+    for (let i=1;i<mine.length;i++) expect(mine[i].t-mine[i-1].t).toBe(ROLL_TICKS);
+    expect(rolls.every(r => r.r>=1 && r.r<=6)).toBe(true);
+  });
+});
+
 describe('peace', () => {
-  it('gives the attacker the claimed regions it occupies; the rest are free again', () => {
+  it('white peace: every occupied region is free again, nothing changes hands', () => {
     world(); const { home, theirs }=lands(2);
     const a=army(1,16,home);
     war(1,2,theirs);
     armyOrder(1,a.id,'attack',theirs[0]);
     until(() => W.rOcc[theirs[0]]===1, CAPTURE_TICKS*4);
-    offerPeace(2,1); makePeace(1,2);
+    offerPeace(2,1); expect(acceptPeace(1,2)).toBe(true);
     expect(W.wars[1*M()+2]).toBe(0);
-    expect(W.rOwner[theirs[0]]).toBe(1);
-    expect(W.rOwner[theirs[1]]).toBe(2);
-    expect(W.rOcc[theirs[1]]).toBe(0);
+    expect(theirs.every(r => W.rOwner[r]===2 && !W.rOcc[r])).toBe(true);
     run(5); expect([A_MARCH, A_HOME]).toContain(armyOf(a.id)!.mode);   // (going home)
+  });
+
+  it('war goals: the attacker gets every region it claims, taken or not; demanded and accepted, or given by the defender', () => {
+    world(); const { theirs }=lands(2);
+    war(1,2,theirs);
+    offerPeace(1,2,P_GOALS); expect(W.offerKind[1*M()+2]).toBe(P_GOALS);
+    expect(acceptPeace(2,1)).toBe(true);
+    expect(theirs.every(r => W.rOwner[r]===1)).toBe(true);
+    // given straight away by the defender
+    world(); const l2=lands(2);
+    war(1,2,l2.theirs);
+    expect(giveGoals(2,1)).toBe(true);
+    expect(W.wars[1*M()+2]).toBe(0);
+    expect(l2.theirs.every(r => W.rOwner[r]===1)).toBe(true);
+  });
+
+  it('at war the attacker claims more (any region of theirs) or lets claims go, down to one; an occupied region let go is free again', () => {
+    world(); const { home, theirs }=lands(3);
+    const a=army(1,16,home);
+    war(1,2,[theirs[0]]);
+    const far=RG.adj[theirs[2]].find(r => W.rOwner[r]!==1 && r!==theirs[1] && r!==theirs[0])!;
+    cedeRegion(far,2);
+    expect(claimsProblem(1,2,[])).toMatch(/at least one/);
+    expect(claimsProblem(2,1,[home])).toMatch(/attacker/);
+    expect(setClaims(1,2,[theirs[0],theirs[1],far])).toBe(true);   // (far: not beside anything we hold, still claimable)
+    expect(claimsOf(1,2)).toEqual([theirs[0],theirs[1],far]);
+    armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => W.rOcc[theirs[0]]===1, CAPTURE_TICKS*4);
+    expect(setClaims(1,2,[theirs[1]])).toBe(true);
+    expect(W.rOcc[theirs[0]]).toBe(0);
+    expect(W.wars[1*M()+2]).toBe(1);
   });
 
   it('a kingdom whose castle region is won falls to the winner', () => {

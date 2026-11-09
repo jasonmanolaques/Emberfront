@@ -111,6 +111,8 @@ export interface Army {
   trail: number[];                   // marching: where the head of the column has been, newest first (pixels, x,y pairs): the ranks behind follow it
   stuck: number;                     // marching: ticks without getting nearer the next waypoint (a way is looked for again after a while)
   near: number;                      // marching: the least distance to the next waypoint so far
+  roll: number;                      // in a battle: the die its line rolled last (1 to 6, 3 even), 0 none
+  rollAt: number;                    // tick of that roll
 }
 export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; isle?: number; seed?: number; }   // gold still to spend on this front (isle: a colony's, spent on that island's land only)
 /** A ship at sea (sim/naval.ts): sailing out, waiting off a coast, or sailing home to its naval base. */
@@ -156,13 +158,15 @@ export type Command =
   | { type: 'ally'; nation: number; target: number }                  // propose an alliance
   | { type: 'claim'; nation: number; target: number; regions: number[] }   // a crisis: claims on these regions of target's, which it may give up or fight for
   | { type: 'answer'; nation: number; target: number; accept: boolean }  // the answer to target's claims on us: give them up, or war
-  | { type: 'endWar'; nation: number; target: number }                // offer peace
+  | { type: 'endWar'; nation: number; target: number; kind?: 'white' | 'goals' }   // offer peace: white, or (the attacker) demand the war goals
+  | { type: 'giveGoals'; nation: number; target: number }            // the defender gives the attacker its war goals: peace
+  | { type: 'claims'; nation: number; target: number; regions: number[] }   // at war, the attacker's claims made anew (added to, or down to one)
   | { type: 'peace'; nation: number; target: number }                 // accept the target's peace offer
   | { type: 'research'; nation: number; topic: number }               // study this topic next (R_* in research.ts)
   | { type: 'deescalate'; nation: number; target: number }            // withdraw our claims on target before it answers
   | { type: 'merge'; nation: number; a: number; b: number }   // army b (a barracks' key) joins army a's order group; a leads and gives it its name
   | { type: 'unmerge'; nation: number; key: number }          // army key's order group is dissolved
-  | { type: 'army'; nation: number; army: number; order: 'attack' | 'defend' | 'return' | 'retreat'; region?: number };   // an order to an army (by id)
+  | { type: 'army'; nation: number; army: number; order: 'attack' | 'defend' | 'station' | 'return' | 'retreat'; region?: number };   // an order to an army (by id): 'station' and 'defend' are one order (to a region of its own)
 
 export let elev = new Float32Array(NT), moist = new Float32Array(NT);
 // resources: at most one per tile (R_* in resources.ts), harvests left, claimed by a villager
@@ -209,6 +213,7 @@ export const W = {
   atWar: new Uint8Array(1),          // [a*M+b] 1 while any campaign runs between them, rebuilt each tick
   grudge: new Int32Array(1),         // [a*M+b] tick b last went to war against a
   offers: new Int32Array(1),         // [a*M+b] tick a offered b peace (0 = none)
+  offerKind: new Uint8Array(1),      // [a*M+b] what a offered: P_WHITE (white peace) or P_GOALS (the claimed regions to the attacker) (sim/war.ts)
   wars: new Uint8Array(1),           // [a*M+b] 1 while a and b are at war: from the first attack until peace, whatever the armies do
   aggr: new Uint8Array(1),           // [a*M+b] a has massed an attack on b's border: a crisis until a attacks (then a war), or calls it off
   warSince: new Int32Array(1),       // [a*M+b] tick that war began

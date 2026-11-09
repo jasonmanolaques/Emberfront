@@ -129,7 +129,12 @@ listen({
     else if (why==='done'){ log(`Your army has no border left with ${nm(d)} on that front: it is unassigned, back at its barracks`,'good'); toast('An army finished its front'); }
   },
   armyGone: (a,d,why) => { if (a===PLAYER && why==='lost') log(`Your army in ${nm(d)} has been wiped out`,'bad'); },
-  peaceOffered: (from,to) => { if (to===PLAYER){ log(`${nm(from)} offers peace: click the war at the top to accept`,'good'); toast(`${nm(from)} offers peace`); } },
+  peaceOffered: (from,to) => {
+    if (to!==PLAYER) return;
+    if (W.offerKind[from*W.M+to]===2){ log(`${nm(from)} demands its war goals: give them up from the war bar, or fight on`,'bad'); toast(`${nm(from)} demands its war goals`); }
+    else { log(`${nm(from)} offers white peace: accept it from the war bar`,'good'); toast(`${nm(from)} offers white peace`); }
+  },
+  claimsChanged: (a,d) => { const regs=claimsOf(a,d).map(regionName).join(', '); if (a===PLAYER) log(`Your war goals against ${nm(d)}: ${regs}`); else if (d===PLAYER){ log(`${nm(a)} now claims ${regs}`,'bad'); toast(`${nm(a)} claims more`); } },
   peaceRefused: (from,to) => { if (from===PLAYER) toast(`${nm(to)} refuses peace: they think they can win`); },
   peaceMade: (a,b) => { if (a===PLAYER || b===PLAYER) log(`Peace with ${nm(a===PLAYER?b:a)}`,'good'); else log(`${nm(a)} and ${nm(b)} make peace`); },
   allied: (a,b) => { if (a===PLAYER || b===PLAYER){ const o=a===PLAYER?b:a; log(`${nm(o)} is now your ally: your soldiers may cross each other's land`,'good'); toast(`Alliance with ${nm(o)}`); } },

@@ -52,12 +52,14 @@ export interface SimEvents {
   armyOrdered(o: number, id: number, order: string, r: number): void;   // army id of o was sent: 'attack', 'defend' or 'retreat' to region r
   armyLost(o: number, id: number, r: number): void;            // army id of o has nobody left standing in the field
   battle(a: number, b: number, x: number, y: number): void;    // armies of a and b met in battle at (x,y)
-  warWon(a: number, d: number): void;                          // a holds every region it claimed of d's   // an unpaid soldier of tier `tier` went back to work; his armour scrapped for `gold`
+  warWon(a: number, d: number): void;                          // a holds every region it claimed of d's
+  claimsChanged(a: number, d: number): void;                   // at war, a changed its claims on d
+  battleRoll(o: number, id: number, roll: number): void;       // the line of army id of o rolled its die (1 to 6)   // an unpaid soldier of tier `tier` went back to work; his armour scrapped for `gold`
 }
 
 const noop = () => {};
 export const on: SimEvents = {
-  regionChanged: noop, regionTaken: noop, claimsAnswered: noop, armyOrdered: noop, armyLost: noop, battle: noop, warWon: noop,
+  regionChanged: noop, claimsChanged: noop, battleRoll: noop, regionTaken: noop, claimsAnswered: noop, armyOrdered: noop, armyLost: noop, battle: noop, warWon: noop,
   tileChanged: noop, plotChanged: noop, roadBuilt: noop, plotIgnited: noop,
   buildingPlaced: noop, capitalFell: noop, eliminated: noop, roleChanged: noop,
   towerShot: noop, produced: noop,

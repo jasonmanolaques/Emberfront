@@ -12,7 +12,7 @@ export const client = {
   placing: 0,            // building type being placed from the buildings panel, 0 when not placing
   selected: -1,          // the army (its id) the player has in hand
   settling: 0,           // a naval settlement is chosen (1; 0 when not choosing): the next click on land picks where the ship lands
-  claiming: null as null | { target: number; regions: number[] },   // picking regions of `target`'s to claim (ui/diplomacy.ts)
+  claiming: null as null | { target: number; regions: number[]; war?: boolean },   // picking regions of `target`'s to claim (ui/diplomacy.ts)
   mapIndex: 0,           // which of MAPS (game.ts) is being played
   me: '',                // the country the player chose (core/countries.ts code)
   placement: 'real' as 'real' | 'random' | 'near',   // where the rivals are founded on a real map: at their capitals, at random, or at random but near each other

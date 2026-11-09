@@ -39,8 +39,8 @@ export function armyStatus(x: import('../sim/state').Army){
   if (x.mode===A_BATTLE) return `${men} · in battle${r ? ` for ${r}` : ''}`;
   if (x.order===O_RETURN) return `${men} · going home`;
   if (x.order===O_RETREAT) return `${men} · retreating to ${r}`;
-  if (x.mode===A_MARCH) return `${men} · marching to ${x.order===O_ATTACK ? 'attack' : x.order===O_DEFEND ? 'defend' : ''} ${r}`;
-  if (x.mode===A_HOLD) return x.order===O_ATTACK ? `${men} · lowering the flag of ${r}` : x.order===O_DEFEND ? `${men} · holding ${r}` : `${men} · waiting for orders`;
+  if (x.mode===A_MARCH) return `${men} · marching to ${x.order===O_ATTACK ? 'attack ' : x.order===O_DEFEND && x.enemy ? 'defend ' : ''}${r}`;
+  if (x.mode===A_HOLD) return x.order===O_ATTACK ? `${men} · lowering the flag of ${r}` : x.order===O_DEFEND ? `${men} · ${x.enemy ? 'holding' : 'stationed in'} ${r}` : `${men} · waiting for orders`;
   return men;
 }
 const pieces = (n: number[]) => [3,2].filter(t => n[t]).map(t => `${n[t]} ${TIER_NAME[t]}`).join(' · ') || 'none';

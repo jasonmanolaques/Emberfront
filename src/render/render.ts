@@ -335,7 +335,8 @@ function drawClaims(now: number, vx0: number, vy0: number, vx1: number, vy1: num
   const hr=hover.tile>=0 ? region[hover.tile] : 0;
   const can=(r: number) => !C.regions.includes(r) && !claimProblem(PLAYER,C.target,[...C.regions,r]);
   const next=new Set<number>();
-  if (C.regions.length) for (const p of C.regions) for (const q of RG.adj[p]) { if (can(q)) next.add(q); }
+  if (C.war){ for (let r=1;r<RG.n;r++) if (W.rOwner[r]===C.target && !C.regions.includes(r)) next.add(r); }   // (at war: any region of theirs)
+  else if (C.regions.length) for (const p of C.regions) for (const q of RG.adj[p]) { if (can(q)) next.add(q); }
   else for (let r=1;r<RG.n;r++) if (W.rOwner[r]===C.target && can(r)) next.add(r);
   for (const r of next) if (r!==hr) lightRegion(r,'#ffd23f',0.35,vx0,vy0,vx1,vy1);
   if (hr && next.has(hr)) lightRegion(hr,'#ffffff',0.8,vx0,vy0,vx1,vy1);
@@ -549,6 +550,25 @@ export function render(now: number, dt: number){
       if (sx<-60||sy<-20||sx>w+60||sy>h+20) continue;
       ctx.strokeStyle='rgba(8,14,22,.9)'; ctx.fillStyle=x.o===PLAYER ? '#ffe27a' : '#f2f5f8';
       const t=`${RANKS[rank]} · ${x.men}`; ctx.strokeText(t,sx,sy); ctx.fillText(t,sx,sy);
+    }
+  }
+  // each line in a battle shows its last roll of the die, behind its front rank
+  if (zs>=0.8){
+    const fs=Math.round(Math.max(11,Math.min(15,zs*3))*dpr);
+    for (const x of W.armies){
+      if (x.mode!==3 || !x.roll) continue;
+      const px=(x.x-x.fx*14)*K, py=(x.y-x.fy*14)*K-10, sx=(px-camX)*zoom, sy=(py-camY)*zoom;
+      if (sx<-40||sy<-40||sx>w+40||sy>h+40) continue;
+      const s2=fs*1.5, good=x.roll>3, bad=x.roll<3, pct=x.roll<=3 ? (x.roll-3)*10 : Math.round((x.roll-3)*20/3);
+      ctx.fillStyle='rgba(8,14,22,.9)'; ctx.fillRect(sx-s2/2-2*dpr,sy-s2/2-2*dpr,s2+4*dpr,s2+4*dpr);
+      ctx.fillStyle=good ? '#bfe9a0' : bad ? '#ffb0a0' : '#f2f0e6'; ctx.fillRect(sx-s2/2,sy-s2/2,s2,s2);
+      // the pips
+      ctx.fillStyle='#2a1c10'; const p=s2*0.13, o=s2*0.27;
+      const pips: [number, number][]=x.roll===1 ? [[0,0]] : x.roll===2 ? [[-1,-1],[1,1]] : x.roll===3 ? [[-1,-1],[0,0],[1,1]] : x.roll===4 ? [[-1,-1],[1,-1],[-1,1],[1,1]] : x.roll===5 ? [[-1,-1],[1,-1],[0,0],[-1,1],[1,1]] : [[-1,-1],[1,-1],[-1,0],[1,0],[-1,1],[1,1]];
+      for (const [a,b] of pips) ctx.fillRect(sx+a*o-p/2,sy+b*o-p/2,p,p);
+      ctx.font=`700 ${fs}px "Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif`; ctx.lineWidth=Math.max(2,fs*0.25); ctx.strokeStyle='rgba(8,14,22,.9)';
+      ctx.fillStyle=good ? '#bfe9a0' : bad ? '#ffb0a0' : '#f2f0e6'; const t=`${pct>0 ? '+' : ''}${pct}%`;
+      ctx.strokeText(t,sx,sy+s2*0.95); ctx.fillText(t,sx,sy+s2*0.95);
     }
   }
   // the names of the regions claimed in a crisis or war of the player's (and the one under the pointer while claiming)

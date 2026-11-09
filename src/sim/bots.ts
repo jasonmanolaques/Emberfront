@@ -7,7 +7,7 @@ import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, R_MEDICS,
 import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, anyWithin, isEnemyLand, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, standingTower, WALL_MIN, WALL_MAX } from './fort';
-import { allied, atWar, ready, endWar, refusePeace, makePeace, wantsPeace, outlook, warAge, claim, claimable, claimsOf, attackerIn, besideHeld, armyOrder, armyProblem, armyMembers, armyOf, MAX_CLAIMS, A_HOME, A_HOLD, A_BATTLE, O_ATTACK, O_DEFEND, O_NONE, O_RETREAT } from './war';
+import { allied, atWar, ready, endWar, refusePeace, acceptPeace, giveGoals, setClaims, P_GOALS, P_WHITE, wantsPeace, outlook, warAge, claim, claimable, claimsOf, attackerIn, besideHeld, armyOrder, armyProblem, armyMembers, armyOf, MAX_CLAIMS, A_HOME, A_HOLD, A_BATTLE, O_ATTACK, O_DEFEND, O_NONE, O_RETREAT } from './war';
 import { RG, flagXY } from './regions';
 import type { Army } from './state';
 
@@ -334,7 +334,7 @@ const homeMen = (x: Army) => armyMembers(x).filter(h => h.war<0 && h.hp>0).lengt
 /** An army of n's free for an order: at home with enough men, or holding in the field with nothing to do. */
 function idle(x: Army){
   if (x.mode===A_HOME) return homeMen(x)>=MIN_ARMY;
-  return x.mode===A_HOLD && (x.order===O_NONE || (x.order===O_ATTACK && W.rOcc[x.goal]===x.o));
+  return x.mode===A_HOLD && (x.order===O_NONE || (x.order===O_ATTACK && W.rOcc[x.goal]===x.o) || (x.order===O_DEFEND && !x.enemy));   // (stationed in a region of its own, with no war to defend it in)
 }
 const distTo = (x: Army, r: number) => { const [fx,fy]=flagXY(r); return Math.hypot(fx-x.x,fy-x.y); };
 /** In a fight it is losing badly, or worn down in the field with nothing to do: an army falls back, or goes home to heal. */
@@ -402,11 +402,15 @@ function botWar(n: Nation){
   // raise or stand down the army as the times demand (quickly up, slowly down)
   const want=armyShare(n), d=want-n.soldierShare;
   n.soldierShare=Math.min(1,Math.max(0,n.soldierShare+Math.max(-0.04,Math.min(0.1,d))));
+  // peace offered: white peace is taken by a defender always, by an attacker that is losing; war goals demanded by the attacker are given up by a defender that is losing badly
   for (let o=1;o<M;o++){
-    if (!W.offers[o*M+id]) continue;
-    if (wantsPeace(n,o)) makePeace(id,o); else refusePeace(o,id);
+    if (!W.offers[o*M+id] || !W.wars[id*M+o]) continue;
+    const goals=W.offerKind[o*M+id]===P_GOALS, held=heldShare(o,id);
+    const yes = goals ? outlook(n,o)<-0.6 || (held>=0.5 && outlook(n,o)<0) : attackerIn(o,id) || wantsPeace(n,o);
+    if (yes) acceptPeace(id,o); else refusePeace(o,id);
   }
   husband(id);
+  deploy(n);
   let busy=false;
   for (let o=1;o<M;o++){
     if (o===id || !W.nations[o].alive) continue;
@@ -415,9 +419,20 @@ function botWar(n: Nation){
     busy=true;
     if (attackerIn(id,o)) attackOrders(n,o); else if (attackerIn(o,id)) defendOrders(n,o);
   }
+  // ending a war (at most every 30 s): an attacker holding most of what it claimed demands it; one losing offers white peace.
+  // A defender losing badly gives the war goals up; one losing for a while offers white peace. A winning attacker may claim more.
   if (W.simTime>=n.nextOffer) for (let o=1;o<M;o++){
-    if (o===id || !atWar(id,o) || W.offers[id*M+o] || warAge(id,o)<600 || outlook(n,o)>-0.4) continue;
-    endWar(id,o); n.nextOffer=W.simTime+30;   // losing for a while: it offers peace, at most every 30 s
+    if (o===id || !atWar(id,o) || W.offers[id*M+o]) continue;
+    const look=outlook(n,o), age=warAge(id,o);
+    if (attackerIn(id,o)){
+      const held=heldShare(id,o);
+      if (held>=0.6 && look>-0.2){ endWar(id,o,P_GOALS); n.nextOffer=W.simTime+30; }
+      else if (age>=600 && look<-0.4){ endWar(id,o,P_WHITE); n.nextOffer=W.simTime+30; }
+      else if (look>0.5 && held>=0.5 && srand()<0.3){ const more=moreClaims(id,o); if (more) setClaims(id,o,[...claimsOf(id,o),more]); }
+    } else if (attackerIn(o,id)){
+      if (look<-0.9 || heldShare(o,id)>=0.75){ giveGoals(id,o); continue; }
+      if (age>=600 && look<-0.3){ endWar(id,o,P_WHITE); n.nextOffer=W.simTime+30; }
+    }
   }
   // after a war it rests a while (the bold less), so a winner digests its gains first
   const desperate=stuck(n);
@@ -438,6 +453,33 @@ function botWar(n: Nation){
   if (regs.length && claim(id,best,regs)) n.nextWar=W.simTime+120;
 }
 void O_NONE;
+/** The share of a's claims on d that a occupies. */
+function heldShare(a: number, d: number){ const regs=claimsOf(a,d); return regs.length ? regs.filter(r => W.rOcc[r]===a).length/regs.length : 0; }
+/** One more region of d's for a winning attacker a to claim: beside its claims or ground it holds; 0 if none (or it claims 6 already). */
+function moreClaims(a: number, d: number){
+  const regs=claimsOf(a,d); if (regs.length>=6) return 0;
+  for (const r of regs) for (const q of RG.adj[r]) if (W.rOwner[q]===d && !regs.includes(q)) return q;
+  return 0;
+}
+/** In peace a bot with two armies or more stations those beyond the first in its regions on the border with the strongest neighbour, a region each, for a quick answer
+    to a war there (they march in as a second wave when a region beside them is attacked). */
+function deploy(n: Nation){
+  const id=n.id, M=W.M;
+  if (W.tickN%150!==(id*7)%150) return;
+  for (let o=1;o<M;o++) if (W.wars[id*M+o]) return;
+  const home=W.armies.filter(x => x.o===id && x.mode===A_HOME && homeMen(x)>=MIN_ARMY).sort((a,b) => a.id-b.id);
+  const all=W.armies.filter(x => x.o===id).length; if (all<2 || !home.length) return;
+  if (home.length===all) home.shift();   // (one stays at home)
+  // the neighbour to watch: the strongest kingdom with a region beside one of ours
+  let foe=0, fs=-1;
+  for (let o=1;o<M;o++){ const D=W.nations[o]; if (o===id || !D.alive || allied(id,o) || !W.contact[id*M+o]) continue; if (D.strength>fs){ fs=D.strength; foe=o; } }
+  if (!foe) return;
+  const border: number[]=[]; for (let r=1;r<RG.n;r++) if (W.rOwner[r]===id && RG.adj[r].some(q => W.rOwner[q]===foe)) border.push(r);
+  for (const x of home){
+    const r=border.find(r => !armyProblem(id,x.id,'station',r)); if (!r) return;
+    armyOrder(id,x.id,'station',r);
+  }
+}
 
 import { botSea } from './botsea';
 export function botThink(n: Nation){

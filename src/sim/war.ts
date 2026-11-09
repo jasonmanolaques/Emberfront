@@ -44,8 +44,11 @@ export const A_HOME = 0, A_MARCH = 1, A_HOLD = 2, A_BATTLE = 3;   // an army: at
 export const O_NONE = 0, O_ATTACK = 1, O_DEFEND = 2, O_RETURN = 3, O_RETREAT = 4;
 export const CRISIS_TICKS = 30*GAME_SPEED*10;     // the defender's time to answer claims: 30 s on the clock, then it is war
 const BOT_ANSWER = 4*GAME_SPEED*10;               // a bot answers within 4 s
-export const CAPTURE_TICKS = 40*GAME_SPEED*10;    // an army of CAPTURE_MEN lowers a flag in 40 s on the clock (more men faster, at most twice)
-export const CAPTURE_MEN = 16;
+export const CAPTURE_TICKS = 30*GAME_SPEED*10;    // an invader sitting alone in a region brings its flag down in 30 s on the clock; its owner's army raises it as fast
+export const ROLL_TICKS = 3*GAME_SPEED*10;        // every 3 s on the clock each side of a battle rolls a die for its line
+export const ROLL_MOD = 0.2;                      // a 6 is +20% to the blows of its line, a 1 is -20%, a 3 even
+export const BATTLE_DMG = 2;                      // blows in a battle line land twice as hard as a soldier's blow elsewhere: a line fight is brutal
+export const P_WHITE = 1, P_GOALS = 2;            // peace offers: white peace (all back as it was), or the war goals (the claimed regions to the attacker)
 export const MAX_CLAIMS = 4;                      // regions one crisis may claim
 export const OFFER_TICKS = 300;                   // a peace offer stands 30 s
 export const MAX_ALLIES = 3;
@@ -56,7 +59,6 @@ const HOLD_FILES = 14;                            // a phalanx standing or fight
 const MARCH_GAP = 2.4;                            // pixels between the files of a marching column
 const ENGAGE_R = 26;                              // pixels between two hostile armies' front ranks at which they fight
 const GAP = 2.2;                                  // pixels between the two front ranks in a fight
-const FLAG_R = 16;                                // pixels from its flag an army holds a region
 export const ARMY_SP = 6;                         // pixels a second an army marches (on open ground)
 const SAFE_TICKS = 40*GAME_SPEED*10;              // an army retreating or going home is let go for 40 s
 const HEAL_TICKS = 30*GAME_SPEED*10;              // a wounded soldier at his barracks is whole again in 30 s
@@ -81,7 +83,7 @@ export const warringNow = (o: number) => warring[o]===1;
 
 export function resetWar(M: number){
   const MM=M*M;
-  W.ally=new Uint8Array(MM); W.atWar=new Uint8Array(MM); W.grudge=new Int32Array(MM).fill(-1e9); W.offers=new Int32Array(MM);
+  W.ally=new Uint8Array(MM); W.atWar=new Uint8Array(MM); W.grudge=new Int32Array(MM).fill(-1e9); W.offers=new Int32Array(MM); W.offerKind=new Uint8Array(MM);
   W.wars=new Uint8Array(MM); W.aggr=new Uint8Array(MM); W.warSince=new Int32Array(MM); W.occCount=new Int32Array(MM); W.lost=new Uint8Array(MM); W.ready=new Int32Array(MM);
   W.siege=new Int32Array(M); W.siegeBy=new Uint8Array(M); W.offensive=new Uint8Array(MM); W.kills=new Int32Array(MM); W.stall=new Int32Array(MM); W.lastNet=new Int32Array(MM); W.crisisAt=new Int32Array(MM);
   W.occIsle=new Map(); W.armies=[]; W.claims=new Map();
@@ -183,35 +185,67 @@ export function claimable(a: number, d: number){
 }
 
 /* ---------- peace and alliances ---------- */
-/** Kingdom `from` asks `to` for peace. Bots answer when they next think; the player from the war chip. */
-export function offerPeace(from: number, to: number){
-  if (!W.wars[from*W.M+to] || W.offers[from*W.M+to]) return;
-  W.offers[from*W.M+to]=W.tickN; on.peaceOffered(from,to);
+/** Kingdom `from` offers `to` peace: white peace (P_WHITE), or (the attacker) its war goals (P_GOALS). Bots answer when they next think; the player from the war bar. */
+export function offerPeace(from: number, to: number, kind=P_WHITE){
+  const M=W.M; if (!W.wars[from*M+to]) return;
+  if (kind===P_GOALS && !attackerIn(from,to)) kind=P_WHITE;
+  if (W.offers[from*M+to] && W.offerKind[from*M+to]===kind) return;
+  W.offers[from*M+to]=Math.max(1,W.tickN); W.offerKind[from*M+to]=kind; on.peaceOffered(from,to);
 }
-export function refusePeace(from: number, to: number){ W.offers[from*W.M+to]=0; on.peaceRefused(from,to); }
-/** Peace between a and b: what the attacker occupies of its claims is its; the rest is free again. Their armies go home. */
-export function makePeace(a: number, b: number){
+export function refusePeace(from: number, to: number){ W.offers[from*W.M+to]=0; W.offerKind[from*W.M+to]=0; on.peaceRefused(from,to); }
+/** `to` accepts the peace `from` offered (white peace, or the war goals). */
+export function acceptPeace(to: number, from: number){
+  const M=W.M; if (!W.wars[from*M+to] || !W.offers[from*M+to]) return false;
+  makePeace(from,to,W.offerKind[from*M+to]===P_GOALS);
+  return true;
+}
+/** The defender d gives the attacker a its war goals: the claimed regions are a's, and it is peace. */
+export function giveGoals(d: number, a: number){
+  if (!attackerIn(a,d)) return false;
+  makePeace(a,d,true); return true;
+}
+/** Peace between a and b. With `goals`, the attacker gets every region it claimed (a kingdom whose castle region is among them falls to it);
+    otherwise it is a white peace: every occupied region is free again and nothing changes hands. Their armies go home. */
+export function makePeace(a: number, b: number, goals=false){
   const M=W.M;
   for (const [x,y] of [[a,b],[b,a]]){
     const regs=W.claims.get(x*M+y); if (!regs) continue;
     W.claims.delete(x*M+y);
-    const won=regs.filter(r => W.rOcc[r]===x && W.rOwner[r]===y);
-    for (const r of regs) if (W.rOcc[r] && !won.includes(r)) freeRegion(r);
-    const Y=W.nations[y];
+    for (const r of regs) if (W.rOcc[r]) freeRegion(r);
+    if (!goals) continue;
+    const won=regs.filter(r => W.rOwner[r]===y), Y=W.nations[y];
     if (Y.alive && Y.capTile>=0 && won.includes(region[Y.capTile])){ endWarState(a,b); annex(y,x); on.peaceMade(a,b); return; }
     for (const r of won) cedeRegion(r,x);
   }
+  for (let r=1;r<RG.n;r++) if ((W.rOcc[r]===a && W.rOwner[r]===b) || (W.rOcc[r]===b && W.rOwner[r]===a)) freeRegion(r);
   endWarState(a,b);
   on.peaceMade(a,b);
 }
 function endWarState(a: number, b: number){
   const M=W.M;
-  for (const i of [a*M+b, b*M+a]){ W.offers[i]=0; W.atWar[i]=0; W.wars[i]=0; W.aggr[i]=0; W.stall[i]=0; W.lost[i]=0; W.ready[i]=0; }
+  for (const i of [a*M+b, b*M+a]){ W.offers[i]=0; W.offerKind[i]=0; W.atWar[i]=0; W.wars[i]=0; W.aggr[i]=0; W.stall[i]=0; W.lost[i]=0; W.ready[i]=0; }
   for (const x of W.armies) if ((x.o===a && x.enemy===b) || (x.o===b && x.enemy===a)) sendHome(x);
   for (const o of [a,b]){ let any=0; for (let k=1;k<M;k++) if (W.wars[o*M+k]) any=1; warring[o]=any; }
 }
+/** At war, the attacker a's claims on d made anew: any regions d controls, at least one (an occupied one let go is free again). Why not, or null. */
+export function claimsProblem(a: number, d: number, regions: number[]): string | null {
+  if (!attackerIn(a,d)) return 'Only the attacker in a war can change its claims';
+  if (!regions.length) return 'Keep at least one claim: the war needs one';
+  if (new Set(regions).size!==regions.length) return 'A region is picked twice';
+  for (const r of regions) if (!r || r>=RG.n || W.rOwner[r]!==d) return 'Only regions they control can be claimed';
+  return null;
+}
+export function setClaims(a: number, d: number, regions: number[]){
+  if (claimsProblem(a,d,regions)) return false;
+  for (const r of claimsOf(a,d)) if (!regions.includes(r) && W.rOcc[r]===a) freeRegion(r);
+  W.claims.set(a*W.M+d,regions.slice()); layRoads(regions);
+  W.offers[a*W.M+d]=0; W.offers[d*W.M+a]=0;   // (the terms changed: offers made are off)
+  on.claimsChanged(a,d);
+  checkVictory(a,d);
+  return true;
+}
 /** n wants the fighting with t to end: a war gets a peace offer. */
-export function endWar(n: number, t: number){ if (W.wars[n*W.M+t]) offerPeace(n,t); }
+export function endWar(n: number, t: number, kind=P_WHITE){ if (W.wars[n*W.M+t]) offerPeace(n,t,kind); }
 /** Men of o's armies out against `vs` (or all of them in the field). */
 export function menAgainst(o: number, vs?: number){ let k=0; for (const a of W.armies) if (a.o===o && a.mode!==A_HOME && (vs===undefined || a.enemy===vs)) k+=a.men; return k; }
 /** How the fighting with o is going for n: above 0 winning, below 0 losing. */
@@ -316,7 +350,7 @@ function syncArmies(){
       let x: Army | undefined;
       for (const q of u.plots){ const y=byPlot.get(q); if (y && !seen.has(y) && y.o===n.id){ x=y; break; } }
       if (!x) for (const q of plots){ const y=byPlot.get(q); if (y && !seen.has(y) && y.o===n.id){ x=y; break; } }
-      if (!x){ x={ id:u.key, o:n.id, plots, x:u.x, y:u.y+4, fx:0, fy:1, mode:A_HOME, order:O_NONE, goal:0, enemy:0, path:[], foe:-1, files:[], men:0, safe:0, stand:false, hitAt:-1e9, leader:-1, trail:[], stuck:0, near:Infinity }; }
+      if (!x){ x={ id:u.key, o:n.id, plots, x:u.x, y:u.y+4, fx:0, fy:1, mode:A_HOME, order:O_NONE, goal:0, enemy:0, path:[], foe:-1, files:[], men:0, safe:0, stand:false, hitAt:-1e9, leader:-1, trail:[], stuck:0, near:Infinity, roll:0, rollAt:0 }; }
       if (W.armies.some(y => y!==x && y.id===x!.id && seen.has(y))) x.id=u.key;   // (two with one name: the new one takes its lead's)
       x.plots=plots; seen.add(x); keep.push(x);
     }
@@ -417,7 +451,7 @@ function walk(h: Human, gx: number, gy: number, quick=1){
 /** Why army `id` of kingdom o can't take this order, or null. */
 export function armyProblem(o: number, id: number, order: string, r=0): string | null {
   const x=armyById.get(id); if (!x || x.o!==o) return 'That army is gone';
-  if (order==='return'){ if (x.mode===A_HOME) return 'It is at home'; return null; }
+  if (order==='return'){ if (x.mode===A_HOME && !x.men) return 'It is at home'; return null; }
   if (order==='retreat'){ if (x.mode===A_HOME) return 'It is at home'; if (x.order===O_RETREAT) return 'It is retreating'; return null; }
   if (x.mode===A_BATTLE) return 'It is fighting: it can only retreat or go home';
   if (x.mode===A_HOME && !membersOf(x).some(fit)) return 'Nobody of it is at home';
@@ -428,13 +462,11 @@ export function armyProblem(o: number, id: number, order: string, r=0): string |
     if (!d || !W.wars[o*M+d] || !claimsOf(o,d).includes(r)) return 'Only the regions you claimed in a war can be attacked';
     if (W.rOcc[r]===o) return 'You hold it already';
     if (!besideHeld(o,r)) return 'Take the claimed region before it first: it must border ground you hold';
-
     return null;
   }
-  if (order==='defend'){
-    if (d!==o) return 'Only your own regions can be defended';
-    let claimed=false; for (let a=1;a<M;a++) if (W.wars[a*M+o] && claimsOf(a,o).includes(r)) claimed=true;
-    if (!claimed) return 'Only regions claimed in a war on you can be defended';
+  if (order==='defend' || order==='station'){
+    if (!d) return 'Nobody holds that region: armies are stationed in regions of yours (or your allies\')';
+    if (d!==o && !allied(o,d)) return 'Armies are stationed only in regions of yours (or your allies\')';
     return null;
   }
   return 'Unknown order';
@@ -448,9 +480,9 @@ export function armyOrder(o: number, id: number, order: string, r=0){
   const M=W.M, d=W.rOwner[r];
   let enemy=0;
   if (order==='attack') enemy=d;
-  else for (let a=1;a<M;a++) if (W.wars[a*M+o] && claimsOf(a,o).includes(r)){ enemy=a; break; }
+  else for (let a=1;a<M;a++) if (W.wars[a*M+d] && claimsOf(a,d).includes(r)){ enemy=a; break; }
   sendOut(x,r,order==='attack' ? O_ATTACK : O_DEFEND,enemy);
-  on.armyOrdered(o,x.id,order,r);
+  on.armyOrdered(o,x.id,order==='attack' ? 'attack' : 'defend',r);
   return true;
 }
 /** x marches for region r's flag. */
@@ -619,7 +651,7 @@ function engage(){
     if (!best) continue;
     const y=best;
     x.stand=x.mode===A_HOLD; y.stand=y.mode===A_HOLD;
-    x.mode=y.mode=A_BATTLE; x.foe=y.id; y.foe=x.id;
+    x.mode=y.mode=A_BATTLE; x.foe=y.id; y.foe=x.id; x.roll=y.roll=0;   // (each line rolls its first die as the fight begins)
     on.battle(x.o,y.o,(x.x+y.x)/2,(x.y+y.y)/2);
   }
 }
@@ -633,18 +665,25 @@ function fight(x: Army, y: Army){
   if (x.stand && !y.stand) close(y,x.x+dx*GAP,x.y+dy*GAP);
   else if (y.stand && !x.stand) close(x,y.x-dx*GAP,y.y-dy*GAP);
   else { const mx=(x.x+y.x)/2, my=(x.y+y.y)/2; close(x,mx-dx*GAP/2,my-dy*GAP/2); close(y,mx+dx*GAP/2,my+dy*GAP/2); }
-  // the front ranks: each man faces the one opposite him (lined up across, from the middle out)
+  // every 3 s each line rolls its die
+  for (const m of [x,y]) if (!m.roll || W.tickN-m.rollAt>=ROLL_TICKS){ m.roll=1+((W.prand()*6)|0); m.rollAt=W.tickN; on.battleRoll(m.o,m.id,m.roll); }
+  // the front ranks: each man faces the one opposite him (lined up across, from the middle out); a man of the wider front with nobody
+  // opposite goes for the nearest enemy nobody is fighting yet (round the flank, the ranks behind): the whole line fights, each man one on one
   const rx=-dy, ry=dx;
   const front=(m: Army) => { const out: { h: Human; s: number }[]=[]; for (const f of m.files){ const h=byId.get(f[0]); if (h) out.push({ h, s:(h.x-x.x)*rx+(h.y-x.y)*ry }); } return out.sort((p,q) => p.s-q.s); };
-  const fa=front(x), fb=front(y), off=(fa.length-fb.length)/2;
+  const fa=front(x), fb=front(y), off=(fa.length-fb.length)/2, taken=new Set<number>(), spare: Human[]=[];
   for (let i=0;i<fa.length;i++){
     const j=Math.round(i-off), h=fa[i].h, e=j>=0 && j<fb.length ? fb[j].h : undefined;
-    if (!e){ const k=x.files.findIndex(f => f[0]===h.id); const [sx,sy]=slotOf(x,k,0); walk(h,sx,sy); continue; }
-    duelStep(h,e);
+    if (e){ taken.add(e.id); taken.add(h.id); duelStep(h,e); } else spare.push(h);
   }
-  for (let j=0;j<fb.length;j++){
-    const i=Math.round(j+off); if (i>=0 && i<fa.length) continue;
-    const h=fb[j].h, k=y.files.findIndex(f => f[0]===h.id); const [sx,sy]=slotOf(y,k,0); walk(h,sx,sy);
+  for (let j=0;j<fb.length;j++){ const h=fb[j].h; if (!taken.has(h.id)) spare.push(h); }
+  for (const h of spare){
+    const foe=h.o===x.o ? y : x, own=h.o===x.o ? x : y;
+    const p=partner(h);
+    let e: Human | undefined=p && !taken.has(p.id) ? p : undefined;
+    if (!e){ let bd=Infinity; for (const f of foe.files) for (const id of f){ if (taken.has(id)) continue; const c=byId.get(id); if (!c || c.hp<=0 || partner(c)) continue; const dd=(c.x-h.x)**2+(c.y-h.y)**2; if (dd<bd){ bd=dd; e=c; } } }
+    if (e){ taken.add(e.id); taken.add(h.id); duelStep(h,e); }
+    else { const k=own.files.findIndex(f => f[0]===h.id); const [sx,sy]=slotOf(own,k,0); walk(h,sx,sy); }
   }
 }
 /** Two men of the front ranks fight: each steps up to the other and strikes when he can reach. */
@@ -662,8 +701,7 @@ function flags(){
     if (x.mode===A_HOME || !x.men) continue;
     const r=region[tileOf(x.x,x.y)]; if (!r) continue;
     if (x.mode===A_BATTLE){ fighting.add(r); continue; }
-    if (x.mode!==A_HOLD) continue;
-    const [fx,fy]=flagXY(r); if ((fx-x.x)**2+(fy-x.y)**2>FLAG_R*FLAG_R) continue;
+    if (x.mode!==A_HOLD) continue;   // (an army sitting anywhere in the region)
     let a=at.get(r); if (!a){ a=[]; at.set(r,a); } a.push(x);
   }
   for (const [r,list] of at){
@@ -671,7 +709,7 @@ function flags(){
     const d=W.rOwner[r]; if (!d) continue;
     const own=list.filter(x => x.o===d), foes=list.filter(x => x.o!==d && W.atWar[x.o*W.M+d] && claimsOf(x.o,d).includes(r));
     if (own.length && foes.length) continue;
-    const rate=(men: number) => 5/CAPTURE_TICKS*Math.max(0.5,Math.min(2,men/CAPTURE_MEN));
+    const rate=(_men: number) => 5/CAPTURE_TICKS;
     if (foes.length){
       const a=foes[0].o; if (W.rOcc[r]===a) continue;
       let men=0; for (const x of foes) men+=x.men;
@@ -690,7 +728,7 @@ function flags(){
 function checkVictory(a: number, d: number){
   const regs=claimsOf(a,d); if (!regs.length || !regs.every(r => W.rOcc[r]===a)) return;
   on.warWon(a,d);
-  makePeace(a,d);
+  makePeace(a,d,true);
 }
 /** The second wave: a defender's army holding a claimed region, with the region beside it under attack and nobody of its own there, marches in to defend it. */
 function secondWave(){
@@ -726,6 +764,8 @@ function locked(h: Human, e: Human){
   const pe=partner(e); if (pe && pe!==h) return true;
   const ph=partner(h); return !!ph && ph!==e;
 }
+/** What a line's roll of the die does to its blows: 1 -20%, 2 -10%, 3 even, 4 +6.7%, 5 +13.3%, 6 +20%. */
+export const diceFactor = (roll: number) => 1+(roll<=3 ? (roll-3)*ROLL_MOD/2 : (roll-3)*ROLL_MOD/3);
 export function strike(h: Human, e: Human){
   if (h.cool>0 || h.beggar || h.hp<=0 || e.hp<=0) return;
   if (locked(h,e)) return;            // (a duel is one on one)
@@ -735,7 +775,9 @@ export function strike(h: Human, e: Human){
   if (W.prand()<HIT_CHANCE){
     const was=e.hp;
     const roll=1+((W.prand()*3|0)-1)*STRIKE_SWING;
-    e.hp-=(h.kind!==H_SOLDIER ? MILITIA_DMG : h.militia ? MILITIA_HIT : HIT_DMG[h.tier])*roll;
+    const line=h.war>=0 ? armyById.get(h.war) : undefined, fighting=line && line.mode===A_BATTLE;
+    const dice=fighting && line.roll ? diceFactor(line.roll) : 1;
+    e.hp-=(h.kind!==H_SOLDIER ? MILITIA_DMG : h.militia ? MILITIA_HIT : HIT_DMG[h.tier])*roll*dice*(fighting ? BATTLE_DMG : 1);
     e.by=h.o; if (was>0 && e.hp<=0){ W.kills[h.o*W.M+e.o]++; const x=e.war>=0 ? armyById.get(e.war) : undefined; if (x) x.hitAt=W.tickN; }
     on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id);
   }
