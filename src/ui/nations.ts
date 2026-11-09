@@ -3,7 +3,7 @@
    capital is on it). Click one to play it; tick the ones you will face. On a real-world map
    everyone, you included, is founded at their real capital. Quick picks choose the nearest
    capitals to yours (at random on a generated map), all of them, or none. */
-import { TW, kingdomLimit, isEurope } from '../core/constants';
+import { TW, kingdomLimit, isEurope, STANDARD_KINGDOMS } from '../core/constants';
 import { COUNTRIES, MAJOR, countryByCode } from '../core/countries';
 import { W } from '../sim/state';
 import { capitalsOn } from '../sim/realmap';
@@ -29,6 +29,10 @@ function quick(kind: string, k=0): string[] {
   const av=available().filter(a => a.country.code!==client.me);
   if (kind==='none') return [];
   if (kind==='full') return av.map(a => a.country.code).sort(() => Math.random()-0.5).slice(0,maxRivals());
+  if (kind==='standard'){   // (24 kingdoms, the rivals drawn at random: on a real map those with a capital on it first)
+    const pool=av.sort(() => Math.random()-0.5); if (real()) pool.sort((a,b) => +(b.tile>=0)-+(a.tile>=0));
+    return pool.slice(0,Math.min(STANDARD_KINGDOMS,maxKingdoms())-1).map(a => a.country.code);
+  }
   const mine=available().find(a => a.country.code===client.me);
   if (real() && mine){
     const d=(t: number) => t<0 || mine.tile<0 ? Infinity : Math.hypot(t%TW-mine.tile%TW, ((t/TW)|0)-((mine.tile/TW)|0));
@@ -37,8 +41,8 @@ function quick(kind: string, k=0): string[] {
   return av.map(a => a.country.code).sort(() => Math.random()-0.5).slice(0,k);
 }
 
-/** A new random draw of the rivals for a game (all the room the map has, out of the countries that could play: on Europe, 29 of the other 61). */
-export function randomRivals(){ return quick('full'); }
+/** A new random draw of the rivals for a standard game: 23 of the countries that could play. */
+export function randomRivals(){ return quick('standard'); }
 /** Is the choice of rivals the player's own (made in the window)? Otherwise a map with a limit draws them afresh for each game. */
 export const handPicked = () => !!client.choices[client.mapIndex]?.hand;
 
@@ -53,7 +57,7 @@ export function fitChoice(){
     client.me=pool[(Math.random()*pool.length)|0].country.code;
   }
   client.rivals=client.rivals.filter(c => codes.has(c) && c!==client.me);
-  if (!saved) client.rivals = isEurope(W.map) ? quick('full') : quick('near',9);
+  if (!saved) client.rivals = quick('standard');   // (the standard match: 24 kingdoms, on every map)
   keep();
   summary();
 }
@@ -93,7 +97,11 @@ function render(){
   for (const b of $('nPlace').querySelectorAll<HTMLButtonElement>('button')) b.setAttribute('aria-pressed',String(b.dataset.p===client.placement));
   for (const b of win.querySelectorAll<HTMLButtonElement>('.nquick button[data-k]')) b.textContent=`${real() ? 'Nearest' : 'Random'} ${b.dataset.k}`;
   const full=win.querySelector<HTMLButtonElement>('.nquick button[data-q="full"]')!, n=Math.min(maxKingdoms(), available().length);
+  full.hidden = n<=STANDARD_KINGDOMS;   // (on Europe the standard match is all the room there is)
   full.textContent = isEurope(W.map) ? `Random ${n-1}` : n<maxKingdoms() ? `All · ${n}` : `Full game · ${maxKingdoms()}`;
+  const std=win.querySelector<HTMLButtonElement>('.nquick button[data-q="standard"]')!, k=Math.min(STANDARD_KINGDOMS,n);
+  std.textContent=`Standard · ${k}`;
+  std.title=`The standard match: ${k} kingdoms, you and ${k-1} rivals drawn at random${real() ? ', founded where "Rivals start" says (at their capitals, or at random places)' : ', founded at random places'}; a fresh draw for each game unless you choose your own`;
   full.title = isEurope(W.map) ? `${n} kingdoms: you and ${n-1} rivals drawn at random from the other countries; a fresh draw for each game unless you choose your own` : `${maxKingdoms()} kingdoms: you and ${maxKingdoms()-1} rivals, at random if more countries could play`;
 }
 

@@ -44,7 +44,7 @@ function stamp(ox: number, oy: number, w: number, h: number, draw: () => void){
   for (const c of to){ const o=objectsCtx(c); o.clearRect(ox-c.x0,oy-c.y0,w,h); o.drawImage(tmp,0,0,w,h,ox-c.x0,oy-c.y0,w,h); }
 }
 
-export const MODULAR = [B_FARM, B_BARRACKS, B_TOWER, B_MINTER];
+export const MODULAR = [B_FARM, B_BARRACKS, B_TOWER];
 const N_=1, E_=2, S_=4, W_=8;
 /** Which neighbours of plot q are the same kind of building with the same owner (N/E/S/W bits). */
 function joins(q: number){
@@ -245,17 +245,31 @@ function batter(ox: number, oy: number, [gone, crack, rubble]: number[][][], soo
   for (const [x,y] of rubble){ P(ox+x,oy+y,'#8d867b'); P(ox+x+1,oy+y,'#6f695f'); P(ox+x,oy+y-1,'#a49d90'); }
 }
 
-/* ---------- coin minters ---------- */
-function drawMinter(ox: number, oy: number, n: NationStyle, m: number){
-  const x0=m&W_?0:1, x1=m&E_?16:15, w=x1-x0;
-  R(ox+x0,oy+14,w,1,SH);
-  R(ox+x0,oy+8,w,6,'#a39e94'); R(ox+x0,oy+13,w,1,'#7c776e');          // stone workshop, one long building when joined
-  for (let x=x0+((ox>>4)&1);x<x1;x+=3) P(ox+x,oy+10,'#8f8a80'); for (let x=x0+1;x<x1;x+=3) P(ox+x,oy+12,'#8f8a80');
-  R(ox+x0,oy+7,w,1,C.slateD); R(ox+x0,oy+5,w,2,C.slate); R(ox+x0,oy+4,w,1,C.slateL);   // slate roof
-  R(ox+x0+(m&W_?0:1),oy+3,w-(m&W_?0:1)-(m&E_?0:1),1,n.roof);          // ridge in the kingdom's colour
-  R(ox+4,oy+10,2,4,'#d9602a'); R(ox+4,oy+10,2,2,'#ffb24a');           // furnace mouth
-  R(ox+10,oy+9,3,3,'#ffd23f'); P(ox+11,oy+10,'#b8860b'); P(ox+10,oy+9,'#fff0a0');   // coin sign
-  if (!(m&E_)){ R(ox+12,oy,2,4,'#6e6a62'); R(ox+12,oy,2,1,'#4a4740'); }   // chimney at the east end
+/* ---------- the coin minter (2×1 plots): a stone mint house with the kingdom's treasury door, and its yard of furnace and coin press ---------- */
+function drawMinter(ox: number, oy: number, n: NationStyle){
+  const st='#b3ada2', stD='#8a8479', stL='#cfc9bd', gold='#ffd23f', goldD='#b8860b', goldL='#fff0a0';
+  R(ox+1,oy+14,30,1,SH);
+  // the mint house: dressed stone, a stepped gable, a slate roof with a ridge in the kingdom's colour
+  R(ox+1,oy+6,17,8,st); R(ox+1,oy+13,17,1,stD); R(ox+1,oy+6,1,8,stL);
+  for (let y=7;y<13;y+=2) for (let x=2+((y>>1)&1)*2;x<18;x+=4) R(ox+x,oy+y,2,1,stD);   // the coursing of the stone
+  R(ox+1,oy+5,17,1,C.slateD); R(ox+2,oy+3,15,2,C.slate); R(ox+3,oy+2,13,1,C.slateL); R(ox+4,oy+1,11,1,n.roof);
+  R(ox+1,oy+3,2,3,st); R(ox+1,oy+2,1,1,st); R(ox+16,oy+3,2,3,st); R(ox+17,oy+2,1,1,st);   // the stepped gable ends
+  // the treasury door, banded with iron, under the kingdom's banner, and two barred windows
+  R(ox+8,oy+9,4,5,'#4a3020'); R(ox+8,oy+10,4,1,'#2a2a2a'); R(ox+8,oy+12,4,1,'#2a2a2a'); P(ox+11,oy+11,gold); R(ox+7,oy+8,6,1,stD);
+  R(ox+8,oy+6,4,2,n.roof); P(ox+9,oy+6,n.roofL);
+  for (const x of [3,14]){ R(ox+x,oy+8,2,3,'#2c2622'); P(ox+x,oy+9,'#ffcf6a'); R(ox+x,oy+8,2,1,stD); }
+  // the coin over the door
+  R(ox+9,oy+3,2,2,gold); P(ox+9,oy+3,goldL); P(ox+10,oy+4,goldD);
+  // the yard: a brick furnace with its chimney
+  R(ox+19,oy+8,6,6,'#9a5a3c'); R(ox+19,oy+8,6,1,'#b8704c'); R(ox+19,oy+13,6,1,'#6e3e28');
+  for (let x=20;x<25;x+=2) P(ox+x,oy+10,'#7a4430');
+  R(ox+20,oy+11,3,3,'#2a1810');                                      // the furnace mouth (its fire is drawn live)
+  R(ox+22,oy+1,3,7,'#8a4e34'); R(ox+22,oy+1,3,1,'#5a3424'); P(ox+23,oy+3,'#6e3e28');
+  // the coin press under a timber lean-to: a frame, its screw and the bar that turns it (drawn live)
+  R(ox+25,oy+5,6,1,C.woodD); R(ox+25,oy+4,6,1,C.wood); R(ox+30,oy+5,1,9,C.woodD);
+  R(ox+26,oy+8,4,1,C.woodD); R(ox+26,oy+8,1,6,C.woodD); R(ox+29,oy+8,1,6,C.woodD); R(ox+26,oy+12,4,2,'#6f695f'); R(ox+26,oy+12,4,1,'#8d867b');
+  // a chest of new coins by the door
+  R(ox+13,oy+12,3,2,C.woodD); R(ox+13,oy+11,3,1,gold); P(ox+14,oy+11,goldL);
 }
 function drawMine(ox: number, oy: number, n: NationStyle){
   R(ox+2,oy+9,12,5,'#9a958b'); R(ox+4,oy+7,8,2,'#aca79c'); R(ox+2,oy+14,12,1,SH);
@@ -570,7 +584,6 @@ export function drawPlot(q: number){
   else if (ty===B_FARM){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawFarm(0,0,n,pOwner[q]%3,m)); }   // one crop per kingdom, so joined fields match
   else if (ty===B_TOWER){ const m=joins(q), t=towerTier(q), w=wear(q); stamp(ox,oy,PS,PS,()=>drawTower(0,0,n,m,t,w)); }
   else if (ty===B_BARRACKS){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawBarracks(0,0,n,m)); }
-  else if (ty===B_MINTER){ const m=joins(q); stamp(ox,oy,PS,PS,()=>drawMinter(0,0,n,m)); }
   else if (ty===B_CARPENTER) stamp(ox,oy,PS,PS,()=>drawCarpenter(0,0,n));
   else if (ty===B_MINE) stamp(ox,oy,PS,PS,()=>drawMine(0,0,n));
   else if (ty===B_RUINS) stamp(ox,oy,PS,PS,()=>drawRuins(0,0,pVar[q]));
@@ -590,7 +603,7 @@ export function drawPlotAndNeighbours(q: number){
 export function drawIcon(ctx: CanvasRenderingContext2D, type: number, n: NationStyle, orient=0){
   const prev=G; G=ctx; ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
   if (type===B_FARM) drawFarm(0,0,n,1,0); else if (type===B_BARRACKS) drawBarracks(0,0,n,0);
-  else if (type===B_TOWER) drawTower(0,0,n,0); else if (type===B_MINTER) drawMinter(0,0,n,0);
+  else if (type===B_TOWER) drawTower(0,0,n,0);
   else if (type===B_HOUSE) drawHouse(0,0,n,0,false);
   else if (type===B_RESEARCH) drawResearch(0,0,n);
   else if (type===B_SMITHY) drawSmithy(0,0,n);
@@ -604,7 +617,7 @@ export function drawIcon(ctx: CanvasRenderingContext2D, type: number, n: NationS
 /* ---------- production buildings: a static base here plus live work drawn each frame ----------
    Plantations, quarries and copper mines are drawn at their size: one plot (tier 1), two side by
    side (tier 2) or a 2×2 block (tier 3); the builders guild is always 2×1. */
-export const BIG: Record<number, [number, number]> = { [B_PLANTATION]: [1,1], [B_QUARRY]: [1,1], [B_COPPERMINE]: [1,1], [B_GUILD]: [2,1], [B_HOSPITAL]: [2,1] };
+export const BIG: Record<number, [number, number]> = { [B_PLANTATION]: [1,1], [B_QUARRY]: [1,1], [B_COPPERMINE]: [1,1], [B_GUILD]: [2,1], [B_HOSPITAL]: [2,1], [B_MINTER]: [2,1] };
 /** Where the trees of a plantation (a sawmill yard) of w×h plots stand, by the foot of the trunk: one beside the shed in a single plot, more in the bigger yards. */
 const slots = (w: number, h: number) => {
   const W=w*16, H=h*16;
@@ -620,6 +633,7 @@ function drawBig(ox: number, oy: number, type: number, n: NationStyle, w=BIG[typ
   const W=w*16, H=h*16;
   if (type===B_GUILD){ drawGuild(ox,oy,n); return; }
   if (type===B_HOSPITAL){ drawHospital(ox,oy,n); return; }
+  if (type===B_MINTER){ drawMinter(ox,oy,n); return; }
   if (type===B_PLANTATION){
     // a sawmill yard: trodden earth, a shed with a saw, planks and logs stacked, a stump; the trees growing by it are drawn live
     R(ox,oy,W,H,'#8a6f45'); for (let i=0;i<W*H/7;i++) P(ox+((speck(i,3)*W)|0),oy+((speck(i,4)*H)|0),'#9b8052');
@@ -688,6 +702,15 @@ export function drawWorking(ctx: CanvasRenderingContext2D, type: number, ox: num
     const f=(k*10)%1, up=f<0.5 ? f*2 : 2-f*2, low=Math.round(H*0.62), by=oy+low-Math.round(up*(low-7)), x=ox+W/2;
     R(x,oy+6,1,Math.max(0,by-oy-6),'#c9b48a');   // the rope
     R(x-2,by,5,3,'#bdb6aa'); R(x-2,by,5,1,'#d6d1c5'); R(x+2,by,1,3,'#8d867b');
+  } else if (type===B_MINTER){
+    // the furnace burns, the press's bar swings round and its screw goes down and up, and a new coin glints on the chest
+    const fl=0.6+0.4*Math.sin(now/130)*Math.sin(now/53+2);
+    ctx.globalAlpha=0.6+0.4*fl; R(ox+20,oy+12,3,2,'#ff8a2b'); ctx.globalAlpha=0.4+0.4*fl; P(ox+21,oy+11,'#ffd86b'); ctx.globalAlpha=1;
+    const f=(now/900)%1, dn=f<0.5 ? 0 : 1, sw=Math.round(Math.sin(f*Math.PI*2)*2);
+    R(ox+27,oy+6,2,2+dn,'#5a5048'); R(ox+28+sw-1,oy+6,3,1,'#3b3530');   // the screw and its bar
+    R(ox+27,oy+8+dn,2,1,'#9aa0a6');
+    if (((now/600)|0)%3===0) P(ox+15,oy+11,'#fffbe0');
+    if (((now/1400)|0)%2===0){ ctx.globalAlpha=0.35; R(ox+22,oy-1,2,1,'#d8d2c8'); R(ox+23,oy-2,1,1,'#d8d2c8'); ctx.globalAlpha=1; }   // smoke
   } else if (type===B_GUILD){
     // a block of stone swings gently on the crane's rope
     const sway=Math.round(Math.sin(now/700)), x=ox+27+sway;

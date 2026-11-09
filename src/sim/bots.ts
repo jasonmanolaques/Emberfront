@@ -8,8 +8,8 @@ import { UNIT_SIZE, units } from './army';
 import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, anyWithin, isEnemyLand, structureOf, fortTier, fortProblem, buildFort, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, standingTower, WALL_MIN, WALL_MAX } from './fort';
 import { waiting, FORT_UPKEEP } from './war';
-import { allied, atWar, ready, endWar, refusePeace, acceptPeace, giveGoals, setClaims, P_GOALS, P_WHITE, wantsPeace, outlook, warAge, claim, claimable, claimsOf, attackerIn, besideHeld, armyOrder, armyProblem, armyMembers, armyOf, MAX_CLAIMS, A_HOME, A_HOLD, A_BATTLE, O_ATTACK, O_DEFEND, O_NONE, O_RETREAT } from './war';
-import { RG, flagXY } from './regions';
+import { allied, atWar, ready, endWar, refusePeace, acceptPeace, giveGoals, setClaims, P_GOALS, P_WHITE, wantsPeace, outlook, warAge, claim, claimable, claimsOf, attackerIn, began, besideHeld, armyOrder, armyProblem, armyMembers, armyOf, MAX_CLAIMS, A_HOME, A_HOLD, A_BATTLE, O_ATTACK, O_DEFEND, O_NONE, O_RETREAT } from './war';
+import { RG, flagXY, holdsRegion, region } from './regions';
 import type { Army } from './state';
 
 const WALL = -1;   // a tower of the town wall, in a wishlist
@@ -352,11 +352,13 @@ function husband(id: number){
     if (x.mode===A_HOLD && x.order===O_NONE && x.enemy===0 && !W.armies.some(y => y.o===id && y.enemy) ) armyOrder(id,x.id,'return');
   }
 }
-/** Attacking d: every free army goes for the nearest claimed region that can be attacked and has no army of ours sent to it. */
-function attackOrders(n: Nation, d: number){
+/** Attacking d: every free army goes for the nearest claimed region that can be attacked and has no army of ours sent to it. A defender striking
+    back (`counter`) also sends the armies holding its regions while none of d's is in the field against it. */
+function attackOrders(n: Nation, d: number, counter=false){
   const id=n.id, regs=claimsOf(id,d);
+  const quiet=counter && !W.armies.some(y => y.o===d && y.mode!==A_HOME && y.men>0 && y.enemy===id);
   for (const x of W.armies){
-    if (x.o!==id || !idle(x)) continue;
+    if (x.o!==id || !(idle(x) || (quiet && x.mode===A_HOLD && x.order===O_DEFEND && x.enemy===d))) continue;
     if (x.mode!==A_HOME && strengthOf(x)<0.35) continue;
     let best=0, bd=Infinity;
     for (const r of regs){
@@ -404,11 +406,13 @@ function botWar(n: Nation){
   // raise or stand down the army as the times demand (quickly up, slowly down)
   const want=armyShare(n), d=want-n.soldierShare;
   n.soldierShare=Math.min(1,Math.max(0,n.soldierShare+Math.max(-0.04,Math.min(0.1,d))));
-  // peace offered: white peace is taken by a defender always, by an attacker that is losing; war goals demanded by the attacker are given up by a defender that is losing badly
+  // peace offered: white peace is taken by a defender that holds none of its own war goals, and by anyone losing; war goals (each side gets
+  // the claimed regions it holds) by one losing badly, or losing while they hold half of theirs, or one that gets at least as much as it gives
   for (let o=1;o<M;o++){
     if (!W.offers[o*M+id] || !W.wars[id*M+o]) continue;
-    const goals=W.offerKind[o*M+id]===P_GOALS, held=heldShare(o,id);
-    const yes = goals ? outlook(n,o)<-0.6 || (held>=0.5 && outlook(n,o)<0) : attackerIn(o,id) || wantsPeace(n,o);
+    const goals=W.offerKind[o*M+id]===P_GOALS, held=heldShare(o,id), look=outlook(n,o);
+    const yes = goals ? look<-0.6 || (held>=0.5 && look<0) || taken(id,o)>taken(o,id) || (look<0.2 && taken(id,o)>=taken(o,id))
+      : (began(o,id) && !taken(id,o)) || wantsPeace(n,o);
     if (yes) acceptPeace(id,o); else refusePeace(o,id);
   }
   husband(id);
@@ -420,21 +424,25 @@ function botWar(n: Nation){
     if (W.aggr[id*M+o] || W.aggr[o*M+id]) busy=true;
     if (!W.wars[id*M+o]) continue;
     busy=true;
-    if (attackerIn(id,o)) attackOrders(n,o); else if (attackerIn(o,id)) defendOrders(n,o);
+    // (the side that began attacks first; a defender holds its claimed regions first and sends what is left against the regions it claims back)
+    if (began(id,o)){ attackOrders(n,o); if (attackerIn(o,id)) defendOrders(n,o); }
+    else { if (attackerIn(o,id)) defendOrders(n,o); if (attackerIn(id,o)) attackOrders(n,o,true); }
   }
   // ending a war (at most every 30 s): an attacker holding most of what it claimed demands it; one losing offers white peace.
   // A defender losing badly gives the war goals up; one losing for a while offers white peace. A winning attacker may claim more.
   if (W.simTime>=n.nextOffer) for (let o=1;o<M;o++){
     if (o===id || !atWar(id,o) || W.offers[id*M+o]) continue;
     const look=outlook(n,o), age=warAge(id,o);
-    if (attackerIn(id,o)){
+    if (began(id,o)){
       const held=heldShare(id,o);
+      if (attackerIn(o,id) && (look<-0.9 || heldShare(o,id)>=0.75)){ giveGoals(id,o); continue; }   // (the defender's counter-attack goes badly for it)
       if (held>=0.6 && look>-0.2){ endWar(id,o,P_GOALS); n.nextOffer=W.simTime+30; }
       else if (age>=600 && look<-0.4){ endWar(id,o,P_WHITE); n.nextOffer=W.simTime+30; }
       else if (look>0.5 && held>=0.5 && srand()<0.3){ const more=moreClaims(id,o); if (more) setClaims(id,o,[...claimsOf(id,o),more]); }
-    } else if (attackerIn(o,id)){
-      if (look<-0.9 || heldShare(o,id)>=0.75){ giveGoals(id,o); continue; }
-      if (age>=600 && look<-0.3){ endWar(id,o,P_WHITE); n.nextOffer=W.simTime+30; }
+    } else {
+      if (attackerIn(o,id) && (look<-0.9 || heldShare(o,id)>=0.75)){ giveGoals(id,o); continue; }
+      if (counter(n,o,look,age)) continue;
+      if (age>=600 && look<-0.3 && !taken(id,o)){ endWar(id,o,P_WHITE); n.nextOffer=W.simTime+30; }
     }
   }
   // after a war it rests a while (the bold less), so a winner digests its gains first
@@ -475,6 +483,28 @@ function fortify(n: Nation){
     if (s2>bs){ bs=s2; best=r; }
   }
   if (best) buildFort(n,best);
+}
+/** How many of a's claims on d a occupies. */
+const taken = (a: number, d: number) => { let k=0; for (const r of claimsOf(a,d)) if (W.rOcc[r]===a) k++; return k; };
+/** A defending bot whose defence holds (it is winning, and the attacker holds under half its goals) strikes back: it claims a region of the
+    attacker's on the border, one at a time (the next once the last is taken), until it holds as many as its temper wants (1 to 3); then it
+    offers peace for the war goals (each side keeping the claimed regions it holds). True when it did something. */
+function counter(n: Nation, a: number, look: number, age: number){
+  const id=n.id, mine=claimsOf(id,a), got=taken(id,a), want=1+Math.round(n.attackAt*2);
+  if (got>=want || (got && look<0)){ endWar(id,a,P_GOALS); n.nextOffer=W.simTime+30; return true; }
+  if (look<0.15 || heldShare(a,id)>=0.5 || age<600) return false;
+  if (mine.some(r => W.rOcc[r]!==id)) return false;   // (the one claimed last is not taken yet)
+  let best=0, bs=-Infinity;
+  for (let r=1;r<RG.n;r++){
+    if (W.rOwner[r]!==a || W.rOcc[r] || mine.includes(r) || !besideHeld(id,r)) continue;
+    const A=W.nations[a]; if (A.capTile>=0 && region[A.capTile]===r && want<3) continue;   // (its castle region only for the boldest)
+    let s2=0; for (const q of RG.adj[r]) if (holdsRegion(id,q)) s2++;
+    s2+=W.srand()*0.5;
+    if (s2>bs){ bs=s2; best=r; }
+  }
+  if (!best) return false;
+  setClaims(id,a,[...mine,best]); n.nextOffer=W.simTime+20;
+  return true;
 }
 /** The share of a's claims on d that a occupies. */
 function heldShare(a: number, d: number){ const regs=claimsOf(a,d); return regs.length ? regs.filter(r => W.rOcc[r]===a).length/regs.length : 0; }

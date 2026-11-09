@@ -62,7 +62,9 @@ export const UI_SCALE = 0.8;             // the interface is drawn at this share
 export const MAX_KINGDOMS = 64;           // kingdoms in one game at most, the player's included (a full game)
 export const EUROPE_KINGDOMS = 24;        // ...on the Europe map: you and 23 rivals picked at random from the other countries, a size the late game runs smoothly at
 /** The most kingdoms a game on that map holds. */
-export const EUROPE_S_KINGDOMS = 16;      // ...and on the small Europe (two thirds the size in each direction)
+export const EUROPE_S_KINGDOMS = 24;      // ...and on the small Europe (two thirds the size in each direction)
+/** The standard match: you and 23 rivals, on every map (Europe and the generated ones alike). */
+export const STANDARD_KINGDOMS = 24;
 export const kingdomLimit = (map: string | null | undefined) => map==='europe' ? EUROPE_KINGDOMS : map==='europe-s' ? EUROPE_S_KINGDOMS : MAX_KINGDOMS;
 /** Is this one of the Europe maps (their rivals are drawn at random, a limited number of them)? */
 export const isEurope = (map: string | null | undefined) => map==='europe' || map==='europe-s';

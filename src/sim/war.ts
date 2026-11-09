@@ -51,7 +51,7 @@ export const BATTLE_DMG = 2;                      // blows in a battle line land
 export const FORT_SLOW = 0.4;                     // each tier of a region's fort makes its capture (and its retaking) 40% slower
 export const FORT_DMG = [0, 2, 4, 8];             // what a fort's shot does, by tier (one every ROLL_TICKS, at a man of an army attacking the region)
 export const FORT_UPKEEP = 1.5;                   // gold a second a fort costs, a tier
-export const P_WHITE = 1, P_GOALS = 2;            // peace offers: white peace (all back as it was), or the war goals (the claimed regions to the attacker)
+export const P_WHITE = 1, P_GOALS = 2;            // peace offers: white peace (all back as it was), or the war goals (each side gets the claimed regions it holds)
 export const MAX_CLAIMS = 4;                      // regions one crisis may claim
 export const OFFER_TICKS = 300;                   // a peace offer stands 30 s
 export const MAX_ALLIES = 3;
@@ -94,7 +94,7 @@ export const warringNow = (o: number) => warring[o]===1;
 export function resetWar(M: number){
   const MM=M*M;
   W.ally=new Uint8Array(MM); W.atWar=new Uint8Array(MM); W.grudge=new Int32Array(MM).fill(-1e9); W.offers=new Int32Array(MM); W.offerKind=new Uint8Array(MM);
-  W.wars=new Uint8Array(MM); W.aggr=new Uint8Array(MM); W.warSince=new Int32Array(MM); W.occCount=new Int32Array(MM); W.lost=new Uint8Array(MM); W.ready=new Int32Array(MM);
+  W.wars=new Uint8Array(MM); W.aggr=new Uint8Array(MM); W.warSince=new Int32Array(MM); W.began=new Uint8Array(MM); W.occCount=new Int32Array(MM); W.lost=new Uint8Array(MM); W.ready=new Int32Array(MM);
   W.siege=new Int32Array(M); W.siegeBy=new Uint8Array(M); W.offensive=new Uint8Array(MM); W.kills=new Int32Array(MM); W.stall=new Int32Array(MM); W.lastNet=new Int32Array(MM); W.crisisAt=new Int32Array(MM);
   W.occIsle=new Map(); W.armies=[]; W.claims=new Map();
   warring=new Uint8Array(M); soldiersOf=[]; byId.clear(); armyById.clear(); led.clear();
@@ -120,8 +120,10 @@ export const inCrisis = (a: number, d: number) => !!W.aggr[a*W.M+d] && !W.wars[a
 export const crisisWait = (a: number, d: number) => Math.max(0,CRISIS_TICKS-(W.tickN-W.crisisAt[a*W.M+d]));
 /** The regions a claims of d's (in a crisis, or the war for them), or none. */
 export const claimsOf = (a: number, d: number): number[] => W.claims.get(a*W.M+d) ?? [];
-/** Is a the attacker in its war with d (the one that claimed)? */
+/** Does a have war goals in its war with d (regions of d's it claims)? Either side may: the one that began the war, and the defender too once it claims. */
 export const attackerIn = (a: number, d: number) => W.claims.has(a*W.M+d) && !!W.wars[a*W.M+d];
+/** Did a begin its war with d (its claims made the crisis)? */
+export const began = (a: number, d: number) => !!W.began[a*W.M+d];
 /** Does region r border ground o holds (controls and nobody occupies, or occupies)? */
 export const besideHeld = (o: number, r: number) => RG.adj[r]?.some(q => holdsRegion(o,q)) ?? false;
 /** Why a can't claim these regions of d's, or null. */
@@ -174,7 +176,7 @@ export const deescalateProblem = (a: number, d: number) => inCrisis(a,d) ? null 
 function startWar(a: number, d: number){
   const M=W.M;
   for (const k of [a*M+d, d*M+a]){ W.wars[k]=1; W.atWar[k]=1; W.warSince[k]=W.tickN; W.kills[k]=0; W.offers[k]=0; }
-  W.aggr[a*M+d]=0;
+  W.aggr[a*M+d]=0; W.began[a*M+d]=1;
   warring[a]=warring[d]=1;
   on.escalated(a,d);
 }
@@ -195,7 +197,7 @@ export function claimable(a: number, d: number){
 }
 
 /* ---------- peace and alliances ---------- */
-/** Kingdom `from` offers `to` peace: white peace (P_WHITE), or (the attacker) its war goals (P_GOALS). Bots answer when they next think; the player from the war bar. */
+/** Kingdom `from` offers `to` peace: white peace (P_WHITE), or (a side with war goals) the war goals (P_GOALS: each side gets the claimed regions it holds). Bots answer when they next think; the player from the war bar. */
 export function offerPeace(from: number, to: number, kind=P_WHITE){
   const M=W.M; if (!W.wars[from*M+to]) return;
   if (kind===P_GOALS && !attackerIn(from,to)) kind=P_WHITE;
@@ -209,22 +211,25 @@ export function acceptPeace(to: number, from: number){
   makePeace(from,to,W.offerKind[from*M+to]===P_GOALS);
   return true;
 }
-/** The defender d gives the attacker a its war goals: the claimed regions are a's, and it is peace. */
+/** Kingdom d gives a its war goals: every region a claims is a's (and d keeps the claimed regions of a's it holds), and it is peace. */
 export function giveGoals(d: number, a: number){
   if (!attackerIn(a,d)) return false;
-  makePeace(a,d,true); return true;
+  makePeace(a,d,true,a); return true;
 }
-/** Peace between a and b. With `goals`, the attacker gets every region it claimed (a kingdom whose castle region is among them falls to it);
-    otherwise it is a white peace: every occupied region is free again and nothing changes hands. Their armies go home. */
-export function makePeace(a: number, b: number, goals=false){
-  const M=W.M;
+/** Peace between a and b. With `goals`, each side gets the regions it claimed of the other's that it holds (occupies), and the side `all`
+    every region it claimed, held or not (the war goals given up to it); a kingdom whose castle region is among them falls to the other.
+    Otherwise it is a white peace: every occupied region is free again and nothing changes hands. Their armies go home. */
+export function makePeace(a: number, b: number, goals=false, all=0){
+  const M=W.M, gains: [number, number, number[]][]=[];
   for (const [x,y] of [[a,b],[b,a]]){
     const regs=W.claims.get(x*M+y); if (!regs) continue;
     W.claims.delete(x*M+y);
-    for (const r of regs) if (W.rOcc[r]) freeRegion(r);
-    if (!goals) continue;
-    const won=regs.filter(r => W.rOwner[r]===y), Y=W.nations[y];
-    if (Y.alive && Y.capTile>=0 && won.includes(region[Y.capTile])){ endWarState(a,b); annex(y,x); on.peaceMade(a,b); return; }
+    if (goals) gains.push([x,y,regs.filter(r => W.rOwner[r]===y && (x===all || W.rOcc[r]===x))]);
+  }
+  for (const [x,y,won] of gains){
+    for (const r of won) if (W.rOcc[r]) freeRegion(r);
+    const Y=W.nations[y];
+    if (Y.alive && Y.capTile>=0 && won.includes(region[Y.capTile])){ for (const [x2,,w2] of gains) if (x2!==x) for (const r of w2) cedeRegion(r,x2); endWarState(a,b); annex(y,x); on.peaceMade(a,b); return; }
     for (const r of won) cedeRegion(r,x);
   }
   for (let r=1;r<RG.n;r++) if ((W.rOcc[r]===a && W.rOwner[r]===b) || (W.rOcc[r]===b && W.rOwner[r]===a)) freeRegion(r);
@@ -233,14 +238,15 @@ export function makePeace(a: number, b: number, goals=false){
 }
 function endWarState(a: number, b: number){
   const M=W.M;
-  for (const i of [a*M+b, b*M+a]){ W.offers[i]=0; W.offerKind[i]=0; W.atWar[i]=0; W.wars[i]=0; W.aggr[i]=0; W.stall[i]=0; W.lost[i]=0; W.ready[i]=0; }
+  for (const i of [a*M+b, b*M+a]){ W.offers[i]=0; W.offerKind[i]=0; W.atWar[i]=0; W.wars[i]=0; W.aggr[i]=0; W.began[i]=0; W.stall[i]=0; W.lost[i]=0; W.ready[i]=0; }
   for (const x of W.armies) if ((x.o===a && x.enemy===b) || (x.o===b && x.enemy===a)) sendHome(x);
   for (const o of [a,b]){ let any=0; for (let k=1;k<M;k++) if (W.wars[o*M+k]) any=1; warring[o]=any; }
 }
-/** At war, the attacker a's claims on d made anew: any regions d controls, at least one (an occupied one let go is free again). Why not, or null. */
+/** At war, a's claims on d made anew (either side's: the defender may claim too, to win regions of the attacker's): any regions d controls.
+    The war needs a claim on one side at least, so a side may let all of its own go only while the other claims something. Why not, or null. */
 export function claimsProblem(a: number, d: number, regions: number[]): string | null {
-  if (!attackerIn(a,d)) return 'Only the attacker in a war can change its claims';
-  if (!regions.length) return 'Keep at least one claim: the war needs one';
+  if (!W.wars[a*W.M+d]) return 'Only at war can war goals be changed';
+  if (!regions.length && !claimsOf(d,a).length) return 'Keep at least one claim: the war needs one';
   if (new Set(regions).size!==regions.length) return 'A region is picked twice';
   for (const r of regions) if (!r || r>=RG.n || W.rOwner[r]!==d) return 'Only regions they control can be claimed';
   return null;
@@ -248,7 +254,7 @@ export function claimsProblem(a: number, d: number, regions: number[]): string |
 export function setClaims(a: number, d: number, regions: number[]){
   if (claimsProblem(a,d,regions)) return false;
   for (const r of claimsOf(a,d)) if (!regions.includes(r) && W.rOcc[r]===a) freeRegion(r);
-  W.claims.set(a*W.M+d,regions.slice());
+  if (regions.length) W.claims.set(a*W.M+d,regions.slice()); else W.claims.delete(a*W.M+d);
   W.offers[a*W.M+d]=0; W.offers[d*W.M+a]=0;   // (the terms changed: offers made are off)
   on.claimsChanged(a,d);
   checkVictory(a,d);
@@ -795,9 +801,9 @@ function fortsFire(){
 }
 /** a holds every region it claimed of d's: the war is won, and they are its. */
 function checkVictory(a: number, d: number){
-  const regs=claimsOf(a,d); if (!regs.length || !regs.every(r => W.rOcc[r]===a)) return;
+  const regs=claimsOf(a,d); if (!regs.length || !regs.every(r => W.rOcc[r]===a) || !W.wars[a*W.M+d]) return;
   on.warWon(a,d);
-  makePeace(a,d,true);
+  makePeace(a,d,true,a);
 }
 /** The second wave: a defender's army holding a claimed region, with the region beside it under attack and nobody of its own there, marches in to defend it. */
 function secondWave(){

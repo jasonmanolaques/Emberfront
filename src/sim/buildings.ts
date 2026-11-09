@@ -118,7 +118,7 @@ export function finishHouse(q: number, id: number){
 /* ---------- buildings a kingdom places ---------- */
 export interface Structure { type: number; name: string; cost: number[]; info: string; }   // cost: [wood, stone, copper]
 // buildings placed bigger than one plot: [width, height] in plots
-export const SIZE: Record<number, [number, number]> = { [B_GUILD]: [2,1], [B_HOSPITAL]: [2,1], [B_NAVAL]: [4,2] };
+export const SIZE: Record<number, [number, number]> = { [B_GUILD]: [2,1], [B_HOSPITAL]: [2,1], [B_MINTER]: [2,1], [B_NAVAL]: [4,2] };
 /** The plots a building of `type` placed with its top-left on plot q covers (a naval base is 4×2, or, turned, 2×4). */
 export function footprint(q: number, type: number, orient=0){ return rect(q, type===B_NAVAL && orient ? [2,4] : SIZE[type] ?? [1,1]); }
 const rect = (q: number, [w,h]: number[]) => { const out: number[]=[]; for (let y=0;y<h;y++) for (let x=0;x<w;x++) out.push(q+y*PW+x); return out; };
@@ -147,7 +147,7 @@ export const STRUCTURES: Structure[] = [
   { type: B_FARM,     name: 'Farm',        cost: [5,2,0], info: 'Villagers arrive 3% sooner.' },
   { type: B_BARRACKS, name: 'Barracks',    cost: [5,5,0], info: 'Trains soldiers: an army of 5. Joined barracks make bigger armies.' },
   { type: B_TOWER,    name: 'Watchtower',  cost: [15,50,15], info: 'A fort of four towers round a region\'s flag: slows its capture, shoots its attackers.' },
-  { type: B_MINTER,   name: 'Coin minter', cost: [5,5,5], info: '+5% gold income.' },
+  { type: B_MINTER,   name: 'Coin minter', cost: [5,5,5], info: '2×1 plots. +5% gold income.' },
   { type: B_PLANTATION, name: 'Plantation', cost: [10,0,0], info: '+2 wood every 30 s. Joined ones give more (needs research).' },
   { type: B_QUARRY,     name: 'Stone quarry', cost: [5,10,0], info: '+2 stone every 30 s. Joined ones give more (needs research).' },
   { type: B_COPPERMINE, name: 'Copper mine', cost: [10,10,0], info: '+1 copper every 30 s. Joined ones give more (needs research).' },

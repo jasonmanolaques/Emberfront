@@ -171,7 +171,7 @@ describe('countries', () => {
     expect(W.nations[1].code).toBe('GR');
   });
 
-  it('have a small Europe for testing: the same Europe at two thirds of the size each way, with its own limit of 16 kingdoms', () => {
+  it('have a small Europe for testing: the same Europe at two thirds of the size each way, with the standard 24 kingdoms', () => {
     newWorld(5,'europe-s');
     expect([TW,TH]).toEqual([1216,992]);
     const big=capitalsOn('europe').length, small=capitalsOn('europe-s').length;
@@ -181,11 +181,11 @@ describe('countries', () => {
     expect(isLand[at(52.5,-1.5)]).toBe(1);                 // Britain
     expect(isLand[at(45,-1.5)]).toBe(0);                   // the Bay of Biscay
     expect(W.landCount).toBeGreaterThan(NT*0.2);
-    expect(kingdomLimit('europe-s')).toBe(16);
+    expect(kingdomLimit('europe-s')).toBe(24);
     const me=capitalsOn('europe-s').find(c => c.country.code==='FR')!;
     const rivals=capitalsOn('europe-s').map(c => c.country.code).filter(c => c!=='FR');
     expect(startMatch(me.tile,rivals,'FR')).toBe(true);
-    expect(W.nations.length-1).toBe(16);
+    expect(W.nations.length-1).toBe(24);
   });
 
   it('lets a country with no capital on the map play there all the same, founded at a random place', () => {
@@ -198,21 +198,21 @@ describe('countries', () => {
     expect(n).toBeDefined(); expect(n.alive).toBe(true); expect(n.capTile).toBeGreaterThanOrEqual(0);
   });
 
-  it('can found the rivals at random places, or at random places that keep near each other, each still its own country', () => {
+  it('can found the rivals at random places, or at random places that keep near each other, each still its own country (a standard match of 24)', () => {
     const run=(placement: 'real' | 'random' | 'near') => {
       newWorld(5,'europe-s');
       const all=capitalsOn('europe-s'), me=all.find(c => c.country.code==='DE')!;
-      const rivals=all.map(c => c.country.code).filter(c => c!=='DE').slice(0,15);
+      const rivals=all.map(c => c.country.code).filter(c => c!=='DE').slice(0,23);
       expect(startMatch(me.tile,rivals,'DE',placement)).toBe(true);
       const ns=W.nations.slice(1).filter(n => n.alive);
       return { ns, real:new Map(all.map(c => [c.country.code, c.tile])) };
     };
-    const real=run('real'); expect(real.ns.length).toBe(16);
+    const real=run('real'); expect(real.ns.length).toBe(24);
     for (const n of real.ns) expect(near(n.capTile,real.real.get(n.code)!)).toBeLessThan(30);   // (each at its capital)
-    const rnd=run('random'); expect(rnd.ns.length).toBe(16);
+    const rnd=run('random'); expect(rnd.ns.length).toBe(24);
     expect(rnd.ns.filter(n => near(n.capTile,rnd.real.get(n.code)!)>60).length).toBeGreaterThan(8);   // (most are far from their capitals)
-    expect(new Set(rnd.ns.map(n => n.code)).size).toBe(16);
-    const nr=run('near'); expect(nr.ns.length).toBe(16);
+    expect(new Set(rnd.ns.map(n => n.code)).size).toBe(24);
+    const nr=run('near'); expect(nr.ns.length).toBe(24);
     const far=TW*0.07*1.7, close=nr.ns.filter(n => nr.ns.some(o => o!==n && near(n.capTile,o.capTile)<far)).length;
     expect(close).toBeGreaterThanOrEqual(15);                 // everyone has another kingdom within reach
   });

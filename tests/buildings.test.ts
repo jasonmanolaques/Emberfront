@@ -34,6 +34,8 @@ function freePlots(){
   for (let q=0;q<NP;q++) if (!plotProblem(n,q)) out.push(q);
   return out.sort((a,b)=>((a%PW-cap%PW)**2+((a/PW|0)-(cap/PW|0))**2)-((b%PW-cap%PW)**2+((b/PW|0)-(cap/PW|0))**2));
 }
+/** The free plot nearest the capital where a `type` building fits (a coin minter needs two side by side). */
+const freeFor = (type: number) => freePlots().find(q => !placeProblem(me(),q,type)) ?? -1;
 function place(type: number, q = freePlots()[0]){
   me().stock=[...costFor(me(),structureOf(type)!)];
   if (!build(me(), q, type)) throw new Error('could not build');
@@ -154,7 +156,7 @@ describe('what the buildings do', () => {
     const n=me(); n.humanProg=-1e9;
     expect(n.taxpayers).toBeGreaterThan(0);
     expect(n.income).toBeCloseTo(TAX_PER_VILLAGER*n.taxpayers+LAND_TAX*n.tiles, 9);
-    place(B_MINTER, freePlots()[0]); place(B_MINTER, freePlots()[0]); tick();
+    place(B_MINTER, freeFor(B_MINTER)); place(B_MINTER, freeFor(B_MINTER)); tick();   // (2×1 plots each)
     expect(n.income).toBeCloseTo((TAX_PER_VILLAGER*n.taxpayers+LAND_TAX*n.tiles)*1.1, 9);
   });
 
@@ -224,7 +226,7 @@ describe('gold and strength', () => {
     const n=me(); n.humanProg=-1e9;
     const [dx,dy]=doorOf(n);
     for (let i=0;i<9;i++){ const h=makeHuman(n,H_SOLDIER,dx,dy+2); h.militia=i<4; W.humans.push(h); }   // 5 trained soldiers and 4 militia
-    place(B_MINTER, freePlots()[0]); run(3);   // (the counts catch up)
+    place(B_MINTER, freeFor(B_MINTER)); run(3);   // (the counts catch up)
     const p=incomeParts(n);
     expect(p.tax).toBeCloseTo(TAX_PER_VILLAGER*n.taxpayers, 9);
     expect(p.land).toBeCloseTo(LAND_TAX*n.tiles, 9);

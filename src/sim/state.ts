@@ -220,6 +220,7 @@ export const W = {
   wars: new Uint8Array(1),           // [a*M+b] 1 while a and b are at war: from the first attack until peace, whatever the armies do
   aggr: new Uint8Array(1),           // [a*M+b] a has massed an attack on b's border: a crisis until a attacks (then a war), or calls it off
   warSince: new Int32Array(1),       // [a*M+b] tick that war began
+  began: new Uint8Array(1),          // [a*M+b] a began its war with b (its claims made the crisis that became the war)
   occCount: new Int32Array(1),       // [o*M+b] tiles of o's that b occupies
   lost: new Uint8Array(1),           // [o*M+b] b has occupied some of o's land in this war (cleared when o has it all back)
   ready: new Int32Array(1),          // [o*M+b] tick o's army took all its land back from b and stands ready to counter-attack (0 = not)

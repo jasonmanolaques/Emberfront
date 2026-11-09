@@ -227,7 +227,7 @@ export function step(){
 export function startGame(){
   $('intro').hidden=true; $('scrim').hidden=true;
   if (W.map==='gen'){ client.state='spawn'; ui.banner.hidden=false; return; }
-  if (isEurope(W.map) && !handPicked()) client.rivals=randomRivals();   // (29 of the other countries, drawn afresh for each game)
+  if (!handPicked()) client.rivals=randomRivals();   // (the standard match: 23 of the other countries, drawn afresh for each game)
   const cap=available().find(a => a.country.code===client.me);
   client.state='spawn';
   if (cap) trySpawn(cap.tile);
@@ -236,7 +236,7 @@ export function startGame(){
 
 export function trySpawn(t: number){
   if (t<0) return;
-  if (!startMatch(t, client.rivals.length ? client.rivals : 9, client.me || undefined, client.placement)){ toast('Pick open land away from water and mountains'); return; }
+  if (!startMatch(t, client.rivals.length ? client.rivals : 23, client.me || undefined, client.placement)){ toast('Pick open land away from water and mountains'); return; }
   const me=W.nations[PLAYER];
   $('meName').textContent=me.name; $('meCrest').style.cssText=flagCSS(me.code);
   client.state='play'; ui.banner.hidden=true; showHUD(true);

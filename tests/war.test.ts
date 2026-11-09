@@ -11,12 +11,12 @@ import { build, placeProblem } from '../src/sim/buildings';
 import { labelWorld, allocIsles } from '../src/sim/naval';
 import { H_SOLDIER, makeHuman, doorOf } from '../src/sim/population';
 import { maxHp } from '../src/sim/army';
-import { RG, region, setRegions, cedeRegion, updateRegions, CONTROL } from '../src/sim/regions';
+import { RG, region, setRegions, cedeRegion, updateRegions, occupyRegion, CONTROL } from '../src/sim/regions';
 import { claim, claimProblem, answer, inCrisis, armyProblem, armyOrder, armyOf, makePeace, offerPeace, acceptPeace, giveGoals, setClaims, claimsProblem, claimsOf, wageOf, diceFactor, CRISIS_TICKS, CAPTURE_TICKS, ROLL_TICKS, MAX_CLAIMS, P_GOALS, A_HOME, A_MARCH, A_HOLD, A_BATTLE, O_DEFEND, partner } from '../src/sim/war';
 import { WAGE, WAGE_IDLE, B_TOWER } from '../src/core/constants';
 import { buildFort, fortTier, fortSpot } from '../src/sim/buildings';
 import { pTier } from '../src/sim/state';
-import { waiting, fortUpkeep, FORT_DMG } from '../src/sim/war';
+import { waiting, fortUpkeep, FORT_DMG, began, outlook } from '../src/sim/war';
 import { incomeParts } from '../src/sim/sim';
 
 const N = (i: number) => W.nations[i];
@@ -450,28 +450,47 @@ describe('peace', () => {
     run(5); expect([A_MARCH, A_HOME]).toContain(armyOf(a.id)!.mode);   // (going home)
   });
 
-  it('war goals: the attacker gets every region it claims, taken or not; demanded and accepted, or given by the defender', () => {
-    world(); const { theirs }=lands(2);
+  /** A region of the player's beside its castle region (south of it, or south-east of it beside the bot's first region), ceded to it. */
+  const ours = (dx=0) => { const [bx,by]=blockOf(N(1).capTile), r=regionAt(bx+dx,by+1); if (region[N(2).capTile]===r) throw new Error('bot castle in the way'); cedeRegion(r,1); census(); return r; };
+
+  it('war goals demanded and accepted: each side gets the claimed regions it holds, no more; given up, the other gets every region it claims and the giver keeps what it holds', () => {
+    world(); const { theirs }=lands(2), south=ours();
     war(1,2,theirs);
+    expect(began(1,2)).toBe(true); expect(began(2,1)).toBe(false);
+    expect(claimsProblem(2,1,[south])).toBeNull();   // (the defender may claim too)
+    expect(setClaims(2,1,[south])).toBe(true);
+    occupyRegion(theirs[0],1); occupyRegion(south,2);
     offerPeace(1,2,P_GOALS); expect(W.offerKind[1*M()+2]).toBe(P_GOALS);
     expect(acceptPeace(2,1)).toBe(true);
-    expect(theirs.every(r => W.rOwner[r]===1)).toBe(true);
-    // given straight away by the defender
-    world(); const l2=lands(2);
-    war(1,2,l2.theirs);
+    expect(W.wars[1*M()+2]).toBe(0);
+    expect(W.rOwner[theirs[0]]).toBe(1);   // taken by the attacker: its
+    expect(W.rOwner[theirs[1]]).toBe(2);   // claimed, not taken: stays
+    expect(W.rOwner[south]).toBe(2);       // taken by the defender: its
+    expect(W.rOcc[theirs[0]]+W.rOcc[theirs[1]]+W.rOcc[south]).toBe(0);
+    // the defender demands them in turn: the same split
+    world(); const l3=lands(2), s3=ours();
+    war(1,2,l3.theirs); setClaims(2,1,[s3]); occupyRegion(s3,2);
+    offerPeace(2,1,P_GOALS); expect(W.offerKind[2*M()+1]).toBe(P_GOALS);
+    expect(acceptPeace(1,2)).toBe(true);
+    expect(W.rOwner[s3]).toBe(2); expect(l3.theirs.every(r => W.rOwner[r]===2)).toBe(true);
+    // given straight away by the defender: every region the attacker claims, while the defender keeps the one of the attacker's it holds
+    world(); const l2=lands(2), s2=ours();
+    war(1,2,l2.theirs); setClaims(2,1,[s2]); occupyRegion(s2,2);
     expect(giveGoals(2,1)).toBe(true);
     expect(W.wars[1*M()+2]).toBe(0);
     expect(l2.theirs.every(r => W.rOwner[r]===1)).toBe(true);
+    expect(W.rOwner[s2]).toBe(2);
   });
 
-  it('at war the attacker claims more (any region of theirs) or lets claims go, down to one; an occupied region let go is free again', () => {
+  it('at war either side claims any region of the other\'s or lets claims go: down to one while the other claims nothing, down to none while it does', () => {
     world(); const { home, theirs }=lands(3);
     const a=army(1,16,home);
     war(1,2,[theirs[0]]);
     const far=RG.adj[theirs[2]].find(r => W.rOwner[r]!==1 && r!==theirs[1] && r!==theirs[0])!;
     cedeRegion(far,2);
     expect(claimsProblem(1,2,[])).toMatch(/at least one/);
-    expect(claimsProblem(2,1,[home])).toMatch(/attacker/);
+    expect(claimsProblem(2,1,[home])).toBeNull();
+    expect(claimsProblem(2,1,[theirs[1]])).toMatch(/only regions they control/i);
     expect(setClaims(1,2,[theirs[0],theirs[1],far])).toBe(true);   // (far: not beside anything we hold, still claimable)
     expect(claimsOf(1,2)).toEqual([theirs[0],theirs[1],far]);
     armyOrder(1,a.id,'attack',theirs[0]);
@@ -479,6 +498,43 @@ describe('peace', () => {
     expect(setClaims(1,2,[theirs[1]])).toBe(true);
     expect(W.rOcc[theirs[0]]).toBe(0);
     expect(W.wars[1*M()+2]).toBe(1);
+    // the defender claims: now the attacker may let all of its own go, and the war goes on for the defender's
+    expect(setClaims(2,1,[home])).toBe(true);
+    expect(claimsProblem(1,2,[])).toBeNull();
+    expect(setClaims(1,2,[])).toBe(true);
+    expect(claimsOf(1,2)).toEqual([]); expect(W.wars[1*M()+2]).toBe(1);
+    expect(claimsProblem(2,1,[])).toMatch(/at least one/);
+  });
+
+  it('the defender attacks the regions it claims, whether or not the attacker holds regions of its own, and takes them', () => {
+    world(); const { home, theirs }=lands(2), se=ours(1);   // (se: the player's, beside the bot's first region)
+    army(1,6,home); const d=army(2,16,theirs[0]);
+    war(1,2,theirs);
+    occupyRegion(theirs[1],1);   // (the attacker holds one of the defender's regions)
+    expect(armyProblem(2,d.id,'attack',se)).toMatch(/claimed/);
+    expect(setClaims(2,1,[se])).toBe(true);
+    expect(armyProblem(2,d.id,'attack',se)).toBeNull();
+    expect(armyOrder(2,d.id,'attack',se)).toBe(true);
+    until(() => W.rOwner[se]===2, CAPTURE_TICKS*6);
+    expect(W.wars[1*M()+2]).toBe(0);   // (every region the defender claimed is taken: it has won, and peace splits the goals)
+    expect(W.rOwner[se]).toBe(2);
+    expect(W.rOwner[theirs[1]]).toBe(1);
+  });
+
+  it('a defending bot whose defence holds claims a border region of the attacker\'s, takes it, and offers peace for the war goals', () => {
+    world(); const { home, theirs }=lands(2), se=ours(1);
+    army(1,5,home); army(2,30,theirs[0]);
+    const B=N(2); B.attackAt=0.2; B.nextThink=0; B.nextWar=1e9; B.nextOffer=0; B.gold=1e6;
+    war(1,2,theirs);
+    until(() => claimsOf(2,1).length>0, 6000);
+    expect(claimsOf(2,1)).toEqual([se]);   // (its castle region is not claimed by a bot this calm)
+    until(() => W.rOcc[se]===2 || W.rOwner[se]===2, 12000);
+    if (W.wars[1*M()+2]){
+      until(() => W.offerKind[2*M()+1]===P_GOALS, 4000);
+      expect(acceptPeace(1,2)).toBe(true);
+    }
+    expect(W.rOwner[se]).toBe(2);
+    expect(W.wars[1*M()+2]).toBe(0);
   });
 
   it('a kingdom whose castle region is won falls to the winner', () => {
