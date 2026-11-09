@@ -760,7 +760,7 @@ describe('the front', () => {
     const t=((d.y/2)|0)*TW+((d.x/2)|0);
     for (let dy=-ZOC;dy<=ZOC;dy++) for (let dx=-ZOC;dx<=ZOC;dx++) expect(freeOf(2,t+dy*TW+dx)).toBe(true);
     expect(Math.min(...lineAt(b))).toBeGreaterThan(edge+10);
-    d.hp=0; run(300);
+    d.hp=0; run(1500);   // (the line has to come up to where it fell behind, strip by strip)
     expect(missed(b)).toBe(0);
     expect(crooked(lineAt(b),b)).toBeLessThanOrEqual(4);
   });
@@ -1044,7 +1044,7 @@ describe('crisis', () => {
     run(40);
     expect(setOffensive(2,1,false)).toBe(true); run(5);        // its land is back: it was told to attack, and is told to hold
     expect(W.offensive[2*M()+1]).toBe(F_HOLD);                 // it holds, and may strike back
-    run(150);                                                  // (the men out beyond the line come back to it)
+    run(400);                                                  // (the men out beyond the line come back to it: their places move toward the new line a little at a time)
     for (let i=0;i<300;i++){ tick();   // ...and goes on holding on its own side of the border, out of reach of their watchtowers, until it is told to attack
       for (const h of W.humans) if (h.o===2 && h.war>=0 && h.kind===H_SOLDIER){ const t=((h.y/2)|0)*TW+((h.x/2)|0); expect(owner[t]===1 && !occ[t] && h.duel<0).toBe(false); }   // (a man in a duel at the line may stand a step across it: the blow reaches across)
     }

@@ -260,7 +260,18 @@ export function placeAt(F: Front, u: number, side: number, rank: number, ok: (t:
     if (px<0 || py<0 || px>=TW || py>=TH) continue;
     if (ok(((py|0)*TW+(px|0)))) return [px*2, py*2];
   }
-  return [(x+side*bx*0.3)*2, (y+side*by*0.3)*2];
+  // no tile near the line he can stand on in his direction: the nearest one round it that he can (never the enemy's ground a step past it)
+  const cx=x|0, cy=y|0;
+  for (let r=0; r<=4; r++){
+    let best=-1, bd=1e9;
+    for (let dy=-r; dy<=r; dy++) for (let dx=-r; dx<=r; dx++){
+      if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
+      const tx=cx+dx, ty=cy+dy; if (tx<0 || ty<0 || tx>=TW || ty>=TH || !ok(ty*TW+tx)) continue;
+      const d=(tx+0.5-x)**2+(ty+0.5-y)**2; if (d<bd){ bd=d; best=ty*TW+tx; }
+    }
+    if (best>=0) return [((best%TW)+0.5)*2, (((best/TW)|0)+0.5)*2];
+  }
+  return [x*2, y*2];
 }
 
 /** How many men a line of F's length takes in its front rank, out of n: one every MIN_GAP tiles at

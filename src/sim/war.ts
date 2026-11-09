@@ -1580,10 +1580,11 @@ function redeploy(o: Offensive){
     for (const m of c.members){ const h=byId.get(m); if (h && h.id!==c.leader && h.fk===id) mine.push(h); }
     if (!mine.length) continue;
     mine.sort((p,q) => p.slot-q.slot || p.line-q.line || p.id-q.id);
-    let x=0, y=0, deep=0; for (const h of mine){ x+=h.fx; y+=h.fy; if (h.line<RESERVE_LINE) deep=Math.max(deep,h.line); }
-    c.bx=x/mine.length; c.by=y/mine.length;   // where the army is, for anyone looking for it
+    const onLine=mine.filter(h => h.line<RESERVE_LINE), who=onLine.length ? onLine : mine;   // (the banner and the leader go by the men on the line, not by those waiting behind it)
+    let x=0, y=0, deep=0; for (const h of who){ x+=h.fx; y+=h.fy; if (h.line<RESERVE_LINE) deep=Math.max(deep,h.line); }
+    c.bx=x/who.length; c.by=y/who.length;   // where the army is, for anyone looking for it
     const l=byId.get(c.leader); if (!l) continue;
-    const L=c.placed===2 && Fd ? Fd : F, u=mine[mine.length>>1].slot, [lx,ly]=placeAt(L,u,1,deep+1,ok);
+    const L=c.placed===2 && Fd ? Fd : F, u=who[who.length>>1].slot, [lx,ly]=placeAt(L,u,1,deep+1,ok);
     l.fk=id; l.slot=u; l.line=deep+1; l.fx=lx; l.fy=ly; srcs.push(tileOf(lx,ly));
   }
   // a man on land of his own landmass with no way left to the front but over a third kingdom's ground (it lies across his path, or he has come to stand on its coast):
@@ -1607,7 +1608,7 @@ function redeploy(o: Offensive){
     the attacker's ground about it than a straight line has (a corner where it has fallen behind round a
     defender) goes too, so the line stays smooth. */
 function push(o: Offensive){
-  const F=o.F; if (!F || !F.tiles.length || !o.k) return;
+  const F=o.F; if (!F || !F.tiles.length || !o.k){ o.pace.clear(); return; }   // (no front: no count of strips; o.strips keeps the most there was)
   const gap=F.len/o.k, dens=Math.min(1,DENSE/gap);
   // (a kingdom retaking its land takes only that)
   const lib=o.liberating;
@@ -1624,15 +1625,27 @@ function push(o: Offensive){
     const near=lo>0 && Math.abs(front[lo-1].slot-h.slot)<=Math.abs(front[lo].slot-h.slot) ? front[lo-1] : front[lo];
     power.set(near.id,(power.get(near.id) ?? 0)+powerOf(h));
   }
-  const foes=W.humans.filter(e => e.o===d && e.kind===H_SOLDIER && e.hp>0 && !indoors(e) && (e.war>=0 || e.foe>=0 || e.fk>=0));
-  const reach=gap+5, reach2=reach*reach;   // (pixels: half the width of his stretch (gap tiles of 2 pixels, halved) and the depth of the ranks)
+  // every enemy soldier on the field counts once, against the man of the front whose place is nearest (within half a stretch and the depth of the ranks), at the strength he has left:
+  // whether he is fighting or standing there makes no difference, but a garrison far from the line adds nothing
+  const reach=gap+5, reach2=reach*reach, againstOf=new Map<number, number>();
+  for (const e of W.humans){
+    if (e.o!==d || e.kind!==H_SOLDIER || e.hp<=0 || indoors(e)) continue;
+    let near: Human | undefined, bd=reach2;
+    for (const h of front){ const dd=(e.x-h.fx)**2+(e.y-h.fy)**2; if (dd<=bd){ bd=dd; near=h; } }
+    if (near) againstOf.set(near.id,(againstOf.get(near.id) ?? 0)+powerOf(e)*Math.max(0.25,Math.min(1,e.hp/maxHp(e))));
+  }
   const alive=new Set<number>(), dueOf=new Float64Array(T.length), pace=o.pace;
   let speedSum=0, speedN=0;
+  const known=new Map<number, number>(); for (const [id,v] of pace) known.set(id,v.n);   // (the counts as they stood at the start of this tick: a newcomer copies one of these, not a man's count already moved on)
   for (const h of front){
     alive.add(h.id);
     let st=pace.get(h.id);
-    if (!st){ let n=0, k=0; for (const v of pace.values()){ n+=v.n; k++; } st={ acc:0, n:k ? Math.round(n/k) : o.strips }; pace.set(h.id,st); }
-    let against=0; for (const e of foes) if ((e.x-h.fx)**2+(e.y-h.fy)**2<=reach2) against+=powerOf(e);
+    if (!st){   // (a man new to the line takes the count of the stretch he steps into: that of the man nearest him along the line that has one)
+      let from=o.strips, bd=Infinity;
+      for (const e of front){ const v=known.get(e.id); if (v!==undefined && Math.abs(e.slot-h.slot)<bd){ bd=Math.abs(e.slot-h.slot); from=v; } }
+      st={ acc:0, n:from }; pace.set(h.id,st);
+    }
+    const against=againstOf.get(h.id) ?? 0;
     const mine=power.get(h.id) ?? 1, speed=against<=0 ? INVADE_EMPTY : Math.max(0,Math.min(1,(mine/against-HOLDS)/(FULL-HOLDS)));   // (outmatched: it does not move; even strength: a slow grind; three times the enemy's: full speed)
     speedSum+=speed; speedN++;
     if ((h.x-h.fx)**2+(h.y-h.fy)**2>R2 || partner(h)) continue;   // (a man out of his place, or in a duel, holds his ground: the line takes none before him)
@@ -2241,11 +2254,11 @@ function heldWay(c: Campaign, ax: number, ay: number, bx: number, by: number){
   return true;
 }
 const noRoute=new Map<number, number>();   // man id → the tick before which a search for a way over held ground is not tried again
-/** A man of the front goes to his place: straight if the way is all ground his side holds, else by a way over it, never across the enemy's ground (a corner of the line, a bay). */
-function toPlace(h: Human, c: Campaign){
-  const gx=h.fx, gy=h.fy, d=Math.hypot(gx-h.x,gy-h.y);
-  if (d<=0.25){ if (h.path.length) h.path=[]; return; }
-  if (!holds(c.a,c.d,tileOf(gx,gy)) || d>80){ moveTo(h,c,gx,gy,0.2); return; }   // (a place off the ground his side holds, or far: as he marches)
+/** A man of the front goes to (gx,gy): straight if the way is all ground his side holds, else by a way over it, never across the enemy's ground (a corner of the line, a bay). */
+function goHeld(h: Human, c: Campaign, gx: number, gy: number, stop=0.25){
+  const d=Math.hypot(gx-h.x,gy-h.y);
+  if (d<=stop){ if (h.path.length) h.path=[]; return; }
+  if (!holds(c.a,c.d,tileOf(gx,gy)) || d>80){ moveTo(h,c,gx,gy,stop-0.05); return; }   // (a place off the ground his side holds, or far: as he marches)
   let tx=gx, ty=gy;
   const straight=heldWay(c,h.x,h.y,gx,gy);
   if (straight && h.path.length && (h.id+W.tickN)%10===0) h.path=[];
@@ -2257,13 +2270,14 @@ function toPlace(h: Human, c: Campaign){
   if (h.path.length>=2){
     const n=h.path.length; if (Math.hypot(h.path[n-2]-gx,h.path[n-1]-gy)>2) h.path=plan();   // (the place has moved: a way to where it is now)
     if (h.path.length>2 && Math.hypot(h.path[0]-h.x,h.path[1]-h.y)<1.2) h.path.splice(0,2);
-    if (h.path.length>=2){ tx=h.path[0]; ty=h.path[1]; } else { moveTo(h,c,gx,gy,0.2); return; }
-  } else if (!straight){ moveTo(h,c,gx,gy,0.2); return; }   // (no way over held ground at all: as he marches)
+    if (h.path.length>=2){ tx=h.path[0]; ty=h.path[1]; } else { moveTo(h,c,gx,gy,stop-0.05); return; }
+  } else if (!straight){ moveTo(h,c,gx,gy,stop-0.05); return; }   // (no way over held ground at all: as he marches)
   const dx=tx-h.x, dy=ty-h.y, dd=Math.hypot(dx,dy); if (dd<1e-6){ if (h.path.length) h.path.splice(0,2); return; }
   const st=Math.min(dd,pace(h)*TICK), nx=h.x+dx/dd*st, ny=h.y+dy/dd*st;
   if (!mayStand(h,owner[tileOf(nx,ny)])) return;
   wallStep(h,nx,ny);
 }
+const toPlace = (h: Human, c: Campaign) => goHeld(h,c,h.fx,h.fy);
 /** One tick for a man of an army on a front: fight an enemy who comes at him or at his place (any
     near it while attacking; while holding, those who come onto his side's ground), break what stands
     by his place while attacking, and otherwise go to his place and stand there. Its leader fights
@@ -2278,12 +2292,12 @@ function frontStep(h: Human, c: Campaign){
   let foe=h.foe>=0 ? byId.get(h.foe) : undefined;
   const R=pushing ? REACH_PUSH : REACH_HOLD;   // (a man of the front keeps to his place: he goes out no further than this after anyone)
   // (an army that is not invading never goes out after a man onto the enemy's own ground: only one within his blow's reach)
-  if (foe && (foe.hp<=0 || !atWar(h.o,foe.o) || indoors(foe) || locked(h,foe) || (foe.foe!==h.id && (foe.x-h.fx)**2+(foe.y-h.fy)**2>(foe.fk>=0 ? R : Math.max(R,REACH_STRAY))**2) || (!invading && !stayOut(h,foe,c)))){ foe=undefined; h.foe=-1; }
+  if (foe && (foe.hp<=0 || !atWar(h.o,foe.o) || indoors(foe) || locked(h,foe) || (foe.foe!==h.id && (foe.x-h.fx)**2+(foe.y-h.fy)**2>(foe.fk>=0 || !invading ? R : Math.max(R,REACH_STRAY))**2) || (!invading && !stayOut(h,foe,c)))){ foe=undefined; h.foe=-1; }
   const stray=h.fk>=0 && h.aim<0 && !holds(c.a,c.d,tileOf(h.x,h.y)) && owner[tileOf(h.x,h.y)]!==0;   // (a man of the line standing on the other side's ground: the line moved, or he was pushed)
   if (foe){
     const rr=MELEE_R+(holds(c.a,c.d,tileOf(foe.x,foe.y)) ? 0 : ACROSS);   // (a blow reaches a little across the line: the two sides fight from their own ground)
     if ((foe.x-h.x)**2+(foe.y-h.y)**2<=rr*rr) strike(h,foe);
-    else if (stray) toPlace(h,c);   // (he comes back to the line before anything else)
+    else if (stray && !(invading && foe.fk<0)) toPlace(h,c);   // (he comes back to the line before anything else, unless he is out after a straggler of theirs)
     else closeIn(h,c,foe);
     return;
   }
@@ -2291,7 +2305,8 @@ function frontStep(h: Human, c: Campaign){
   if (h.aim>=0){
     const [x0,y0,x1,y1]=rectOf(h.aim);
     if (h.x>=x0-1.5 && h.x<=x1+1.5 && h.y>=y0-1.5 && h.y<=y1+1.5) hitBuilding(h,c);
-    else stepOwn(h,c,clamp(h.x,x0-1,x1+1),clamp(h.y,y0-1,y1+1),0,jobs.get(h.id)!==h.aim);   // (a building by the line is gone at over the enemy's ground; a detail sent after a tower walks only over his own)
+    else if (jobs.get(h.id)===h.aim) goHeld(h,c,clamp(h.x,x0-1,x1+1),clamp(h.y,y0-1,y1+1),0.25);   // (a detail sent after a tower on ground his side holds goes over his own, round a bay if need be)
+    else stepOwn(h,c,clamp(h.x,x0-1,x1+1),clamp(h.y,y0-1,y1+1),0,true);   // (a building by the line is gone at over the enemy's ground)
     return;
   }
   if (h.fk<0){ const s=downhill(c.field,h.x,h.y); if (s) moveTo(h,c,s[0],s[1]); return; }   // no place yet: on toward the front
@@ -2317,7 +2332,7 @@ function chooseOnFront(h: Human, c: Campaign, invading: boolean, retaking: boole
       const d=Math.hypot(e.x-h.x,e.y-h.y), onMe=e.foe===h.id, onLeader=c.leader>=0 && e.foe===c.leader;
       if (leader){ if (!onMe && d>=MELEE_R*2) continue; }
       else if (!onMe){
-        const er=e.fk>=0 ? R : Math.max(R,REACH_STRAY);   // (a man not in a line, a guard or a straggler, is gone after from further off than one standing in the enemy's line)
+        const er=e.fk>=0 || !invading ? R : Math.max(R,REACH_STRAY);   // (a man not in a line, a guard or a straggler, is gone after from further off than one standing in the enemy's line)
         if (!(onLeader && d<R*1.5) && (e.x-h.fx)**2+(e.y-h.fy)**2>er*er) continue;
         if (!invading && !onLeader && d>MELEE_R*1.5 && !(retaking ? owner[tileOf(e.x,e.y)]===c.a : holds(c.a,c.d,tileOf(e.x,e.y)))) continue;   // (not invading: only those on his own side's ground, occupied or not)
       }
