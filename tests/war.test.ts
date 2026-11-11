@@ -18,6 +18,7 @@ import { buildFort, fortTier, fortSpot } from '../src/sim/buildings';
 import { pTier } from '../src/sim/state';
 import { waiting, fortUpkeep, FORT_DMG, began, outlook, ARROW_TICKS, ARROW_DMG, RALLY_TICKS, ARCHER_WAGE, siteOf } from '../src/sim/war';
 import { pHp } from '../src/sim/state';
+import { WIDTH, PH_FIRE, PH_MELEE, PHASE_TICKS, BATTLE_TICK } from '../src/sim/war';
 import { bldHp } from '../src/sim/defense';
 import { unitAt, SOLDIER_HP, SOLDIER_DMG } from '../src/sim/army';
 import { pArch, pArmor } from '../src/sim/state';
@@ -196,7 +197,7 @@ describe('armies', () => {
     const a=army(1,20,home);
     run(200);
     expect(a.mode).toBe(A_HOME);
-    expect(a.files.length).toBeGreaterThanOrEqual(5);
+    expect(a.rows.map(r => r.length)).toEqual([WIDTH,WIDTH]);   // (rows of ten)
     const men=W.humans.filter(h => h.o===1 && h.kind===H_SOLDIER);
     const cx=men.reduce((s,h) => s+h.x,0)/men.length, cy=men.reduce((s,h) => s+h.y,0)/men.length;
     for (const h of men) expect(Math.hypot(h.x-cx,h.y-cy)).toBeLessThan(20);
@@ -239,26 +240,28 @@ describe('armies', () => {
     listen({ regionTaken: () => {} });
   });
 
-  it('fight a defending army man to man: front rank against front rank, one on one; the man behind steps up when one falls', () => {
+  it('fight row against row: the front rows fight until one is all down, and only then does the next row move up into the fighting zone', () => {
     world(); const { home, theirs }=lands(1);
     const a=army(1,20,home), d=army(2,20,theirs[0]);
     war(1,2,theirs);
     armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
     until(() => a.mode===A_BATTLE, 4000);
     expect(d.mode).toBe(A_BATTLE);
-    let most=0, stepped=0;
-    const heads=new Map<number, number>();
-    for (let i=0;i<600 && a.men>0 && d.men>0;i++){
+    const first=new Map<Army, Set<number>>([[a,new Set(a.rows[0])],[d,new Set(d.rows[0])]]);
+    const alive=(id: number) => { const h=W.humans.find(h => h.id===id); return !!h && h.hp>0; };
+    let movedUp=0, gaps=0;
+    for (let i=0;i<3000 && a.mode===A_BATTLE && d.mode===A_BATTLE;i++){
       tick();
-      const fighting=W.humans.filter(h => h.hp>0 && partner(h));
-      for (const h of fighting) expect(partner(partner(h)!)).toBe(h);   // (a duel is two men, each the other's)
-      const duels=fighting.length/2; most=Math.max(most,duels);
-      expect(duels).toBeLessThanOrEqual(Math.max(a.files.length,d.files.length));   // (one man of each front rank at most in a duel: files come and go as men fall)
-      a.files.forEach((f,k) => { const was=heads.get(k); if (was!==undefined && was!==f[0]) stepped++; heads.set(k,f[0]); });
+      for (const m of [a,d]){
+        const was=first.get(m)!, row=(m.rows[0] ?? []).filter(id => id);
+        if (!row.length) continue;
+        if ([...was].some(alive)){ expect(row.every(id => was.has(id))).toBe(true); if (m.rows[0].some(id => !id)) gaps++; }   // (while a man of the fighting row stands, nobody joins it: the fallen leave gaps)
+        else if (!row.some(id => was.has(id))){ movedUp++; first.set(m,new Set(m.rows[0])); }                                    // (all down: the next row is the fighting row)
+      }
       expect(W.rFlag[theirs[0]]).toBe(1);   // (no flag moves while they fight)
     }
-    expect(most).toBeGreaterThan(2);
-    expect(stepped).toBeGreaterThan(0);
+    expect(gaps).toBeGreaterThan(0);
+    expect(movedUp).toBeGreaterThan(0);
   });
 
   it('retreat out of a fight to the nearest region of their own, and the fight is over', () => {
@@ -330,17 +333,47 @@ describe('armies in peace and war', () => {
     expect(W.rOwner[e]).toBe(1); expect(W.rOwner[s2]).toBe(1);   // (both taken: the war is won)
   });
 
-  it('fight with the whole front rank at once, every man one on one, the wider army\'s spare men round the flank', () => {
+  it('fight with the whole fighting row at once: each man the one opposite him, and men with nobody opposite go for the nearest, three on one at most', () => {
     world(); const { home, theirs }=lands(1);
-    const a=army(1,60,home), d=army(2,20,theirs[0]);
+    const a=army(1,20,home), d=army(2,3,theirs[0]);
     war(1,2,theirs);
     armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
     until(() => a.mode===A_BATTLE, 4000);
-    run(40);
-    let most=0;
-    for (let i=0;i<60;i++){ tick(); const n=W.humans.filter(h => h.hp>0 && partner(h)).length/2; most=Math.max(most,n); }
-    expect(most).toBeGreaterThanOrEqual(Math.min(a.files.length,d.men)-2);   // (as many duels as the wider front can find men for, bar a man or two still stepping up)
-    expect(most).toBeGreaterThan(d.files.length);                              // (more than the narrow front alone: its rear ranks are flanked)
+    run(50);   // (the lines close, in the first fire phase)
+    const foes=new Map<number, number>(); let fighting=0;
+    for (const id of a.rows[0]){ const h=W.humans.find(h => h.id===id)!; if (h.foe>=0){ fighting++; foes.set(h.foe,(foes.get(h.foe) ?? 0)+1); } }
+    expect(fighting).toBe(9);                                   // (three of ours on each of their three)
+    expect([...foes.values()].every(k => k<=3)).toBe(true);
+    expect(a.rows[1].every(id => W.humans.find(h => h.id===id)!.foe<0)).toBe(true);   // (the row behind waits)
+    // equal rows: every man has the man opposite him
+    world(); const l2=lands(1);
+    const a2=army(1,10,l2.home), d2=army(2,10,l2.theirs[0]);
+    war(1,2,l2.theirs);
+    armyOrder(2,d2.id,'defend',l2.theirs[0]); armyOrder(1,a2.id,'attack',l2.theirs[0]);
+    until(() => a2.mode===A_BATTLE, 4000);
+    run(50);
+    const pairs=a2.rows[0].map(id => W.humans.find(h => h.id===id)!.foe);
+    expect(new Set(pairs).size).toBe(10); expect(pairs.every(f => d2.rows[0].includes(f))).toBe(true);
+  });
+
+  it('a battle goes by phases of three ticks, fire then melee: blows land only in the melee phases, arrows fly only in the fire phases, one a tick a man', () => {
+    world(); const { home, theirs }=lands(1);
+    const a=army(1,20,home,0,10), d=army(2,20,theirs[0],0,10);
+    war(1,2,theirs);
+    armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => a.mode===A_BATTLE, 4000);
+    expect(a.phase).toBe(PH_FIRE);   // (it begins with fire)
+    const swings: number[]=[], arrows: number[]=[], seen: number[]=[];
+    listen({ swing: () => { swings.push(a.phase); }, arrowShot: () => { arrows.push(a.phase); } });
+    const archers0=W.humans.filter(h => h.arch && h.hp>0 && h.war>=0).length;
+    for (let i=0;i<PHASE_TICKS*4-1;i++){ tick(); if (i%PHASE_TICKS===5) seen.push(a.phase); }
+    listen({ swing: () => {}, arrowShot: () => {} });
+    expect(seen).toEqual([PH_FIRE,PH_MELEE,PH_FIRE,PH_MELEE]);
+    expect(swings.length).toBeGreaterThan(40);   // (two rows of ten, three blows each a melee phase, two phases)
+    expect(swings.every(p => p===PH_MELEE)).toBe(true);
+    expect(arrows.every(p => p===PH_FIRE)).toBe(true);
+    expect(arrows.length).toBeGreaterThan(archers0*3*2*0.8); expect(arrows.length).toBeLessThanOrEqual(archers0*3*2);   // (an arrow a tick each, three ticks a phase, two fire phases)
+    expect(PHASE_TICKS).toBe(3*BATTLE_TICK); expect(BATTLE_TICK).toBe(GAME_SPEED*10);
   });
 
   it('roll a die for each line every 3 seconds: 1 is -20%, 3 even, 6 is +20%', () => {
@@ -362,20 +395,18 @@ describe('armies in peace and war', () => {
 });
 
 describe('battle lines', () => {
-  it('two lines that meet fight all along: nearly every man of the front rank is in a duel, none idle for long', () => {
+  it('two lines that meet fight all along: in a melee phase nearly every man of both fighting rows strikes three times', () => {
     world(); const { home, theirs }=lands(1);
     const a=army(1,40,home), d=army(2,40,theirs[0]);
     war(1,2,theirs);
     armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
     until(() => a.mode===A_BATTLE, 4000);
-    run(60);   // (the lines close)
-    let sum=0, k=0;
-    for (let i=0;i<200 && a.men>8 && d.men>8;i++){
-      tick();
-      const fronts=Math.min(a.files.length,d.files.length), duels=W.humans.filter(h => h.hp>0 && partner(h)).length/2;
-      sum+=duels/fronts; k++;
-    }
-    expect(sum/k).toBeGreaterThan(0.85);   // (on average at least 85% of the narrower front is fighting, man to man)
+    until(() => a.phase===PH_MELEE, PHASE_TICKS+5);
+    let swings=0; listen({ swing: () => { swings++; } });
+    run(PHASE_TICKS-1);
+    listen({ swing: () => {} });
+    expect(swings).toBeGreaterThanOrEqual(0.85*20*3);   // (twenty men in the two fighting rows, three blows each)
+    expect(swings).toBeLessThanOrEqual(20*3);
   });
 
   it('are reinforced from the barracks: the men waiting there march up and join the back of the phalanx, in a fight too', () => {
@@ -426,38 +457,75 @@ describe('archers', () => {
     expect(u.cap).toBe(40); expect(u.archers).toBe(30); expect(u.members.length-u.archers).toBe(10);
   });
 
-  it('stand behind the spearmen: the head of every file is a spearman while there are spearmen enough, and a file that loses its spearmen takes one from another', () => {
-    world(); const { home, theirs }=lands(1);
-    const a=army(1,40,home,0,30);
-    war(1,2,theirs); armyOrder(1,a.id,'attack',theirs[0]);
-    run(50);
+  it('stand at the back: rows of ten, the spearmen\'s first, then an empty row, then the archers\'', () => {
+    const shape=(x: Army) => [x.rows.slice(0,x.spearRows).map(r => r.length), x.rows.slice(x.spearRows).map(r => r.length)];
     const arch=(id: number) => W.humans.find(h => h.id===id)!.arch;
-    const F=a.files.length; expect(F).toBeLessThanOrEqual(10);
-    expect(a.files.every(f => !arch(f[0]))).toBe(true);
-    for (const f of a.files){ const k=f.findIndex(arch); if (k>=0) expect(f.slice(k).every(arch)).toBe(true); }   // (spearmen at the head, archers behind)
-    // the spearmen of one file fall: another file's spare spearman takes the head
-    const f0=a.files[0], spears=f0.filter(id => !arch(id));
-    for (const id of spears) W.humans.find(h => h.id===id)!.hp=0;
+    world(); const { home, theirs }=lands(1);
+    const a=army(1,25,home,0,5), d=army(2,25,theirs[0],0,15);
+    expect(shape(a)).toEqual([[10,10],[5]]);     // 20 spearmen and 5 archers
+    expect(shape(d)).toEqual([[10],[10,5]]);     // 10 spearmen and 15 archers
+    expect(a.rows.slice(0,2).flat().some(arch)).toBe(false); expect(a.rows[2].every(arch)).toBe(true);
+    // the empty row: the archers stand two rows behind the last of the spearmen, the spearmen's rows one behind the other
+    run(150);
+    const along=(x: Army, r: number) => { let s=0, k=0; for (const id of x.rows[r]){ const h=W.humans.find(h => h.id===id)!; s+=(h.x-x.x)*x.fx+(h.y-x.y)*x.fy; k++; } return s/k; };
+    expect(along(a,0)-along(a,1)).toBeCloseTo(2.6,0); expect(along(a,1)-along(a,2)).toBeCloseTo(5.2,0);
+    expect(along(d,0)-along(d,1)).toBeCloseTo(5.2,0); expect(along(d,1)-along(d,2)).toBeCloseTo(2.6,0);
+    // out of a battle the rows close up: a fallen man's place is taken from the last row of his kind
+    const dead=a.rows[0].slice(0,3); for (const id of dead) W.humans.find(h => h.id===id)!.hp=0;
     run(3);
-    const alive=W.humans.filter(h => h.o===1 && h.war===a.id && h.hp>0 && !h.arch).length;
-    expect(a.files.filter(f => !arch(f[0])).length).toBe(Math.min(a.files.length,alive));
+    expect(shape(a)).toEqual([[10,7],[5]]);
+    // with the spearmen gone the archers are the front
+    for (const id of a.rows.slice(0,2).flat()) W.humans.find(h => h.id===id)!.hp=0;
+    run(3);
+    expect(shape(a)).toEqual([[],[5]]);
   });
 
-  it('shoot from the ranks behind in a battle: an arrow each every 4 seconds for 1 damage, at the enemy army only', () => {
+  it('shoot only in the fire phases, an arrow a tick each, from the rows behind; no arrows without a fight', () => {
     world(); const { home, theirs }=lands(1);
     const a=army(1,25,home,0,15), d=army(2,15,theirs[0]);
     war(1,2,theirs);
     let shots=0; listen({ arrowShot: () => { shots++; } });
     armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
     until(() => a.mode===A_BATTLE, 4000);
-    shots=0; run(ARROW_TICKS);
-    const behind=a.files.reduce((k,f) => k+f.slice(1).filter(id => W.humans.find(h => h.id===id)?.arch).length,0);
-    expect(behind).toBeGreaterThan(5);
-    expect(shots).toBeGreaterThanOrEqual(behind-2); expect(shots).toBeLessThanOrEqual(15);
+    shots=0; run(PHASE_TICKS-1);
+    expect(shots).toBeGreaterThanOrEqual(15*3-3); expect(shots).toBeLessThanOrEqual(15*3);   // (fifteen archers, three ticks)
+    shots=0; run(PHASE_TICKS); expect(shots).toBe(0);                                           // (the melee phase: no arrows)
     expect(ARROW_DMG).toBe(1);
-    // no shots without a fight
     world(); const l2=lands(1); army(1,15,l2.home,0,10);
-    shots=0; run(ARROW_TICKS*2); expect(shots).toBe(0);
+    shots=0; run(PHASE_TICKS*3); expect(shots).toBe(0);
+    listen({ arrowShot: () => {} });
+  });
+
+  it('with the enemy upon them fight hand to hand and do not shoot, while the archers\' rows behind shoot on; the enemy comes to them', () => {
+    world(); const { home, theirs }=lands(1);
+    const a=army(1,20,home), d=army(2,20,theirs[0],0,20);   // spearmen against archers alone
+    war(1,2,theirs);
+    armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => a.mode===A_BATTLE, 4000);
+    const [dx0,dy0]=[d.x,d.y];
+    until(() => a.phase===PH_MELEE, PHASE_TICKS+5); until(() => a.phase===PH_FIRE, PHASE_TICKS+5);
+    expect(Math.hypot(d.x-dx0,d.y-dy0)).toBeLessThan(0.5);        // (the archers held their ground: the spearmen came up)
+    expect(Math.hypot(a.x-d.x,a.y-d.y)).toBeLessThan(4);
+    const front=new Set(d.rows[0]), by=new Map<number, number>();
+    listen({ arrowShot: (x0,y0) => { let b=-1, bd=9; for (const h of W.humans) if (h.o===2 && h.arch && h.hp>0){ const dd=Math.hypot(h.x-x0,h.y-3-y0); if (dd<bd){ bd=dd; b=h.id; } } by.set(b,(by.get(b) ?? 0)+1); } });
+    run(PHASE_TICKS-1);
+    listen({ arrowShot: () => {} });
+    expect([...by.keys()].some(id => front.has(id))).toBe(false);   // (the row in the melee looses nothing)
+    expect(by.size).toBeGreaterThan(5);                              // (the row behind it shoots)
+  });
+
+  it('archers against archers stay where they are and shoot: nobody closes, nobody strikes', () => {
+    world(); const { home, theirs }=lands(1);
+    const a=army(1,20,home,0,20), d=army(2,20,theirs[0],0,20);
+    war(1,2,theirs);
+    armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => a.mode===A_BATTLE, 4000);
+    const gap=Math.hypot(a.x-d.x,a.y-d.y); let swings=0, shots=0;
+    listen({ swing: () => { swings++; }, arrowShot: () => { shots++; } });
+    run(PHASE_TICKS*2);
+    listen({ swing: () => {}, arrowShot: () => {} });
+    expect(Math.hypot(a.x-d.x,a.y-d.y)).toBeCloseTo(gap,3);
+    expect(swings).toBe(0); expect(shots).toBeGreaterThan(60);
   });
 });
 

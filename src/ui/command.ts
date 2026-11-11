@@ -121,7 +121,7 @@ export function armyAt(sx: number, sy: number): Army | undefined {
   let best: Army | undefined, bd=r*r;
   const byId=new Map(W.humans.map(h => [h.id,h]));
   for (const x of mine()){
-    for (const f of x.files) for (const id of f){ const h=byId.get(id); if (!h) continue; const d=(h.x-wx)**2+(h.y-2-wy)**2; if (d<bd){ bd=d; best=x; } }
+    for (const f of x.rows) for (const id of f){ const h=id ? byId.get(id) : undefined; if (!h) continue; const d=(h.x-wx)**2+(h.y-2-wy)**2; if (d<bd){ bd=d; best=x; } }
   }
   return best;
 }

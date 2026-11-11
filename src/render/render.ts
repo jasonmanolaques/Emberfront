@@ -24,7 +24,7 @@ import { H_SOLDIER, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, TASK_F
 import { units, unitLabel } from '../sim/army';
 import { chatter, drawSpeech } from './speech';
 import { paintSmallFlag, flagImage } from './flags';
-import { allied, atWar, HIT_TICKS, claimsOf, claimProblem, armyOf, A_HOME } from '../sim/war';
+import { allied, atWar, HIT_TICKS, claimsOf, claimProblem, armyOf, A_HOME, PH_FIRE, PHASE_TICKS, BATTLE_TICK } from '../sim/war';
 import { RG, region } from '../sim/regions';
 const RANKS = ['', 'Leader', 'General', 'Captain', 'Commander', 'Grand Marshal'];
 const rankFor = (size: number) => size<=5 ? 0 : size<=15 ? 1 : size<=30 ? 2 : size<=50 ? 3 : size<=80 ? 4 : 5;
@@ -80,7 +80,7 @@ function box(x: number, y: number, w: number, h: number, c: string){ ctx.fillSty
 /** Each army in the field's standard bearer (the man at the back of its middle file) and the rank its size gives him. */
 function leaders(){
   const m=new Map<number, number>();
-  for (const x of W.armies){ if (x.mode===A_HOME || x.men<3 || !x.files.length) continue; const f=x.files[x.files.length>>1]; if (f.length) m.set(f[f.length-1],Math.max(1,rankFor(x.men))); }
+  for (const x of W.armies){ if (x.mode===A_HOME || x.men<3 || !x.rows.length) continue; const f=x.rows[x.rows.length-1].filter(id => id); if (f.length) m.set(f[f.length>>1],Math.max(1,rankFor(x.men))); }   // (the middle man of its last row)
   return m;
 }
 /** The leader's standard on his back, his country's flag, and his rank in gold pips above it. */
@@ -101,7 +101,7 @@ function drawStandard(o: number, rank: number, bx: number, fy: number, left: boo
 /** The army the player has in hand: a gold ring at each of its soldiers' feet, and a dotted line along its way. */
 function drawSelection(now: number){
   const x=client.selected>=0 ? armyOf(client.selected) : undefined; if (!x) return;
-  const pulse=reduceMotion ? 0 : ((now/300)|0)&1, ids=new Set(x.files.flat());
+  const pulse=reduceMotion ? 0 : ((now/300)|0)&1, ids=new Set(x.rows.flat());
   for (const p of W.humans){
     if (!ids.has(p.id) || indoors(p)) continue;
     const px=Math.round(p.x*K), py=Math.floor(p.y*K)+1, w=4;
@@ -567,19 +567,20 @@ export function render(now: number, dt: number){
     const fs=Math.round(11*dpr); ctx.font=`600 ${fs}px "Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif`; ctx.lineWidth=Math.max(2,fs*0.25);
     for (const [id,rank] of leaders()){
       const p=W.humans.find(h => h.id===id); if (!p || p.hp<=0 || indoors(p)) continue;
-      const x=W.armies.find(a => a.files.some(f => f.includes(id))); if (!x) continue;
+      const x=W.armies.find(a => a.rows.some(f => f.includes(id))); if (!x) continue;
       const sx=(p.x*K-camX)*zoom, sy=(p.y*K-camY)*zoom+3*zoom+fs*0.6;
       if (sx<-60||sy<-20||sx>w+60||sy>h+20) continue;
       ctx.strokeStyle='rgba(8,14,22,.9)'; ctx.fillStyle=x.o===PLAYER ? '#ffe27a' : '#f2f5f8';
       const t=`${RANKS[rank]} · ${x.men}`; ctx.strokeText(t,sx,sy); ctx.fillText(t,sx,sy);
     }
   }
-  // each line in a battle shows its last roll of the die, behind its front rank
+  // each line in a battle shows the battle's phase (fire: a bow; melee: crossed swords; three pips for its three ticks) and its die for it, behind its rows
   if (zs>=0.8){
     const fs=Math.round(Math.max(11,Math.min(15,zs*3))*dpr);
     for (const x of W.armies){
       if (x.mode!==3 || !x.roll) continue;
-      const px=(x.x-x.fx*14)*K, py=(x.y-x.fy*14)*K-10, sx=(px-camX)*zoom, sy=(py-camY)*zoom;
+      const back=14+Math.max(0,x.rows.length-3)*2.6;
+      const px=(x.x-x.fx*back)*K, py=(x.y-x.fy*back)*K-10, sx=(px-camX)*zoom+fs*0.95, sy=(py-camY)*zoom;
       if (sx<-40||sy<-40||sx>w+40||sy>h+40) continue;
       const s2=fs*1.5, good=x.roll>3, bad=x.roll<3, pct=x.roll<=3 ? (x.roll-3)*10 : Math.round((x.roll-3)*20/3);
       ctx.fillStyle='rgba(8,14,22,.9)'; ctx.fillRect(sx-s2/2-2*dpr,sy-s2/2-2*dpr,s2+4*dpr,s2+4*dpr);
@@ -588,9 +589,27 @@ export function render(now: number, dt: number){
       ctx.fillStyle='#2a1c10'; const p=s2*0.13, o=s2*0.27;
       const pips: [number, number][]=x.roll===1 ? [[0,0]] : x.roll===2 ? [[-1,-1],[1,1]] : x.roll===3 ? [[-1,-1],[0,0],[1,1]] : x.roll===4 ? [[-1,-1],[1,-1],[-1,1],[1,1]] : x.roll===5 ? [[-1,-1],[1,-1],[0,0],[-1,1],[1,1]] : [[-1,-1],[1,-1],[-1,0],[1,0],[-1,1],[1,1]];
       for (const [a,b] of pips) ctx.fillRect(sx+a*o-p/2,sy+b*o-p/2,p,p);
-      ctx.font=`700 ${fs}px "Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif`; ctx.lineWidth=Math.max(2,fs*0.25); ctx.strokeStyle='rgba(8,14,22,.9)';
-      ctx.fillStyle=good ? '#bfe9a0' : bad ? '#ffb0a0' : '#f2f0e6'; const t=`${pct>0 ? '+' : ''}${pct}%`;
-      ctx.strokeText(t,sx,sy+s2*0.95); ctx.fillText(t,sx,sy+s2*0.95);
+      // the phase's icon, in a plate left of the die
+      const fire=x.phase===PH_FIRE, ix=sx-s2*1.12, u=s2/10;
+      ctx.fillStyle='rgba(8,14,22,.9)'; ctx.fillRect(ix-s2/2-2*dpr,sy-s2/2-2*dpr,s2+4*dpr,s2+4*dpr);
+      ctx.fillStyle=fire ? '#3a2c1c' : '#2a2f38'; ctx.fillRect(ix-s2/2,sy-s2/2,s2,s2);
+      ctx.lineCap='round'; ctx.lineWidth=Math.max(1.5,u*1.1);
+      if (fire){   // a drawn bow and its arrow
+        ctx.strokeStyle='#c9925a'; ctx.beginPath(); ctx.arc(ix-u*1.5,sy,u*3.6,-Math.PI*0.42,Math.PI*0.42); ctx.stroke();
+        ctx.strokeStyle='#e8e0c8'; ctx.lineWidth=Math.max(1,u*0.6); ctx.beginPath(); ctx.moveTo(ix-u*0.1,sy-u*3.3); ctx.lineTo(ix-u*2.6,sy); ctx.lineTo(ix-u*0.1,sy+u*3.3); ctx.stroke();
+        ctx.strokeStyle='#f2f0e6'; ctx.lineWidth=Math.max(1.5,u*0.9); ctx.beginPath(); ctx.moveTo(ix-u*2.6,sy); ctx.lineTo(ix+u*3.6,sy); ctx.moveTo(ix+u*2.2,sy-u*1.3); ctx.lineTo(ix+u*3.6,sy); ctx.lineTo(ix+u*2.2,sy+u*1.3); ctx.stroke();
+      } else {      // crossed swords
+        for (const sg of [-1,1]){
+          ctx.strokeStyle='#dfe5ea'; ctx.lineWidth=Math.max(1.5,u*1.1); ctx.beginPath(); ctx.moveTo(ix-sg*u*3.2,sy+u*3.2); ctx.lineTo(ix+sg*u*3.2,sy-u*3.2); ctx.stroke();
+          ctx.strokeStyle='#c9925a'; ctx.lineWidth=Math.max(1.5,u*1.2); ctx.beginPath(); ctx.moveTo(ix-sg*u*3.0,sy+u*1.2); ctx.lineTo(ix-sg*u*1.2,sy+u*3.0); ctx.stroke();
+        }
+      }
+      // the phase's three ticks: one pip lit for each begun
+      const done=Math.min(3,1+(((W.tickN-x.since)%PHASE_TICKS)/BATTLE_TICK|0));
+      for (let k=0;k<3;k++){ ctx.fillStyle=k<done ? (fire ? '#ffb24a' : '#dfe5ea') : 'rgba(255,255,255,.22)'; ctx.fillRect(ix-s2/2+k*(s2/3)+1*dpr,sy+s2/2+3*dpr,s2/3-2*dpr,2.5*dpr); }
+      ctx.font=`700 ${fs}px "Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif`; ctx.lineWidth=Math.max(2,fs*0.25); ctx.strokeStyle='rgba(8,14,22,.9)'; ctx.textAlign='center';
+      ctx.fillStyle=good ? '#bfe9a0' : bad ? '#ffb0a0' : '#f2f0e6'; const t=`${fire ? 'Fire' : 'Melee'} ${pct>0 ? '+' : ''}${pct}%`;
+      ctx.strokeText(t,sx-s2*0.56,sy+s2*1.12); ctx.fillText(t,sx-s2*0.56,sy+s2*1.12);
     }
   }
   // the names of the regions claimed in a crisis or war of the player's (and the one under the pointer while claiming)

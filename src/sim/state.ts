@@ -104,7 +104,10 @@ export interface Army {
   enemy: number;                     // the kingdom its order is against (0 none)
   path: number[];                    // its way, waypoints in pixels (x,y pairs)
   foe: number;                       // the army it is fighting (id), or -1
-  files: number[][];                 // its men in the field by file, the front rank first in each
+  rows: number[][];                  // its men in the field by row, the front row first: each at most WIDTH men (ids; 0 a place left empty by a man fallen in the fighting row); the spearmen's rows first, then the archers'
+  spearRows: number;                 // how many of its rows (the first ones) are spearmen's: the archers' stand an empty row behind them
+  phase: number;                     // in a battle: its phase, PH_FIRE or PH_MELEE (sim/war.ts), 0 none
+  since: number;                     // tick its battle began (the phases count from it)
   men: number;                       // men in the field
   safe: number;                      // tick before which no enemy army takes it on (it is retreating, or going home)
   stand: boolean;                    // in a fight: it was holding its ground when it began (it stays; the other comes up to it)

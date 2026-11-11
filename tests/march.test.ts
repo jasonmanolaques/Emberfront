@@ -46,7 +46,7 @@ function army(k: number): Army {
   for (let i=0;i<k;i++) W.humans.push(makeHuman(n,H_SOLDIER,x+(i%7)-3,y+((i/7)|0)*0.5));
   n.soldierShare=1;
   run(3);
-  const a=W.armies.filter(a => a.o===1).sort((p,q) => q.files.flat().length-p.files.flat().length)[0];
+  const a=W.armies.filter(a => a.o===1).sort((p,q) => q.rows.flat().length-p.rows.flat().length)[0];
   if (!a) throw new Error('no army');
   return a;
 }
@@ -56,9 +56,9 @@ function march(a: Army, px: number, py: number, slack=3){
   expect(moveArmy(1,a.id,px,py)).toBe(true);
   tick();   // (the phalanx forms its column)
   let wide=0, onWater=0;
-  const t=until(() => { if (a.mode===A_MARCH) wide=Math.max(wide,a.files.length); for (const f of a.files) for (const id of f){ const h=W.humans.find(h => h.id===id); if (h && !isLand[((h.y/2)|0)*TW+((h.x/2)|0)]) onWater++; } return a.mode===A_HOLD; }, max);
+  const t=until(() => { if (a.mode===A_MARCH) wide=Math.max(wide,...a.rows.map(r => r.length)); for (const f of a.rows) for (const id of f){ const h=W.humans.find(h => h.id===id); if (h && !isLand[((h.y/2)|0)*TW+((h.x/2)|0)]) onWater++; } return a.mode===A_HOLD; }, max);
   run(120);   // (the ranks close up)
-  const men=a.files.flat().map(id => W.humans.find(h => h.id===id)!).filter(Boolean);
+  const men=a.rows.flat().map(id => W.humans.find(h => h.id===id)!).filter(Boolean);
   const far=men.filter(h => Math.hypot(h.x-a.x,h.y-a.y)>45).length;
   return { ticks:t, max, far, men:men.length, wide, onWater, at:Math.hypot(a.x-px,a.y-py) };
 }
@@ -66,7 +66,7 @@ function march(a: Army, px: number, py: number, slack=3){
 describe('marching', () => {
   for (const k of [5, 20, 50, 100]) it(`an army of ${k} crosses open ground in good time, a column at most ${MARCH_FILES} across, and nobody falls behind`, () => {
     world(); const a=army(k);
-    expect(a.files.flat().length).toBe(k);
+    expect(a.rows.flat().length).toBe(k);
     const r=march(a,a.x+300,a.y);
     expect(r.at).toBeLessThan(1);
     expect(r.ticks).toBeLessThan(300/(ARMY_SP*0.1)*1.6+200);   // (a 100-man column waits a little for its rear at the start)

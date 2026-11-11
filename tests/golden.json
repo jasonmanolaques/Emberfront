@@ -140,7 +140,7 @@
     "pTimer": "eaee5dc7",
     "nations": "d9fc807d",
     "attacks": "599968d5",
-    "campaigns": "687c79df"
+    "campaigns": "62af5874"
    },
    {
     "tick": 2200,
@@ -154,7 +154,7 @@
     "pTimer": "60f0eda1",
     "nations": "6657fe71",
     "attacks": "46645870",
-    "campaigns": "3481a7a5"
+    "campaigns": "9f44e453"
    },
    {
     "tick": 2400,
@@ -168,7 +168,7 @@
     "pTimer": "de7a5dc4",
     "nations": "75cf76a8",
     "attacks": "811c9dc5",
-    "campaigns": "e405d780"
+    "campaigns": "8308d1e5"
    },
    {
     "tick": 2600,
@@ -182,7 +182,7 @@
     "pTimer": "eaee5dc7",
     "nations": "ec848526",
     "attacks": "811c9dc5",
-    "campaigns": "da8c16bf"
+    "campaigns": "cbb177df"
    },
    {
     "tick": 2800,
@@ -196,21 +196,21 @@
     "pTimer": "60f0eda1",
     "nations": "179e3f3b",
     "attacks": "811c9dc5",
-    "campaigns": "aef9ff26"
+    "campaigns": "5af1db7e"
    },
    {
     "tick": 3000,
     "simTime": "299.9999999999997",
     "owner": "7d1c0b1e",
     "road": "aad73bc5",
-    "pType": "e8f7f564",
-    "pOwner": "c8661892",
-    "pVar": "bebf0aeb",
+    "pType": "21499d00",
+    "pOwner": "1bbf2184",
+    "pVar": "3c532ccd",
     "pBurn": "cf224b45",
     "pTimer": "de7a5dc4",
-    "nations": "9f81c430",
+    "nations": "ab108c4b",
     "attacks": "811c9dc5",
-    "campaigns": "e120ef71"
+    "campaigns": "be5024c"
    }
   ]
  },
@@ -369,7 +369,7 @@
     "pTimer": "f761f769",
     "nations": "feb49b55",
     "attacks": "21f94ee8",
-    "campaigns": "ba15950b"
+    "campaigns": "52f0bed8"
    },
    {
     "tick": 2400,
@@ -383,49 +383,49 @@
     "pTimer": "22c93f99",
     "nations": "1265c57f",
     "attacks": "fab3a68d",
-    "campaigns": "ba15950b"
+    "campaigns": "52f0bed8"
    },
    {
     "tick": 2600,
     "simTime": "259.9999999999906",
     "owner": "8c90cdbb",
     "road": "8a3728ba",
-    "pType": "5db59fd2",
-    "pOwner": "267db440",
-    "pVar": "31e9ab60",
+    "pType": "23e4111e",
+    "pOwner": "4f00f7c6",
+    "pVar": "3c3b0622",
     "pBurn": "cf224b45",
     "pTimer": "e1e4f62d",
-    "nations": "d3a5559e",
+    "nations": "9fa9ac47",
     "attacks": "811c9dc5",
-    "campaigns": "4c8095ad"
+    "campaigns": "8d2636c4"
    },
    {
     "tick": 2800,
     "simTime": "279.99999999999517",
     "owner": "8c90cdbb",
     "road": "69e06500",
-    "pType": "5f16cbd0",
-    "pOwner": "e6a76925",
-    "pVar": "da64ef40",
+    "pType": "567485a",
+    "pOwner": "7642ed6a",
+    "pVar": "43f3f897",
     "pBurn": "cf224b45",
     "pTimer": "f761f769",
-    "nations": "a67d0967",
+    "nations": "9590db7d",
     "attacks": "811c9dc5",
-    "campaigns": "5834b53b"
+    "campaigns": "57bf0996"
    },
    {
     "tick": 3000,
     "simTime": "299.9999999999997",
     "owner": "8c90cdbb",
-    "road": "ffe47562",
-    "pType": "ffbc7556",
-    "pOwner": "fa510b83",
-    "pVar": "3b6919cd",
+    "road": "f3c85f95",
+    "pType": "d9c4a79a",
+    "pOwner": "2a995608",
+    "pVar": "9c19d00d",
     "pBurn": "cf224b45",
     "pTimer": "22c93f99",
-    "nations": "b98b3cc2",
+    "nations": "e979f3ed",
     "attacks": "811c9dc5",
-    "campaigns": "5cbe1dd6"
+    "campaigns": "492b8d45"
    }
   ]
  },
@@ -584,7 +584,7 @@
     "pTimer": "2d1fda69",
     "nations": "34c16ac2",
     "attacks": "811c9dc5",
-    "campaigns": "2e041414"
+    "campaigns": "30674165"
    },
    {
     "tick": 2400,
@@ -598,7 +598,7 @@
     "pTimer": "a08b51d7",
     "nations": "f183ec87",
     "attacks": "811c9dc5",
-    "campaigns": "d652de4c"
+    "campaigns": "95618b72"
    },
    {
     "tick": 2600,
@@ -612,35 +612,35 @@
     "pTimer": "584c8c9c",
     "nations": "79fa95e0",
     "attacks": "811c9dc5",
-    "campaigns": "82a53a4d"
+    "campaigns": "78598e51"
    },
    {
     "tick": 2800,
     "simTime": "279.99999999999517",
     "owner": "3c5d08a1",
     "road": "e5f3014c",
-    "pType": "b64a806",
-    "pOwner": "f64f4e14",
+    "pType": "87f936e2",
+    "pOwner": "6c79a234",
     "pVar": "774fad22",
     "pBurn": "cf224b45",
     "pTimer": "2d1fda69",
     "nations": "42045c22",
     "attacks": "811c9dc5",
-    "campaigns": "f89bf6b9"
+    "campaigns": "93e7ff4b"
    },
    {
     "tick": 3000,
     "simTime": "299.9999999999997",
     "owner": "3c5d08a1",
     "road": "39d65b5f",
-    "pType": "2b815a07",
-    "pOwner": "2bada839",
-    "pVar": "36817a38",
+    "pType": "67ccf85f",
+    "pOwner": "7399d5ff",
+    "pVar": "a06a015b",
     "pBurn": "cf224b45",
     "pTimer": "a08b51d7",
-    "nations": "c4871338",
+    "nations": "e0f4fd03",
     "attacks": "811c9dc5",
-    "campaigns": "a35dc232"
+    "campaigns": "58389e65"
    }
   ]
  }

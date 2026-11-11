@@ -45,9 +45,9 @@ export const O_NONE = 0, O_ATTACK = 1, O_DEFEND = 2, O_RETURN = 3, O_RETREAT = 4
 export const CRISIS_TICKS = 30*GAME_SPEED*10;     // the defender's time to answer claims: 30 s on the clock, then it is war
 const BOT_ANSWER = 4*GAME_SPEED*10;               // a bot answers within 4 s
 export const CAPTURE_TICKS = 20*GAME_SPEED*10;    // an invader sitting alone in a region brings its flag down in 20 s on the clock; its owner's army raises it as fast (a capital's region has no flag: it is besieged)
-export const ROLL_TICKS = 3*GAME_SPEED*10;        // every 3 s on the clock each side of a battle rolls a die for its line
+export const ROLL_TICKS = 3*GAME_SPEED*10;        // every 3 s on the clock (a phase of the battle) each side rolls a die for its line
 export const ROLL_MOD = 0.2;                      // a 6 is +20% to the blows of its line, a 1 is -20%, a 3 even
-export const BATTLE_DMG = 2;                      // blows in a battle line land twice as hard as a soldier's blow elsewhere: a line fight is brutal
+export const BATTLE_DMG = 3;                      // blows in a battle line land three times as hard as a soldier's blow elsewhere: men strike only once a second, and only in the melee phases
 export const FORT_SLOW = 0.4;                     // each tier of a region's fort makes its capture (and its retaking) 40% slower
 export const FORT_DMG = [0, 2, 4, 8, 16];         // what a fort's shot does, by tier (one every ROLL_TICKS, at a man of an army attacking the region); 4: a capital's region
 export const FORT_UPKEEP = 1.5;                   // gold a second a fort costs, a tier
@@ -56,16 +56,22 @@ export const MAX_CLAIMS = 4;                      // regions one crisis may clai
 export const OFFER_TICKS = 300;                   // a peace offer stands 30 s
 export const MAX_ALLIES = 3;
 const GRUDGE_TICKS = 900;                         // a kingdom claimed on in the last 90 s won't ally with its claimant
-const FILE_GAP = 2.8, RANK_GAP = 2.6;             // pixels between the files of a phalanx, and between its ranks
-export const MARCH_FILES = 10;                    // a marching column is at most 10 men across, the rest in ranks behind
-const HOLD_FILES = 14;                            // a phalanx standing or fighting is at most this wide
-const MARCH_GAP = 2.4;                            // pixels between the files of a marching column
+const FILE_GAP = 2.8, RANK_GAP = 2.6;             // pixels between the men of a row, and between the rows
+export const WIDTH = 10;                          // the combat width: a row is at most 10 men, the rest in rows behind
+export const MARCH_FILES = WIDTH;                 // (a marching column is as wide)
+const MARCH_GAP = 2.4;                            // pixels between the men of a row of a marching column
+export const LINE_SPEAR = 1, LINE_ARCHER = 4;     // the priority lines of a formation, front to back: 1 the spearmen, 2 and 3 kept for units to come (an empty row stands for 3), 4 the archers (5 is a capital's castle, the last to be fought)
+export const BATTLE_TICK = GAME_SPEED*10;         // a battle's tick: one a second on the clock; every man acts once in each (at his own beat of it)
+export const PHASE_TICKS = 3*BATTLE_TICK;         // a battle goes by phases of three ticks: fire (archers shoot), then melee (the front rows strike), and so on; each side rolls a die for each phase
+export const PH_FIRE = 1, PH_MELEE = 2;
+const FLANKERS = 3;                               // men who can strike one man at once: the one before him and one on each side
+const REACH = 3.9;                                // pixels a man in the fighting row strikes across (a flanker stands a little aside)
 const ENGAGE_R = 26;                              // pixels between two hostile armies' front ranks at which they fight
 const GAP = 2.2;                                  // pixels between the two front ranks in a fight
 export const ARMY_SP = 6;                         // pixels a second an army marches (on open ground)
 const SAFE_TICKS = 40*GAME_SPEED*10;              // an army retreating or going home is let go for 40 s
 const HEAL_TICKS = 30*GAME_SPEED*10;              // a wounded soldier at his barracks is whole again in 30 s
-export const ARROW_TICKS = 4*GAME_SPEED*10;       // an archer behind the front rank shoots an arrow every 4 s on the clock in a battle
+export const ARROW_TICKS = 4*GAME_SPEED*10;       // an archer storming a castle shoots an arrow every 4 s on the clock (in a battle the archers shoot by the fire phases)
 export const ARROW_DMG = 1;                       // ...that does 1 damage
 export const ARCHER_WAGE = 1.1;                   // an archer is paid a tenth more than a spearman (0.33 a second in the field)
 export const RALLY_TICKS = 30*GAME_SPEED*10;      // an army that retreats rallies for 30 s on the clock, taking no orders
@@ -348,7 +354,7 @@ export function annex(loser: number, winner: number){
 function homeSpot(x: Army): [number, number, number, number] {
   const u=unitAt(x.id) ?? x.plots.map(q => unitAt(q)).find(v => !!v);
   if (!u) return [x.x, x.y, 0, 1];
-  const F=Math.max(1,x.files.length), ranks=Math.max(1,Math.ceil(Math.max(1,x.men)/F)), half=(F-1)/2*FILE_GAP+1.5, deep=(ranks-1)*RANK_GAP;
+  const F=Math.max(1,...x.rows.map(r => r.length)), half=(F-1)/2*FILE_GAP+1.5, deep=Math.max(0,depthAll(x)-1)*RANK_GAP;
   const xs=u.plots.map(q => (q%PW)*8), ys=u.plots.map(q => ((q/PW)|0)*8);
   const left=Math.min(...xs), right=Math.max(...xs)+8, top=Math.min(...ys), bottom=Math.max(...ys)+8, mx=(left+right)/2, my=(top+bottom)/2;
   // [front-rank middle x, y, facing x, y]: the ranks stand behind the front, toward the barracks
@@ -376,7 +382,7 @@ function syncArmies(){
       let x: Army | undefined;
       for (const q of u.plots){ const y=byPlot.get(q); if (y && !seen.has(y) && y.o===n.id){ x=y; break; } }
       if (!x) for (const q of plots){ const y=byPlot.get(q); if (y && !seen.has(y) && y.o===n.id){ x=y; break; } }
-      if (!x){ x={ id:u.key, o:n.id, plots, x:u.x, y:u.y+4, fx:0, fy:1, mode:A_HOME, order:O_NONE, goal:0, enemy:0, path:[], foe:-1, files:[], men:0, safe:0, stand:false, hitAt:-1e9, leader:-1, trail:[], stuck:0, near:Infinity, roll:0, rollAt:0, coming:[], via:[], viaAt:-1e9, rally:0, next:null }; }
+      if (!x){ x={ id:u.key, o:n.id, plots, x:u.x, y:u.y+4, fx:0, fy:1, mode:A_HOME, order:O_NONE, goal:0, enemy:0, path:[], foe:-1, rows:[], spearRows:0, phase:0, since:0, men:0, safe:0, stand:false, hitAt:-1e9, leader:-1, trail:[], stuck:0, near:Infinity, roll:0, rollAt:0, coming:[], via:[], viaAt:-1e9, rally:0, next:null }; }
       if (W.armies.some(y => y!==x && y.id===x!.id && seen.has(y))) x.id=u.key;   // (two with one name: the new one takes its lead's)
       x.plots=plots; seen.add(x); keep.push(x);
     }
@@ -393,62 +399,61 @@ function membersOf(x: Army): Human[] {
 }
 const fit = (h: Human) => h.hp>0 && !indoors(h) && !switching(h) && h.boat<0;
 /** How many files a phalanx of n men has: wide and shallow. */
-const filesFor = (n: number, marching=false) => n<=0 ? 0 : Math.max(1,Math.min(n,marching ? MARCH_FILES : HOLD_FILES,Math.round(Math.sqrt(n*2.2))));
-/** Keeps x's files to its men: the fallen leave their file (the man behind steps up), newcomers join the shortest file at its back, and the files stay even.
-    Spearmen hold the front and archers stand behind them: the spearmen are spread evenly over the files, each file has its spearmen at its head,
-    and a file whose spearmen have all fallen takes one over from a file with more (a man changes places with an archer), so archers come to the
-    front only when there are no spearmen left to stand there. With few spearmen the phalanx is narrower and deeper (as wide as its spearmen,
-    but no less than half its usual width), so archers stand behind a front of spears. */
+/** The priority line of a man: spearmen fight in front, archers stand at the back. */
+const lineOf = (h: Human) => h.arch ? LINE_ARCHER : LINE_SPEAR;
 const isArcher = (id: number) => byId.get(id)?.arch===true;
-function tidyFiles(x: Army, men: Human[]){
-  const ids=new Set<number>(); for (const h of men) ids.add(h.id);
-  const placed=new Set<number>();
-  for (let i=0;i<x.files.length;i++){ x.files[i]=x.files[i].filter(id => ids.has(id) && !placed.has(id)); for (const id of x.files[i]) placed.add(id); }
-  x.files=x.files.filter(f => f.length);
-  const loose: number[]=[]; for (const h of men) if (!placed.has(h.id)) loose.push(h.id);
-  let spears=0; for (const h of men) if (!h.arch) spears++;
-  let F=filesFor(men.length,x.mode===A_MARCH);
-  if (spears>0 && spears<men.length && spears<F) F=Math.max(spears,Math.ceil(F/2));
-  while (x.files.length>F){ const f=x.files.length%2 ? x.files.pop()! : x.files.shift()!; loose.push(...f); }
-  while (x.files.length<F) if (x.files.length%2) x.files.push([]); else x.files.unshift([]);
-  const spearsIn=(f: number[]) => { let k=0; for (const id of f) if (!isArcher(id)) k++; return k; };
-  loose.sort((a,b) => +isArcher(a)-+isArcher(b));   // (spearmen placed first)
-  for (const id of loose){
-    let s=0;
-    if (isArcher(id)){ for (let i=1;i<x.files.length;i++) if (x.files[i].length<x.files[s].length) s=i; }
-    else { for (let i=1;i<x.files.length;i++){ const a=spearsIn(x.files[i]), b=spearsIn(x.files[s]); if (a<b || (a===b && x.files[i].length<x.files[s].length)) s=i; } }
-    x.files[s].push(id);
-  }
-  for (let k=0;k<50 && x.files.length>1;k++){
-    let lo=0, hi=0; for (let i=1;i<x.files.length;i++){ if (x.files[i].length<x.files[lo].length) lo=i; if (x.files[i].length>x.files[hi].length) hi=i; }
-    if (x.files[hi].length-x.files[lo].length<2) break;
-    const f=x.files[hi]; let j=f.length-1; for (let t=f.length-1;t>=0;t--) if (isArcher(f[t])){ j=t; break; }   // (an archer moves over if there is one)
-    x.files[lo].push(f.splice(j,1)[0]);
-  }
-  if (spears && spears<men.length){
-    // the spearmen spread evenly over the files: a spearman changes places with an archer of the file shortest of them
-    for (let k=0;k<60;k++){
-      let lo=0, hi=0, slo=Infinity, shi=-1;
-      for (let i=0;i<x.files.length;i++){ const c=spearsIn(x.files[i]); if (c<slo){ slo=c; lo=i; } if (c>shi){ shi=c; hi=i; } }
-      if (shi-slo<2) break;
-      const A=x.files[hi], B=x.files[lo];
-      let si=-1; for (let t=A.length-1;t>=0;t--) if (!isArcher(A[t])){ si=t; break; }
-      const ai=B.findIndex(isArcher);
-      if (ai>=0){ const s=A[si]; A[si]=B[ai]; B[ai]=s; } else B.push(A.splice(si,1)[0]);
+/** Is this row an archers' row (by its first man)? */
+function archerRow(row: number[]){ for (const id of row) if (id) return isArcher(id); return false; }
+/** Keeps x's rows to its men. A formation is rows of at most WIDTH men: the spearmen's rows first (line 1), then one empty row (kept for line 3),
+    then the archers' rows (line 4). Rows are kept full from the back: a gap in a row is filled by the nearest man of the last row of his kind
+    (he steps forward), and the last row closes up; newcomers join the last row. In a battle the front row is the fighting row and is left as
+    it is: its fallen leave gaps, and only when every man of it is down does the next row move up into the fighting zone. When the last
+    spearmen's row falls the archers stay where they are (the enemy comes to them): the army's front falls back to their row. */
+function tidyRows(x: Army, men: Human[]){
+  const alive=new Set<number>(); for (const h of men) alive.add(h.id);
+  const placed=new Set<number>(), frozen=x.mode===A_BATTLE, hadSpears=x.spearRows;
+  for (const row of x.rows) for (let i=0;i<row.length;i++){ const id=row[i]; if (!id) continue; if (!alive.has(id) || placed.has(id)) row[i]=0; else placed.add(id); }
+  const front=frozen && x.rows.length && x.rows[0].some(id => id) ? x.rows[0] : null;   // the fighting row, while a man of it stands
+  const kinds: number[][][]=[[],[]];   // the rows behind it: spearmen's, archers'
+  for (const row of x.rows){ if (row===front) continue; if (row.some(id => id)) kinds[archerRow(row) ? 1 : 0].push(row); }
+  const loose: number[][]=[[],[]]; for (const h of men) if (!placed.has(h.id)) loose[h.arch ? 1 : 0].push(h.id);
+  for (let k=0;k<2;k++){
+    const rows=kinds[k];
+    // gaps are filled from the last row, by its man nearest across; the last row closes up
+    for (let r=0;r<rows.length;r++){
+      const row=rows[r];
+      for (let i=0;i<row.length;i++){
+        if (row[i]) continue;
+        while (rows.length-1>r && !rows[rows.length-1].some(id => id)) rows.pop();
+        if (rows.length-1<=r) break;
+        const last=rows[rows.length-1], at=i-(row.length-1)/2; let bj=-1, bd=Infinity;
+        for (let j=0;j<last.length;j++){ if (!last[j]) continue; const d=Math.abs(j-(last.length-1)/2-at); if (d<bd){ bd=d; bj=j; } }
+        row[i]=last[bj]; last[bj]=0;
+      }
     }
-    // in each file the spearmen stand at its head, the archers behind (each keeping his order)
-    for (let i=0;i<x.files.length;i++){ const f=x.files[i]; let sorted=true; for (let t=1;t<f.length;t++) if (isArcher(f[t-1]) && !isArcher(f[t])){ sorted=false; break; } if (!sorted) x.files[i]=[...f.filter(id => !isArcher(id)), ...f.filter(isArcher)]; }
+    while (rows.length && !rows[rows.length-1].some(id => id)) rows.pop();
+    if (rows.length) rows[rows.length-1]=rows[rows.length-1].filter(id => id);
+    for (let r=0;r<rows.length-1;r++) if (rows[r].length<WIDTH){ rows[r]=rows[r].filter(id => id); while (rows[r].length<WIDTH && rows[rows.length-1].length && rows.length-1>r){ rows[r].push(rows[rows.length-1].pop()!); if (!rows[rows.length-1].length) rows.pop(); } }
+    for (const id of loose[k]){ if (!rows.length || rows[rows.length-1].length>=WIDTH) rows.push([]); rows[rows.length-1].push(id); }
   }
+  const frontArch=front ? archerRow(front) : false;
+  x.rows=[...(front && !frontArch ? [front] : []), ...kinds[0], ...(front && frontArch ? [front] : []), ...kinds[1]];
+  x.spearRows=(front && !frontArch ? 1 : 0)+kinds[0].length;
+  if (frozen && hadSpears>0 && !x.spearRows && x.rows.length){ const back=(hadSpears+1)*RANK_GAP; x.x-=x.fx*back; x.y-=x.fy*back; }   // (the spearmen are gone: the archers hold their ground, and the front is theirs)
   x.men=men.length;
 }
-/** The place of the man in file i, rank j of army x, in pixels: a phalanx standing square, or a marching column whose ranks follow the trail of its head. */
-function slotOf(x: Army, i: number, j: number): [number, number] {
-  const F=x.files.length;
+/** How many rows behind the front row r of x stands: the archers' rows stand one empty row behind the spearmen's. */
+const depthOf = (x: Army, r: number) => r<x.spearRows || !x.spearRows ? r : r+1;
+/** How deep x's formation is, in rows (the empty one too). */
+const depthAll = (x: Army) => x.rows.length ? depthOf(x,x.rows.length-1)+1 : 0;
+/** The place of the man in row r, place i of army x, in pixels: a formation standing square, or a marching column whose rows follow the trail of its head. */
+function slotOf(x: Army, r: number, i: number): [number, number] {
+  const L=x.rows[r]?.length ?? 1, j=depthOf(x,r);
   if (x.mode===A_MARCH && ranksAt.length>j){
-    const [px,py,dx,dy]=ranksAt[j], s=(i-(F-1)/2)*MARCH_GAP;
+    const [px,py,dx,dy]=ranksAt[j], s=(i-(L-1)/2)*MARCH_GAP;
     return [px-dy*s, py+dx*s];
   }
-  const rx=-x.fy, ry=x.fx, s=(i-(F-1)/2)*FILE_GAP, b=j*RANK_GAP;
+  const rx=-x.fy, ry=x.fx, s=(i-(L-1)/2)*FILE_GAP, b=j*RANK_GAP;
   return [x.x+rx*s-x.fx*b, x.y+ry*s-x.fy*b];
 }
 /** Where each rank of a marching column stands, and the way it faces: along the trail its head has left, a rank every RANK_GAP behind. (Worked out once a tick for the army being moved.) */
@@ -520,25 +525,6 @@ function standby(){
     x.next=null;
     if (busy || armyProblem(x.o,x.id,q.order,q.r)){ on.armyOrdered(x.o,x.id,'stand down',q.r); continue; }
     armyOrder(x.o,x.id,q.order,q.r);
-  }
-}
-/** Army x's archers behind the front rank shoot: each every ARROW_TICKS (each at his own moment), at a man of the army x is fighting picked at
-    random, the front ranks a little likelier (the first rank three times, the second twice as likely as those behind). */
-function volley(x: Army){
-  const y=armyById.get(x.foe); if (!y) return;
-  let pool: Human[] | null=null, weight: number[]=[], total=0;
-  for (const f of x.files) for (let j=1;j<f.length;j++){
-    const h=byId.get(f[j]); if (!h || !h.arch || h.hp<=0 || (W.tickN+h.id*7)%ARROW_TICKS) continue;
-    if (!pool){
-      pool=[];
-      for (const g of y.files) for (let k=0;k<g.length;k++){ const e=byId.get(g[k]); if (!e || e.hp<=0) continue; const w=k===0 ? 3 : k===1 ? 2 : 1; pool.push(e); weight.push(w); total+=w; }
-    }
-    if (!total) return;
-    let pick=W.prand()*total, i=0; while (i<pool.length-1 && pick>=weight[i]){ pick-=weight[i]; i++; }
-    const e=pool[i]; if (e.hp<=0) continue;
-    e.hp-=ARROW_DMG; e.by=x.o;
-    if (e.hp<=0){ W.kills[x.o*W.M+e.o]++; y.hitAt=W.tickN; }
-    on.arrowShot(h.x,h.y-3,e.x,e.y-2,e.hp<=0,e.id);
   }
 }
 /** Why army `id` of kingdom o can't take this order, or null. */
@@ -630,7 +616,8 @@ function breakOff(x: Army){
   if (f && f.foe===x.id){ f.foe=-1; f.mode=f.path.length ? A_MARCH : f.mode===A_BATTLE ? A_HOLD : f.mode; }
   x.foe=-1;
   if (x.mode===A_BATTLE) x.mode=x.path.length ? A_MARCH : A_HOLD;
-  for (const id of x.files.flat()){ const h=byId.get(id); if (h){ h.duel=-1; h.foe=-1; } }
+  x.phase=0; x.roll=0;
+  for (const row of x.rows) for (const id of row){ const h=id ? byId.get(id) : undefined; if (h){ h.duel=-1; h.foe=-1; } }
 }
 
 /* ---------- each tick ---------- */
@@ -656,8 +643,7 @@ export function updateWar(){
   for (const x of W.armies) stepArmy(x);
   if (W.tickN%5===0) engage();
   for (const x of W.armies) if (x.mode===A_BATTLE && x.foe>=0 && x.id<x.foe){ const y=armyById.get(x.foe); if (y) fight(x,y); }
-  for (const x of W.armies) if (x.mode===A_BATTLE && x.foe>=0) volley(x);
-  for (const x of W.armies) if (x.mode===A_BATTLE && (x.foe<0 || !armyById.has(x.foe))){ x.foe=-1; x.mode=x.path.length ? A_MARCH : A_HOLD; }
+  for (const x of W.armies) if (x.mode===A_BATTLE && (x.foe<0 || !armyById.has(x.foe))){ x.foe=-1; x.phase=0; x.roll=0; x.mode=x.path.length ? A_MARCH : A_HOLD; }
   if (W.tickN%10===3) standby();
   if (W.tickN%5===0) flags();
   if (W.tickN%ROLL_TICKS===11) fortsFire();
@@ -675,29 +661,30 @@ function stepArmy(x: Army){
   if (x.coming.length) bringUp(x);
   const coming=new Set(x.coming);
   const men=x.mode===A_HOME ? all.filter(h => fit(h) && h.war<0) : all.filter(h => h.war===x.id && h.hp>0 && !indoors(h) && !coming.has(h.id));
-  tidyFiles(x,men);
+  tidyRows(x,men);
   if (x.mode!==A_HOME && !men.length){ if (x.coming.length) breakOff(x); else { lost(x); return; } }   // (nobody left in the ranks, but more on the way: it waits for them)
   if (x.mode===A_HOME){
     const [hx,hy,fx,fy]=homeSpot(x); x.x=hx; x.y=hy; x.fx=fx; x.fy=fy; x.trail.length=0;
     const heal=1/HEAL_TICKS;
     for (const h of men){ if (h.hp<maxHp(h)) h.hp=Math.min(maxHp(h),h.hp+maxHp(h)*heal); }
   } else if (x.mode===A_MARCH){
-    let ranks=0; for (const f of x.files) ranks=Math.max(ranks,f.length); columnRanks(x,ranks);
+    columnRanks(x,depthAll(x));
     march(x,men);
   }
-  if (x.mode===A_MARCH){ let ranks=0; for (const f of x.files) ranks=Math.max(ranks,f.length); columnRanks(x,ranks); }
-  if (besieging(x)){ for (const f of x.files) for (const id of f){ const h=byId.get(id); if (h){ led.add(h.id); if (h.cool>0) h.cool--; } } siegeStep(x); return; }
-  // the men to their places (in a battle, the front rank's fighters are moved by the fight)
+  if (x.mode===A_MARCH) columnRanks(x,depthAll(x));
+  if (besieging(x)){ for (const row of x.rows) for (const id of row){ const h=byId.get(id); if (h){ led.add(h.id); if (h.cool>0) h.cool--; } } siegeStep(x); return; }
+  // the men to their places (in a battle, the men of the fighting row are moved by the fight)
   const busy=x.mode===A_BATTLE;
-  for (let i=0;i<x.files.length;i++){
-    const f=x.files[i];
-    for (let j=0;j<f.length;j++){
-      const h=byId.get(f[j]); if (!h) continue;
+  for (let r=0;r<x.rows.length;r++){
+    const row=x.rows[r];
+    for (let i=0;i<row.length;i++){
+      const h=row[i] ? byId.get(row[i]) : undefined; if (!h) continue;
       led.add(h.id);
       if (h.cool>0) h.cool--;
-      if (j>0 && h.duel>=0){ const p=byId.get(h.duel); if (p && p.duel===h.id) p.duel=-1; h.duel=-1; }   // (only the front rank fights: a man who is no longer in it is out of his duel)
-      if (busy && j===0) continue;
-      const [sx,sy]=slotOf(x,i,j);
+      if (busy && r===0) continue;
+      if (h.duel>=0) unbind(h);
+      if (h.foe>=0) h.foe=-1;
+      const [sx,sy]=slotOf(x,r,i);
       walk(h,sx,sy);
     }
   }
@@ -735,7 +722,7 @@ function march(x: Army, men: Human[]){
   if (!x.path.length){ arrive(x); return; }
   const gx=x.path[0], gy=x.path[1], dx=gx-x.x, dy=gy-x.y, d=Math.hypot(dx,dy);
   // how far the heads of its files are from their places: a column waits a little for its stragglers, never stops for them
-  let lag=0, k=0; for (let i=0;i<x.files.length;i++){ const h=byId.get(x.files[i][0]); if (h && ranksAt.length){ const [sx,sy]=slotOf(x,i,0); lag+=Math.hypot(h.x-sx,h.y-sy); k++; } }
+  let lag=0, k=0; const head=x.rows[0] ?? []; for (let i=0;i<head.length;i++){ const h=byId.get(head[i]); if (h && ranksAt.length){ const [sx,sy]=slotOf(x,0,i); lag+=Math.hypot(h.x-sx,h.y-sy); k++; } }
   lag/=Math.max(1,k);
   const t=tileOf(x.x,x.y), tm=isLand[t] ? TMULT[terr[t]] || 1 : 1.6, sp=ARMY_SP/Math.sqrt(tm)*(lag>16 ? 0.5 : lag>8 ? 0.75 : 1)*0.1;
   if (d<x.near-0.02){ x.near=d; x.stuck=0; } else if (++x.stuck>120){   // (no nearer for 12 s: the way is looked for again)
@@ -753,7 +740,7 @@ function march(x: Army, men: Human[]){
 function trail(x: Army){
   const T=x.trail;
   if (!T.length || Math.hypot(T[0]-x.x,T[1]-x.y)>=1){ T.unshift(x.x,x.y); }
-  let ranks=0; for (const f of x.files) ranks=Math.max(ranks,f.length);
+  const ranks=depthAll(x);
   const keep=Math.ceil(ranks*RANK_GAP+8)*2+4; if (T.length>keep) T.length=keep;
 }
 /** x has reached the end of its way. */
@@ -771,7 +758,7 @@ function arrive(x: Army){
 function lost(x: Army){
   breakOff(x);
   const was=x.goal;
-  x.mode=A_HOME; x.order=O_NONE; x.goal=0; x.enemy=0; x.path=[]; x.files=[]; x.men=0; x.safe=0;
+  x.mode=A_HOME; x.order=O_NONE; x.goal=0; x.enemy=0; x.path=[]; x.rows=[]; x.spearRows=0; x.men=0; x.safe=0;
   on.armyLost(x.o,x.id,was);
 }
 /** Hostile armies close enough take each other on (one fight each: an army already fighting is left to it). */
@@ -787,40 +774,102 @@ function engage(){
     if (!best) continue;
     const y=best;
     x.stand=x.mode===A_HOLD; y.stand=y.mode===A_HOLD;
-    x.mode=y.mode=A_BATTLE; x.foe=y.id; y.foe=x.id; x.roll=y.roll=0;   // (each line rolls its first die as the fight begins)
+    x.mode=y.mode=A_BATTLE; x.foe=y.id; y.foe=x.id; x.roll=y.roll=0; x.phase=y.phase=0; x.since=y.since=now;   // (the battle begins with a fire phase; each line rolls its die as each phase begins)
     on.battle(x.o,y.o,(x.x+y.x)/2,(x.y+y.y)/2);
   }
 }
-/** One tick of the fight between x and y: the phalanxes close, and the front ranks fight man to man. */
+/** One tick of the battle between x and y.
+    The lines. Each army's front row is its fighting row. Spearmen close with the enemy: the army that was holding its ground stays and the
+    other comes up to it (both, if both or neither held); an army whose front row is archers never advances (the enemy's spearmen come to
+    it), and two armies of archers alone stay where they are and shoot.
+    The phases. A battle is fire, melee, fire, melee…, three ticks each (a tick a second on the clock), and each side rolls a die as each phase
+    begins, for all its blows or arrows of that phase. In a fire phase every archer who is not in the melee looses one arrow a tick, at a man
+    of the enemy army picked at random (its front rows likelier); nobody strikes, but the lines close and men take their places. In a melee
+    phase every man of the two fighting rows strikes once a tick: the man opposite him, or with nobody opposite the nearest man of the enemy's
+    fighting row with room about him (a man can be struck by three at once: from the front and from each side). The rows behind wait; archers
+    whose row is the fighting row, with the enemy upon them, fight hand to hand and do not shoot. A fighting row fights until its last man is
+    down; only then does the next row move up (tidyRows). */
+interface Fighter { h: Human; px: number; py: number; s: number; own: Army; foe: Army; to: Fighter | null; gx: number; gy: number; set: boolean; front: boolean; load: number; side: number[] }
 function fight(x: Army, y: Army){
   let dx=y.x-x.x, dy=y.y-x.y; const d=Math.hypot(dx,dy)||1; dx/=d; dy/=d;
   x.fx=dx; x.fy=dy; y.fx=-dx; y.fy=-dy;
-  // the one holding its ground stays; the other comes up to it (both, if both or neither held)
+  const ax=x.rows.length>0 && !x.spearRows, ay=y.rows.length>0 && !y.spearRows;   // its front row is archers
   const step=ARMY_SP*0.1;
   const close=(m: Army, tx: number, ty: number) => { const ex=tx-m.x, ey=ty-m.y, e=Math.hypot(ex,ey); if (e<=step){ m.x=tx; m.y=ty; } else { m.x+=ex/e*step; m.y+=ey/e*step; } };
-  if (x.stand && !y.stand) close(y,x.x+dx*GAP,x.y+dy*GAP);
-  else if (y.stand && !x.stand) close(x,y.x-dx*GAP,y.y-dy*GAP);
-  else { const mx=(x.x+y.x)/2, my=(x.y+y.y)/2; close(x,mx-dx*GAP/2,my-dy*GAP/2); close(y,mx+dx*GAP/2,my+dy*GAP/2); }
-  // every 3 s each line rolls its die
-  for (const m of [x,y]) if (!m.roll || W.tickN-m.rollAt>=ROLL_TICKS){ m.roll=1+((W.prand()*6)|0); m.rollAt=W.tickN; on.battleRoll(m.o,m.id,m.roll); }
-  // the front ranks: each man faces the one opposite him (lined up across, from the middle out); a man of the wider front with nobody
-  // opposite goes for the nearest enemy nobody is fighting yet (round the flank, the ranks behind): the whole line fights, each man one on one
-  const rx=-dy, ry=dx;
-  const front=(m: Army) => { const out: { h: Human; s: number }[]=[]; for (const f of m.files){ const h=byId.get(f[0]); if (h) out.push({ h, s:(h.x-x.x)*rx+(h.y-x.y)*ry }); } return out.sort((p,q) => p.s-q.s); };
-  const fa=front(x), fb=front(y), off=(fa.length-fb.length)/2, taken=new Set<number>(), spare: Human[]=[];
-  for (let i=0;i<fa.length;i++){
-    const j=Math.round(i-off), h=fa[i].h, e=j>=0 && j<fb.length ? fb[j].h : undefined;
-    if (e){ taken.add(e.id); taken.add(h.id); bind(h,e); duelStep(h,e,true); } else spare.push(h);
+  if (!(ax && ay)){
+    const hx=ax || (!ay && x.stand), hy=ay || (!ax && y.stand);
+    if (hx && !hy) close(y,x.x+dx*GAP,x.y+dy*GAP);
+    else if (hy && !hx) close(x,y.x-dx*GAP,y.y-dy*GAP);
+    else { const mx=(x.x+y.x)/2, my=(x.y+y.y)/2; close(x,mx-dx*GAP/2,my-dy*GAP/2); close(y,mx+dx*GAP/2,my+dy*GAP/2); }
   }
-  for (let j=0;j<fb.length;j++){ const h=fb[j].h; if (!taken.has(h.id)) spare.push(h); }
-  for (const h of spare){
-    const foe=h.o===x.o ? y : x, own=h.o===x.o ? x : y;
-    const p=partner(h);
-    let e: Human | undefined=p && !taken.has(p.id) ? p : undefined;
-    if (!e){ let bd=Infinity; for (const f of foe.files) for (const id of f){ if (taken.has(id)) continue; const c=byId.get(id); if (!c || c.hp<=0 || partner(c)) continue; const dd=(c.x-h.x)**2+(c.y-h.y)**2; if (dd<bd){ bd=dd; e=c; } } }
-    if (e){ taken.add(e.id); taken.add(h.id); bind(h,e); duelStep(h,e,foe.files.some(f => f[0]===e!.id)); }
-    else { unbind(h); const k=own.files.findIndex(f => f[0]===h.id); const [sx,sy]=slotOf(own,k,0); walk(h,sx,sy); }
+  const contact=!(ax && ay) && Math.hypot(y.x-x.x,y.y-x.y)<=GAP+0.9;
+  // the phase, and each side's die for it
+  const t=W.tickN-x.since, ph=((t/PHASE_TICKS)|0)%2===0 ? PH_FIRE : PH_MELEE, beat=t%BATTLE_TICK;
+  if (t%PHASE_TICKS===0 || !x.roll || !y.roll) for (const m of [x,y]){ m.roll=1+((W.prand()*6)|0); m.rollAt=W.tickN; m.phase=ph; on.battleRoll(m.o,m.id,m.roll); }
+  x.phase=y.phase=ph;
+  // the fighting rows: who each man goes for
+  const rx=-dy, ry=dx, mx=(x.x+y.x)/2, my=(x.y+y.y)/2;
+  const rowOf=(m: Army, foe: Army) => {
+    const out: Fighter[]=[], row=m.rows[0] ?? [];
+    for (let i=0;i<row.length;i++){ const h=row[i] ? byId.get(row[i]) : undefined; if (!h || h.hp<=0) continue; const [px,py]=slotOf(m,0,i); out.push({ h, px, py, s:(px-mx)*rx+(py-my)*ry, own:m, foe, to:null, gx:px, gy:py, set:false, front:false, load:0, side:[0,0] }); }
+    return out;
+  };
+  const A=rowOf(x,y), B=rowOf(y,x);
+  if (contact){
+    const near=(f: Fighter, E: Fighter[]): [Fighter | null, number] => { let b: Fighter | null=null, bd=Infinity; for (const e of E){ if (e.load>=FLANKERS) continue; const dd=Math.abs(e.s-f.s); if (dd<bd){ bd=dd; b=e; } } return [b,bd]; };
+    // first the men with an enemy opposite: each holds his place and fights him
+    for (const [own,E] of [[A,B],[B,A]] as [Fighter[], Fighter[]][]) for (const f of own){ const [e,dd]=near(f,E); if (e && dd<=FILE_GAP*0.51){ f.to=e; f.set=true; e.load++; e.front=true; } }
+    // then the men with nobody opposite, the nearest to an enemy first: each goes for the nearest enemy with room about him. That man holds
+    // his place (and takes him on, if he had nobody); the one who comes stands before him, or at his side if another is there already
+    const free=[...A,...B].filter(f => !f.to).map(f => ({ f, d:near(f,f.own===x ? B : A)[1] })).sort((p,q) => p.d-q.d || p.f.h.id-q.f.h.id);
+    for (const { f } of free){
+      if (f.to) continue;   // (taken on meanwhile by a man who came for him: he holds his place)
+      const [e]=near(f,f.own===x ? B : A); if (!e) continue;
+      f.to=e; e.load++;
+      if (!e.to){ e.to=f; e.set=true; f.load++; f.front=true; }
+      const away=f.own===x ? -1 : 1;
+      if (!e.front){ e.front=true; f.gx=e.gx+away*dx*GAP; f.gy=e.gy+away*dy*GAP; }
+      else { const sg=f.s>=e.s ? 1 : -1, k=++e.side[sg>0 ? 1 : 0]; f.gx=e.gx+away*dx*GAP+rx*sg*1.5*k; f.gy=e.gy+away*dy*GAP+ry*sg*1.5*k; }
+      f.s=(f.gx-mx)*rx+(f.gy-my)*ry; f.set=true;
+    }
   }
+  for (const f of [...A,...B]){
+    const h=f.h, e=f.to; led.add(h.id);
+    if (h.duel>=0) unbind(h);
+    h.foe=e ? e.h.id : -1;
+    walk(h,f.gx,f.gy,f.gx!==f.px || f.gy!==f.py ? 1.4 : 1);
+    if (e && ph===PH_MELEE && beat===(h.id*7)%BATTLE_TICK && Math.hypot(e.h.x-h.x,e.h.y-h.y)<=REACH) blow(h,e.h,f.own,f.foe);
+  }
+  // the archers: one arrow a tick each in a fire phase, but for those in the melee
+  if (ph===PH_FIRE) for (const [m,foe] of [[x,y],[y,x]] as [Army, Army][]){
+    let pool: Human[] | null=null, total=0; const weight: number[]=[];
+    for (let r=m.spearRows;r<m.rows.length;r++){
+      if (r===0 && contact) continue;   // (the enemy is upon this row: it fights hand to hand)
+      for (const id of m.rows[r]){
+        const h=id ? byId.get(id) : undefined; if (!h || !h.arch || h.hp<=0 || beat!==(h.id*7)%BATTLE_TICK) continue;
+        if (!pool){
+          pool=[];
+          for (let k=0;k<foe.rows.length;k++) for (const eid of foe.rows[k]){ const e=eid ? byId.get(eid) : undefined; if (!e || e.hp<=0) continue; const w=k===0 ? 3 : k===1 ? 2 : 1; pool.push(e); weight.push(w); total+=w; }
+        }
+        if (!total) break;
+        let p=W.prand()*total, i=0; while (i<pool.length-1 && p>=weight[i]){ p-=weight[i]; i++; }
+        const e=pool[i]; if (e.hp<=0) continue;
+        e.hp-=ARROW_DMG*diceFactor(m.roll || 3); e.by=m.o;
+        if (e.hp<=0){ W.kills[m.o*W.M+e.o]++; foe.hitAt=W.tickN; }
+        on.arrowShot(h.x,h.y-3,e.x,e.y-2,e.hp<=0,e.id);
+      }
+    }
+  }
+}
+/** A blow in a battle line: h strikes e (it lands 7 times in 10), for his damage by his kind, the swing of the blow, and his line's die. */
+function blow(h: Human, e: Human, line: Army, foe: Army){
+  if (h.hp<=0 || e.hp<=0) return;
+  on.swing(h.id,e.id);
+  if (W.prand()>=HIT_CHANCE) return;
+  const swing=1+((W.prand()*3|0)-1)*STRIKE_SWING;
+  e.hp-=(h.militia ? MILITIA_HIT : h.arch ? HIT_DMG[1]*ARCHER_SHARE : HIT_DMG[h.tier])*swing*diceFactor(line.roll || 3)*BATTLE_DMG;
+  e.by=h.o; if (e.hp<=0){ W.kills[h.o*W.M+e.o]++; foe.hitAt=W.tickN; }
+  on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id);
 }
 /** The fight pairs h with e, one on one: any duel either was in with somebody else is over (the pairing of the lines is what counts, so nobody
     stands idle held by a duel that has moved on). */
@@ -875,7 +924,7 @@ function fortsFire(){
     const r=region[tileOf(x.x,x.y)]; if (!r) continue;
     const holder=W.rOcc[r] || W.rOwner[r]; if (!holder || !W.atWar[x.o*M+holder] || !fortTier(r)) continue;
     let t=targets.get(r); if (!t){ t=[]; targets.set(r,t); }
-    for (const f of x.files) for (const id of f){ const h=byId.get(id); if (h && h.hp>0) t.push(h); }
+    for (const row of x.rows) for (const id of row){ const h=id ? byId.get(id) : undefined; if (h && h.hp>0) t.push(h); }
   }
   for (const [r,t] of targets){
     if (!t.length) continue;
@@ -914,7 +963,7 @@ function findSieges(){
     and strikes; the archers stand back and shoot, every ARROW_TICKS, at a defender near the castle or else the walls. */
 function siegeStep(x: Army){
   const c=capitalIn(x.goal), C=W.nations[c], q=C.capPlot, [cx,cy]=castleXY(C);
-  const men: Human[]=[]; for (const f of x.files) for (const id of f){ const h=byId.get(id); if (h && h.hp>0) men.push(h); }
+  const men: Human[]=[]; for (const row of x.rows) for (const id of row){ const h=id ? byId.get(id) : undefined; if (h && h.hp>0) men.push(h); }
   const spears=men.filter(h => !h.arch), archers=men.filter(h => h.arch);
   const foes=(soldiersOf[c] ?? []).filter(e => e.hp>0 && e.war<0 && Math.hypot(e.x-cx,e.y-cy)<SIEGE_R*1.5);
   const ring=(i: number, n: number, R: number): [number, number] => {   // a place on a square round the castle, i of n
