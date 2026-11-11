@@ -21,10 +21,10 @@ import { R_INFANTRY } from './research';
 
 export const UNIT_SIZE = 5;                         // soldiers and armour racks per barracks module
 export const MAX_ARMY = 100;                        // men in one army at most: a barracks of more than 20 modules side by side is two armies
-export const SOLDIER_HP = [0, 16, 20, 30];          // by tier (twice what they were: longer fights)
-export const SOLDIER_DMG = [0, 1.5, 2.25, 3];       // a blow, by tier (half as much again)
+export const SOLDIER_HP = [0, 8, 12, 18];           // a spearman's hit points, by his armour's tier
+export const SOLDIER_DMG = [0, 2, 2, 2];            // a spearman's blow, whatever his armour
 export const VILLAGER_HP = 8;
-export const MILITIA_HP = 10, MILITIA_HIT = 1.125;       // a militiaman's hit points, and his blow
+export const MILITIA_HP = 8, MILITIA_HIT = 0.8;          // a militiaman's hit points, and his blow
 export const TIER_NAME = ['', 'I', 'II', 'III'];
 const H_SOLDIER = 1;                                // (population.ts; repeated here to keep this module standalone)
 const RACK_R = 14;                                  // pixels from a barracks door a soldier picks up armour
@@ -48,8 +48,8 @@ export interface Unit {
 export let units: Unit[][] = [];                    // per kingdom, rebuilt every tick
 const unitOf = new Map<number, Unit>();             // barracks plot -> its unit
 export const unitAt = (q: number) => unitOf.get(q);
-export const ARCHER_SHARE = 0.5;                    // an archer's hit points and blows, of a tier I spearman's
-export const maxHp = (h: Human) => (h.kind!==H_SOLDIER ? VILLAGER_HP : h.militia ? MILITIA_HP : SOLDIER_HP[h.arch ? 1 : h.tier]*(h.arch ? ARCHER_SHARE : 1)*2**h.lead)*(h.fury ? 1.25 : 1)*(h.dug ? 1.15 : 1);   // an army's leader: doubled for each rank; one spawned in a siege, a quarter more
+export const ARCHER_HP = 8, ARCHER_HIT = 0.8;          // an archer's hit points (he wears no armour), and his blow hand to hand (his arrows: ARROW_DMG in sim/war.ts)
+export const maxHp = (h: Human) => h.kind!==H_SOLDIER ? VILLAGER_HP : h.militia ? MILITIA_HP : h.arch ? ARCHER_HP : SOLDIER_HP[h.tier];   // an army's leader: doubled for each rank; one spawned in a siege, a quarter more
 const frontOf = (q: number): [number, number] => [(q%PW)*8+4, ((q/PW)|0)*8+7.5];
 /** Does o's barracks q stand and work: not burning, and not on ground the enemy occupies (it raises no soldiers and trains none there). */
 const standing = (q: number, o: number) => pType[q]===B_BARRACKS && pOwner[q]===o && pBurn[q]<=0 && !occ[pCenter[q]];

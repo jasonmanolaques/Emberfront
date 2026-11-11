@@ -24,7 +24,7 @@ import { H_SOLDIER, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, TASK_F
 import { units, unitLabel } from '../sim/army';
 import { chatter, drawSpeech } from './speech';
 import { paintSmallFlag, flagImage } from './flags';
-import { allied, atWar, HIT_TICKS, claimsOf, claimProblem, armyOf, A_HOME, PH_FIRE, PHASE_TICKS, BATTLE_TICK } from '../sim/war';
+import { allied, atWar, HIT_TICKS, claimsOf, claimProblem, armyOf, A_HOME, PH_FIRE, PHASE_TICKS, BATTLE_TICK, castleArchers } from '../sim/war';
 import { RG, region } from '../sim/regions';
 const RANKS = ['', 'Leader', 'General', 'Captain', 'Commander', 'Grand Marshal'];
 const rankFor = (size: number) => size<=5 ? 0 : size<=15 ? 1 : size<=30 ? 2 : size<=50 ? 3 : size<=80 ? 4 : 5;
@@ -358,6 +358,13 @@ function drawFlags(now: number, vx0: number, vy0: number, vx1: number, vy1: numb
   for (let i=1;i<W.nations.length;i++){
     const n=W.nations[i]; if (!n.alive || n.capTile<0 || !W.siege[i]) continue;
     const q=n.capPlot, x=(q%PW)*8*K, y=((q/PW)|0)*8*K-6; if (x<vx0-40||y<vy0-10||x>vx1+40||y>vy1+10) continue;
+    // its two archers on the walls, bows drawn, facing the besiegers
+    const foe=W.armies.find(a => a.o===W.siege[i] && a.mode!==A_HOME);
+    castleArchers(n).forEach(([ax,ay],k) => {
+      const left=foe ? foe.x<ax : k===0, frame=((W.tickN-W.siegeFrom[i])/PHASE_TICKS|0)%2===0 && !reduceMotion && ((now/400)|0)%2===k ? 2 : 0;
+      const spr=personSprite(i,1,(i*5+k)&15,frame,left,0,4), bx=Math.round(ax*K)-2, fy=Math.floor(ay*K)+1;
+      ctx.drawImage(spr, left ? bx-(spr.width-BODY_X-4) : bx-BODY_X, fy-FEET_Y);
+    });
     const w=Math.round(16*K), left=Math.max(0,1-pHp[q]/bldHp(q));
     ctx.fillStyle=INK; ctx.fillRect(x-1,y-1,w+2,5);
     ctx.fillStyle='#5a1a14'; ctx.fillRect(x,y,w,3);

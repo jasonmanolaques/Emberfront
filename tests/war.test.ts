@@ -16,7 +16,10 @@ import { claim, claimProblem, answer, inCrisis, armyProblem, armyOrder, armyOf, 
 import { WAGE, WAGE_IDLE, B_TOWER, B_ARCHERY } from '../src/core/constants';
 import { buildFort, fortTier, fortSpot } from '../src/sim/buildings';
 import { pTier } from '../src/sim/state';
-import { waiting, fortUpkeep, FORT_DMG, began, outlook, ARROW_TICKS, ARROW_DMG, RALLY_TICKS, ARCHER_WAGE, siteOf } from '../src/sim/war';
+import { waiting, fortUpkeep, FORT_DMG, began, outlook, ARROW_DMG, RALLY_TICKS, ARCHER_WAGE, siteOf, castleArchers, blowOf } from '../src/sim/war';
+import { CASTLE_ARROW } from '../src/sim/defense';
+import { R_CASTLE } from '../src/sim/research';
+import { MILITIA_HP, ARCHER_HP } from '../src/sim/army';
 import { pHp } from '../src/sim/state';
 import { WIDTH, PH_FIRE, PH_MELEE, PHASE_TICKS, BATTLE_TICK } from '../src/sim/war';
 import { bldHp } from '../src/sim/defense';
@@ -442,7 +445,8 @@ describe('archers', () => {
     expect(u.plots.filter(q => pArch[q])).toHaveLength(1);
     // half a spearman's hit points and blows, no armour; paid a tenth more
     const s=men.find(h => !h.arch)!, b=archers[0];
-    expect(maxHp(b)).toBe(SOLDIER_HP[1]/2); expect(maxHp(s)).toBe(SOLDIER_HP[1]);
+    expect(maxHp(b)).toBe(ARCHER_HP); expect(ARCHER_HP).toBe(8); expect(maxHp(s)).toBe(SOLDIER_HP[1]);
+    expect(blowOf(b)).toBe(0.8); expect(blowOf(s)).toBe(2); expect(ARROW_DMG).toBe(0.5);
     expect(wageOf(b)).toBeCloseTo(wageOf(s)*ARCHER_WAGE,9);
     // armour on the racks goes to the spearmen only
     pArmor[2][u.plots[0]]+=15; run(30);
@@ -490,7 +494,7 @@ describe('archers', () => {
     shots=0; run(PHASE_TICKS-1);
     expect(shots).toBeGreaterThanOrEqual(15*3-3); expect(shots).toBeLessThanOrEqual(15*3);   // (fifteen archers, three ticks)
     shots=0; run(PHASE_TICKS); expect(shots).toBe(0);                                           // (the melee phase: no arrows)
-    expect(ARROW_DMG).toBe(1);
+    expect(ARROW_DMG).toBe(0.5);
     world(); const l2=lands(1); army(1,15,l2.home,0,10);
     shots=0; run(PHASE_TICKS*3); expect(shots).toBe(0);
     listen({ arrowShot: () => {} });
@@ -666,7 +670,7 @@ describe('taking regions', () => {
     const [bx,by]=blockOf(N(2).capTile), bh=regionAt(bx,by); cedeRegion(bh,2);
     const mine=RG.adj[bh][0]; cedeRegion(mine,1); census();
     const other=RG.adj[bh].find(r => r!==mine && !RG.adj[mine].includes(r) && r!==region[N(1).capTile])!; cedeRegion(other,2); census();
-    expect(fortTier(bh)).toBe(4); expect(FORT_DMG[4]).toBe(16);
+    expect(fortTier(bh)).toBe(4); expect(CASTLE_ARROW).toEqual([0,0.5,0.75,1]); void FORT_DMG;
     run(12); expect(fortUpkeep(2)).toBe(0);
     // claimed in a crisis: it can't be given up (a bot refuses, the player's Give up is refused too)
     expect(claim(1,2,[bh])).toBe(true);
@@ -702,21 +706,45 @@ describe('sieges', () => {
     war(1,2,[bh]);
     return { a, bh, q:N(2).capPlot };
   };
-  it('a capital\'s region has no flag: an army attacking it marches to the castle and storms it, many men at once, and the castle falls with its kingdom', () => {
-    expect(CAPTURE_TICKS).toBe(20*GAME_SPEED*10);
+  it('a capital\'s region has no flag: an army attacking it marches to the castle and storms it, ten men at the walls at once, by fire and melee phases; the castle falls with its kingdom', () => {
+    expect(CAPTURE_TICKS).toBe(15*GAME_SPEED*10);
     const { a, bh, q }=siege(40);
     const [gx,gy]=siteOf(bh), [fx,fy]=[(RG.flag[bh]%TW)*2, ((RG.flag[bh]/TW)|0)*2];
     expect(Math.hypot(gx-fx,gy-fy)).toBeGreaterThan(0);   // (to the gate, not to a flag)
     N(2).humanProg=-1e9;   // (no militia: the walls alone)
+    expect(bldHp(q)).toBe(100);
     armyOrder(1,a.id,'attack',bh);
-    until(() => W.siege[2]===1 && pHp[q]>0, 4000);
+    until(() => W.siege[2]===1, 4000);
     expect(W.rFlag[bh]).toBe(1);   // (the flag never moves)
-    run(80);
-    let striking=0; for (const h of W.humans) if (h.o===1 && h.war===a.id && h.cool>0) striking++;
-    expect(striking).toBeGreaterThan(5);   // (the castle is fought by many at once, not one on one)
-    until(() => !N(2).alive, Math.ceil(bldHp(q)/2)*10+4000);
+    const from=W.siegeFrom[2];
+    // the first phase is fire: the walls take no blows; then melee: ten men at most strike, once a second each
+    const strikers=new Set<number>(), when: number[]=[];
+    listen({ swing: (id,e) => { if (e===-1){ strikers.add(id); when.push(W.tickN-from); } } });
+    until(() => W.tickN-from>=PHASE_TICKS*2, PHASE_TICKS*3);
+    listen({ swing: () => {} });
+    expect(when.every(t => t>=PHASE_TICKS && t<PHASE_TICKS*2)).toBe(true);
+    expect(strikers.size).toBeGreaterThan(5); expect(strikers.size).toBeLessThanOrEqual(10);
+    until(() => !N(2).alive, 6000);
     expect(N(2).alive).toBe(false);
     expect(W.wars[1*M()+2]).toBe(0);
+  });
+
+  it('a besieged castle\'s two archers shoot the besiegers in the fire phases, 0.5, 0.75 or 1 by its tier', () => {
+    for (const tier of [1,3]){
+      const { a, bh }=siege(20);
+      N(2).humanProg=-1e9; N(2).tier[R_CASTLE]=tier;
+      armyOrder(1,a.id,'attack',bh);
+      until(() => W.siege[2]===1, 4000);
+      const walls=castleArchers(N(2)), hits: number[]=[];
+      listen({ arrowShot: (x0,y0,_x1,_y1,_k,v) => { if (walls.some(([x,y]) => x===x0 && y===y0)){ const h=W.humans.find(h => h.id===v); if (h) hits.push(W.tickN-W.siegeFrom[2]); } } });
+      const hp=new Map(W.humans.filter(h => h.o===1).map(h => [h.id,h.hp]));
+      run(PHASE_TICKS*2);
+      listen({ arrowShot: () => {} });
+      expect(hits.length).toBe(6);   // (two archers, one arrow a tick each, three ticks of fire)
+      expect(hits.every(t => ((t/PHASE_TICKS)|0)%2===0)).toBe(true);
+      let lost=0; for (const h of W.humans) if (h.o===1 && hp.has(h.id)) lost+=hp.get(h.id)!-h.hp;
+      expect(lost).toBeGreaterThanOrEqual(6*CASTLE_ARROW[tier]-1e-6);   // (the castle's arrows, and nothing else hurts them yet)
+    }
   });
 
   it('while its capital is besieged a kingdom\'s newcomers come out of the gate as militia and fight the besiegers; in peace after, they go back to work', () => {
@@ -727,7 +755,8 @@ describe('sieges', () => {
     for (let i=0;i<600;i++){ N(2).humanProg=Math.max(N(2).humanProg,HUMAN_EVERY); tick(); if (W.humans.some(h => h.o===2 && !was.has(h.id) && h.militia && h.duel>=0)) break; }
     const fresh=W.humans.filter(h => h.o===2 && !was.has(h.id));
     expect(fresh.length).toBeGreaterThan(0);
-    expect(fresh.every(h => h.kind===H_SOLDIER && h.militia)).toBe(true);
+    expect(fresh.every(h => h.kind===H_SOLDIER && h.militia && maxHp(h)===MILITIA_HP && blowOf(h)===0.8)).toBe(true);
+    expect(MILITIA_HP).toBe(8);
     expect(fresh.some(h => h.duel>=0)).toBe(true);   // (in the fight: one on one with a besieger)
     // peace: the siege is over, and the militia (no barracks to train at) go back to being villagers
     makePeace(1,2); N(2).humanProg=-1e9;

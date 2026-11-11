@@ -77,16 +77,16 @@ describe.skip('watchtowers by tier (out of use for now)', () => {
 });
 
 describe('the castle by tier', () => {
-  it('takes 400, 800 and 1200 blows, mends 2 a second, and looks damaged then badly damaged', () => {
+  it('has 100, 200 and 300 hit points by its tier, mends 1 a second on the clock, and looks damaged then badly damaged', () => {
     world(1);
     const q=N(1).capPlot;
     expect(pType[q]).toBe(B_CASTLE);
-    for (const tier of [1,2,3]){ N(1).tier[R_CASTLE]=tier; expect(bldHp(q)).toBe(CASTLE_HP[tier]); }
+    for (const tier of [1,2,3]){ N(1).tier[R_CASTLE]=tier; expect(bldHp(q)).toBe(CASTLE_HP[tier]); expect(CASTLE_HP[tier]).toBe(100*tier); }
     N(1).tier[R_CASTLE]=1;
-    pHp[q]=130; expect(wear(q)).toBe(0);
-    pHp[q]=140; expect(wear(q)).toBe(1);
-    pHp[q]=280; expect(wear(q)).toBe(2);
-    run(100); expect(pHp[q]).toBeCloseTo(260, 2);   // 2 a second
+    pHp[q]=30; expect(wear(q)).toBe(0);
+    pHp[q]=35; expect(wear(q)).toBe(1);
+    pHp[q]=70; expect(wear(q)).toBe(2);
+    run(100); expect(pHp[q]).toBeCloseTo(65, 2);   // 1 a second on the clock (20 ticks)
     run(1310); expect(pHp[q]).toBe(0);
   });
 

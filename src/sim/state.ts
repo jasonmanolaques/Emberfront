@@ -234,6 +234,7 @@ export const W = {
   ready: new Int32Array(1),          // [o*M+b] tick o's army took all its land back from b and stands ready to counter-attack (0 = not)
   siege: new Int32Array(1),          // [d] the tick d's capital was encircled (the siege is on), or 0
   siegeBy: new Uint8Array(1),        // [d] the kingdom that besieges it
+  siegeFrom: new Int32Array(1),      // [d] tick its castle's siege began (its fire and melee phases count from it)
   offensive: new Uint8Array(1),      // [a*M+d] a's offensive against d: gathering at the border, ready, attacking or holding (F_* in war.ts)
   kills: new Int32Array(1),          // [a*M+b] people of b's that a has killed in their war (since it began)
   stall: new Int32Array(1),          // [a*M+b] ticks their war has gone without the border between them moving much (both ways)

@@ -81,7 +81,7 @@ export function soldierMax(n: Nation){
   return Math.max(0,Math.min(1,(people-professionals(n))/people));
 }
 /** How fast kingdom n's capital raises humans: 1 a tick, and a bonus for each farm and for the empty homes, `people` being everyone it has. */
-export const humanRate = (n: Nation, people: number) => (1+FARM_BONUS*n.farms+houseBonus(n,people))*(W.siege[n.id]>0 ? 2 : 1);   // (a capital under siege raises people twice as fast, to have a chance)
+export const humanRate = (n: Nation, people: number) => (1+FARM_BONUS*n.farms+houseBonus(n,people));   // (a besieged capital raises its people at the usual rate: they come out as militia)
 const TRAIN_TICKS = 30;          // ticks inside the barracks to switch role (3 s)
 const PATROL_R = 36;             // pixels around the capital door soldiers patrol when there is no barracks
 export const HOME_PACE = 1.15;   // soldiers on their own kingdom's land move 15% faster
@@ -433,7 +433,6 @@ function spawnPlot(n: Nation, barracks: number[]){
 function spawnHuman(n: Nation, kind: number, barracks: number[], militia=false){
   const [cx,cy]=doorOf(n), q=kind===H_SOLDIER && !militia ? spawnPlot(n,barracks) : -1, [x,y] = q>=0 ? frontOf(q) : [cx,cy];
   const h=makeHuman(n,kind,x,y);
-  if (W.siege[n.id]>0){ h.fury=true; h.hp=maxHp(h); }   // (born in a besieged capital: they fight to the bitter end)
   if (militia){ h.militia=true; h.hp=MILITIA_HP; h.sp-=SPEED_UP[T_SOLDIER]-SPEED_UP[T_MILITIA]; }
   W.humans.push(h);
   if (housing[n.id]) housing[n.id].people++;   // counts himself before deciding whether he needs a home

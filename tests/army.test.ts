@@ -117,8 +117,8 @@ describe('soldier tiers and the blacksmith', () => {
     expect(smith.load).toBeGreaterThanOrEqual(2);   // forged
     until(() => men.some(h => h.tier===2), 1500);   // delivered, and worn
     const t2=men.find(h => h.tier===2)!;
-    expect(SOLDIER_HP[2]).toBe(20);
-    until(() => t2.hp>=20, 800);
+    expect(SOLDIER_HP[2]).toBe(12);
+    until(() => t2.hp>=12, 800);
     expect(FORGE_TICKS).toBe(20*GAME_SPEED*10);
     // reinforced armour for every rack, then no more
     until(() => men.every(h => h.tier===2), 8000);
@@ -138,7 +138,7 @@ describe('soldier tiers and the blacksmith', () => {
     expect(men.every(h => h.tier>=2)).toBe(true);    // every rack got reinforced before any heavy
     until(() => men.every(h => h.tier===3), 9000);
     expect(men[0].hp).toBeLessThanOrEqual(SOLDIER_HP[3]);
-    expect(SOLDIER_HP[3]).toBe(30);
+    expect(SOLDIER_HP[3]).toBe(18);
   });
 
   it('a soldier who goes back to work leaves his armour on the racks', () => {

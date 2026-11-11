@@ -18,8 +18,9 @@ import { isGatherer, gatherTier } from './buildings';
 export const TOWER_RELOADS = [0, 80, 70, 60];   // ticks between a watchtower's shots, by tier (8, 7 and 6 s)
 export const TOWER_DMGS = [0, 3, 4.5, 6];         // damage of a shot, by tier (the castle's too)
 export const TOWER_HP = [0, 40, 60, 80];        // blows a watchtower takes, by tier
-export const CASTLE_HP = [0, 400, 800, 1200];    // blows the castle takes, by tier
-export const CASTLE_MEND = 0.2;                 // blows the castle mends a tick (2 a second)
+export const CASTLE_HP = [0, 100, 200, 300];     // the castle's hit points, by its tier (castle research): 100 a tier
+export const CASTLE_MEND = 0.05;                // hit points the castle mends a tick (1 a second on the clock)
+export const CASTLE_ARROW = [0, 0.5, 0.75, 1];  // what an arrow of the castle's two archers does, by its tier
 export const TOWER_COST = [[], [4,10,0], [8,20,0]];   // [wood, stone, copper] to rebuild a watchtower from tier t to t+1
 export const HOUSE_HP = 20, GATHER_HP = 30;     // blows a hovel takes (a stone house 3 times, a manor 6); a plantation, quarry or mine per tier
 
