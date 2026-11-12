@@ -1,5 +1,5 @@
 /* ---------- population: humans leave the capital, work as villagers or serve as soldiers ----------
-   The capital releases a new human every 20 seconds, sooner with each farm.
+   A lived-in house releases a new villager every 10 seconds (5 on the clock), sooner with each farm.
    Soldiers need a barracks: it trains them and is where they wait. Each kingdom keeps a requested
    share of its people under arms. The barracks' room is all the trained soldiers it can have: when it
    wants more, newcomers are born soldiers at a barracks with room and the nearest villagers walk there
@@ -64,7 +64,7 @@ export const TASK_ROAM = 0,      // between jobs: villagers think or stroll betw
              TASK_BOAT = 17,         // a soldier of a naval invasion aboard a ship (out of sight), or on his way home by sea
              TASK_SUPPLY = 22,       // a carpenter or builder walking back to his workshop for materials after a job
              TASK_STUDY = 23;        // a scholar at his research station's door (while he is there, the station earns its points)
-export const HUMAN_EVERY = 200;  // progress per new human: 200 ticks (20 s), each farm adds 3% speed
+export const HUMAN_EVERY = 100;  // progress per new human: 100 ticks (10 s, 5 s on the clock), each farm adds 3% speed
 export const FARM_BONUS = 0.03;
 /** Beds in n's houses that nobody needs: its capacity less its people (none when everyone is housed or more). */
 export const spareBeds = (n: Nation, people: number) => Math.max(0,n.beds-people);
@@ -422,16 +422,18 @@ export function makeHuman(n: Nation, kind: number, x: number, y: number): Human 
     by:0, war:-1, boat:-1, foe:-1, aim:-1, cool:0, slot:0, brave:-1, fury:false, dug:false, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
     tier:kind===H_SOLDIER?1:0, base:-1, load:0, make:0, dest:-1, arch:false };
 }
-/** A new villager or militiaman walks out of the capital; a new soldier out of the barracks nearest the capital. */
-/** The barracks a new soldier of n comes out of: not one the enemy occupies, and of those the nearest the border where the fighting is (else the nearest the
-    castle); -1, the capital, when every one is occupied, or while the capital is under siege. */
-function spawnPlot(n: Nation, barracks: number[]){
-  const free=barracks.filter(q => !occ[pCenter[q]]);
-  if (!free.length) return -1;
-  const [cx,cy]=doorOf(n); return nearestPlot(free,cx,cy);
+/** Where kingdom n's newcomer comes out: a new villager is the offspring of a village house, out of the door of one of its houses picked at random
+    (a lived-in one: not run down, not burning, not on ground the enemy holds); with none, out of the castle's gate. A militiaman raised in a
+    siege comes out of the castle's gate, into the fight. */
+function birthplace(n: Nation, militia: boolean): [number, number] {
+  if (!militia){
+    const homes: number[]=[]; for (const q of n.blds) if (restsIn(q,n.id) && !occ[pCenter[q]]) homes.push(q);
+    if (homes.length){ const q=homes[(W.prand()*homes.length)|0]; return frontOf(q); }
+  }
+  return doorOf(n);
 }
-function spawnHuman(n: Nation, kind: number, barracks: number[], militia=false){
-  const [cx,cy]=doorOf(n), q=kind===H_SOLDIER && !militia ? spawnPlot(n,barracks) : -1, [x,y] = q>=0 ? frontOf(q) : [cx,cy];
+function spawnHuman(n: Nation, kind: number, militia=false){
+  const [x,y]=birthplace(n,militia);
   const h=makeHuman(n,kind,x,y);
   if (militia){ h.militia=true; h.hp=MILITIA_HP; h.sp-=SPEED_UP[T_SOLDIER]-SPEED_UP[T_MILITIA]; }
   W.humans.push(h);
@@ -876,7 +878,7 @@ export function updatePopulation(){
       // every newcomer is a villager, who trains at a barracks to be a soldier (balance); only while the capital is besieged does he come out
       // of its gate a militiaman, straight into the fight for it (sim/war.ts guardStep)
       const besieged=W.siege[n.id]>0;
-      spawnHuman(n, besieged ? H_SOLDIER : H_VILLAGER, barracks, besieged);
+      spawnHuman(n, besieged ? H_SOLDIER : H_VILLAGER, besieged);
       mine.push(H[H.length-1]);
     }
     payroll(n, mine);

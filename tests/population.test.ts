@@ -1,4 +1,6 @@
 // Humans: spawning from the capital and switching between villager and soldier at a barracks.
+import { B_HOUSE } from '../src/core/constants';
+import { pAband } from '../src/sim/state';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TW, TH, PW, NP, B_BARRACKS, WAGE, WAGE_IDLE } from '../src/core/constants';
 import { W, owner, isLand, pType } from '../src/sim/state';
@@ -71,7 +73,7 @@ describe('population', () => {
   });
 
   it('sends the nearest half of 10 villagers into the barracks at 50%, and they come out as soldiers', () => {
-    run(10*E);
+    run(10*E); me().humanProg=-1e9;   // (nobody new arrives while they train: ten people, five of them soldiers, the barracks' room)
     const [dx, dy] = frontOf(barracks), dist = (h: { x: number; y: number }) => Math.hypot(h.x-dx, h.y-dy);
     const entered = new Map<number, number>(), stints: number[] = [];
     const lastTask = new Map(mine().map(h => [h.id, h.task]));
@@ -102,12 +104,21 @@ describe('population', () => {
     expect(me().soldiers).toBe(count(H_SOLDIER));
   });
 
-  it('spawns every newcomer as a villager at the castle: soldiers are trained at a barracks', () => {
+  it('spawns every newcomer as a villager out of the door of a lived-in house (the castle\'s gate while there are none): soldiers are trained at a barracks', () => {
+    expect(E).toBe(100);   // (one every 10 s of the game's, 5 on the clock)
+    const [dx, dy] = doorOf(W.nations[1]);
+    while (mine().length < 1) tick();
+    expect(Math.hypot(mine()[0].x-dx, mine()[0].y-dy)).toBeLessThan(6);   // (no house yet: out of the gate)
     run(10*E); setShare(0.42);
-    while (mine().length < 11) tick();
-    const newest = mine().reduce((a, b) => a.id > b.id ? a : b), [dx, dy] = doorOf(W.nations[1]);
-    expect(newest.kind).toBe(H_VILLAGER);
-    expect(Math.hypot(newest.x-dx, newest.y-dy)).toBeLessThan(6);   // out of the castle's gate
+    for (let k=0;k<6;k++){
+      const was=new Set(mine().map(h => h.id));
+      while (mine().every(h => was.has(h.id))) tick();
+      const homes=W.nations[1].blds.filter(q => pType[q]===B_HOUSE && !pAband[q]);
+      const newest = mine().find(h => !was.has(h.id))!;
+      expect(newest.kind).toBe(H_VILLAGER);
+      expect(homes.length).toBeGreaterThan(0);
+      expect(homes.some(q => { const [x,y]=frontOf(q); return Math.hypot(newest.x-x, newest.y-y)<1; })).toBe(true);   // (out of a house's door)
+    }
   });
 
   it('trains only as many soldiers as the barracks have room for: no militia in peace, the rest stay villagers', () => {

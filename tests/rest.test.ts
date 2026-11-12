@@ -38,7 +38,7 @@ describe('the counts kept as the map changes', () => {
 describe('resting at home', () => {
   it('sends villagers with nothing to do into the nearest house with room, out of sight, a bed each', () => {
     start(12345, 0);
-    run(10*E);
+    run(10*E); me().humanProg=-1e9; run(400);   // (arrivals stop, and the newest finish their homes)
     const resting = mine().filter(h => h.task===TASK_REST);
     expect(resting.length).toBeGreaterThan(5);
     expect(resting.every(h => indoors(h) && h.kind===H_VILLAGER && h.housed && pType[h.rest]===B_HOUSE)).toBe(true);
