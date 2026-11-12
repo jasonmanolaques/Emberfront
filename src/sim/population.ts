@@ -520,10 +520,12 @@ function balance(n: Nation, mine: Human[], barracks: number[]){
   if (diff>0 && n.gold<0) return;   // nobody signs up while there is no money for wages
   // first turn back anyone still walking to switch the other way
   for (const h of mine){ if (!diff) return; if (h.task===TASK_TO_TRAIN && (diff>0 ? h.to===T_VILLAGER : h.kind===H_VILLAGER)){ backToRoam(h); diff+=diff>0 ? -1 : 1; } }
-  const [gx,gy]=doorOf(n), away=(h: Human)=>{ const [x,y]=barracks.length ? frontOf(nearestPlot(barracks,h.x,h.y)) : [gx,gy]; return (h.x-x)**2+(h.y-y)**2; };
+  const [gx,gy]=doorOf(n), awayOf=new Map<number, number>();
+  const away=(h: Human)=>{ let d=awayOf.get(h.id); if (d===undefined){ const [x,y]=barracks.length ? frontOf(nearestPlot(barracks,h.x,h.y)) : [gx,gy]; d=(h.x-x)**2+(h.y-y)**2; awayOf.set(h.id,d); } return d; };   // (worked out once a man, not at every comparison of a sort)
   const free=(h: Human) => !switching(h) && !h.beggar && h.home<0 && h.war<0 && h.work<0;
   if (diff>0){
-    // villagers nearest a barracks: into its free places while there are any, else to the castle as militia
+    if (spare<=0) return;   // (no room in any barracks: nobody is trained, so nobody need be sorted)
+    // villagers nearest a barracks: into its free places while there are any
     const cands=mine.filter(h => free(h) && h.kind===H_VILLAGER).sort((a,b) => away(a)-away(b) || a.id-b.id);
     for (const h of cands){
       if (!diff) return;
@@ -572,7 +574,8 @@ function roomForHome(n: Nation){
     and lets beggars homeless for 90 seconds die of want. */
 function house(n: Nation, mine: Human[]){
   let free=n.beds;
-  for (const h of [...mine].sort((a,b)=>a.id-b.id)){
+  let sorted=true; for (let i=1;i<mine.length;i++) if (mine[i].id<mine[i-1].id){ sorted=false; break; }
+  for (const h of sorted ? mine : [...mine].sort((a,b)=>a.id-b.id)){   // (by id, the longest-standing first: mine nearly always is in that order already, so it is sorted only when not)
     h.housed = free>0; if (h.housed) free--;
     if (h.housed){
       h.homeless=0;
