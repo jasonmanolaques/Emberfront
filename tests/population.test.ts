@@ -105,7 +105,7 @@ describe('population', () => {
   });
 
   it('spawns every newcomer as a villager out of the door of a lived-in house (the castle\'s gate while there are none): soldiers are trained at a barracks', () => {
-    expect(E).toBe(100);   // (one every 10 s of the game's, 5 on the clock)
+    expect(E).toBe(140);   // (one every 14 s of the game's, 7 on the clock)
     const [dx, dy] = doorOf(W.nations[1]);
     while (mine().length < 1) tick();
     expect(Math.hypot(mine()[0].x-dx, mine()[0].y-dy)).toBeLessThan(6);   // (no house yet: out of the gate)

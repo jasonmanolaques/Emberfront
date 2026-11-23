@@ -77,7 +77,7 @@ export const ARCHER_WAGE = 1.1;                   // an archer is paid a tenth m
 export const RALLY_TICKS = 30*GAME_SPEED*10;      // an army that retreats rallies for 30 s on the clock, taking no orders
 export const GARRISON = [0, 10, 20, 30];          // a castle's garrison by its tier: tier I spearmen, who come out to fight a siege
 export const GARRISON_TICKS = [0, 30, 25, 20].map(s => s*GAME_SPEED*10);   // ...and how long (on the clock: 30, 25, 20 s) it takes to raise one more after losses
-export const WORKS_YIELD = 3;                     // what a region's works deliver each PRODUCE_TICKS: 3 wood, stone or copper
+export const WORKS_YIELD = 1;                     // what a region's works deliver each PRODUCE_TICKS: 1 wood, stone or copper
 const GARRISON_ID = 10_000_000;                   // a garrison's army id: this plus its kingdom's (barracks armies are named by a plot)
 
 export const allied = (a: number, b: number) => a!==b && W.ally[a*W.M+b]===1;

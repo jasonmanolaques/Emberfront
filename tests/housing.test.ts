@@ -117,6 +117,7 @@ describe('empty houses', () => {
     // six people die
     for (const h of mine().filter(h => h.home<0).slice(0,6)) h.hp=0;
     tick();
+    for (const q of houses()) pAband[q]=0; me().surplusTicks=0;   // (the count starts now: a house spare since before would otherwise be given up sooner)
     const spare=houses().length-mine().length;
     expect(spare).toBeGreaterThanOrEqual(6);
     run(ABANDON_TICKS-20);

@@ -24,7 +24,7 @@ import { region, regionName, RG } from '../sim/regions';
 const regionLand = (r: number) => RG.land[r];
 import { claimsOf } from '../sim/war';
 import { fortTier, capitalIn, PRODUCE_TICKS } from '../sim/buildings';
-import { garrisonOf } from '../sim/war';
+import { garrisonOf, WORKS_YIELD } from '../sim/war';
 import { GAME_SPEED } from '../core/constants';
 
 interface Drag { sx: number; sy: number; lx: number; ly: number; moved: boolean; button: number; }
@@ -46,7 +46,7 @@ function updateTip(e: PointerEvent){
     const ft=fortTier(r), cap=capitalIn(r), gar=cap ? garrisonOf(cap) : null;
     const fort=cap ? ` · capital: no flag; its garrison ${gar!.men}/${gar!.cap}${gar!.next ? ` (one more in ${Math.ceil(gar!.next/(GAME_SPEED*10))} s)` : ''}, then its castle, must be beaten` : !ft ? '' : ` · fort, tier ${ft}`;
     const good=['wood','stone','copper'][RG.res[r]], mill=['sawmill','quarry','copper mine'][RG.res[r]], holder=W.rOcc[r] || W.rOwner[r];
-    const worksLine=RG.site[r]<0 ? '' : ` · ${mill}: +3 ${good} every ${PRODUCE_TICKS/10} s${!holder ? ' (idle: nobody holds the region)' : W.rBusy[r] ? ' (stopped: fighting here)' : W.rOcc[r] ? ` (working for ${W.rOcc[r]===PLAYER ? 'you' : W.nations[W.rOcc[r]].name}, the occupier)` : ''}`;
+    const worksLine=RG.site[r]<0 ? '' : ` · ${mill}: +${WORKS_YIELD} ${good} every ${PRODUCE_TICKS/10} s${!holder ? ' (idle: nobody holds the region)' : W.rBusy[r] ? ' (stopped: fighting here)' : W.rOcc[r] ? ` (working for ${W.rOcc[r]===PLAYER ? 'you' : W.nations[W.rOcc[r]].name}, the occupier)` : ''}`;
     l2=`${regionName(r)} · ${c ? (c===PLAYER ? 'your region' : W.nations[c].name+'\'s region') : `no flag yet (${Math.round(W.rCount[r*W.M+(o||0)]/Math.max(1,regionLand(r))*100)}% ${o ? 'theirs' : 'settled'}: more than half takes it)`}${cl}${fort}${worksLine}`;
   }
   ui.tip.innerHTML=`<span class="t1"></span><span class="t2"></span><span class="t2"></span>`;

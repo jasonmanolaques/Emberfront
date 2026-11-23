@@ -64,7 +64,7 @@ export const TASK_ROAM = 0,      // between jobs: villagers think or stroll betw
              TASK_BOAT = 17,         // a soldier of a naval invasion aboard a ship (out of sight), or on his way home by sea
              TASK_SUPPLY = 22,       // a carpenter or builder walking back to his workshop for materials after a job
              TASK_STUDY = 23;        // a scholar at his research station's door (while he is there, the station earns its points)
-export const HUMAN_EVERY = 100;  // progress per new human: 100 ticks (10 s, 5 s on the clock), each farm adds 3% speed
+export const HUMAN_EVERY = 140;  // progress per new human: 140 ticks (14 s, 7 s on the clock), each farm adds 3% speed
 export const FARM_BONUS = 0.03;
 /** Beds in n's houses that nobody needs: its capacity less its people (none when everyone is housed or more). */
 export const spareBeds = (n: Nation, people: number) => Math.max(0,n.beds-people);

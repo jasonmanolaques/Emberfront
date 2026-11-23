@@ -838,14 +838,14 @@ describe('region works', () => {
     expect(share.map(k => Math.round(k/land*100))).toEqual([40,40,20]);
   });
 
-  it('make 3 of their good every 30 s for whoever holds the region; stop while there is fighting there; an occupier gets what they make', () => {
-    expect(WORKS_YIELD).toBe(3);
+  it('make 1 of their good every 30 s for whoever holds the region; stop while there is fighting there; an occupier gets what they make', () => {
+    expect(WORKS_YIELD).toBe(1);
     world(); const { home, theirs }=lands(2);
     for (const r of [home,...theirs]) expect(RG.site[r]).toBeGreaterThanOrEqual(0);
     const made: [number, number, number][]=[]; listen({ produced: (q,o,g,k) => { if (pType[q]===B_WORKS) made.push([q,o,g*100+k]); } });
     W.rProd.fill(0);
     run(PRODUCE_TICKS+4);
-    expect(made.filter(m => m[1]===1)).toEqual([[RG.site[home],1,RG.res[home]*100+3]]);   // (the player holds its home region alone)
+    expect(made.filter(m => m[1]===1)).toEqual([[RG.site[home],1,RG.res[home]*100+1]]);   // (the player holds its home region alone)
     // a battle in a region of the bot's: its works stop
     const a=army(1,20,home), d=army(2,20,theirs[0]);
     war(1,2,theirs);
