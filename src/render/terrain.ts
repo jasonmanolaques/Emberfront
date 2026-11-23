@@ -5,11 +5,11 @@
    the picture that exist (render/tiles.ts), a map tile at a time as it changes; the overview, one
    pixel a map tile, shows the whole map when it is zoomed too far out for the detail: the ground's
    colours, the kingdoms and their borders, occupied land, roads and towns. */
-import { TW, TH, NT, RS, PW, T_DEEP, T_WATER, T_SHALLOW, T_GRASS, T_DRY, T_FOREST, T_DESERT, T_HILLS, T_MOUNT, T_BEACH, T_SNOW, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_PART, B_SITE } from '../core/constants';
+import { TW, TH, NT, RS, PW, T_DEEP, T_WATER, T_SHALLOW, T_GRASS, T_DRY, T_FOREST, T_DESERT, T_HILLS, T_MOUNT, T_BEACH, T_SNOW, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_PART, B_SITE, B_WORKS } from '../core/constants';
 import { clamp, hexRGB, mixc, pack, type RGB } from '../core/util';
-import { W, owner, occ, terr, isLand, elev, road, pType, pMain, pOwner } from '../sim/state';
+import { W, owner, occ, terr, isLand, elev, road, pType, pMain, pOwner, pCenter } from '../sim/state';
 import { styleOf } from './style';
-import { region } from '../sim/regions';
+import { region, RG } from '../sim/regions';
 import { CH, painters, resetTiles, tileOfPx, type Tile } from './tiles';
 
 export const SEA = '#173a57';   // the deep sea, also the colour behind the map
@@ -179,6 +179,7 @@ function bldColour(q: number){
   if (ty===B_TOWER || ty===B_CASTLE) return pack(207,200,187);
   if (ty===B_RUINS) return pack(74,64,56);
   if (ty===B_SITE) return pack(154,122,80);
+  if (ty===B_WORKS){ const g=RG.res[region[pCenter[m]]]; return g===0 ? pack(120,88,52) : g===1 ? pack(182,178,168) : pack(200,112,58); }   // a region's works: by what it makes
   const n=styleOf(pOwner[m]), r=hexRGB(ty===B_HOUSE ? n.roof : n.roofD);
   return pack(r[0],r[1],r[2]);
 }

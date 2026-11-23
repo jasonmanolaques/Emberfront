@@ -24,10 +24,10 @@ import { TW, TH, NT, NP, PW, TMULT, GAME_SPEED, WAGE, WAGE_IDLE, WAGE_ATTACK, B_
 import { W, owner, occ, terr, isLand, isle, pType, pOwner, pCenter, pHp, pMain, pBurn, type Human, type Nation, type Army } from './state';
 import { wear, bldHp, castleTier, CASTLE_MEND, CASTLE_ARROW } from './defense';
 import { on } from './events';
-import { H_SOLDIER, indoors, switching, tileOf, pace, release, doorOf, TASK_ROAM } from './population';
-import { units, unitAt, groupKeys, groupLead, maxHp, SOLDIER_DMG, MILITIA_HIT, ARCHER_HIT, type Unit } from './army';
+import { H_SOLDIER, indoors, switching, tileOf, pace, release, doorOf, makeHuman, TASK_ROAM } from './population';
+import { units, unitAt, groupKeys, groupLead, maxHp, SOLDIER_DMG, SOLDIER_HP, MILITIA_HIT, ARCHER_HIT, type Unit } from './army';
 import { RG, region, holdsRegion, cedeRegion, occupyRegion, freeRegion, flagXY, CONTROL } from './regions';
-import { ignite, fortTier, fortSpot, builtTier, capitalIn } from './buildings';
+import { ignite, fortTier, fortSpot, builtTier, capitalIn, PRODUCE_TICKS } from './buildings';
 import { findWay } from './roads';
 export { findWay };
 import { census } from './census';
@@ -46,7 +46,7 @@ export const A_HOME = 0, A_MARCH = 1, A_HOLD = 2, A_BATTLE = 3;   // an army: at
 export const O_NONE = 0, O_ATTACK = 1, O_DEFEND = 2, O_RETURN = 3, O_RETREAT = 4;
 export const CRISIS_TICKS = 30*GAME_SPEED*10;     // the defender's time to answer claims: 30 s on the clock, then it is war
 const BOT_ANSWER = 4*GAME_SPEED*10;               // a bot answers within 4 s
-export const CAPTURE_TICKS = 15*GAME_SPEED*10;    // an invader sitting alone in a region brings its flag down in 15 s on the clock; its owner's army raises it as fast (a capital's region has no flag: it is besieged)
+export const CAPTURE_TICKS = 10*GAME_SPEED*10;    // an invader sitting alone in a region brings its flag down in 10 s on the clock; its owner's army raises it as fast (a capital's region has no flag: it is besieged)
 export const ROLL_TICKS = 3*GAME_SPEED*10;        // every 3 s on the clock (a phase of the battle) each side rolls a die for its line
 export const ROLL_MOD = 0.2;                      // a 6 is +20% to the blows of its line, a 1 is -20%, a 3 even
 export const FORT_SLOW = 0.4;                     // each tier of a region's fort makes its capture (and its retaking) 40% slower
@@ -75,6 +75,10 @@ const HEAL_TICKS = 30*GAME_SPEED*10;              // a wounded soldier at his ba
 export const ARROW_DMG = 0.5;                     // what an archer's arrow does (by his line's die, in a battle)
 export const ARCHER_WAGE = 1.1;                   // an archer is paid a tenth more than a spearman (0.33 a second in the field)
 export const RALLY_TICKS = 30*GAME_SPEED*10;      // an army that retreats rallies for 30 s on the clock, taking no orders
+export const GARRISON = [0, 10, 20, 30];          // a castle's garrison by its tier: tier I spearmen, who come out to fight a siege
+export const GARRISON_TICKS = [0, 30, 25, 20].map(s => s*GAME_SPEED*10);   // ...and how long (on the clock: 30, 25, 20 s) it takes to raise one more after losses
+export const WORKS_YIELD = 3;                     // what a region's works deliver each PRODUCE_TICKS: 3 wood, stone or copper
+const GARRISON_ID = 10_000_000;                   // a garrison's army id: this plus its kingdom's (barracks armies are named by a plot)
 
 export const allied = (a: number, b: number) => a!==b && W.ally[a*W.M+b]===1;
 export const atWar = (a: number, b: number) => W.atWar[a*W.M+b]===1;
@@ -105,7 +109,7 @@ export function resetWar(M: number){
   const MM=M*M;
   W.ally=new Uint8Array(MM); W.atWar=new Uint8Array(MM); W.grudge=new Int32Array(MM).fill(-1e9); W.offers=new Int32Array(MM); W.offerKind=new Uint8Array(MM);
   W.wars=new Uint8Array(MM); W.aggr=new Uint8Array(MM); W.warSince=new Int32Array(MM); W.began=new Uint8Array(MM); W.occCount=new Int32Array(MM); W.lost=new Uint8Array(MM); W.ready=new Int32Array(MM);
-  W.siege=new Int32Array(M); W.siegeBy=new Uint8Array(M); W.siegeFrom=new Int32Array(M); W.offensive=new Uint8Array(MM); W.kills=new Int32Array(MM); W.stall=new Int32Array(MM); W.lastNet=new Int32Array(MM); W.crisisAt=new Int32Array(MM);
+  W.siege=new Int32Array(M); W.siegeBy=new Uint8Array(M); W.siegeFrom=new Int32Array(M); W.garHp=[]; W.garTimer=new Int32Array(M); W.garCap=new Int32Array(M); W.offensive=new Uint8Array(MM); W.kills=new Int32Array(MM); W.stall=new Int32Array(MM); W.lastNet=new Int32Array(MM); W.crisisAt=new Int32Array(MM);
   W.occIsle=new Map(); W.armies=[]; W.claims=new Map();
   warring=new Uint8Array(M); soldiersOf=[]; byId.clear(); armyById.clear(); led.clear();
 }
@@ -117,7 +121,7 @@ export function mayStand(h: Human, o: number){
 }
 /** What soldier h costs a second: at home 0.22, out with his army 0.3, attacking or in a battle 0.4; militia nothing. */
 export function wageOf(h: Human){
-  if (h.kind!==H_SOLDIER || h.militia) return 0;
+  if (h.kind!==H_SOLDIER || h.militia || h.gar) return 0;   // (militia and a castle's garrison are unpaid)
   const a=h.war>=0 ? armyById.get(h.war) : undefined;
   const k=h.arch ? ARCHER_WAGE : 1;
   if (!a) return WAGE_IDLE*k;
@@ -322,6 +326,7 @@ export function proposeAlliance(a: number, b: number){
 export function annex(loser: number, winner: number){
   const L=W.nations[loser], cap=L.capTile>=0 ? L.capPlot : -1;
   L.capTile=-1;   // so taking the ground below doesn't count as an ordinary sack
+  W.humans=W.humans.filter(h => !(h.o===loser && h.gar)); W.garHp[loser]=[];   // (its castle's garrison is no more)
   for (const h of W.humans){
     if (h.o!==loser) continue;
     release(h); h.o=winner; h.post=-1; h.site=-1; h.war=-1; h.boat=-1; h.foe=-1; h.aim=-1; h.brave=-1; h.calm=0; h.work=-1; h.base=-1; h.duel=-1;
@@ -382,17 +387,19 @@ function syncArmies(){
       let x: Army | undefined;
       for (const q of u.plots){ const y=byPlot.get(q); if (y && !seen.has(y) && y.o===n.id){ x=y; break; } }
       if (!x) for (const q of plots){ const y=byPlot.get(q); if (y && !seen.has(y) && y.o===n.id){ x=y; break; } }
-      if (!x){ x={ id:u.key, o:n.id, plots, x:u.x, y:u.y+4, fx:0, fy:1, mode:A_HOME, order:O_NONE, goal:0, enemy:0, path:[], foe:-1, rows:[], spearRows:0, phase:0, since:0, men:0, safe:0, stand:false, hitAt:-1e9, leader:-1, trail:[], stuck:0, near:Infinity, roll:0, rollAt:0, coming:[], via:[], viaAt:-1e9, rally:0, next:null }; }
+      if (!x){ x={ id:u.key, o:n.id, plots, x:u.x, y:u.y+4, fx:0, fy:1, mode:A_HOME, order:O_NONE, goal:0, enemy:0, path:[], foe:-1, rows:[], spearRows:0, phase:0, since:0, men:0, safe:0, stand:false, hitAt:-1e9, leader:-1, trail:[], stuck:0, near:Infinity, roll:0, rollAt:0, coming:[], via:[], viaAt:-1e9, rally:0, next:null, garrison:false, crew:[], host:-1, guests:[], lent:[] }; }
       if (W.armies.some(y => y!==x && y.id===x!.id && seen.has(y))) x.id=u.key;   // (two with one name: the new one takes its lead's)
       x.plots=plots; seen.add(x); keep.push(x);
     }
   }
+  for (const x of W.armies) if (x.garrison && W.nations[x.o]?.alive){ seen.add(x); keep.push(x); }   // (a castle's garrison has no barracks: it is kept while it is out)
   for (const x of W.armies) if (!seen.has(x)){ for (const h of W.humans) if (h.war===x.id && h.o===x.o) h.war=-1; }   // (its barracks are gone: its men are on their own)
   W.armies=keep.sort((a,b) => a.o-b.o || a.id-b.id);
   armyById.clear(); for (const x of W.armies) armyById.set(x.id,x);
 }
 /** The soldiers of army x: everyone of its barracks. */
 function membersOf(x: Army): Human[] {
+  if (x.garrison){ const out: Human[]=[]; for (const id of x.crew){ const h=byId.get(id); if (h) out.push(h); } return out; }
   const out: Human[]=[], done=new Set<Unit>();
   for (const q of x.plots){ const u=unitAt(q); if (!u || done.has(u)) continue; done.add(u); for (const h of u.members) out.push(h); }
   return out;
@@ -483,21 +490,30 @@ function onCastle(x: number, y: number){
 }
 /** A man walks to (gx,gy) at his pace (quicker if he has fallen behind), over land and water (he rows), and round a castle's walls: when they
     stand in his way he heads for the corner of the castle that makes the shortest way round, so he never dithers along a wall. */
+/** Does the segment a→b pass into the rectangle (x0,y0)-(x1,y1)? (Liang–Barsky; touching an edge is not passing in.) */
+function segBox(ax: number, ay: number, bx: number, by: number, x0: number, y0: number, x1: number, y1: number){
+  let t0=0, t1=1; const dx=bx-ax, dy=by-ay;
+  for (const [p,q] of [[-dx,ax-x0],[dx,x1-ax],[-dy,ay-y0],[dy,y1-ay]]){
+    if (p===0){ if (q<=0) return false; continue; }
+    const r=q/p; if (p<0){ if (r>t1) return false; if (r>t0) t0=r; } else { if (r<t0) return false; if (r<t1) t1=r; }
+  }
+  return t1-t0>1e-6;
+}
 function walk(h: Human, gx: number, gy: number, quick=1){
   let dx=gx-h.x, dy=gy-h.y, d=Math.hypot(dx,dy); if (d<0.05) return;
   const sp=pace(h)*(d>6 ? 1.6 : 1.1)*quick, st=Math.min(d,sp*0.1);
   let nx=h.x+dx/d*st, ny=h.y+dy/d*st;
   if (onCastle(nx,ny) && !onCastle(h.x,h.y)){
+    // round the walls: to the corner he can see that makes the shortest way on (from a corner whose way to the goal still crosses the
+    // castle, on round by the next corner)
     const q=((ny/8)|0)*PW+((nx/8)|0), main=pType[q]===B_CASTLE ? q : pMain[q], e=1.2;
-    const X0=(main%PW)*8-e, Y0=((main/PW)|0)*8-e, X1=X0+16+2*e, Y1=Y0+16+2*e;
-    const corners: [number, number][]=[];
-    if (h.y<=Y0+e) corners.push([X0,Y0],[X1,Y0]);
-    if (h.y>=Y1-e) corners.push([X0,Y1],[X1,Y1]);
-    if (h.x<=X0+e) corners.push([X0,Y0],[X0,Y1]);
-    if (h.x>=X1-e) corners.push([X1,Y0],[X1,Y1]);
-    if (!corners.length) corners.push([X0,Y0],[X1,Y0],[X0,Y1],[X1,Y1]);
-    let cx=corners[0][0], cy=corners[0][1], best=Infinity;
-    for (const [x,y] of corners){ const c=Math.hypot(x-h.x,y-h.y)+Math.hypot(gx-x,gy-y); if (c<best){ best=c; cx=x; cy=y; } }
+    const bx0=(main%PW)*8, by0=((main/PW)|0)*8, bx1=bx0+16, by1=by0+16;
+    const clear=(ax: number, ay: number, bx: number, by: number) => !segBox(ax,ay,bx,by,bx0,by0,bx1,by1);
+    const C4: [number, number][]=[[bx0-e,by0-e],[bx1+e,by0-e],[bx1+e,by1+e],[bx0-e,by1+e]];
+    const on=(k: number) => { const [x,y]=C4[k]; if (clear(x,y,gx,gy)) return Math.hypot(gx-x,gy-y); let b=Infinity; for (const j of [(k+1)%4,(k+3)%4]){ const [x2,y2]=C4[j]; b=Math.min(b,Math.hypot(x2-x,y2-y)+Math.hypot(gx-x2,gy-y2)); } return b; };
+    let cx=NaN, cy=NaN, best=Infinity;
+    for (let k=0;k<4;k++){ const [x,y]=C4[k], to=Math.hypot(x-h.x,y-h.y); if (to<0.3 || !clear(h.x,h.y,x,y)) continue; const c=to+on(k); if (c<best){ best=c; cx=x; cy=y; } }
+    if (!(best<Infinity)) return;
     dx=cx-h.x; dy=cy-h.y; d=Math.hypot(dx,dy);
     if (d<0.05) return;
     const s2=Math.min(d,st); nx=h.x+dx/d*s2; ny=h.y+dy/d*s2;
@@ -513,23 +529,10 @@ export function siteOf(r: number): [number, number] {
   const c=capitalIn(r); if (!c) return flagXY(r);
   const [gx,gy]=doorOf(W.nations[c]); return [gx,gy+6];
 }
-/** The army of o's other than x sent to hold region r (attacking or defending it), if any. */
-const holderOf = (o: number, x: Army, r: number) => W.armies.find(y => y!==x && y.o===o && y.goal===r && (y.order===O_ATTACK || y.order===O_DEFEND) && (y.men>0 || y.mode===A_MARCH));
-/** Armies on standby: each waits while the army of its kingdom's fighting in its region fights on; once that one is beaten or falls back it
-    marches in with its order, and once that one has won, it stands down. */
-function standby(){
-  for (const x of W.armies){
-    const q=x.next; if (!q || x.mode===A_BATTLE) continue;
-    const busy=holderOf(x.o,x,q.r);
-    if (busy && busy.mode===A_BATTLE) continue;
-    x.next=null;
-    if (busy || armyProblem(x.o,x.id,q.order,q.r)){ on.armyOrdered(x.o,x.id,'stand down',q.r); continue; }
-    armyOrder(x.o,x.id,q.order,q.r);
-  }
-}
 /** Why army `id` of kingdom o can't take this order, or null. */
 export function armyProblem(o: number, id: number, order: string, r=0): string | null {
-  const x=armyById.get(id); if (!x || x.o!==o) return 'That army is gone';
+  const x=armyById.get(id); if (!x || x.o!==o || x.garrison) return 'That army is gone';
+  if (x.host>=0) return 'It is fighting alongside another army of yours: it takes orders again once the battle is over';
   if (x.rally>W.tickN) return `It is rallying after its retreat: ${Math.ceil((x.rally-W.tickN)/(GAME_SPEED*10))} s before it takes orders`;
   if (order==='return'){ if (x.mode===A_HOME && !x.men) return 'It is at home'; return null; }
   if (order==='retreat'){ if (x.mode===A_HOME) return 'It is at home'; if (x.order===O_RETREAT) return 'It is retreating'; return null; }
@@ -538,8 +541,6 @@ export function armyProblem(o: number, id: number, order: string, r=0): string |
   if (x.mode===A_HOME && !membersOf(x).some(fit)) return 'Nobody of it is at home';
   if (!r || r>=RG.n) return 'Pick a region';
   const M=W.M, d=W.rOwner[r];
-  const busy=holderOf(o,x,r);
-  if (busy && busy.mode!==A_BATTLE) return 'One army per region: another of yours is there';   // (one fighting there: this one waits on standby)
   if (order==='attack'){
     if (!d || !W.wars[o*M+d] || !claimsOf(o,d).includes(r)) return 'Only the regions you claimed in a war can be attacked';
     if (W.rOcc[r]===o) return 'You hold it already: station an army there to keep it';
@@ -561,7 +562,6 @@ export function armyOrder(o: number, id: number, order: string, r=0){
   if (order==='retreat'){ retreat(x); x.rally=W.tickN+RALLY_TICKS; return true; }   // (its morale broken: it takes no orders while it rallies)
   if (order==='reinforce'){ reinforce(x); return true; }
   x.next=null;
-  if (holderOf(o,x,r)){ x.next={ order, r }; on.armyOrdered(o,x.id,'standby',r); return true; }   // (another of ours is fighting there: this one stands by to take its place)
   const M=W.M, d=W.rOwner[r];
   let enemy=0;
   if (order==='attack' || W.rOcc[r]===o) enemy=d;   // (stationed in a region it occupies: it keeps it from its owner)
@@ -634,17 +634,18 @@ export function updateWar(){
     if (!D.isPlayer && age>=BOT_ANSWER) answer(d,a,botAccepts(D,a));
     else if (age>=CRISIS_TICKS) answer(d,a,false);
   }
-  // each castle mends itself, 2 blows a second
-  for (let i=1;i<N.length;i++){ const n=N[i], q=n.capPlot; if (!n.alive || n.capTile<0 || pHp[q]<=0) continue; const was=wear(q); pHp[q]=Math.max(0,pHp[q]-CASTLE_MEND); if (wear(q)!==was) on.plotChanged(q); }
+  // each castle mends itself, 1 a second on the clock, but never while it is besieged
+  for (let i=1;i<N.length;i++){ const n=N[i], q=n.capPlot; if (!n.alive || n.capTile<0 || pHp[q]<=0 || W.siege[i]) continue; const was=wear(q); pHp[q]=Math.max(0,pHp[q]-CASTLE_MEND); if (wear(q)!==was) on.plotChanged(q); }
   if (W.tickN%10===1) countForts();
   syncArmies();
   findSieges();
+  garrisons();
   led.clear();
   for (const x of W.armies) stepArmy(x);
-  if (W.tickN%5===0) engage();
+  if (W.tickN%5===0){ engage(); joinBattles(); }
   for (const x of W.armies) if (x.mode===A_BATTLE && x.foe>=0 && x.id<x.foe){ const y=armyById.get(x.foe); if (y) fight(x,y); }
   for (const x of W.armies) if (x.mode===A_BATTLE && (x.foe<0 || !armyById.has(x.foe))){ x.foe=-1; x.phase=0; x.roll=0; x.mode=x.path.length ? A_MARCH : A_HOLD; }
-  if (W.tickN%10===3) standby();
+  releaseGuests();
   if (W.tickN%5===0) flags();
   if (W.tickN%ROLL_TICKS===11) fortsFire();
   castleFire();
@@ -658,10 +659,20 @@ function botAccepts(D: Nation, a: number){
 }
 /** One tick of army x: the men of its phalanx to their places, and the phalanx on its way. */
 function stepArmy(x: Army){
+  if (x.host>=0){   // (its men fight in another army's ranks: it goes where that one goes, and its reinforcements join them there)
+    const H=armyById.get(x.host); if (H){ x.x=H.x; x.y=H.y; x.fx=H.fx; x.fy=H.fy; }
+    if (x.coming.length) bringUp(x);
+    x.men=0; return;
+  }
   const all=membersOf(x);
   if (x.coming.length) bringUp(x);
   const coming=new Set(x.coming);
   const men=x.mode===A_HOME ? all.filter(h => fit(h) && h.war<0) : all.filter(h => h.war===x.id && h.hp>0 && !indoors(h) && !coming.has(h.id));
+  for (const gid of x.guests){ const G=armyById.get(gid); if (G) for (const id of G.lent){ const h=byId.get(id); if (h && h.war===x.id && h.hp>0 && !indoors(h)) men.push(h); } }   // (the men of the armies that joined its battle)
+  if (x.garrison){
+    if (!men.length){ breakOff(x); x.mode=A_HOME; x.men=0; x.rows=[]; return; }   // (all fallen: the castle fights on alone)
+    if (x.order===O_RETURN){ const [gx,gy]=doorOf(W.nations[x.o]); for (const h of men){ led.add(h.id); if (h.cool>0) h.cool--; walk(h,gx,gy); } x.men=men.length; return; }   // (back in through the gate)
+  }
   tidyRows(x,men);
   if (x.mode!==A_HOME && !men.length){ if (x.coming.length) breakOff(x); else { lost(x); return; } }   // (nobody left in the ranks, but more on the way: it waits for them)
   if (x.mode===A_HOME){
@@ -698,7 +709,7 @@ function bringUp(x: Army){
   for (const id of x.coming){
     const h=byId.get(id); if (!h || h.hp<=0 || h.war!==x.id || indoors(h)) continue;
     led.add(h.id); if (h.cool>0) h.cool--;
-    if (Math.hypot(h.x-x.x,h.y-x.y)<18){ h.path=[]; continue; }   // (there: into the ranks)
+    if (Math.hypot(h.x-x.x,h.y-x.y)<18){ h.path=[]; if (x.host>=0){ h.war=x.host; x.lent.push(h.id); } continue; }   // (there: into the ranks; into its host's, if its army fights in another's battle)
     if (!h.path.length){
       if (!x.via.length || W.tickN-x.viaAt>60 || Math.hypot(x.via[x.via.length-2]-x.x,x.via[x.via.length-1]-x.y)>20){ x.via=findWay(x.o,h.x,h.y,x.x,x.y); x.viaAt=W.tickN; }
       h.path=x.via.slice();
@@ -762,6 +773,119 @@ function lost(x: Army){
   x.mode=A_HOME; x.order=O_NONE; x.goal=0; x.enemy=0; x.path=[]; x.rows=[]; x.spearRows=0; x.men=0; x.safe=0;
   on.armyLost(x.o,x.id,was);
 }
+/* ---------- reinforcing a battle ----------
+   Any number of a kingdom's armies may be sent to one region. One that comes to a battle of its kingdom's there (or stands in that region
+   when the battle begins near it) joins it: its men take their places in the fighting army's ranks by the priority lines (spearmen in the
+   spearmen's rows, archers in the archers'), and fight as one army till the battle is over. Then it takes its men back and goes to a
+   friendly region beside it (a castle's garrison goes back in). */
+function joinBattles(){
+  const now=W.tickN;
+  for (const g of W.armies){
+    if (g.mode===A_HOME || g.mode===A_BATTLE || g.host>=0 || !g.men || g.safe>now || g.order===O_RETURN || g.order===O_RETREAT) continue;
+    const rg=region[tileOf(g.x,g.y)];
+    let best: Army | undefined, bd=(ENGAGE_R*1.6)**2;
+    for (const h of W.armies){
+      if (h===g || h.o!==g.o || h.mode!==A_BATTLE || h.host>=0) continue;
+      const rh=region[tileOf(h.x,h.y)]; if (!(g.garrison || g.goal===rh || rg===rh)) continue;
+      const d=(g.x-h.x)**2+(g.y-h.y)**2; if (d<bd){ bd=d; best=h; }
+    }
+    if (best) joinBattle(g,best);
+  }
+}
+function joinBattle(g: Army, h: Army){
+  g.lent=[];
+  for (const row of g.rows) for (const id of row){ const m=id ? byId.get(id) : undefined; if (m && m.hp>0){ m.war=h.id; m.foe=-1; if (m.duel>=0) unbind(m); g.lent.push(m.id); } }
+  g.host=h.id; g.rows=[]; g.spearRows=0; g.men=0; g.path=[]; g.mode=A_HOLD; g.foe=-1;
+  h.guests.push(g.id);
+  on.armyOrdered(g.o,g.id,'join',region[tileOf(h.x,h.y)]);
+}
+/** The armies that joined a battle now over (won, lost, or broken off) take their men back; each goes on to a friendly region beside it. */
+function releaseGuests(){
+  for (const g of W.armies){
+    if (g.host<0) continue;
+    const H=armyById.get(g.host); if (H && H.mode===A_BATTLE) continue;
+    releaseGuest(g,H);
+  }
+}
+function releaseGuest(g: Army, H: Army | undefined){
+  let alive=0;
+  for (const id of g.lent){ const m=byId.get(id); if (m && m.hp>0 && (!H || m.war===H.id)){ m.war=g.id; m.foe=-1; alive++; } }
+  if (H) H.guests=H.guests.filter(k => k!==g.id);
+  g.host=-1; g.lent=[]; g.rows=[]; g.trail=[]; g.mode=A_HOLD; g.men=alive;
+  if (H){ g.x=H.x; g.y=H.y; g.fx=H.fx; g.fy=H.fy; }
+  if (!alive || g.garrison) return;   // (nobody left: it is lost; a garrison goes back in by itself)
+  const here=region[tileOf(g.x,g.y)], friendly=(r: number) => holdsRegion(g.o,r) || (!!W.rOwner[r] && allied(g.o,W.rOwner[r]) && !W.rOcc[r]);
+  let best=0, bd=Infinity;
+  for (const r of RG.adj[here] ?? []){ if (!friendly(r) || RG.flag[r]<0) continue; const [fx,fy]=siteOf(r), d=(fx-g.x)**2+(fy-g.y)**2; if (d<bd){ bd=d; best=r; } }
+  if (!best) for (let r=1;r<RG.n;r++){ if (r===here || !friendly(r) || RG.flag[r]<0) continue; const [fx,fy]=siteOf(r), d=(fx-g.x)**2+(fy-g.y)**2; if (d<bd){ bd=d; best=r; } }
+  if (!best){ sendHome(g); return; }
+  sendOut(g,best,O_DEFEND,0);
+  on.armyOrdered(g.o,g.id,'regroup',best);
+}
+
+/* ---------- a castle's garrison ----------
+   Every castle keeps a garrison of tier I spearmen, 10, 20 or 30 by its tier, inside its walls (out of sight, not counted with the kingdom's
+   people, unpaid). When an enemy army comes before the castle they march out and form up before it, facing the enemy, as an army of the
+   castle's (priority line 1; the castle itself is the last line, 5, shooting from its walls), and fight the siege as any battle is fought.
+   Once the siege is over the survivors go back in, where they heal at the usual rate; the castle raises one more man every 30, 25 or 20
+   seconds (by its tier) while it is short of its garrison and not besieged. */
+function garrisons(){
+  const N=W.nations, gone=new Set<number>();
+  const grow=(a: Int32Array) => { const t=new Int32Array(N.length); t.set(a.subarray(0,Math.min(t.length,a.length))); return t; };
+  if (W.garTimer.length!==N.length) W.garTimer=grow(W.garTimer);
+  if (W.garCap.length!==N.length) W.garCap=grow(W.garCap);
+  for (let c=1;c<N.length;c++){
+    const C=N[c], G=armyById.get(GARRISON_ID+c);
+    if (!C.alive || C.capTile<0){ W.garHp[c]=[]; if (G) dropGarrison(G); continue; }
+    const tier=castleTier(c), cap=GARRISON[tier] ?? GARRISON[1], full=SOLDIER_HP[1];
+    const inside=W.garHp[c] ??= Array.from({ length:cap }, () => full);   // (a new castle's garrison is full)
+    if (W.garCap[c] && cap>W.garCap[c]) for (let k=W.garCap[c];k<cap;k++) inside.push(full);   // (its castle researched: 20/20, then 30/30)
+    W.garCap[c]=cap;
+    for (let k=0;k<inside.length;k++) if (inside[k]<full) inside[k]=Math.min(full,inside[k]+full/HEAL_TICKS);
+    if (G) G.crew=G.crew.filter(id => { const h=byId.get(id); return !!h && h.hp>0; });
+    if (W.siege[c]){
+      W.garTimer[c]=0;
+      if (!G && inside.length) deployGarrison(c);
+      continue;
+    }
+    if (G && G.host<0 && G.mode!==A_BATTLE) G.order=O_RETURN;   // (the siege is over: back in)
+    if (G && G.order===O_RETURN){
+      const [gx,gy]=doorOf(C);
+      G.crew=G.crew.filter(id => { const h=byId.get(id)!; if (Math.hypot(h.x-gx,h.y-gy)>2.5) return true; inside.push(h.hp); gone.add(h.id); return false; });
+    }
+    if (G && !G.crew.length) dropGarrison(G);
+    if (inside.length+(G ? G.crew.length : 0)<cap){ if (++W.garTimer[c]>=GARRISON_TICKS[tier]){ inside.push(full); W.garTimer[c]=0; } }
+    else W.garTimer[c]=0;
+  }
+  if (gone.size){ W.humans=W.humans.filter(h => !gone.has(h.id)); for (const id of gone) byId.delete(id); }
+}
+/** Kingdom c's garrison marches out of its castle's gate and forms up before the castle, facing the enemy. */
+function deployGarrison(c: number){
+  const C=W.nations[c], a=W.siege[c], [cx,cy]=castleXY(C), [gx,gy]=doorOf(C);
+  let foe: Army | undefined, bd=Infinity;
+  for (const x of W.armies){ if (x.o!==a || x.mode===A_HOME || !x.men) continue; const d=(x.x-cx)**2+(x.y-cy)**2; if (d<bd){ bd=d; foe=x; } }
+  let fx=0, fy=1; if (foe){ const d=Math.hypot(foe.x-cx,foe.y-cy)||1; fx=(foe.x-cx)/d; fy=(foe.y-cy)/d; }
+  const G: Army={ id:GARRISON_ID+c, o:c, plots:[], x:cx+fx*14, y:cy+fy*14, fx, fy, mode:A_HOLD, order:O_DEFEND, goal:region[C.capTile], enemy:a, path:[], foe:-1, rows:[], spearRows:0, phase:0, since:0, men:0, safe:0, stand:true, hitAt:-1e9, leader:-1, trail:[], stuck:0, near:Infinity, roll:0, rollAt:0, coming:[], via:[], viaAt:-1e9, rally:0, next:null, garrison:true, crew:[], host:-1, guests:[], lent:[] };
+  for (const hp of W.garHp[c]){
+    const h=makeHuman(C,H_SOLDIER,gx+(W.prand()-0.5)*3,gy+0.5); h.gar=true; h.hp=hp; h.tier=1; h.war=G.id; h.task=TASK_ROAM;
+    W.humans.push(h); byId.set(h.id,h); (soldiersOf[c] ??= []).push(h); G.crew.push(h.id);
+  }
+  W.garHp[c]=[]; G.men=G.crew.length;
+  W.armies.push(G); armyById.set(G.id,G);
+  on.armyOrdered(c,G.id,'garrison',G.goal);
+}
+function dropGarrison(G: Army){
+  if (G.host>=0) releaseGuest(G,armyById.get(G.host));
+  for (const gid of G.guests){ const g=armyById.get(gid); if (g) releaseGuest(g,G); }
+  W.armies=W.armies.filter(x => x!==G); armyById.delete(G.id);
+}
+/** Kingdom c's castle garrison: how many men it has (in and out) and how many it can have. */
+export function garrisonOf(c: number): { men: number; cap: number; next: number } {
+  const G=armyById.get(GARRISON_ID+c), cap=GARRISON[castleTier(c)] ?? GARRISON[1];
+  const men=(W.garHp[c]?.length ?? cap)+(G ? G.crew.length : 0);
+  return { men, cap, next: men<cap ? Math.max(0,GARRISON_TICKS[castleTier(c)]-(W.garTimer[c] ?? 0)) : 0 };
+}
+
 /** Hostile armies close enough take each other on (one fight each: an army already fighting is left to it). */
 function engage(){
   const A=W.armies, M=W.M, now=W.tickN;
@@ -776,6 +900,7 @@ function engage(){
     const y=best;
     x.stand=x.mode===A_HOLD; y.stand=y.mode===A_HOLD;
     x.mode=y.mode=A_BATTLE; x.foe=y.id; y.foe=x.id; x.roll=y.roll=0; x.phase=y.phase=0; x.since=y.since=now;   // (the battle begins with a fire phase; each line rolls its die as each phase begins)
+    const c=capitalIn(region[tileOf((x.x+y.x)/2,(x.y+y.y)/2)]); if (c && (x.o===c || y.o===c)) W.siegeFrom[c]=now;   // (a battle before a castle: the castle's archers shoot in its fire phases)
     on.battle(x.o,y.o,(x.x+y.x)/2,(x.y+y.y)/2);
   }
 }
@@ -921,6 +1046,28 @@ function flags(){
   }
   // a flag nobody stands at, half lowered, slowly goes back up
   for (let r=1;r<RG.n;r++) if (!W.rOcc[r] && W.rOwner[r] && W.rFlag[r]<1 && !at.has(r) && !fighting.has(r)) W.rFlag[r]=Math.min(1,W.rFlag[r]+1/CAPTURE_TICKS);
+  works(at,fighting);
+}
+/** Every 5 ticks: each region's works (a sawmill, a quarry or a copper mine round its flag) work for whoever holds the region, its controller
+    (flag up) or its occupier, and deliver WORKS_YIELD of their good to that kingdom every PRODUCE_TICKS of work. They stand idle while a
+    battle is fought in the region, an army at war with its holder stands in it (taking its flag, or retaking it), or its castle is besieged. */
+function works(at: Map<number, Army[]>, fighting: Set<number>){
+  const M=W.M, besieged=new Set<number>();
+  for (let c=1;c<W.nations.length;c++){ const n=W.nations[c]; if (W.siege[c] && n.alive && n.capTile>=0) besieged.add(region[n.capTile]); }
+  for (let r=1;r<RG.n;r++){
+    const p=W.rOcc[r] || W.rOwner[r]; if (!p || RG.site[r]<0){ W.rBusy[r]=0; continue; }   // (nobody's, or a region with no room for works)
+    let busy=fighting.has(r) || besieged.has(r);
+    if (!busy){ const l=at.get(r); if (l) for (const x of l) if (W.atWar[x.o*M+p]){ busy=true; break; } }
+    W.rBusy[r]=busy ? 1 : 0;
+    if (busy) continue;
+    W.rProd[r]+=5;
+    if (W.rProd[r]>=PRODUCE_TICKS){
+      W.rProd[r]-=PRODUCE_TICKS;
+      const g=RG.res[r];
+      W.nations[p].stock[g]+=WORKS_YIELD;
+      on.produced(RG.site[r],p,g,WORKS_YIELD);
+    }
+  }
 }
 /** Every ROLL_TICKS each region's fort shoots a man, picked at random, of the armies in the region at war with whoever holds it. */
 function fortsFire(){
@@ -980,41 +1127,39 @@ function siegeBlow(h: Human, e: Human){
   if (e.hp<=0){ W.kills[h.o*W.M+e.o]++; const x=e.war>=0 ? armyById.get(e.war) : undefined; if (x) x.hitAt=W.tickN; }
   on.hit(e.x,e.y-2,e.hp<=0,e.id,h.id);
 }
-/** One tick of army x storming the castle, by phases like a battle. Its spearmen nearest the walls, ten at most (the combat width), stand at the
-    walls and strike them once a tick in the melee phases; the rest stand behind them, waiting to take a fallen man's place. A man a militiaman
-    has taken on fights him instead. Its archers stand back and shoot once a tick in the fire phases, at a defender near the castle or else the walls. */
+/** One tick of army x storming the castle (priority line 5: its garrison has fallen, or there was none), by phases like a battle. The army
+    faces the side of the castle before it and keeps its formation: its front row (ten at most, the combat width) stands at that wall and, if
+    spearmen, strikes it once a tick in the melee phases; its archers shoot once a tick in the fire phases from their rows, at a militiaman
+    near the castle if there is one, else at the walls. A man a militiaman has taken on fights him instead. */
 function siegeStep(x: Army){
   const c=capitalIn(x.goal), C=W.nations[c], q=C.capPlot, [cx,cy]=castleXY(C), [ph,beat]=siegePhase(c);
-  const men: Human[]=[]; for (const row of x.rows) for (const id of row){ const h=id ? byId.get(id) : undefined; if (h && h.hp>0) men.push(h); }
-  const spears=men.filter(h => !h.arch), archers=men.filter(h => h.arch);
-  const foes=(soldiersOf[c] ?? []).filter(e => e.hp>0 && e.war<0 && Math.hypot(e.x-cx,e.y-cy)<SIEGE_R*1.5);
-  const ring=(i: number, n: number, R: number): [number, number] => {   // a place on a square round the castle, i of n
-    const t=(i+0.5)/n*4, side=t|0, f=t-side, a=-R+2*R*f;
-    return side===0 ? [cx+a,cy-R] : side===1 ? [cx+R,cy+a] : side===2 ? [cx-a,cy+R] : [cx-R,cy-a];
-  };
-  const atWalls=Math.min(WIDTH,spears.length), waiting=spears.length-atWalls;
-  for (let i=0;i<spears.length;i++){
-    const h=spears[i];
-    const p=h.duel>=0 ? byId.get(h.duel) : undefined;
-    if (p && p.hp>0 && p.duel===h.id && Math.hypot(p.x-h.x,p.y-h.y)<DUEL_R){   // (a defender has taken him on: one on one)
-      if (Math.hypot(p.x-h.x,p.y-h.y)>MELEE_R*0.85) walk(h,p.x,p.y,1.4);
-      else if (ph===PH_MELEE && beat===(h.id*7)%BATTLE_TICK) siegeBlow(h,p);
-      continue;
+  const ax=Math.abs(cx-x.x)>=Math.abs(cy-x.y), fx=ax ? Math.sign(cx-x.x) || 1 : 0, fy=ax ? 0 : Math.sign(cy-x.y) || 1;
+  x.fx=fx; x.fy=fy;
+  const tx=cx-fx*9.6, ty=cy-fy*9.6, step=ARMY_SP*0.1, e=Math.hypot(tx-x.x,ty-x.y);
+  if (e<=step){ x.x=tx; x.y=ty; } else { x.x+=(tx-x.x)/e*step; x.y+=(ty-x.y)/e*step; }
+  const foes=(soldiersOf[c] ?? []).filter(m => m.hp>0 && m.war<0 && Math.hypot(m.x-cx,m.y-cy)<SIEGE_R*1.5);
+  for (let r=0;r<x.rows.length;r++){
+    const row=x.rows[r];
+    for (let i=0;i<row.length;i++){
+      const h=row[i] ? byId.get(row[i]) : undefined; if (!h || h.hp<=0) continue;
+      const p=h.duel>=0 ? byId.get(h.duel) : undefined;
+      if (p && p.hp>0 && p.duel===h.id && Math.hypot(p.x-h.x,p.y-h.y)<DUEL_R){   // (a defender has taken him on: one on one)
+        if (Math.hypot(p.x-h.x,p.y-h.y)>MELEE_R*0.85) walk(h,p.x,p.y,1.4);
+        else if (ph===PH_MELEE && beat===(h.id*7)%BATTLE_TICK) siegeBlow(h,p);
+        continue;
+      }
+      if (h.duel>=0) unbind(h);
+      const [sx,sy]=slotOf(x,r,i); walk(h,sx,sy);
+      if (h.arch){
+        if (ph!==PH_FIRE || beat!==(h.id*7)%BATTLE_TICK) continue;
+        const e=foes.length ? foes[(W.prand()*foes.length)|0] : undefined;
+        if (e){ e.hp-=ARROW_DMG; e.by=x.o; if (e.hp<=0) W.kills[x.o*W.M+e.o]++; on.arrowShot(h.x,h.y-3,e.x,e.y-2,e.hp<=0,e.id); }
+        else { pHp[q]+=ARROW_DMG; on.arrowShot(h.x,h.y-3,cx+(W.prand()-0.5)*10,cy-4,false,-1); }
+      } else if (r===0 && ph===PH_MELEE && beat===(h.id*7)%BATTLE_TICK && Math.hypot(sx-h.x,sy-h.y)<2.5){
+        on.swing(h.id,-1);
+        if (W.prand()<HIT_CHANCE){ pHp[q]+=blowOf(h)*(1+((W.prand()*3|0)-1)*STRIKE_SWING); on.hit(h.x+fx*2,h.y+fy*2-2,false,-1,h.id); }
+      }
     }
-    if (h.duel>=0) unbind(h);
-    if (i>=atWalls){ const [sx,sy]=ring(i-atWalls,Math.max(1,waiting),14); walk(h,sx,sy); continue; }   // (waiting his turn at the walls)
-    const [sx,sy]=ring(i,atWalls,9.5); walk(h,sx,sy);
-    if (ph===PH_MELEE && beat===(h.id*7)%BATTLE_TICK && Math.hypot(sx-h.x,sy-h.y)<2){
-      on.swing(h.id,-1);
-      if (W.prand()<HIT_CHANCE){ pHp[q]+=blowOf(h)*(1+((W.prand()*3|0)-1)*STRIKE_SWING); on.hit(sx+(cx-sx)*0.3,sy+(cy-sy)*0.3-2,false,-1,h.id); }
-    }
-  }
-  for (let i=0;i<archers.length;i++){
-    const h=archers[i], [sx,sy]=ring(i,archers.length,18); walk(h,sx,sy);
-    if (ph!==PH_FIRE || beat!==(h.id*7)%BATTLE_TICK) continue;
-    const e=foes.length ? foes[(W.prand()*foes.length)|0] : undefined;
-    if (e){ e.hp-=ARROW_DMG; e.by=x.o; if (e.hp<=0) W.kills[x.o*W.M+e.o]++; on.arrowShot(h.x,h.y-3,e.x,e.y-2,e.hp<=0,e.id); }
-    else { pHp[q]+=ARROW_DMG; on.arrowShot(h.x,h.y-3,cx+(W.prand()-0.5)*10,cy-4,false,-1); }
   }
   if (W.tickN%10===0) on.plotChanged(q);
   if (pHp[q]>=bldHp(q)) castleFalls(c,x.o);

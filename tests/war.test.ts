@@ -16,7 +16,10 @@ import { claim, claimProblem, answer, inCrisis, armyProblem, armyOrder, armyOf, 
 import { WAGE, WAGE_IDLE, B_TOWER, B_ARCHERY } from '../src/core/constants';
 import { buildFort, fortTier, fortSpot } from '../src/sim/buildings';
 import { pTier } from '../src/sim/state';
-import { waiting, fortUpkeep, FORT_DMG, began, outlook, ARROW_DMG, RALLY_TICKS, ARCHER_WAGE, siteOf, castleArchers, blowOf } from '../src/sim/war';
+import { waiting, fortUpkeep, FORT_DMG, began, outlook, ARROW_DMG, RALLY_TICKS, ARCHER_WAGE, siteOf, castleArchers, blowOf, garrisonOf, GARRISON, GARRISON_TICKS, WORKS_YIELD } from '../src/sim/war';
+import { B_WORKS } from '../src/core/constants';
+import { pMain } from '../src/sim/state';
+import { PRODUCE_TICKS } from '../src/sim/buildings';
 import { CASTLE_ARROW } from '../src/sim/defense';
 import { R_CASTLE } from '../src/sim/research';
 import { MILITIA_HP, ARCHER_HP } from '../src/sim/army';
@@ -209,7 +212,7 @@ describe('armies', () => {
     for (const h of men) expect(h.hp).toBeCloseTo(maxHp(h),5);
   });
 
-  it('attack only claimed regions beside ground we hold, at war; are stationed in any region of ours; one army a region', () => {
+  it('attack only claimed regions beside ground we hold, at war; are stationed in any region of ours; several may go for one region', () => {
     world(); const { home, theirs }=lands(2);
     const a=army(1,10,home), b=army(1,10,home,-3);
     expect(armyProblem(1,a.id,'attack',theirs[0])).toMatch(/claimed in a war/);
@@ -219,7 +222,7 @@ describe('armies', () => {
     expect(armyProblem(1,a.id,'station',theirs[0])).toMatch(/stationed only in regions of yours/);
     expect(armyProblem(1,a.id,'attack',theirs[0])).toBeNull();
     expect(armyOrder(1,a.id,'attack',theirs[0])).toBe(true);
-    expect(armyProblem(1,b.id,'attack',theirs[0])).toMatch(/One army per region/);
+    expect(armyProblem(1,b.id,'attack',theirs[0])).toBeNull();   // (a second army may follow it there: in a battle there it joins the first's ranks)
     expect(a.mode).toBe(A_MARCH);
   });
 
@@ -311,7 +314,8 @@ describe('armies in peace and war', () => {
     expect(wageOf(man)).toBe(WAGE_IDLE);
   });
 
-  it('bring a flag down in 30 seconds sitting in the region, whatever their size; the owner raises it again as fast', () => {
+  it('bring a flag down in 10 seconds sitting in the region, whatever their size; the owner raises it again as fast', () => {
+    expect(CAPTURE_TICKS).toBe(10*GAME_SPEED*10);
     for (const k of [5, 40]){
       world(); const { home, theirs }=lands(1);
       const a=army(1,k,home);
@@ -548,28 +552,47 @@ describe('orders', () => {
     expect(W.tickN-t0).toBeGreaterThanOrEqual(RALLY_TICKS-1);
   });
 
-  it('a second army sent where one of ours is fighting stands by, and marches in when the first is beaten', () => {
-    world(); const { home, theirs }=lands(1);
-    const a=army(1,5,home), b=army(1,15,home,1), d=army(2,25,theirs[0]);
+  it('a second army sent where one of ours is fighting joins the battle: its men take places in the first one\'s lines, by the priority law; afterwards it moves to a region of ours beside it', () => {
+    world(); const { home, theirs }=lands(2);
+    const a=army(1,10,home), b=army(1,10,home,1,5), d=army(2,40,theirs[0]);
+    for (const h of W.humans) if (h.war===d.id) h.hp=1e6;   // (the battle goes on until the test ends it)
     war(1,2,theirs);
     armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
     until(() => a.mode===A_BATTLE, 4000);
+    for (const h of W.humans) if (h.war===a.id) h.hp=1e6;   // (nor is the first army beaten meanwhile)
     expect(armyProblem(1,b.id,'attack',theirs[0])).toBeNull();
     expect(armyOrder(1,b.id,'attack',theirs[0])).toBe(true);
-    expect(b.next).toEqual({ order:'attack', r:theirs[0] }); expect(b.mode).toBe(A_HOME);
-    until(() => b.mode!==A_HOME, 6000);   // (the first is beaten: the second marches in)
-    expect(a.mode).toBe(A_HOME); expect(b.goal).toBe(theirs[0]); expect(b.next).toBeNull();
+    until(() => b.host===a.id, 6000);
+    expect(a.guests).toContain(b.id); expect(b.men).toBe(0);
+    expect(armyProblem(1,b.id,'return')).toMatch(/alongside/);
+    until(() => b.lent.length===10, 600);   // (the stragglers ride up and fall in too)
+    const lent=new Set(b.lent);
+    for (const id of lent) expect(W.humans.find(h => h.id===id)!.war).toBe(a.id);
+    run(5);
+    const rows=a.rows.map(r => r.filter(id => id).map(id => W.humans.find(h => h.id===id)!));
+    expect(rows.flat().filter(h => lent.has(h.id)).length).toBe(10);   // all in the host's lines
+    rows.forEach((r,i) => { for (const h of r) expect(!!h.arch).toBe(i>=a.spearRows); });   // spearmen in the front rows (line 1), archers behind them (line 4)
+    // the fight is over: it leaves the host's lines and moves to a region of ours beside the battle
+    for (const h of W.humans) if (h.war===d.id) h.hp=0;
+    until(() => b.host<0, 300);
+    expect(a.guests).toHaveLength(0);
+    for (const id of lent) expect(W.humans.find(h => h.id===id)!.war).toBe(b.id);
+    expect(RG.adj[theirs[0]]).toContain(b.goal); expect(W.rOwner[b.goal]).toBe(1);
+    until(() => b.mode===A_HOLD, 3000);
+    expect(region[(((b.y/2)|0)*TW+((b.x/2)|0))]).toBe(b.goal);
   });
 
-  it('the defender may queue the next army for a region it defends the same way', () => {
+  it('the defender\'s armies reinforce one another in a battle the same way', () => {
     world(); const { home, theirs }=lands(2);
     const a=army(1,30,home), d1=army(2,5,theirs[0]), d2=army(2,15,theirs[1]);
+    for (const h of W.humans) if (h.war===a.id) h.hp=1e6;
     war(1,2,theirs);
     armyOrder(2,d1.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
     until(() => d1.mode===A_BATTLE, 4000);
+    for (const h of W.humans) if (h.war===d1.id) h.hp=1e6;
     expect(armyOrder(2,d2.id,'defend',theirs[0])).toBe(true);
-    expect(d2.next?.r).toBe(theirs[0]);
-    until(() => d2.goal===theirs[0], 6000);
+    until(() => d2.host===d1.id, 6000);
+    expect(d1.guests).toContain(d2.id);
   });
 
   it('an attacker is stationed in a region it occupies, to keep it: the owner can\'t raise the flag while it stands there', () => {
@@ -706,23 +729,34 @@ describe('sieges', () => {
     war(1,2,[bh]);
     return { a, bh, q:N(2).capPlot };
   };
-  it('a capital\'s region has no flag: an army attacking it marches to the castle and storms it, ten men at the walls at once, by fire and melee phases; the castle falls with its kingdom', () => {
-    expect(CAPTURE_TICKS).toBe(15*GAME_SPEED*10);
+  it('a capital\'s region has no flag: an army attacking it marches to the castle; the garrison comes out and forms its line, and only once it is beaten is the castle stormed, ten men at the walls, by fire and melee phases; the castle falls with its kingdom', () => {
     const { a, bh, q }=siege(40);
     const [gx,gy]=siteOf(bh), [fx,fy]=[(RG.flag[bh]%TW)*2, ((RG.flag[bh]/TW)|0)*2];
     expect(Math.hypot(gx-fx,gy-fy)).toBeGreaterThan(0);   // (to the gate, not to a flag)
-    N(2).humanProg=-1e9;   // (no militia: the walls alone)
+    N(2).humanProg=-1e9;
     expect(bldHp(q)).toBe(100);
     armyOrder(1,a.id,'attack',bh);
     until(() => W.siege[2]===1, 4000);
     expect(W.rFlag[bh]).toBe(1);   // (the flag never moves)
-    const from=W.siegeFrom[2];
-    // the first phase is fire: the walls take no blows; then melee: ten men at most strike, once a second each
-    const strikers=new Set<number>(), when: number[]=[];
-    listen({ swing: (id,e) => { if (e===-1){ strikers.add(id); when.push(W.tickN-from); } } });
-    until(() => W.tickN-from>=PHASE_TICKS*2, PHASE_TICKS*3);
+    // the garrison: ten tier I spearmen out of the gate, an army of the castle's, that forms its line and fights the besiegers as a battle
+    const G=W.armies.find(x => x.o===2 && x.garrison)!;
+    expect(G).toBeDefined();
+    const crew=W.humans.filter(h => h.o===2 && h.gar);
+    expect(crew).toHaveLength(10);
+    expect(crew.every(h => h.tier===1 && h.war===G.id && maxHp(h)===SOLDIER_HP[1])).toBe(true);
+    until(() => G.mode===A_BATTLE && a.mode===A_BATTLE, 600);
+    expect(G.rows[0].filter(id => id).length).toBe(10);   // (one line of ten)
+    // the walls take no blows while the garrison stands; then the army storms them in formation
+    let early=0; listen({ swing: (_id,e) => { if (e===-1) early++; } });
+    until(() => !W.humans.some(h => h.o===2 && h.gar && h.hp>0), 4000);
     listen({ swing: () => {} });
-    expect(when.every(t => t>=PHASE_TICKS && t<PHASE_TICKS*2)).toBe(true);
+    expect(early).toBe(0); expect(pHp[q]).toBe(0);
+    const strikers=new Set<number>(), when: number[]=[];
+    listen({ swing: (id,e) => { if (e===-1){ strikers.add(id); when.push(W.tickN-W.siegeFrom[2]); } } });
+    run(PHASE_TICKS*4);
+    listen({ swing: () => {} });
+    expect(when.length).toBeGreaterThan(0);
+    expect(when.every(t => ((t/PHASE_TICKS)|0)%2===1)).toBe(true);   // (in the melee phases only)
     expect(strikers.size).toBeGreaterThan(5); expect(strikers.size).toBeLessThanOrEqual(10);
     until(() => !N(2).alive, 6000);
     expect(N(2).alive).toBe(false);
@@ -734,7 +768,8 @@ describe('sieges', () => {
       const { a, bh }=siege(20);
       N(2).humanProg=-1e9; N(2).tier[R_CASTLE]=tier;
       armyOrder(1,a.id,'attack',bh);
-      until(() => W.siege[2]===1, 4000);
+      until(() => W.siege[2]===1 && a.mode===A_BATTLE, 4000);   // (the garrison out, the battle begun: its phases are the castle's)
+      until(() => (W.tickN-W.siegeFrom[2])%(PHASE_TICKS*2)===0, PHASE_TICKS*2+1);   // (from the start of a fire phase)
       const walls=castleArchers(N(2)), hits: number[]=[];
       listen({ arrowShot: (x0,y0,_x1,_y1,_k,v) => { if (walls.some(([x,y]) => x===x0 && y===y0)){ const h=W.humans.find(h => h.id===v); if (h) hits.push(W.tickN-W.siegeFrom[2]); } } });
       const hp=new Map(W.humans.filter(h => h.o===1).map(h => [h.id,h.hp]));
@@ -747,20 +782,83 @@ describe('sieges', () => {
     }
   });
 
-  it('while its capital is besieged a kingdom\'s newcomers come out of the gate as militia and fight the besiegers; in peace after, they go back to work', () => {
-    const { a, bh }=siege(20);
+  it('a castle keeps a garrison of 10 (20 and 30 with its castle researched); while besieged its newcomers are born as ever and stay villagers, and the castle does not mend', () => {
+    expect(GARRISON).toEqual([0,10,20,30]);
+    expect(GARRISON_TICKS.map(t => t/(GAME_SPEED*10))).toEqual([0,30,25,20]);
+    const { a, bh, q }=siege(30);
+    run(2); expect(garrisonOf(2)).toEqual({ men:10, cap:10, next:0 });
+    N(2).tier[R_CASTLE]=2; run(2); expect(garrisonOf(2)).toEqual({ men:20, cap:20, next:0 });   // (20/20 at once)
+    N(2).tier[R_CASTLE]=3; run(2); expect(garrisonOf(2)).toEqual({ men:30, cap:30, next:0 });
+    N(2).tier[R_CASTLE]=1; delete W.garHp[2]; W.garCap[2]=0; run(2);
     armyOrder(1,a.id,'attack',bh);
     until(() => W.siege[2]===1, 4000);
+    pHp[q]=40;   // (the walls knocked about before)
     const was=new Set(W.humans.map(h => h.id));
-    for (let i=0;i<600;i++){ N(2).humanProg=Math.max(N(2).humanProg,HUMAN_EVERY); tick(); if (W.humans.some(h => h.o===2 && !was.has(h.id) && h.militia && h.duel>=0)) break; }
+    for (let i=0;i<200;i++){ N(2).humanProg=Math.max(N(2).humanProg,HUMAN_EVERY); tick(); }
     const fresh=W.humans.filter(h => h.o===2 && !was.has(h.id));
     expect(fresh.length).toBeGreaterThan(0);
-    expect(fresh.every(h => h.kind===H_SOLDIER && h.militia && maxHp(h)===MILITIA_HP && blowOf(h)===0.8)).toBe(true);
-    expect(MILITIA_HP).toBe(8);
-    expect(fresh.some(h => h.duel>=0)).toBe(true);   // (in the fight: one on one with a besieger)
-    // peace: the siege is over, and the militia (no barracks to train at) go back to being villagers
-    makePeace(1,2); N(2).humanProg=-1e9;
-    until(() => !W.humans.some(h => h.o===2 && h.militia && h.hp>0), 3000);
+    expect(fresh.every(h => h.kind!==H_SOLDIER && !h.militia)).toBe(true);   // (no militia now: the garrison fights)
+    expect(pHp[q]).toBeGreaterThanOrEqual(40);   // (no mending under siege)
+  });
+
+  it('the garrison\'s dead come back one at a time once the siege is over: 30 s each (25 and 20 s with castle research)', () => {
+    const { a, bh }=siege(30);
+    N(2).humanProg=-1e9;
+    armyOrder(1,a.id,'attack',bh);
+    until(() => W.siege[2]===1, 4000);
+    const crew=W.humans.filter(h => h.o===2 && h.gar);
+    expect(crew).toHaveLength(10);
+    for (const h of crew.slice(0,5)) h.hp=0;   // five fall
+    run(3); expect(garrisonOf(2).men).toBe(5);
+    makePeace(1,2);
+    until(() => !W.siege[2], 400); const t0=W.tickN;
+    until(() => !W.armies.some(x => x.o===2 && x.garrison), 3000);   // (the rest go back in)
+    expect(garrisonOf(2).men).toBe(5);
+    until(() => garrisonOf(2).men===6, GARRISON_TICKS[1]+5);
+    expect(W.tickN-t0).toBeGreaterThanOrEqual(GARRISON_TICKS[1]-1);
+    until(() => garrisonOf(2).men===7, GARRISON_TICKS[1]+5);
+    void a;
+  });
+});
+
+describe('region works', () => {
+  it('stand round each region\'s flag, 2×2 plots of nobody\'s; on Europe two in five make wood, two in five stone, one in five copper', () => {
+    newWorld(1,'europe');
+    const share=[0,0,0]; let land=0, sites=0;
+    for (let r=1;r<RG.n;r++){
+      if (!RG.land[r]) continue;
+      land++; share[RG.res[r]]++;
+      const q=RG.site[r]; if (q<0) continue;
+      sites++;
+      expect([q,q+1,q+PW,q+PW+1].every(k => pType[k]===B_WORKS && pMain[k]===q && !pOwner[k])).toBe(true);
+      const f=RG.flag[r], [fx,fy]=[f%TW,(f/TW)|0], [mx,my]=[(q%PW)*4+4,((q/PW)|0)*4+4];
+      expect(Math.max(Math.abs(fx-mx),Math.abs(fy-my))).toBeLessThanOrEqual(1);   // (the flag in their middle)
+    }
+    expect(sites/land).toBeGreaterThan(0.9);
+    expect(share.map(k => Math.round(k/land*100))).toEqual([40,40,20]);
+  });
+
+  it('make 3 of their good every 30 s for whoever holds the region; stop while there is fighting there; an occupier gets what they make', () => {
+    expect(WORKS_YIELD).toBe(3);
+    world(); const { home, theirs }=lands(2);
+    for (const r of [home,...theirs]) expect(RG.site[r]).toBeGreaterThanOrEqual(0);
+    const made: [number, number, number][]=[]; listen({ produced: (q,o,g,k) => { if (pType[q]===B_WORKS) made.push([q,o,g*100+k]); } });
+    W.rProd.fill(0);
+    run(PRODUCE_TICKS+4);
+    expect(made.filter(m => m[1]===1)).toEqual([[RG.site[home],1,RG.res[home]*100+3]]);   // (the player holds its home region alone)
+    // a battle in a region of the bot's: its works stop
+    const a=army(1,20,home), d=army(2,20,theirs[0]);
+    war(1,2,theirs);
+    armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => a.mode===A_BATTLE, 4000);
+    run(5); expect(W.rBusy[theirs[0]]).toBe(1);
+    const p=W.rProd[theirs[0]]; run(60); expect(W.rProd[theirs[0]]).toBe(p);
+    // taken: they work on, for the occupier
+    for (const h of W.humans) if (h.war===d.id) h.hp=0;
+    until(() => W.rOcc[theirs[0]]===1, CAPTURE_TICKS*4);
+    made.length=0; run(PRODUCE_TICKS+10);
+    listen({ produced: () => {} });
+    expect(made.filter(m => m[0]===RG.site[theirs[0]]).map(m => m[1])).toEqual([1]);
   });
 });
 

@@ -420,7 +420,7 @@ export function makeHuman(n: Nation, kind: number, x: number, y: number): Human 
   return { id:++W.humanSeq, o:n.id, kind, militia:false, to:0, task:TASK_ROAM, x, y, tx:x, ty:y, path:[], wait:0, sp:(kind===H_SOLDIER?4:3)+W.prand()*2,
     hp:kind===H_SOLDIER?SOLDIER_HP[1]:VILLAGER_HP, post:-1, site:-1, home:-1, rest:-1, duel:-1, housed:false, homeless:0, beggar:false,
     by:0, war:-1, boat:-1, foe:-1, aim:-1, cool:0, slot:0, brave:-1, fury:false, dug:false, calm:0, work:-1, fix:-1, lead:0, fk:-1, line:-1, fx:x, fy:y,
-    tier:kind===H_SOLDIER?1:0, base:-1, load:0, make:0, dest:-1, arch:false };
+    tier:kind===H_SOLDIER?1:0, base:-1, load:0, make:0, dest:-1, arch:false, gar:false };
 }
 /** Where kingdom n's newcomer comes out: a new villager is the offspring of a village house, out of the door of one of its houses picked at random
     (a lived-in one: not run down, not burning, not on ground the enemy holds); with none, out of the castle's gate. A militiaman raised in a
@@ -864,7 +864,7 @@ export function updatePopulation(){
   updateMedics(reviveWounded);   // the wounded bleed, or heal in their beds
   buildUnits();  // which barracks stand, and their armies
   const groups: Human[][]=N.map(()=>[]);
-  for (const h of H) groups[h.o].push(h);
+  for (const h of H) if (!h.gar) groups[h.o].push(h);   // (a castle's garrison is the castle's: not the kingdom's people, soldiers or homeless)
   for (let i=1;i<N.length;i++){
     const n=N[i], mine=groups[i];
     if (!n.alive) continue;
@@ -875,10 +875,9 @@ export function updatePopulation(){
     const barracks=barracksOf(n);
     if (n.capTile>=0 && (n.humanProg+=humanRate(n,mine.length))>=HUMAN_EVERY){
       n.humanProg-=HUMAN_EVERY;
-      // every newcomer is a villager, who trains at a barracks to be a soldier (balance); only while the capital is besieged does he come out
-      // of its gate a militiaman, straight into the fight for it (sim/war.ts guardStep)
-      const besieged=W.siege[n.id]>0;
-      spawnHuman(n, besieged ? H_SOLDIER : H_VILLAGER, besieged);
+      // every newcomer is a villager, out of a house's door, who trains at a barracks to be a soldier (balance); a siege changes nothing: the
+      // castle's garrison fights it (sim/war.ts)
+      spawnHuman(n, H_VILLAGER, false);
       mine.push(H[H.length-1]);
     }
     payroll(n, mine);
@@ -893,7 +892,7 @@ export function updatePopulation(){
   // headcount after everyone has moved, so it matches what is on the map this tick
   for (const n of N){ n.villagers=0; n.soldiers=0; n.militia=0; n.called=0; n.wageS=0; n.wageM=0; n.training=0; n.beggars=0; n.homeless=0; n.unhoused=0; n.taxpayers=0; n.might=0; n.jobs[0]=n.jobs[1]=n.jobs[2]=n.jobs[3]=n.jobs[4]=0; n.studying=0; }
   for (const h of H){
-    const n=N[h.o];
+    const n=N[h.o]; if (h.gar) continue;
     if (h.kind===H_SOLDIER){ n.soldiers++; if (h.militia){ n.militia++; n.might+=STR_MILITIA; if (h.war>=0) n.called++; n.wageM+=wageOf(h); } else { n.wageS+=wageOf(h); n.might+=STR_SOLDIER[h.tier] ?? STR_SOLDIER[1]; } } else if (h.beggar) n.beggars++; else { n.villagers++; n.might+=STR_VILLAGER; if (h.housed) n.taxpayers++; }
     if (!h.housed && !(h.home>=0 && h.kind===H_VILLAGER && !h.beggar)){ n.homeless++; if (h.homeless>=100) n.unhoused++; }   // (one on his way to build himself a home is not homeless yet; the screen counts only those without one for 10 seconds)
     if (h.kind===H_VILLAGER && !h.beggar && h.work>=0){ const t=pType[h.work]; n.jobs[t===B_GUILD ? 0 : t===B_SMITHY ? 1 : t===B_HOSPITAL ? 2 : t===B_RESEARCH ? 4 : 3]++; }

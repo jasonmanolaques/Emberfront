@@ -1,6 +1,6 @@
 // Buildings a kingdom places, and the gold economy.
 import { describe, it, expect } from 'vitest';
-import { MINTER_BONUS, TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_CARPENTER, B_FARM, B_BARRACKS, B_NAVAL, B_HOSPITAL, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, GOLD_START, WAGE, WAGE_IDLE, GOLD_PER_TILE, TAX_PER_VILLAGER, LAND_TAX, STR_VILLAGER, STR_MILITIA, STR_SOLDIER } from '../src/core/constants';
+import { MINTER_BONUS, TW, TH, NP, PW, NT, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_CARPENTER, B_FARM, B_BARRACKS, B_NAVAL, B_HOSPITAL, B_TOWER, B_MINTER, B_HOUSE, B_CASTLE, B_CPART, B_EMPTY, B_RUINS, B_SITE, B_WORKS, GOLD_START, WAGE, WAGE_IDLE, GOLD_PER_TILE, TAX_PER_VILLAGER, LAND_TAX, STR_VILLAGER, STR_MILITIA, STR_SOLDIER } from '../src/core/constants';
 import { W, owner, isLand, pType, pCenter, pBuild, type Human } from '../src/sim/state';
 import { newWorld, startMatch, queueCommand, tick, incomeParts } from '../src/sim/sim';
 import { claim, answer } from '../src/sim/war';
@@ -129,7 +129,7 @@ describe('building costs and placement', () => {
     const types = new Set<number>();
     for (let q=0;q<NP;q++) if (owner[pCenter[q]]===1) types.add(pType[q]);
     expect(types.has(B_HOUSE)).toBe(true);
-    for (const t of types) expect([B_EMPTY, B_HOUSE, B_SITE, B_CASTLE, B_CPART, B_RUINS]).toContain(t);   // (a house going up)
+    for (const t of types) expect([B_EMPTY, B_HOUSE, B_SITE, B_CASTLE, B_CPART, B_RUINS, B_WORKS]).toContain(t);   // (a house going up; a region's works, there from the start)
   });
 });
 

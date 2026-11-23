@@ -79,6 +79,7 @@ export interface Human {
   load: number;                      // blacksmiths: carrying 1 copper, or armour of tier 2 or 3 (0 = nothing)
   make: number;                      // blacksmiths: tier of the armour the current job is for (0 = no job)
   dest: number;                      // blacksmiths: plot of the barracks the armour is for, or -1
+  gar: boolean;                      // soldiers: one of a castle's garrison (out of the castle in a siege; not counted with the kingdom's people)
   arch: boolean;                     // soldiers: an archer (half the hit points and blows of a spearman, shoots from the ranks behind in a battle)
   lead: number;                      // soldiers leading an army: their rank (RANKS in war.ts), doubling their hit points each rank; 0 otherwise
   fk: number;                        // soldiers on a front (sim/front.ts): the offensive it belongs to (attacker*M+defender), or -1
@@ -122,7 +123,12 @@ export interface Army {
   via: number[];                     // the way the reinforcements take (pixels), and the tick it was worked out
   viaAt: number;
   rally: number;                     // tick until which it rallies after a retreat, its morale broken: it takes no orders
-  next: { order: string; r: number } | null;   // an order on standby: carried out once the army of ours fighting in that region is beaten or falls back
+  next: { order: string; r: number } | null;   // (unused: armies now join a battle of their own side's in the region they are sent to)
+  garrison: boolean;                 // a castle's garrison come out to fight a siege (sim/war.ts): its men are `crew`
+  crew: number[];                    // the garrison's men (ids)
+  host: number;                      // the army of its kingdom's whose battle it has joined (its men fight in that one's ranks till the battle is over), -1 none
+  guests: number[];                  // the armies that have joined its battle
+  lent: number[];                    // its men lent to its host's ranks
 }
 export interface Attack { id: number; att: number; def: number; gold: number; front: number[]; done: boolean; isle?: number; seed?: number; }   // gold still to spend on this front (isle: a colony's, spent on that island's land only)
 /** A ship at sea (sim/naval.ts): sailing out, waiting off a coast, or sailing home to its naval base. */
@@ -235,6 +241,11 @@ export const W = {
   siege: new Int32Array(1),          // [d] the tick d's capital was encircled (the siege is on), or 0
   siegeBy: new Uint8Array(1),        // [d] the kingdom that besieges it
   siegeFrom: new Int32Array(1),      // [d] tick its castle's siege began (its fire and melee phases count from it)
+  garHp: [] as number[][],           // [d] the hit points of each man of its castle's garrison inside the castle (those out fighting are people)
+  garTimer: new Int32Array(1),       // [d] ticks toward its garrison's next man
+  garCap: new Int32Array(1),         // [d] the size its garrison was last counted for (castle research raises it: the new places fill at once)
+  rProd: new Float32Array(1),        // [region] ticks of work toward its works' next delivery
+  rBusy: new Uint8Array(1),          // [region] its works stand idle: a battle there, an enemy army in it, or its castle besieged
   offensive: new Uint8Array(1),      // [a*M+d] a's offensive against d: gathering at the border, ready, attacking or holding (F_* in war.ts)
   kills: new Int32Array(1),          // [a*M+b] people of b's that a has killed in their war (since it began)
   stall: new Int32Array(1),          // [a*M+b] ticks their war has gone without the border between them moving much (both ways)

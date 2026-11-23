@@ -1,6 +1,6 @@
 /* ---------- simulation entry points: worlds, matches, commands, ticks ----------
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
-import { B_TOWER, TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, kingdomLimit, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, TAX_PER_TIER, RUSH_TICKS, RUSH_LAND_TAX, LAND_TAX, MINTER_BONUS, WAGE, } from '../core/constants';
+import { B_TOWER, B_WORKS, TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, kingdomLimit, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, TAX_PER_TIER, RUSH_TICKS, RUSH_LAND_TAX, LAND_TAX, MINTER_BONUS, WAGE, } from '../core/constants';
 import { mulberry32 } from '../core/rng';
 import { W, resizeGrid, pCenter, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pIn, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
@@ -51,6 +51,7 @@ function pickCountry(pool: Country[], taken: Country[]){
 function blockOK(bx: number, by: number){
   if (bx<0||by<0||bx+1>=PW||by+1>=PH) return false;
   for (let y=by*4;y<by*4+8;y++) for (let x=bx*4;x<bx*4+8;x++){ const t=y*TW+x; if (!isLand[t]||terr[t]===T_MOUNT||terr[t]===T_SNOW||owner[t]) return false; }
+  for (const q of [by*PW+bx, by*PW+bx+1, (by+1)*PW+bx, (by+1)*PW+bx+1]) if (pType[q]===B_WORKS) return false;   // (a region's works stand there)
   return true;
 }
 /** Nearest 2x2-plot block around tile (tx,ty) where a capital can be founded, or null. */

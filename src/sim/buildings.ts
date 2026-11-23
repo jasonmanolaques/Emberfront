@@ -5,7 +5,7 @@
    at tier 3 four of a kind in a square join into one of 2×2 (tier 3); a joined building makes far
    more than its parts did apart. ---------- */
 import { plannedWall } from './fort';
-import { TW, PW, PH, NP, T_FOREST, B_CARPENTER, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_NAVAL, B_ARCHERY, TH, isStructure } from '../core/constants';
+import { TW, PW, PH, NP, T_FOREST, B_WORKS, B_CARPENTER, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_NAVAL, B_ARCHERY, TH, isStructure } from '../core/constants';
 import { W, owner, occ, terr, isLand, isle, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pAband, pMain, pHp, pTier, pSpan, pArmor, pIn, pArch, type Nation } from './state';
 import { R_GATHER, hasMedics } from './research';
 import { on } from './events';
@@ -118,7 +118,7 @@ export function finishHouse(q: number, id: number){
 /* ---------- buildings a kingdom places ---------- */
 export interface Structure { type: number; name: string; cost: number[]; info: string; }   // cost: [wood, stone, copper]
 // buildings placed bigger than one plot: [width, height] in plots
-export const SIZE: Record<number, [number, number]> = { [B_GUILD]: [2,1], [B_HOSPITAL]: [2,1], [B_MINTER]: [2,1], [B_NAVAL]: [4,2] };
+export const SIZE: Record<number, [number, number]> = { [B_GUILD]: [2,1], [B_HOSPITAL]: [2,1], [B_MINTER]: [2,1], [B_PLANTATION]: [2,2], [B_QUARRY]: [2,2], [B_COPPERMINE]: [2,2], [B_NAVAL]: [4,2] };
 /** The plots a building of `type` placed with its top-left on plot q covers (a naval base is 4×2, or, turned, 2×4). */
 export function footprint(q: number, type: number, orient=0){ return rect(q, type===B_NAVAL && orient ? [2,4] : SIZE[type] ?? [1,1]); }
 const rect = (q: number, [w,h]: number[]) => { const out: number[]=[]; for (let y=0;y<h;y++) for (let x=0;x<w;x++) out.push(q+y*PW+x); return out; };
@@ -127,13 +127,16 @@ export const GATHERERS = [B_PLANTATION, B_QUARRY, B_COPPERMINE];
 export const isGatherer = (ty: number) => ty===B_PLANTATION || ty===B_QUARRY || ty===B_COPPERMINE;
 /** Buildings that join up with their own kind (the gatherers as far as research allows, and blacksmiths always, for looks alone). */
 const joinsUp = (ty: number) => isGatherer(ty) || ty===B_SMITHY;
-const SPANS = [[1,1],[2,1],[2,2]];
+const SPANS = [[1,1],[2,1],[2,2]];   // a blacksmith: one plot, two side by side, a square of four
+const GSPANS = [[2,2],[4,2],[4,4]];  // a plantation, quarry or copper mine: 2×2 plots, two side by side (4×2), four in a square (4×4)
+/** The spans a building that joins up can have, by its kind. */
+const spansOf = (ty: number) => isGatherer(ty) ? GSPANS : SPANS;
 /** [width, height] in plots of the building whose main plot is q. */
 export function dims(q: number): [number, number] {
   const ty=pType[q];
   if (ty===B_CASTLE) return [2,2];
   if (ty===B_NAVAL) return pSpan[q]===1 ? [2,4] : [4,2];
-  if (joinsUp(ty)){ const [w,h]=SPANS[pSpan[q]]; return [w,h]; }
+  if (joinsUp(ty)){ const [w,h]=spansOf(ty)[pSpan[q]]; return [w,h]; }
   return SIZE[ty] ?? [1,1];
 }
 /** The plots the building whose main plot is q covers. */
@@ -149,9 +152,9 @@ export const STRUCTURES: Structure[] = [
   { type: B_ARCHERY,  name: 'Archer barracks', cost: [8,5,0], info: 'Trains 5 archers: they shoot from behind the spearmen. Joins any barracks beside it into one army.' },
   { type: B_TOWER,    name: 'Watchtower',  cost: [15,50,15], info: 'A fort of four towers round a region\'s flag: slows its capture, shoots its attackers.' },
   { type: B_MINTER,   name: 'Coin minter', cost: [5,5,5], info: '2×1 plots. +5% gold income.' },
-  { type: B_PLANTATION, name: 'Plantation', cost: [10,0,0], info: '+2 wood every 30 s. Joined ones give more (needs research).' },
-  { type: B_QUARRY,     name: 'Stone quarry', cost: [5,10,0], info: '+2 stone every 30 s. Joined ones give more (needs research).' },
-  { type: B_COPPERMINE, name: 'Copper mine', cost: [10,10,0], info: '+1 copper every 30 s. Joined ones give more (needs research).' },
+  { type: B_PLANTATION, name: 'Plantation', cost: [10,0,0], info: '2×2 plots. +2 wood every 30 s. Two side by side, or four in a square, join into one that gives more (needs research).' },
+  { type: B_QUARRY,     name: 'Stone quarry', cost: [5,10,0], info: '2×2 plots. +2 stone every 30 s. Two side by side, or four in a square, join into one that gives more (needs research).' },
+  { type: B_COPPERMINE, name: 'Copper mine', cost: [10,10,0], info: '2×2 plots. +1 copper every 30 s. Two side by side, or four in a square, join into one that gives more (needs research).' },
   { type: B_RESEARCH,   name: 'Research station', cost: [15,15,10], info: 'A scholar earns 1 research point a second. Click to pick what to study.' },
   { type: B_GUILD,      name: 'Builders guild', cost: [10,50,10], info: 'A builder upgrades your houses and towers for free.' },
   { type: B_NAVAL,      name: 'Naval base', cost: [15,5,0], info: 'Builds ships to settle islands and invade. Needs a coast.' },
@@ -357,7 +360,7 @@ export function joinGatherers(n: Nation){
   const topFor=(ty: number) => ty===B_SMITHY ? 3 : n.tier[R_GATHER];   // (blacksmiths join up whatever is researched: they are only prettier for it)
   const kind=(k: number) => { const m=mainOf(k); return pOwner[m]===id && pBurn[m]<=0 && joinsUp(pType[m]) ? pType[m] : -1; };
   const join=(q: number, span: number, ty: number) => {
-    const cells=rect(q,SPANS[span]); let timer=0, hp=0;
+    const cells=rect(q,spansOf(ty)[span]); let timer=0, hp=0;
     for (const k of cells){ const m=mainOf(k); timer=Math.max(timer,pTimer[m]); hp=Math.max(hp,pHp[m]); }
     for (const k of cells){ pType[k]=B_PART; pMain[k]=q; pOwner[k]=id; pSpan[k]=0; pTimer[k]=0; pHp[k]=0; }
     pType[q]=ty; pSpan[q]=span; pTimer[q]=timer; pHp[q]=hp;
@@ -365,16 +368,20 @@ export function joinGatherers(n: Nation){
   };
   if (n.tier[R_GATHER]<2 && !n.smithies) return;
   const plots=n.blds.slice().sort((a,b) => a-b);   // main plots, top-left first
+  // four of a kind in a square (a gatherer's 4×4, a blacksmith's 2×2), whatever they were joined as before
   for (let i=0;i<plots.length;i++){
     const q=plots[i], ty=pType[q]; if (!joinsUp(ty) || topFor(ty)<3 || pOwner[q]!==id || pSpan[q]===2 || mainOf(q)!==q) continue;
-    if (q%PW+1>=PW || ((q/PW)|0)+1>=PH) continue;
-    const sq=rect(q,[2,2]);
+    const [w,h]=spansOf(ty)[2];
+    if (q%PW+w>PW || ((q/PW)|0)+h>PH) continue;
+    const sq=rect(q,[w,h]);
     if (!sq.every(k => kind(k)===ty && cover(mainOf(k)).every(c => sq.includes(c)))) continue;
     join(q,2,ty);
   }
+  // two of a kind side by side, the left one's top-left with the right one's
   for (let i=0;i<plots.length;i++){
-    const q=plots[i], ty=pType[q]; if (!joinsUp(ty) || topFor(ty)<2 || pOwner[q]!==id || pSpan[q]!==0 || mainOf(q)!==q || q%PW+1>=PW) continue;
-    const r=q+1; if (pType[r]!==ty || pOwner[r]!==id || pSpan[r]!==0 || pBurn[r]>0) continue;
+    const q=plots[i], ty=pType[q]; if (!joinsUp(ty) || topFor(ty)<2 || pOwner[q]!==id || pSpan[q]!==0 || mainOf(q)!==q) continue;
+    const w=spansOf(ty)[0][0]; if (q%PW+2*w>PW) continue;
+    const r=q+w; if (pType[r]!==ty || pOwner[r]!==id || pSpan[r]!==0 || pBurn[r]>0) continue;
     join(q,1,ty);
   }
 }
@@ -396,7 +403,7 @@ export function fortSpot(r: number){
     for (let dy=-3;dy<=3;dy++) for (let dx=-3;dx<=3;dx++){
       const bx=bx0+dx, by=by0+dy; if (bx<0 || by<0 || bx+1>=PW || by+1>=PH) continue;
       const q=by*PW+bx;
-      if (!blockPlots(q).every(k => pBuild[k] && region[pCenter[k]]===r)) continue;
+      if (!blockPlots(q).every(k => pBuild[k] && region[pCenter[k]]===r && pType[k]!==B_WORKS)) continue;
       const d=dx*dx+dy*dy; if (d<bd){ bd=d; best=q; }
     }
   }

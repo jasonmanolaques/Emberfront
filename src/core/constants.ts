@@ -29,6 +29,7 @@ export const B_PLANTATION=11, B_QUARRY=12, B_COPPERMINE=13, B_PART=14;
 export const B_RESEARCH=15, B_GUILD=16, B_SMITHY=17;   // research station, builders guild, blacksmith
 export const B_HOSPITAL=19;   // hospital: 2 plots; two doctors fetch the wounded (sim/medics.ts)
 export const B_CARPENTER=20;   // carpenters: one villager builds extra hovels for free, 20 seconds each (sim/population.ts)
+export const B_WORKS=22;   // a region's works (sawmill, quarry or copper mine) round its flag: 2×2 plots, the main one top-left (pMain), nobody's; it works for whoever holds the region (sim/war.ts)
 export const B_ARCHERY=21;   // archer barracks: what the build menu places; on the map it is a barracks plot marked in pArch (it joins the others into one army)
 export const B_NAVAL=18;   // naval base: 8 plots (4×2 or 2×4), at least a third of it on the water
 /** Anything standing on a plot that a kingdom owns and that burns when the ground is taken. */

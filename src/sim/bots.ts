@@ -1,11 +1,11 @@
 /* ---------- bots ---------- */
-import { B_EMPTY, B_RUINS, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_HOUSE, B_ARCHERY, PW, PH, NP, WAGE } from '../core/constants';
-import { W, isle, pType, pOwner, pAband, type Nation } from './state';
+import { B_EMPTY, B_RUINS, B_PART, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_HOUSE, B_ARCHERY, PW, PH, NP, WAGE } from '../core/constants';
+import { W, isle, pType, pOwner, pAband, pMain, type Nation } from './state';
 import { launch } from './territory';
 import { grossIncome } from './sim';
 import { R_HOUSING, R_TAXES, R_INFANTRY, R_TOWERS, R_CASTLE, R_GATHER, R_MEDICS, TOPICS, MAX_TIER, setStudy, maxed, hasMedics } from './research';
 import { UNIT_SIZE, units } from './army';
-import { STRUCTURES, GATHERERS, canAfford, costFor, placeProblem, build, anyWithin, isEnemyLand, structureOf, fortTier, fortProblem, buildFort, type Over } from './buildings';
+import { STRUCTURES, GATHERERS, dims, canAfford, costFor, placeProblem, build, anyWithin, isEnemyLand, structureOf, fortTier, fortProblem, buildFort, type Over } from './buildings';
 import { plannedWall, wallPlots, townRing, ringOf, wallNeighbours, standingTower, WALL_MIN, WALL_MAX } from './fort';
 import { waiting, FORT_UPKEEP } from './war';
 import { allied, atWar, ready, endWar, refusePeace, acceptPeace, giveGoals, setClaims, P_GOALS, P_WHITE, wantsPeace, outlook, warAge, claim, claimable, claimsOf, attackerIn, began, besideHeld, armyOrder, armyProblem, armyMembers, armyOf, MAX_CLAIMS, A_HOME, A_HOLD, A_BATTLE, O_ATTACK, O_DEFEND, O_NONE, O_RETREAT } from './war';
@@ -159,19 +159,22 @@ function wallPlot(n: Nation){
 }
 const sameNeighbour = (q: number, type: number, id: number) =>
   [q-1,q+1,q-PW,q+PW].some(k => k>=0 && pType[k]===type && pOwner[k]===id);
-/** The most of a 2×2 square's other three plots, round q, that already hold a building of `type`
-    of n's: three means q completes a square (four of a kind in a square join into one, with research). */
-function squareFill(q: number, type: number, id: number){
+/** Does plot (px,py) hold a gathering building of `type` of id's (any part of it)? */
+const gathererAt = (px: number, py: number, type: number, id: number) => {
+  if (px<0 || py<0 || px>=PW || py>=PH) return false;
+  const k=py*PW+px, m=pType[k]===B_PART ? pMain[k] : k; return pType[m]===type && pOwner[m]===id;
+};
+/** For a gathering building (2×2 plots) with its top-left at q: how many of the other three 2×2 places of the 4×4 square round it already hold
+    one of `type` of id's (three means it completes a square: four join into one with research), and whether one stands just left or right
+    of it (two side by side join into one). */
+function gathererFit(q: number, type: number, id: number): [number, boolean] {
   const x=q%PW, y=(q/PW)|0; let best=0;
-  for (const [sx,sy] of [[-1,-1],[0,-1],[-1,0],[0,0]]){
+  for (const [sx,sy] of [[-2,-2],[0,-2],[-2,0],[0,0]]){
     let k=0;
-    for (let dy=0;dy<2;dy++) for (let dx=0;dx<2;dx++){
-      const px=x+sx+dx, py=y+sy+dy; if ((px===x && py===y) || px<0 || py<0 || px>=PW || py>=PH) continue;
-      const m=py*PW+px; if (pType[m]===type && pOwner[m]===id) k++;
-    }
+    for (const [dx,dy] of [[0,0],[2,0],[0,2],[2,2]]){ const px=x+sx+dx, py=y+sy+dy; if ((px===x && py===y) || !gathererAt(px,py,type,id)) continue; k++; }
     if (k>best) best=k;
   }
-  return best;
+  return [best, gathererAt(x-2,y,type,id) || gathererAt(x+2,y,type,id)];
 }
 
 /** Where a new barracks module goes: beside the biggest barracks, so its army grows (the free
@@ -206,9 +209,14 @@ function gathererPlot(n: Nation, type: number){
   let best=-1, bs=0;
   const mine=n.blds.filter(q => pType[q]===type && pOwner[q]===n.id).slice(0,40), cap=n.capPlot;
   for (const p of mine){
-    for (const q of [p-PW,p+1,p+PW,p-1,p-PW-1,p-PW+1,p+PW-1,p+PW+1]){
-      if (q<0 || q>=NP || Math.abs(q%PW-p%PW)>1 || placeProblem(n,q,type,'none') || plannedWall(n,q)) continue;   // (the line of the wall is kept clear)
-      const s=squareFill(q,type,n.id)*10 + (sameNeighbour(q,type,n.id) ? 6 : 0) - Math.hypot(q%PW-cap%PW,((q/PW)|0)-((cap/PW)|0))*0.05;
+    // the 2×2 places round it, in step with it (so that two side by side, and four in a square, can join)
+    const [w,h]=dims(p), x0=p%PW, y0=(p/PW)|0;
+    for (const [dx,dy] of [[-2,0],[w,0],[0,-2],[0,h],[w-2,-2],[w-2,h],[-2,h-2],[w,h-2]]){
+      const x=x0+dx, y=y0+dy; if (x<0 || y<0 || x+1>=PW || y+1>=PH) continue;
+      const q=y*PW+x;
+      if (placeProblem(n,q,type,'none') || plannedWall(n,q)) continue;   // (the line of the wall is kept clear)
+      const [sq,pair]=gathererFit(q,type,n.id);
+      const s=sq*10 + (pair ? 6 : 0) - Math.hypot(x-cap%PW,y-((cap/PW)|0))*0.05;
       if (s>bs){ bs=s; best=q; }
     }
   }
@@ -227,7 +235,7 @@ function pickPlot(n: Nation, type: number){
     let s = (pType[q]===B_EMPTY || pType[q]===B_RUINS ? 0 : pType[q]===B_HOUSE && pAband[q] ? -1 : -6)
       + (type===B_TOWER ? (anyWithin(q,n.id,2,isEnemyLand) ? 20 : 0) - d*0.2
         : type===B_FARM ? -d*0.4 + 4*fieldNeighbours(q,n.id)   // fields together, in one big farmland
-        : GATHERERS.includes(type) ? -d*0.3 + (sameNeighbour(q,type,n.id) ? 12 : 0) + 8*squareFill(q,type,n.id)   // side by side, then in squares: research joins them
+        : GATHERERS.includes(type) ? -d*0.3 + (gathererFit(q,type,n.id)[1] ? 12 : 0) + 8*gathererFit(q,type,n.id)[0]   // side by side, then in squares: research joins them
         : -d + (sameNeighbour(q,type,n.id) ? 12 : 0));
     // with a wall planned, a proper town: fields outside it, workshops inside
     if (n.wallR && type!==B_TOWER){ const inside=ringOf(n,q)<n.wallR; s += type===B_FARM ? (inside ? -8 : 6) : TOWN.includes(type) ? (inside ? 8 : -4) : 0; }
@@ -363,6 +371,7 @@ function attackOrders(n: Nation, d: number, counter=false){
     let best=0, bd=Infinity;
     for (const r of regs){
       if (W.rOcc[r]===id || !besideHeld(id,r) || armyProblem(id,x.id,'attack',r)) continue;
+      if (W.armies.some(y => y!==x && y.o===id && y.goal===r && y.order===O_ATTACK && y.men>0 && y.mode!==A_BATTLE)) continue;   // (one army a region, unless the one there is fighting: then it goes to help)
       const dd=distTo(x,r); if (dd<bd){ bd=dd; best=r; }
     }
     if (best) armyOrder(id,x.id,'attack',best);
@@ -388,13 +397,20 @@ function claimsFor(n: Nation, d: number){
   const first=claimable(n.id,d); if (!first.length) return [];
   const srand=W.srand, D=W.nations[d];
   const want=Math.max(1,Math.min(MAX_CLAIMS,1+Math.round(n.attackAt*2*srand()+(n.strength>D.strength*2 ? 1 : 0))));
-  const chain=[first[(srand()*first.length)|0]];
+  const chain=[pickWorth(n,first,srand)];
   while (chain.length<want){
     const next: number[]=[]; for (const r of chain) for (const q of RG.adj[r]) if (W.rOwner[q]===d && !chain.includes(q) && !next.includes(q)) next.push(q);
     if (!next.length) break;
-    chain.push(next[(srand()*next.length)|0]);
+    chain.push(pickWorth(n,next,srand));
   }
   return chain;
+}
+/** One of the regions, picked at random by what each is worth to kingdom n: a region with works counts double, and triple if they make
+    the good it is shortest of. */
+function pickWorth(n: Nation, regs: number[], srand: () => number){
+  const low=n.stock.indexOf(Math.min(...n.stock)), w=regs.map(r => RG.site[r]<0 ? 1 : RG.res[r]===low ? 3 : 2);
+  let p=srand()*w.reduce((a,b) => a+b,0), i=0; while (i<regs.length-1 && p>=w[i]){ p-=w[i]; i++; }
+  return regs[i];
 }
 
 /** War for a bot: answer peace offers, give its armies their orders in the wars it fights (attacking the

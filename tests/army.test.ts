@@ -1,4 +1,5 @@
 // Barracks armies, soldier tiers, armour and the blacksmith.
+import { RG } from '../src/sim/regions';
 import { describe, it, expect } from 'vitest';
 import { listen } from '../src/sim/events';
 import { TW, TH, NT, PW, B_BARRACKS, B_SMITHY, B_TOWER, GAME_SPEED } from '../src/core/constants';
@@ -15,7 +16,7 @@ const mine = () => W.humans.filter(h => h.o === 1);
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
 function until(ok: () => boolean, max = 6000){ for (let i=0;i<max;i++){ if (ok()) return; tick(); } throw new Error('condition never met'); }
 function start(seed: number){
-  newWorld(seed); W.rushUntil=0;
+  newWorld(seed); W.rushUntil=0; RG.site.fill(-1);   // (the regions' works shut: only the kingdom's own buildings fill its stockpile)
   for (let r=0;r<60;r++) for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){
     if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
     if (startMatch((TH/2+dy*3)*TW + TW/2+dx*3, 0)) return;

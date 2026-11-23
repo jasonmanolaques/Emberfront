@@ -1,6 +1,7 @@
 // Goods: nothing lies on the map to gather, the gathering buildings make it all, the first of each free.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_FARM, B_TOWER, B_MINTER, B_GUILD } from '../src/core/constants';
+import { TW, TH, NP, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_FARM, B_TOWER, B_MINTER, B_GUILD } from '../src/core/constants';
+import { RG, region, cedeRegion } from '../src/sim/regions';
 import { W, pType } from '../src/sim/state';
 import { newWorld, startMatch, tick } from '../src/sim/sim';
 import { build, placeProblem, structureOf, costFor, canAfford, RISE } from '../src/sim/buildings';
@@ -19,7 +20,8 @@ function start(seed: number, rivals: number){
 /** Builds `type` on the first free plot, whatever it costs, and returns what the stockpile lost. */
 function place(type: number){
   const before=[...me().stock];
-  for (const q of me().plots) if (!placeProblem(me(),q,type) && build(me(),q,type)) return before.map((b,g) => b-me().stock[g]);
+  if (W.rOwner[region[me().capTile]]!==1) cedeRegion(region[me().capTile],1);   // (room for a 2×2 yard: the home region)
+  for (let q=0;q<NP;q++) if (!placeProblem(me(),q,type) && build(me(),q,type)) return before.map((b,g) => b-me().stock[g]);   // (a gathering building takes 2×2 plots)
   throw new Error('nowhere to build');
 }
 
@@ -46,7 +48,7 @@ describe('goods with nothing on the map to gather', () => {
     }
   });
   it('fill the stockpile through the buildings alone', () => {
-    start(12345, 0);
+    start(12345, 0); RG.site.fill(-1);   // (no region's works either)
     place(B_PLANTATION); const w0=me().stock[0];
     run(305);
     expect(me().stock[0]).toBe(w0+2);   // 2 wood every 30 seconds

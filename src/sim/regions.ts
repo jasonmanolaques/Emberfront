@@ -9,11 +9,11 @@
    occupier); a peace hands occupied regions over.
    The static map of the regions lives here; what changes in a match (who controls each region, how
    high its flag stands, who occupies it, and how much of it each kingdom owns) lives in W. */
-import { TW, TH, NT } from '../core/constants';
+import { TW, TH, NT, PW, PH, NP, B_EMPTY, B_WORKS, T_FOREST, T_HILLS, T_MOUNT, T_SNOW } from '../core/constants';
 import { mulberry32 } from '../core/rng';
-import { W, owner, occ, isLand, isle } from './state';
+import { W, owner, occ, isLand, isle, pType, pMain, pBuild, pCenter, terr, elev } from './state';
 import { VIEWS } from './mapview';
-import { DATA, decodeRaw } from './realmap';
+import { DATA, decodeRaw, capitalsOn } from './realmap';
 import { REGION_DATA } from './regiondata';
 import { on } from './events';
 
@@ -30,6 +30,8 @@ export const RG = {
   tiles: new Int32Array(0),
   adj: [[]] as number[][],                // the regions each one borders on land
   isle: new Int32Array(1),                // the landmass each region's flag stands on
+  res: new Uint8Array(1),                 // the good each region's works make: 0 wood (a sawmill), 1 stone (a quarry), 2 copper (a copper mine)
+  site: new Int32Array(1),                // the top-left plot of each region's works (2×2 plots round its flag), -1 if it has no room for them
 };
 
 /* ---------- the map of the regions ---------- */
@@ -141,7 +143,42 @@ function finishRegions(names: string[], flags: Int32Array){
     const best=new Int32Array(n).fill(-1);
     for (let t=0;t<NT;t++){ const r=region[t]; if (r && want[r] && dist[t]>best[r]){ best[r]=dist[t]; flag[r]=t; } }
   }
-  RG.n=n; RG.names=['',...g.names]; RG.flag=flag; RG.land=land; RG.start=start; RG.tiles=tiles;
+  // the works: a 2×2 block of plots of the region's own buildable ground, empty, nearest its flag; the flag then stands in their middle
+  for (let q=0;q<NP;q++) if (pType[q]===B_WORKS){ pType[q]=B_EMPTY; pMain[q]=0; }
+  const site=new Int32Array(n).fill(-1);
+  // (kept off the real capitals of a real map, where a kingdom's castle will stand: a small island's may have room for no more than that)
+  const caps=W.map!=='gen' && VIEWS[W.map] ? capitalsOn(W.map).map(c => [(c.tile%TW)>>2, ((c.tile/TW)|0)>>2]) : [];
+  for (let r=1;r<n;r++){
+    const f=flag[r]; if (f<0) continue;
+    const bx0=Math.round((f%TW)/4)-1, by0=Math.round(((f/TW)|0)/4)-1; let best=-1, bd=Infinity;
+    for (let dy=-3;dy<=3;dy++) for (let dx=-3;dx<=3;dx++){
+      const bx=bx0+dx, by=by0+dy; if (bx<0 || by<0 || bx+1>=PW || by+1>=PH) continue;
+      const q=by*PW+bx, d=dx*dx+dy*dy; if (d>=bd || caps.some(([cx,cy]) => Math.max(Math.abs(cx-bx-0.5),Math.abs(cy-by-0.5))<4)) continue;
+      if ([q,q+1,q+PW,q+PW+1].every(k => pBuild[k] && region[pCenter[k]]===r && pType[k]===B_EMPTY)){ bd=d; best=q; }
+    }
+    if (best<0) continue;
+    site[r]=best;
+    for (const k of [best,best+1,best+PW,best+PW+1]){ pType[k]=B_WORKS; pMain[k]=best; }
+    const mx=(best%PW)*4+4, my=((best/PW)|0)*4+4;
+    for (const [ox,oy] of [[0,0],[-1,0],[0,-1],[-1,-1]]){ const t=(my+oy)*TW+mx+ox; if (region[t]===r){ flag[r]=t; break; } }
+  }
+  // what each region's works make, from its ground: copper where it is most rugged and high (a fifth of the regions: the Pyrenees, the Alps,
+  // the Carpathians, the Balkans, the Scandinavian ranges), wood where it is most wooded (two in five), stone everywhere else (two in five)
+  const res=new Uint8Array(n), wood=new Float64Array(n), rough=new Float64Array(n), high=new Float64Array(n);
+  let lo=Infinity, hi=-Infinity;
+  for (let r=1;r<n;r++){
+    for (let i=start[r];i<start[r+1];i++){ const t=tiles[i], ty=terr[t]; if (ty===T_FOREST) wood[r]++; else if (ty===T_HILLS) rough[r]+=1; else if (ty===T_MOUNT || ty===T_SNOW) rough[r]+=2; high[r]+=elev[t]; }
+    const L=Math.max(1,land[r]); wood[r]/=L; rough[r]/=L; high[r]/=L; if (land[r]){ lo=Math.min(lo,high[r]); hi=Math.max(hi,high[r]); }
+  }
+  const ids: number[]=[]; for (let r=1;r<n;r++) if (land[r]) ids.push(r);
+  const lift=(r: number) => hi>lo ? (high[r]-lo)/(hi-lo) : 0;
+  ids.sort((a,b) => (rough[b]+0.5*lift(b))-(rough[a]+0.5*lift(a)) || a-b);
+  const nCopper=Math.round(ids.length*0.2), rest=ids.slice(nCopper);
+  for (const r of ids.slice(0,nCopper)) res[r]=2;
+  rest.sort((a,b) => wood[b]-wood[a] || lift(a)-lift(b) || a-b);
+  const nWood=Math.round(ids.length*0.4);
+  rest.forEach((r,i) => { res[r]=i<nWood ? 0 : 1; });
+  RG.n=n; RG.names=['',...g.names]; RG.flag=flag; RG.land=land; RG.start=start; RG.tiles=tiles; RG.res=res; RG.site=site;
   RG.adj=adj.map(s => [...s].sort((a,b) => a-b));
   RG.isle=new Int32Array(n); for (let r=1;r<n;r++) if (flag[r]>=0) RG.isle[r]=isle[flag[r]];
 }
@@ -149,7 +186,7 @@ function finishRegions(names: string[], flags: Int32Array){
 /** Clears who holds what (a new match, or the kingdoms counted again: sim.ts). */
 export function resetRegions(M: number){
   const n=RG.n;
-  W.rOwner=new Uint8Array(n); W.rFlag=new Float32Array(n); W.rOcc=new Uint8Array(n); W.rCount=new Int32Array(n*M);
+  W.rOwner=new Uint8Array(n); W.rFlag=new Float32Array(n); W.rOcc=new Uint8Array(n); W.rCount=new Int32Array(n*M); W.rProd=new Float32Array(n); W.rBusy=new Uint8Array(n);
   dirty=new Uint8Array(n); dirtyList=[];
 }
 let dirty=new Uint8Array(1), dirtyList: number[]=[];

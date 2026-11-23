@@ -36,8 +36,8 @@ function fieldReport(key: number){
 export function armyStatus(x: import('../sim/state').Army){
   const r=x.goal ? regionName(x.goal) : '', men=`${x.men} men`;
   const wait=x.rally>W.tickN ? ` · rallying, ${Math.ceil((x.rally-W.tickN)/(GAME_SPEED*10))} s` : '';
-  const sb=x.next ? ` · on standby for ${regionName(x.next.r)}` : '';
-  return armyLine(x,r,men)+wait+sb;
+  if (x.host>=0){ const H=W.armies.find(a => a.id===x.host); return `${x.lent.length} men · fighting in the battle${H ? ` for ${regionName(H.goal)}` : ''} beside another army`; }
+  return armyLine(x,r,men)+wait;
 }
 function armyLine(x: import('../sim/state').Army, r: string, men: string){
   if (x.mode===A_HOME) return 'At home';

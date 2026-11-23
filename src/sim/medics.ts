@@ -25,7 +25,7 @@ export const hospitalDoor = (q: number): [number, number] => [(q%PW)*8+8, ((q/PW
 /** A soldier of a kingdom that has learned field medics has fallen: he may be wounded, not dead (returns true: he is on the list, and is not mourned). */
 export function wound(h: Human): boolean {
   const n=W.nations[h.o];
-  if (!n?.alive || h.kind!==1 || !hasMedics(n) || W.prand()>=woundChance(n)) return false;
+  if (!n?.alive || h.kind!==1 || h.gar || !hasMedics(n) || W.prand()>=woundChance(n)) return false;
   if (h.by>0) W.kills[h.by*W.M+h.o]=Math.max(0,W.kills[h.by*W.M+h.o]-1);   // (a wounded man is no kill: only if he dies)
   W.wounded.push({ id:h.id, o:h.o, h, x:h.x, y:h.y, left:BLEED_TICKS, medic:-1, carried:false, hosp:-1, bed:-1, heal:0 });
   return true;

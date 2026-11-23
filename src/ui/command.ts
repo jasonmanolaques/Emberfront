@@ -9,6 +9,7 @@ import { W, type Army } from '../sim/state';
 import { queueCommand } from '../sim/sim';
 import { armyProblem, armyOf, claimsOf, waiting, A_HOME, A_BATTLE } from '../sim/war';
 import { region, regionName } from '../sim/regions';
+import { tileOf } from '../sim/population';
 import { units, unitAt, groupKeys, groupLead, MAX_MERGES } from '../sim/army';
 import { client } from '../client';
 import { cam, tileAt } from '../render/camera';
@@ -23,7 +24,7 @@ let folded=typeof innerWidth==='number' && innerWidth<=640, html='';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]!);
 /** Our armies, by their lead barracks. */
-const mine = () => W.armies.filter(x => x.o===PLAYER).sort((a,b) => a.id-b.id);
+const mine = () => W.armies.filter(x => x.o===PLAYER && !x.garrison).sort((a,b) => a.id-b.id);   // (the castle's garrison is the castle's: not an army of the list)
 /** The army a row (a lead barracks' key) stands for. */
 const armyFor = (key: number) => W.armies.find(x => x.o===PLAYER && x.plots.includes(key));
 export const selectedArmy = () => { const x=client.selected>=0 ? armyOf(client.selected) : undefined; return x && x.o===PLAYER ? x : undefined; };
@@ -50,7 +51,7 @@ const btn = (act: string, label: string, attrs: string, opts: { off?: boolean; t
 
 /** The orders under the open row. */
 function orders(x: Army){
-  const hint='Right-click a region on the map: one of yours (or an ally\'s), or one you occupy, to station the army there, in peace or war; one you claimed in a war, beside ground you hold, to attack it. Where another of your armies is fighting, it waits on standby and marches in if that one is beaten or falls back. A retreating army rallies for 30 s before it takes orders. Home garrisons it at its barracks, for less upkeep.';
+  const hint='Right-click a region on the map: one of yours (or an ally\'s), or one you occupy, to station the army there, in peace or war; one you claimed in a war, beside ground you hold, to attack it. Sent where another of your armies is fighting, it joins the battle (its men in that army\'s ranks) and afterwards moves to a region of yours beside it. A retreating army rallies for 30 s before it takes orders. Home garrisons it at its barracks, for less upkeep.';
   const ret=armyProblem(PLAYER,x.id,'retreat'), home=armyProblem(PLAYER,x.id,'return'), rein=armyProblem(PLAYER,x.id,'reinforce'), w=waiting(x);
   return `<p class="dnote">${hint}</p><div class="ato2">${btn('retreat','↩ Retreat',`data-id="${x.id}"`,{ off:!!ret, title: ret ?? 'Break off and fall back to the nearest region you hold' })}${btn('home','🏠 Home',`data-id="${x.id}"`,{ off:!!home, title: home ?? 'Back to its barracks: its men heal, and are paid less' })}${btn('reinforce',`⇪ Reinforce${w ? ' · '+w : ''}`,`data-id="${x.id}"`,{ off:!!rein, title: rein ?? 'Its men waiting at the barracks (new recruits, the healed) march up to it and join its ranks at the back, in a fight too' })}</div>`;
 }
@@ -136,6 +137,6 @@ export function rightClick(sx: number, sy: number){
   const why=armyProblem(PLAYER,x.id,order,r);
   if (why){ const y=armyAt(sx,sy); if (y && y!==x){ selectArmy(y.id); return; } toast(why); return; }
   queueCommand({ type:'army', nation:PLAYER, army:x.id, order, region:r });
-  const fighting=W.armies.some(y => y!==x && y.o===PLAYER && y.goal===r && y.mode===A_BATTLE);
-  toast(fighting ? `${rowName(x)}: on standby for ${regionName(r)}, to march in if the army fighting there is beaten or falls back` : `${rowName(x)}: ${order==='attack' ? 'attack' : 'to'} ${regionName(r)}`);
+  const fighting=W.armies.some(y => y!==x && y.o===PLAYER && region[tileOf(y.x,y.y)]===r && y.mode===A_BATTLE);
+  toast(fighting ? `${rowName(x)}: to ${regionName(r)}, to join the battle there` : `${rowName(x)}: ${order==='attack' ? 'attack' : 'to'} ${regionName(r)}`);
 }

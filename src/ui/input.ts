@@ -23,7 +23,9 @@ import { nationsOpen, closeNations } from './nations';
 import { region, regionName, RG } from '../sim/regions';
 const regionLand = (r: number) => RG.land[r];
 import { claimsOf } from '../sim/war';
-import { fortTier, capitalIn } from '../sim/buildings';
+import { fortTier, capitalIn, PRODUCE_TICKS } from '../sim/buildings';
+import { garrisonOf } from '../sim/war';
+import { GAME_SPEED } from '../core/constants';
 
 interface Drag { sx: number; sy: number; lx: number; ly: number; moved: boolean; button: number; }
 const pointers=new Map<number,{x: number; y: number}>(); let drag: Drag | null=null, pinch: {d: number; mx: number; my: number} | null=null;
@@ -41,8 +43,11 @@ function updateTip(e: PointerEvent){
   const r=region[t];
   if (r){
     const c=W.rOwner[r], cl=c && c!==PLAYER && claimsOf(PLAYER,c).includes(r) ? ' · claimed by you' : c===PLAYER && [...W.claims.entries()].some(([k,v]) => k%W.M===PLAYER && v.includes(r)) ? ' · claimed by an enemy' : '';
-    const ft=fortTier(r), fort=!ft ? '' : capitalIn(r) ? ' · capital: no flag; taken only by storming its castle, which shoots like a tier 4 fort' : ` · fort, tier ${ft}`;
-    l2=`${regionName(r)} · ${c ? (c===PLAYER ? 'your region' : W.nations[c].name+'\'s region') : `no flag yet (${Math.round(W.rCount[r*W.M+(o||0)]/Math.max(1,regionLand(r))*100)}% ${o ? 'theirs' : 'settled'}: more than half takes it)`}${cl}${fort}`;
+    const ft=fortTier(r), cap=capitalIn(r), gar=cap ? garrisonOf(cap) : null;
+    const fort=cap ? ` · capital: no flag; its garrison ${gar!.men}/${gar!.cap}${gar!.next ? ` (one more in ${Math.ceil(gar!.next/(GAME_SPEED*10))} s)` : ''}, then its castle, must be beaten` : !ft ? '' : ` · fort, tier ${ft}`;
+    const good=['wood','stone','copper'][RG.res[r]], mill=['sawmill','quarry','copper mine'][RG.res[r]], holder=W.rOcc[r] || W.rOwner[r];
+    const worksLine=RG.site[r]<0 ? '' : ` · ${mill}: +3 ${good} every ${PRODUCE_TICKS/10} s${!holder ? ' (idle: nobody holds the region)' : W.rBusy[r] ? ' (stopped: fighting here)' : W.rOcc[r] ? ` (working for ${W.rOcc[r]===PLAYER ? 'you' : W.nations[W.rOcc[r]].name}, the occupier)` : ''}`;
+    l2=`${regionName(r)} · ${c ? (c===PLAYER ? 'your region' : W.nations[c].name+'\'s region') : `no flag yet (${Math.round(W.rCount[r*W.M+(o||0)]/Math.max(1,regionLand(r))*100)}% ${o ? 'theirs' : 'settled'}: more than half takes it)`}${cl}${fort}${worksLine}`;
   }
   ui.tip.innerHTML=`<span class="t1"></span><span class="t2"></span><span class="t2"></span>`;
   ui.tip.children[0].textContent=l1; ui.tip.children[1].textContent=l2; ui.tip.children[2].textContent=l3;

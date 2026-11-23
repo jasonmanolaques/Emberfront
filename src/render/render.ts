@@ -3,16 +3,16 @@
    is screen pixels per render pixel. Close in, the map is drawn from the tiles of its picture
    (render/tiles.ts), a few made each frame, those nearest the middle of the screen first; far
    out (a map tile under DETAIL_CSS screen pixels), from the overview, one pixel a map tile. */
-import { TW, TH, RW, RH, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY, B_HOSPITAL, B_RESEARCH, B_NAVAL } from '../core/constants';
+import { TW, TH, RW, RH, PW, PH, PS, RS, K, PLAYER, PLAYER_COL, B_TOWER, B_GUILD, B_SMITHY, B_HOSPITAL, B_RESEARCH, B_NAVAL, B_WORKS } from '../core/constants';
 import { clamp, fmt } from '../core/util';
-import { W, owner, isLand, sea, pType, pTimer, pBurn, pHp, type Human } from '../sim/state';
+import { W, owner, isLand, sea, pType, pTimer, pBurn, pHp, pMain, pCenter, type Human } from '../sim/state';
 import { findBlock } from '../sim/sim';
 import { placeProblem, structureOf, canAfford, navalSite, blockPlan, fortProblem, fortSpot, capitalIn, SIZE, PRODUCE_TICKS, dims } from '../sim/buildings';
 import { bldHp } from '../sim/defense';
 import { client, reduceMotion } from '../client';
 import { view, ctx, cam, stepCamAnim } from './camera';
 import { ovC, flushWorld, SEA } from './terrain';
-import { drawIcon, drawWorking, BIG } from './sprites';
+import { drawIcon, drawWorking, drawWorksLive, BIG } from './sprites';
 import './nature';   // (it paints the trees into the picture's tiles)
 import { CH, MAKE_PER_FRAME, tileAt, makeTile, nextFrame, tileCols, tileRows, frame, type Tile } from './tiles';
 import { styleOf } from './style';
@@ -429,9 +429,16 @@ export function render(now: number, dt: number){
 
   // production buildings at work: saplings growing, the quarry pulley, the mine's glow
   if (detail){
-    const qx0=Math.max(0,Math.floor(vx0/PS)-1), qy0=Math.max(0,Math.floor(vy0/PS)-1), qx1=Math.min(PW-1,Math.floor(vx1/PS)), qy1=Math.min(PH-1,Math.floor(vy1/PS));
+    const qx0=Math.max(0,Math.floor(vx0/PS)-3), qy0=Math.max(0,Math.floor(vy0/PS)-3), qx1=Math.min(PW-1,Math.floor(vx1/PS)), qy1=Math.min(PH-1,Math.floor(vy1/PS));   // (from up to 3 plots before the view: a 4×4 yard's top-left)
     for (let y=qy0;y<=qy1;y++) for (let x=qx0;x<=qx1;x++){
-      const q=y*PW+x, ty=pType[q]; if (!BIG[ty] || pBurn[q]>0) continue;
+      const q=y*PW+x, ty=pType[q];
+      if (ty===B_WORKS){   // a region's works: at work while somebody holds the region and nobody fights there
+        if (pMain[q]!==q) continue;
+        const r=region[pCenter[q]], p=W.rOcc[r] || W.rOwner[r];
+        drawWorksLive(ctx,RG.res[r],x*PS,y*PS,W.rProd[r]/PRODUCE_TICKS,reduceMotion ? 0 : now,!!p && !W.rBusy[r],W.rOcc[r]);
+        continue;
+      }
+      if (!BIG[ty] || pBurn[q]>0) continue;
       const [bw,bh]=dims(q); drawWorking(ctx,ty,x*PS,y*PS,pTimer[q]/PRODUCE_TICKS,reduceMotion?0:now,bw,bh,q);
     }
   }

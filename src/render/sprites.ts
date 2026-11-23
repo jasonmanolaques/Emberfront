@@ -5,8 +5,10 @@
    Farms, barracks, watchtowers and coin minters are modular: each plot looks at its four
    neighbours, and plots of the same kind and owner join up, so fields merge into one farmland,
    barracks into one long hall, minters into one workshop, and towers link with walls. */
-import { PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_NAVAL, B_ARCHERY, TW } from '../core/constants';
-import { W, isLand, pType, pOwner, pVar, pMain, pAband, pTier, pBurn, pArch } from '../sim/state';
+import { PW, PH, NP, PS, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_NAVAL, B_ARCHERY, B_WORKS, TW } from '../core/constants';
+import { W, isLand, pType, pOwner, pVar, pMain, pAband, pTier, pBurn, pArch, pCenter } from '../sim/state';
+import { region, RG } from '../sim/regions';
+import { paintSmallFlag } from './flags';
 import { cultureOf, drawCapital, wearCapital } from './capitals';
 import { styleOf, type NationStyle } from './style';
 import { towerTier, castleTier, wear } from '../sim/defense';
@@ -568,6 +570,7 @@ export function drawPlot(q: number){
   if (!only) ovPlot(q);   // (the overview shows towns too)
   const ox=(q%PW)*PS, oy=((q/PW)|0)*PS, ty=pType[q];
   if (ty===B_CPART){ const m=pMain[q]; if (pType[m]===B_CASTLE){ drawPlot(m); return; } }
+  if (ty===B_WORKS){ const m=pMain[q]; if (m!==q){ if (!only) drawPlot(m); return; } stamp(ox,oy,2*PS,2*PS,()=>drawWorks(0,0,RG.res[region[pCenter[q]]])); return; }   // (a tile being painted draws it from its main plot, which its loop takes in)
   if (ty===B_PART){ const m=pMain[q]; if (BIG[pType[m]] || pType[m]===B_NAVAL || pType[m]===B_SMITHY){ drawPlot(m); return; } clearAt(ox,oy,PS,PS); return; }
   const n=styleOf(pOwner[q]);
   if (ty===B_NAVAL){ const [w,h]=dims(q); stamp(ox,oy,w*PS,h*PS,()=>drawNaval(0,0,n,w,h,q)); return; }
@@ -623,65 +626,231 @@ export function drawIcon(ctx: CanvasRenderingContext2D, type: number, n: NationS
 }
 
 /* ---------- production buildings: a static base here plus live work drawn each frame ----------
-   Plantations, quarries and copper mines are drawn at their size: one plot (tier 1), two side by
-   side (tier 2) or a 2×2 block (tier 3); the builders guild is always 2×1. */
-export const BIG: Record<number, [number, number]> = { [B_PLANTATION]: [1,1], [B_QUARRY]: [1,1], [B_COPPERMINE]: [1,1], [B_GUILD]: [2,1], [B_HOSPITAL]: [2,1], [B_MINTER]: [2,1] };
-/** Where the trees of a plantation (a sawmill yard) of w×h plots stand, by the foot of the trunk: one beside the shed in a single plot, more in the bigger yards. */
-const slots = (w: number, h: number) => {
-  const W=w*16, H=h*16;
-  if (w===1) return [[W-4,H-3]];
-  const out=[[W-7,10],[W-14,12]]; if (h===2) out.push([6,21]);
-  return out;
-};
+   Sawmills (plantations), quarries and copper mines are 2×2 plots (tier 1), 4×2 (tier 2: two side by side) or 4×4 (tier 3: four in a
+   square), each size drawn in its own detail; the builders guild, the hospital and the coin minter are 2×1. A region's works (its own
+   sawmill, quarry or copper mine round its flag: nobody's, working for whoever holds the region) are drawn apart (drawWorks), older
+   and weathered, in stone and grey slate rather than a kingdom's colours. */
+export const BIG: Record<number, [number, number]> = { [B_PLANTATION]: [2,2], [B_QUARRY]: [2,2], [B_COPPERMINE]: [2,2], [B_GUILD]: [2,1], [B_HOSPITAL]: [2,1], [B_MINTER]: [2,1] };
 /** A cheap fixed 0..1 scatter from two numbers, so the dirt of a yard is speckled the same way every time. */
 const speck = (a: number, b: number) => { let h=(Math.imul(a|0,374761393)+Math.imul(b|0,668265263)+1013904223)|0; h=Math.imul(h^(h>>>15),2246822519); h=Math.imul(h^(h>>>13),3266489917); h^=h>>>16; return (h>>>0)/4294967296; };
-/** A copper mine's shafts by size: [centre x, width]. */
-const shafts = (w: number, h: number) => w===1 ? [[8,4]] : h===1 ? [[16,8]] : [[9,6],[23,6]];
+
+/* the pieces they are built of */
+/** Trodden ground w×h, speckled lighter and darker. */
+function ground(x: number, y: number, w: number, h: number, base: string, light: string, dark: string, seed: number){
+  R(x,y,w,h,base);
+  for (let i=0;i<w*h/6;i++) P(x+((speck(i,seed+1)*w)|0),y+((speck(i,seed+2)*h)|0),speck(i,seed)<0.65 ? light : dark);
+}
+/** Tufts of grass round the edges of a yard. */
+function tufts(x: number, y: number, w: number, h: number, seed: number, k: number){
+  for (let i=0;i<k;i++){
+    const e=(speck(i,seed)*4)|0, f=speck(i,seed+1);
+    const tx=e===1 ? w-3 : e===3 ? 0 : (f*(w-3))|0, ty=e===0 ? 0 : e===2 ? h-2 : (f*(h-2))|0;
+    P(x+tx,y+ty+1,'#4f7a32'); P(x+tx+1,y+ty,'#7fb34c'); P(x+tx+2,y+ty+1,'#5f8a3a');
+  }
+}
+/** A log's sawn end, 4×4. */
+function logEnd(x: number, y: number){ R(x+1,y,2,4,'#6e4a2c'); R(x,y+1,4,2,'#6e4a2c'); R(x+1,y+1,2,2,'#d9b27a'); P(x+1,y+1,'#ecd2a0'); }
+/** A pile of logs seen end on: n along the bottom (its top at y), one fewer in each row above. */
+function logPile(x: number, y: number, n: number){ for (let r=0;r<n;r++) for (let i=0;i<n-r;i++) logEnd(x+i*4+r*2,y-r*3); }
+/** A log lying along, len long, its sawn end to the right. */
+function logLong(x: number, y: number, len: number){
+  R(x,y,len,3,'#8a5a32'); R(x,y,len,1,'#a8784a'); R(x,y+2,len,1,'#5e3e24'); R(x+len-1,y,1,3,'#d9b27a');
+  for (let i=3;i<len-2;i+=5) P(x+i,y+1,'#6c4a2c');
+}
+/** A log on two trestles. */
+function trestle(x: number, y: number, len: number){
+  for (const lx of [x+2,x+len-3]){ R(lx,y+3,1,2,C.woodD); P(lx-1,y+4,C.woodD); P(lx+1,y+4,C.woodD); }
+  logLong(x,y,len);
+}
+/** A stack of sawn planks, w×h, seen from the front. */
+function planks(x: number, y: number, w: number, h: number){
+  R(x,y,w,h,'#d0a670'); for (let j=0;j<h;j+=2) R(x,y+j,w,1,'#ecd2a0');
+  R(x,y+h-1,w,1,'#a8824e'); R(x+w-1,y,1,h,'#b08850'); P(x+2,y+1,'#c49a62'); P(x+w-4,y+h-2,'#c49a62');
+}
+/** A cut block of stone. */
+function block(x: number, y: number, w: number, h: number){ R(x,y,w,h,'#bdb6aa'); R(x,y,w,1,'#dcd6ca'); R(x+w-1,y,1,h,'#8d867b'); R(x,y+h-1,w,1,'#9a9387'); }
+/** A heap of copper ore: rust-red and green stone. */
+function oreHeap(x: number, y: number, w: number){
+  R(x+2,y,w-4,1,'#b8642e'); R(x+1,y+1,w-2,1,'#d07a3a'); R(x,y+2,w,3,'#a0562a'); R(x,y+4,w,1,'#7e4422');
+  for (let i=0;i<w;i+=3){ P(x+i,y+2+(i%2),'#f2a35e'); P(x+i+1,y+3,'#5aa37e'); }
+}
+/** A hand cart, 8 wide, with what it carries on top (logs, stone or ore). */
+function cart(x: number, y: number, load: 'logs' | 'stone' | 'ore'){
+  if (load==='logs'){ logLong(x,y-2,8); logLong(x+1,y-4,6); }
+  else if (load==='stone'){ block(x+1,y-3,3,3); block(x+4,y-3,3,3); block(x+2,y-5,4,2); }
+  else { R(x+1,y-2,6,2,'#a0562a'); P(x+2,y-2,'#f2a35e'); P(x+5,y-2,'#5aa37e'); R(x+3,y-3,2,1,'#d07a3a'); }
+  R(x,y,8,3,C.wood); R(x,y,8,1,C.woodL); R(x+8,y+1,3,1,C.woodD);
+  R(x+1,y+3,2,2,'#3b2a1e'); R(x+5,y+3,2,2,'#3b2a1e');
+}
+/** The kingdom's marker post: a little pennant in its colour. */
+function post(x: number, y: number, n: NationStyle){ R(x,y,1,6,C.woodD); R(x+1,y,3,2,n.roof); P(x+1,y+2,n.roofD); }
+/** A shed of the kingdom's: a shingled roof in its colours over a plank wall, open at the front at each door [from x, wide]. */
+function shed(x: number, y: number, w: number, h: number, n: NationStyle, doors: [number, number][]){
+  R(x,y+4,w,h-4,'#8a5a32'); for (let i=x+2;i<x+w-1;i+=3) R(i,y+4,1,h-4,'#7a4e2c');
+  R(x,y+4,1,h-4,C.woodD); R(x+w-1,y+4,1,h-4,C.woodD);
+  for (const [d,dw] of doors){ R(x+d,y+6,dw,h-6,'#2a1a10'); R(x+d-1,y+6,1,h-6,C.woodD); R(x+d+dw,y+6,1,h-6,C.woodD); }
+  R(x-1,y,w+2,5,n.roof); R(x-1,y,w+2,1,n.roofL); R(x-1,y+4,w+2,1,n.roofD);
+  for (let j=1;j<4;j+=2) for (let i=x+(j&2 ? 1 : 3);i<x+w;i+=4) P(i,y+j,n.roofD);   // shingles
+  R(x,y+5,w,1,'rgba(20,12,6,.45)');   // the eave's shadow
+}
+/** A circular saw blade, its hub at (x,y). */
+function sawBlade(x: number, y: number){ R(x-2,y-1,5,3,'#bfc6cc'); R(x-1,y-2,3,5,'#bfc6cc'); P(x,y,'#4a4a4a'); P(x-2,y-1,'#8a9399'); P(x+2,y+1,'#8a9399'); }
+/** A stepped pit cut into the ground (levels deep), each step's wall the darker band at its top, rubble on the steps. */
+function pit(x: number, y: number, w: number, h: number, levels: number, seed: number){
+  const top=['#b3ac9f','#9d968a','#878075','#6f695f','#57524a'], face=['#8a8378','#767066','#625c53','#4c4841','#3a3732'];
+  for (let i=0;i<levels;i++){
+    const x0=x+i*3, y0=y+i*3, w0=w-i*6, h0=h-i*6; if (w0<4 || h0<4) break;
+    R(x0,y0,w0,h0,top[i]);
+    if (i>0){ R(x0,y0,w0,2,face[i]); R(x0,y0+2,1,h0-2,face[i]); R(x0+w0-1,y0+2,1,h0-2,face[i]); R(x0,y0-1,w0,1,'#c4beb4'); for (const [cx,cy] of [[x0,y0],[x0+w0-1,y0],[x0,y0+h0-1],[x0+w0-1,y0+h0-1]]) P(cx,cy,top[i-1]); }
+    for (let k=0;k<w0*h0/40;k++){ const px=x0+1+((speck(k,seed+i)*(w0-2))|0), py=y0+3+((speck(k,seed+i+9)*Math.max(1,h0-4))|0); P(px,py,speck(k,seed)<0.5 ? '#c4beb4' : face[i]); }
+  }
+  R(x,y+h,w,1,SH);
+}
+/** The pulley frame over a pit: posts at x1 and x2 from y down to y+ph, the beam across the top and the wheel in its middle. */
+function pulley(x1: number, x2: number, y: number, ph: number){
+  R(x1,y,2,ph,C.woodD); R(x2,y,2,ph,C.woodD); R(x1-1,y+ph-1,4,1,C.woodD); R(x2-1,y+ph-1,4,1,C.woodD);
+  R(x1,y,x2-x1+2,2,C.wood); R(x1,y,x2-x1+2,1,C.woodL);
+  const m=(x1+x2+2)>>1; R(m-1,y+2,3,3,'#3b2a1e'); P(m,y+3,C.woodL);
+}
+/** A rocky hill, round at the top and lit from the upper left, with copper (rust and green) in its veins. */
+function mound(x: number, y: number, w: number, h: number, seed: number){
+  for (let j=0;j<h;j++){
+    const t=j/h, ins=Math.round(Math.pow(Math.max(0,1-t*2.4),0.8)*w*0.32);
+    R(x+ins,y+j,w-2*ins,1,j<2 ? '#a49d90' : '#8d867b');
+    P(x+ins,y+j,'#b3ac9f'); R(x+w-ins-2,y+j,2,1,'#6f695f');
+  }
+  for (let k=0;k<w*h/14;k++){
+    const px=x+((speck(k,seed)*w)|0), py=y+3+((speck(k,seed+1)*(h-4))|0), s=speck(k,seed+2);
+    if (s<0.15) R(px,py,2,1,'#c8743a'); else if (s<0.27) P(px,py,'#5aa37e'); else if (s<0.6) P(px,py,'#a49d90'); else P(px,py,'#76705f');
+  }
+}
+/** A timbered entrance into a hill: dark inside, posts each side and a lintel over it. */
+function adit(x: number, y: number, w: number, h: number){
+  R(x,y,w,h,'#1c1410'); R(x-2,y,2,h,C.woodD); R(x+w,y,2,h,C.woodD); R(x-2,y-2,w+4,2,C.wood); R(x-2,y-2,w+4,1,C.woodL);
+}
+/** Mine rails: down from (x,y0) to y1 (two rails 4 apart), then along to x1 at y1 if given. */
+function rails(x: number, y0: number, y1: number, x1=x){
+  if (y1>y0){ for (let y=y0;y<=y1;y+=3) R(x-1,y,6,1,C.woodD); R(x,y0,1,y1-y0+1,'#5a5048'); R(x+3,y0,1,Math.max(1,y1-y0-2),'#5a5048'); }
+  if (x1!==x){ const a=Math.min(x,x1), b=Math.max(x,x1); for (let i=a;i<=b;i+=3) R(i,y1-1,1,5,C.woodD); R(a,y1,b-a+4,1,'#5a5048'); R(a+3,y1+3,b-a+1,1,'#5a5048'); }
+}
+/** A stone smelting furnace with its chimney: the body from (x,y), w wide and h high. */
+function smelter(x: number, y: number, w: number, h: number){
+  R(x,y,w,h,C.stD); R(x,y,w,1,C.stL); R(x+w-1,y,1,h,C.stS);
+  for (let j=2;j<h;j+=3) for (let i=(j&1)*2;i<w-1;i+=4) R(x+i,y+j,3,1,'#9c968a');
+  const mx=x+(w>>1)-2; R(mx,y+h-5,4,4,'#2a1a10'); R(mx-1,y+h-6,6,1,C.stS);   // the mouth
+  R(x+w-5,y-7,3,8,C.stS); R(x+w-5,y-7,3,1,'#4a4740'); R(x+w-6,y-7,1,8,C.stD);   // the chimney
+}
+
+/* where the moving parts are, for each size (the static drawing and the live one share them) */
+const sawLayout = (w: number, h: number) =>
+  w===2 ? { saws: [[13,10]], trees: [[26,16],[28,24]] }
+  : h===2 ? { saws: [[25,10]], trees: [[44,13],[52,12],[60,14],[48,25],[57,27]] }
+  : { saws: [[27,11],[11,11]], trees: [[47,14],[56,12],[52,27],[60,25],[46,40],[56,41],[50,55],[59,57]] };
+/** A quarry's ropes: [x, the top (under its wheel), the lowest the block goes]. */
+const quarryLayout = (w: number, h: number) => w===2 ? [[15,8,17]] : h===2 ? [[21,7,17]] : [[23,8,40],[35,35,50]];
+const mineLayout = (w: number, h: number) =>
+  w===2 ? { adits: [[12,12,7,8]], track: [[15,20],[15,30]], smelt: null as null | [number, number, number, number], wheel: null as null | [number, number] }
+  : h===2 ? { adits: [[10,12,7,8],[30,12,7,8]], track: [[13,20],[13,27],[46,27]], smelt: [48,12,14,17] as [number, number, number, number], wheel: null }
+  : { adits: [[24,22,7,8],[44,22,7,8]], track: [[27,30],[27,50],[44,50]], smelt: [46,36,16,24] as [number, number, number, number], wheel: [10,34] as [number, number] };
+
+function drawSawmill(ox: number, oy: number, n: NationStyle, W: number, H: number){
+  ground(ox,oy,W,H,'#8a6f45','#9b8052','#78603c',3); tufts(ox,oy,W,H,7,(W*H/80)|0);
+  const L=sawLayout(W/16,H/16);
+  if (W===32){
+    shed(ox+2,oy+1,19,13,n,[[9,8]]);
+    trestle(ox+2,oy+16,14); logPile(ox+2,oy+27,4);
+    planks(ox+18,oy+25,9,4); R(ox+19,oy+20,4,2,'#9a6e42'); R(ox+19,oy+20,4,1,'#d9b27a');   // planks, a stump
+    post(ox+24,oy+1,n);
+  } else if (H===32){
+    shed(ox+2,oy+1,34,13,n,[[5,8],[19,9]]); logEnd(ox+8,oy+9);
+    trestle(ox+2,oy+16,22); logPile(ox+2,oy+27,3); logPile(ox+15,oy+27,3);
+    cart(ox+28,oy+17,'logs'); planks(ox+28,oy+25,10,4); planks(ox+29,oy+23,8,2);
+    post(ox+38,oy+1,n);
+  } else {
+    shed(ox+2,oy+1,38,15,n,[[5,9],[21,10]]);
+    trestle(ox+2,oy+19,26);
+    // the open drying shed for planks: a roof on four posts
+    for (const px of [3,10,17,23]) R(ox+px,oy+30,1,9,C.woodD);
+    R(ox+1,oy+26,25,4,n.roof); R(ox+1,oy+26,25,1,n.roofL); R(ox+1,oy+29,25,1,n.roofD);
+    planks(ox+4,oy+33,18,6);
+    logPile(ox+2,oy+59,5); logPile(ox+24,oy+59,3);
+    cart(ox+30,oy+26,'logs'); planks(ox+28,oy+36,12,6); planks(ox+29,oy+44,10,4);
+    post(ox+41,oy+20,n);
+  }
+  for (const [x,y] of L.saws) sawBlade(ox+x,oy+y);
+  for (const [x,y] of L.trees){ R(ox+x-1,oy+y,3,1,'#6e5a36'); P(ox+x,oy+y+1,'#5e4a2c'); }   // the patch each tree grows from
+}
+function drawQuarry(ox: number, oy: number, n: NationStyle, W: number, H: number){
+  ground(ox,oy,W,H,'#a39a86','#b3ab98','#8c846f',11); tufts(ox,oy,W,H,13,(W*H/120)|0);
+  if (W===32){
+    pit(ox+2,oy+8,28,22,4,5); pulley(ox+6,ox+23,oy+3,16);
+    block(ox+1,oy+3,5,4); block(ox+2,oy+1,3,2); post(ox+27,oy+1,n);
+    block(ox+9,oy+22,3,2); block(ox+19,oy+19,2,2);
+  } else if (H===32){
+    pit(ox+2,oy+7,40,23,4,5); pulley(ox+8,ox+33,oy+2,17);
+    shed(ox+46,oy+1,16,11,n,[[9,5]]);
+    block(ox+46,oy+16,6,4); block(ox+53,oy+16,6,4); block(ox+49,oy+13,6,3); block(ox+45,oy+23,5,4);
+    cart(ox+52,oy+25,'stone'); post(ox+43,oy+1,n);
+    block(ox+12,oy+22,3,2); block(ox+28,oy+20,2,2);
+  } else {
+    pit(ox+2,oy+8,44,54,5,5); pulley(ox+9,ox+36,oy+3,22);
+    R(ox+33,oy+33,10,2,C.wood); R(ox+33,oy+33,10,1,C.woodL); R(ox+41,oy+33,2,10,C.woodD);   // a second hoist's arm, over the lower steps
+    shed(ox+48,oy+1,15,12,n,[[8,5]]);
+    block(ox+48,oy+17,6,4); block(ox+55,oy+17,6,4); block(ox+51,oy+14,6,3); block(ox+48,oy+25,6,4); block(ox+55,oy+25,6,4);
+    block(ox+49,oy+33,5,4); block(ox+56,oy+33,5,4);
+    cart(ox+50,oy+46,'stone'); cart(ox+52,oy+56,'stone'); post(ox+60,oy+40,n);
+    block(ox+14,oy+44,3,2); block(ox+30,oy+26,2,2); block(ox+20,oy+50,2,2);
+  }
+}
+function drawCopperMine(ox: number, oy: number, n: NationStyle, W: number, H: number){
+  ground(ox,oy,W,H,'#8f8676','#a0978a','#7a7264',17); tufts(ox,oy,W,H,19,(W*H/120)|0);
+  const L=mineLayout(W/16,H/16);
+  if (W===32){ mound(ox+1,oy+1,30,20,3); oreHeap(ox+2,oy+25,10); post(ox+27,oy+22,n); R(ox+22,oy+26,4,3,C.wood); R(ox+22,oy+26,4,1,C.woodL); }
+  else if (H===32){ mound(ox+1,oy+1,44,20,3); oreHeap(ox+2,oy+22,8); oreHeap(ox+17,oy+21,8); post(ox+38,oy+20,n); }
+  else {
+    mound(ox+1,oy+1,62,30,3);
+    shed(ox+2,oy+53,17,10,n,[[11,5]]); oreHeap(ox+33,oy+38,9); oreHeap(ox+30,oy+55,10); post(ox+42,oy+55,n);
+    // the headframe over a shaft: two legs, the wheel at the top
+    const [hx,hy]=L.wheel!; R(ox+hx-5,oy+hy+4,2,12,C.woodD); R(ox+hx+4,oy+hy+4,2,12,C.woodD); R(ox+hx-4,oy+hy+9,9,1,C.wood);
+    R(ox+hx-3,oy+hy+15,8,3,'#1c1410'); R(ox+hx-4,oy+hy+18,10,1,C.woodD);
+    R(ox+hx-3,oy+hy-3,7,7,'#3b2a1e'); R(ox+hx-2,oy+hy-2,5,5,'#5c432c'); P(ox+hx,oy+hy,'#c2915c');
+  }
+  for (const [x,y,w,h] of L.adits) adit(ox+x,oy+y,w,h);
+  const T=L.track; for (let i=0;i+1<T.length;i++){ const [x0,y0]=T[i], [x1,y1]=T[i+1]; if (x0===x1) rails(ox+x0-2,oy+y0,oy+y1); else rails(ox+x0-2,oy+y0,oy+y0,ox+x1-2); }
+  if (W>32){ const [x,y,,h]=L.adits[1]; rails(ox+x+1,oy+y+h,oy+(H===32 ? T[1][1] : 34)); }
+  if (L.smelt){ const [x,y,w,h]=L.smelt; smelter(ox+x,oy+y,w,h); }
+  R(ox,oy+H-1,W,1,SH);
+}
 function drawBig(ox: number, oy: number, type: number, n: NationStyle, w=BIG[type][0], h=BIG[type][1]){
-  const W=w*16, H=h*16;
   if (type===B_GUILD){ drawGuild(ox,oy,n); return; }
   if (type===B_HOSPITAL){ drawHospital(ox,oy,n); return; }
   if (type===B_MINTER){ drawMinter(ox,oy,n); return; }
-  if (type===B_PLANTATION){
-    // a sawmill yard: trodden earth, a shed with a saw, planks and logs stacked, a stump; the trees growing by it are drawn live
-    R(ox,oy,W,H,'#8a6f45'); for (let i=0;i<W*H/7;i++) P(ox+((speck(i,3)*W)|0),oy+((speck(i,4)*H)|0),'#9b8052');
-    const sw=Math.min(W-6,16);
-    R(ox+2,oy+2,sw,7,'#8a5a32'); R(ox+2,oy+2,sw,1,'#c2915c'); R(ox+2,oy+8,sw,1,'#6c4a2c');   // the shed's wall
-    R(ox+1,oy,sw+2,3,n.roof); R(ox+1,oy,sw+2,1,n.roofL); R(ox+1,oy+2,sw+2,1,n.roofD);
-    R(ox+2+sw-6,oy+4,5,5,'#2a1a10');                                  // its open front
-    R(ox+5,oy+5,5,5,'#bfc6cc'); R(ox+6,oy+4,3,7,'#bfc6cc'); P(ox+7,oy+6,'#555'); P(ox+5,oy+5,'#8a9399'); P(ox+9,oy+9,'#8a9399');   // the saw
-    for (let i=0,n6=W>=32 ? 6 : 3;i<n6;i++){ const lx=ox+2+(i%3)*5, ly=oy+H-4-((i/3)|0)*3; R(lx,ly,6,3,'#9a6e42'); R(lx,ly,6,1,'#c2915c'); R(lx+5,ly,1,3,'#d9b27a'); P(lx+5,ly+1,'#8a5f38'); }   // logs
-    if (h>=2){ R(ox+W-12,oy+H-8,9,5,'#d9b27a'); R(ox+W-12,oy+H-8,9,1,'#ecd2a0'); R(ox+W-12,oy+H-5,9,1,'#b08850'); R(ox+W-11,oy+H-11,7,3,'#d9b27a'); R(ox+W-11,oy+H-11,7,1,'#ecd2a0'); }   // planks
-    R(ox+W-6,oy+H-3,4,2,'#9a6e42'); R(ox+W-6,oy+H-3,4,1,'#d9b27a'); R(ox+W-5,oy+H-1,2,1,'#6c4a2c');   // a stump
-    R(ox+W-5,oy+2,1,4,C.woodD); R(ox+W-4,oy+2,3,2,n.roof);                                       // the kingdom's marker post
-  } else if (type===B_QUARRY){
-    // a stepped pit cut into the ground, the deepest step darkest
-    const cols=['#a49d90','#8d867b','#6f695f','#4a4640'], lips=['#c4beb4','#a49d90','#8d867b'];
-    for (let i=0,x=0,y=4,ww=W,hh=H-5;i<4 && ww>=4 && hh>=3;i++,x+=4,y+=4,ww-=8,hh-=8){ R(ox+x,oy+y,ww,hh,cols[i]); if (i<3) R(ox+x,oy+y,ww,1,lips[i]); }
-    R(ox,oy+H-1,W,1,SH);
-    for (const [x,y] of [[2,6],[26,10],[6,26],[22,24],[28,20],[14,9]]) if (x+2<W && y+2<H){ R(ox+x,oy+y,2,1,'#c4beb4'); P(ox+x,oy+y+1,'#7c766c'); }   // loose blocks
-    // the pulley frame over the pit
-    const p1=Math.round(W*0.19), p2=W-p1-2, ph=Math.round(H*0.56);
-    R(ox+p1,oy+2,2,ph,C.woodD); R(ox+p2,oy+2,2,ph,C.woodD); R(ox+p1,oy+2,p2-p1+2,2,C.wood); R(ox+p1,oy+2,p2-p1+2,1,C.woodL);
-    R(ox+W/2-1,oy+4,3,3,'#3b2a1e'); P(ox+W/2,oy+5,C.woodL);         // the wheel
-    if (W>=32){ const y=H-8; R(ox+26,oy+y,4,4,'#bdb6aa'); R(ox+26,oy+y,4,1,'#d6d1c5'); R(ox+27,oy+y-2,3,2,'#bdb6aa'); }   // a stack of cut stone
-    R(ox+1,oy+1,1,5,C.woodD); R(ox+2,oy+1,3,2,n.roof);
-  } else if (type===B_COPPERMINE){
-    // a rocky mound with timbered shafts; the glow is drawn live
-    const top=H-12;
-    if (h===2){ R(ox+3,oy+3,W-6,top-2,'#7c766c'); R(ox+5,oy+2,W-10,2,'#a49d90'); R(ox+5,oy+2,W-10,1,'#bdb6aa'); R(ox+9,oy+8,3,2,'#6f695f'); R(ox+20,oy+6,4,2,'#d9823e'); }   // the mountain behind
-    R(ox+2,oy+top,W-4,11,'#8d867b'); R(ox+Math.min(6,W/4),oy+top-2,W-2*Math.min(6,W/4),2,'#a49d90'); R(ox+Math.min(6,W/4),oy+top-2,W-2*Math.min(6,W/4),1,'#bdb6aa');
-    P(ox+3,oy+top+1,'#bdb6aa'); R(ox+W-6,oy+top+4,3,2,'#6f695f');
-    for (const [cx,ew] of shafts(w,h)){
-      const x=cx-ew/2, pw=ew>4 ? 2 : 1;
-      R(ox+x,oy+H-10,ew,9,'#1c1410');                                // the dark entrance
-      R(ox+x-pw,oy+H-10,pw,9,C.woodD); R(ox+x+ew,oy+H-10,pw,9,C.woodD); R(ox+x-pw,oy+H-12,ew+2*pw,2,C.wood); R(ox+x-pw,oy+H-12,ew+2*pw,1,C.woodL);
-    }
-    R(ox,oy+H-1,W,1,SH);
-    R(ox+2,oy+H-4,3,2,'#d9823e'); P(ox+3,oy+H-4,'#f2a35e'); if (W>=32){ R(ox+W-7,oy+H-5,3,2,'#e08a48'); P(ox+W-6,oy+H-5,'#ffc080'); }   // ore by the door
-    if (h===2){ R(ox+W-9,oy+1,3,9,C.stD); R(ox+W-9,oy+1,3,1,'#4a4740'); }   // the smelter's chimney
-    R(ox+W-4,oy+top-6,1,5,C.woodD); R(ox+W-3,oy+top-6,3,2,n.roof);
-  }
+  if (type===B_PLANTATION) drawSawmill(ox,oy,n,w*16,h*16);
+  else if (type===B_QUARRY) drawQuarry(ox,oy,n,w*16,h*16);
+  else if (type===B_COPPERMINE) drawCopperMine(ox,oy,n,w*16,h*16);
+}
+/** A sapling at the foot (x,y) growing to a full tree over the 30-second cycle (k from 0 to 1). */
+function growTree(x: number, y: number, k: number){
+  if (k<0.2){ P(x,y,'#7fb34c'); P(x,y-1,'#b2d86c'); }
+  else if (k<0.45){ R(x,y-2,1,3,'#6e4b2c'); R(x-1,y-3,3,1,'#7fb34c'); P(x+1,y-2,'#4f8a37'); P(x,y-4,'#b2d86c'); }
+  else if (k<0.75){ R(x,y-3,1,4,'#6b4a2c'); R(x-2,y-6,5,3,'#4f8a37'); R(x-1,y-7,3,1,'#7fb34c'); P(x-2,y-6,'#7fb34c'); P(x+2,y-4,'#2e5b2a'); }
+  else { R(x,y-3,1,4,'#6b4a2c'); R(x-3,y-8,7,5,'#4f8a37'); R(x-2,y-9,5,1,'#7fb34c'); R(x-3,y-8,2,2,'#7fb34c'); P(x-1,y-9,'#b2d86c'); R(x+2,y-6,2,3,'#2e5b2a'); R(x-2,y-4,5,1,'#2e5b2a'); }
+}
+/** Where along a path of points a thing a fraction f of the way stands. */
+function along(pts: number[][], f: number): [number, number] {
+  let len=0; const seg: number[]=[]; for (let i=0;i+1<pts.length;i++){ const d=Math.hypot(pts[i+1][0]-pts[i][0],pts[i+1][1]-pts[i][1]); seg.push(d); len+=d; }
+  let d=f*len; for (let i=0;i<seg.length;i++){ if (d<=seg[i] || i===seg.length-1){ const t=seg[i] ? Math.min(1,d/seg[i]) : 0; return [pts[i][0]+(pts[i+1][0]-pts[i][0])*t, pts[i][1]+(pts[i+1][1]-pts[i][1])*t]; } d-=seg[i]; }
+  return [pts[0][0],pts[0][1]];
+}
+/** A mine cart on the rails, full of ore or empty. */
+function mineCart(x: number, y: number, full: boolean){
+  R(x-3,y-3,7,4,'#5a5048'); R(x-3,y-3,7,1,'#7a7064'); R(x-2,y+1,2,1,'#2a2420'); R(x+1,y+1,2,1,'#2a2420');
+  if (full){ R(x-2,y-4,5,1,'#d07a3a'); P(x-1,y-5,'#f2a35e'); P(x+1,y-4,'#5aa37e'); }
+}
+/** Smoke rising from a chimney's top at (x,y). */
+function smoke(ctx: CanvasRenderingContext2D, x: number, y: number, now: number, c='#d8d2c8'){
+  for (let i=0;i<3;i++){ const t=((now/1400+i/3)%1); ctx.globalAlpha=0.45*(1-t); R(x+Math.round(Math.sin(t*5+i)*1.5),y-Math.round(t*9),2,2,c); }
+  ctx.globalAlpha=1;
 }
 /** The moving part of a production building, drawn over its base each frame. k = progress through
     the 30-second cycle (0..1), now = milliseconds for the looping bits. */
@@ -696,20 +865,17 @@ export function drawWorking(ctx: CanvasRenderingContext2D, type: number, ox: num
     }
   }
   if (type===B_PLANTATION){
-    const f=((now/110)|0)&1; P(ox+5+f*4,oy+5,'#eef2f5'); P(ox+9-f*4,oy+9,'#eef2f5');   // the saw's teeth flicker round
-    // each tree by the yard grows from a sprout to a full tree over the cycle
-    for (const [sx,sy] of slots(w,h)){
-      const x=ox+sx, y=oy+sy;
-      if (k<0.2){ P(x,y,'#7fb34c'); P(x,y-1,'#b2d86c'); }
-      else if (k<0.45){ R(x,y-2,1,3,'#6e4b2c'); R(x-1,y-3,3,1,'#7fb34c'); P(x+1,y-2,'#4f8a37'); P(x,y-4,'#b2d86c'); }
-      else if (k<0.75){ R(x,y-3,1,4,'#6b4a2c'); R(x-2,y-6,5,3,'#4f8a37'); R(x-1,y-7,3,1,'#7fb34c'); P(x-2,y-6,'#7fb34c'); P(x+2,y-4,'#2e5b2a'); }
-      else { R(x,y-3,1,4,'#6b4a2c'); R(x-3,y-8,7,5,'#4f8a37'); R(x-2,y-9,5,1,'#7fb34c'); R(x-3,y-8,2,2,'#7fb34c'); P(x-1,y-9,'#b2d86c'); R(x+2,y-6,2,3,'#2e5b2a'); R(x-2,y-4,5,1,'#2e5b2a'); }
-    }
+    const L=sawLayout(w,h), f=((now/110)|0)&1;
+    for (const [x,y] of L.saws){ P(ox+x-2+f*4,oy+y-1,'#eef2f5'); P(ox+x+2-f*4,oy+y+1,'#eef2f5'); }   // the saw's teeth flicker round
+    // each tree by the yard grows from a sprout to a full tree, one after another round the cycle
+    L.trees.forEach(([x,y],i) => growTree(ox+x,oy+y,(k+i*0.29)%1));
   } else if (type===B_QUARRY){
-    // a block rides the rope up from the pit floor and back, ten times a cycle
-    const f=(k*10)%1, up=f<0.5 ? f*2 : 2-f*2, low=Math.round(H*0.62), by=oy+low-Math.round(up*(low-7)), x=ox+W/2;
-    R(x,oy+6,1,Math.max(0,by-oy-6),'#c9b48a');   // the rope
-    R(x-2,by,5,3,'#bdb6aa'); R(x-2,by,5,1,'#d6d1c5'); R(x+2,by,1,3,'#8d867b');
+    // a block rides each rope up from the pit floor and back, ten times a cycle
+    quarryLayout(w,h).forEach(([x,top,low],i) => {
+      const f=(k*10+i*0.5)%1, up=f<0.5 ? f*2 : 2-f*2, by=oy+low-Math.round(up*(low-top-1));
+      R(ox+x,oy+top,1,Math.max(0,by-oy-top),'#c9b48a');
+      R(ox+x-2,by,5,3,'#bdb6aa'); R(ox+x-2,by,5,1,'#d6d1c5'); R(ox+x+2,by,1,3,'#8d867b');
+    });
   } else if (type===B_MINTER){
     // the furnace burns, the press's bar swings round and its screw goes down and up, and a new coin glints on the chest
     const fl=0.6+0.4*Math.sin(now/130)*Math.sin(now/53+2);
@@ -724,13 +890,105 @@ export function drawWorking(ctx: CanvasRenderingContext2D, type: number, ox: num
     const sway=Math.round(Math.sin(now/700)), x=ox+27+sway;
     R(x,oy+2,1,4,'#c9b48a'); R(x-1,oy+6,3,2,'#bdb6aa'); R(x-1,oy+6,3,1,'#d6d1c5');
   } else if (type===B_COPPERMINE){
-    const glow=0.55+0.45*Math.sin(now/180)*Math.sin(now/67+1);
-    for (const [cx,ew] of shafts(w,h)){
-      const x=ox+cx-ew/2;
-      ctx.globalAlpha=0.55+0.4*glow; R(x+Math.max(1,ew/4),oy+H-7,Math.max(2,ew/2),6,'#ff8a2b'); ctx.globalAlpha=0.35+0.3*glow; R(x,oy+H-5,ew,4,'#ffb24a');
-    }
-    if (h===2){ ctx.globalAlpha=0.5+0.4*glow; P(ox+W-8,oy,'#ffb24a'); }   // sparks over the smelter
+    const L=mineLayout(w,h), glow=0.55+0.45*Math.sin(now/180)*Math.sin(now/67+1);
+    for (const [x,y,aw,ah] of L.adits){ ctx.globalAlpha=0.45+0.4*glow; R(ox+x+1,oy+y+ah-5,aw-2,4,'#ff8a2b'); ctx.globalAlpha=0.3+0.3*glow; R(ox+x+2,oy+y+2,aw-4,3,'#ffb24a'); }
     ctx.globalAlpha=1;
+    // a cart runs out of the first shaft full of ore and back empty, three times a cycle
+    const [ax,ay,aw,ah]=L.adits[0], path=[[ax+aw/2,ay+ah-2],...L.track.slice(1).map(([x,y]) => [x,y])];
+    if (path.length<2) path.push([ax+aw/2,H-2]);
+    const f=(k*3)%1, [cx,cy]=along(path,f<0.5 ? f*2 : 2-f*2); mineCart(ox+Math.round(cx),oy+Math.round(cy),f<0.5);
+    if (L.smelt){ const [x,y,sw,sh]=L.smelt; ctx.globalAlpha=0.55+0.4*glow; R(ox+x+(sw>>1)-1,oy+y+sh-4,2,2,'#ffb24a'); ctx.globalAlpha=1; smoke(ctx,ox+x+sw-5,oy+y-9,now); }
+    if (L.wheel){ const [hx,hy]=L.wheel, a=now/260; R(ox+hx-2,oy+hy-2,5,5,'#5c432c'); for (const d of [0,Math.PI/2]) P(ox+hx+Math.round(Math.cos(a+d)*2),oy+hy+Math.round(Math.sin(a+d)*2),'#c2915c'); P(ox+hx,oy+hy,'#c2915c'); }
+  }
+  G=prev;
+}
+
+/* ---------- a region's works ----------
+   2×2 plots round the region's flag (sim/regions.ts): a water sawmill, a cliff quarry or the old copper workings, by what the region
+   yields. Built long before any of the kingdoms, of grey stone, weathered timber and slate, they belong to nobody and work for whoever
+   holds the region; the flag stands on the flagstones in their middle. */
+const WK = { st:'#7f817b', stL:'#a6a8a0', stD:'#5c5e59', stS:'#464843', tim:'#5e4c3a', timL:'#7c6852', timD:'#3e3226', sl:'#4d5966', slL:'#6b7886', slD:'#36404a', moss:'#5f7a3a', mossL:'#86a050' };
+/** The flagstones round the foot of the region's flag, (cx,cy) its foot. */
+function plaza(cx: number, cy: number){
+  for (let j=-3;j<=3;j++){ const hw=Math.round(6*Math.sqrt(Math.max(0,1-(j/3.6)**2))); R(cx-hw,cy+j,hw*2+1,1,j===-3 ? '#b8b3a8' : '#a29d92'); P(cx-hw,cy+j,'#86817a'); P(cx+hw,cy+j,'#86817a'); }
+  for (let j=-2;j<=2;j+=2) for (let i=-5+(j&2 ? 2 : 0);i<=5;i+=4) P(cx+i,cy+j,'#86817a');
+  R(cx-6,cy+4,13,1,'rgba(20,16,10,.35)');
+  P(cx-4,cy+2,WK.moss); P(cx+5,cy-1,WK.moss); P(cx+3,cy+3,WK.mossL);
+  R(cx-1,cy-1,3,2,'#625e57');   // the socket the flagpole stands in
+}
+/** A wheel (a water wheel or a treadwheel) of radius r at (cx,cy): its rim, and its spokes turned by angle a. */
+function wheel(cx: number, cy: number, r: number, a: number, rim: string, spoke: string, fill: string){
+  for (let j=-r+1;j<r;j++){ const hw=Math.floor(Math.sqrt((r-0.5)**2-j*j)); R(cx-hw,cy+j,hw*2+1,1,fill); }
+  for (let t=0;t<24;t++){ const u=t/24*Math.PI*2; P(cx+Math.round(Math.cos(u)*r),cy+Math.round(Math.sin(u)*r),rim); }
+  for (let s=0;s<4;s++){ const u=a+s*Math.PI/4; for (let d=1;d<r;d++){ P(cx+Math.round(Math.cos(u)*d),cy+Math.round(Math.sin(u)*d),spoke); P(cx-Math.round(Math.cos(u)*d),cy-Math.round(Math.sin(u)*d),spoke); } }
+  P(cx,cy,WK.timD);
+}
+function drawWorks(ox: number, oy: number, res: number){
+  if (res===0){   // the water sawmill
+    ground(ox,oy,32,32,'#6a683e','#7b784a','#57552f',23); tufts(ox,oy,32,32,41,10);
+    R(ox,oy+2,7,3,WK.timD); R(ox,oy+3,7,1,'#5a8ab0'); R(ox+2,oy+5,1,3,WK.timD);   // the flume bringing water onto the wheel
+    R(ox+2,oy+14,9,2,'#4a7aa0'); R(ox+3,oy+14,7,1,'#7aa8c8');                      // the pool under it
+    R(ox+8,oy+1,24,5,WK.sl); R(ox+8,oy+1,24,1,WK.slL); R(ox+8,oy+5,24,1,WK.slD);    // the hall's slate roof
+    for (let i=ox+9;i<ox+31;i+=3) P(i,oy+3,WK.slD);
+    for (let j=6;j<12;j+=2){ R(ox+9,oy+j,22,2,'#6b4c30'); R(ox+9,oy+j,22,1,'#80603e'); P(ox+9,oy+j,'#c9a46a'); P(ox+30,oy+j,'#c9a46a'); }   // its log walls
+    R(ox+9,oy+12,22,1,WK.stD); R(ox+21,oy+8,4,4,'#24180f'); R(ox+12,oy+8,3,2,'#24180f'); P(ox+13,oy+8,'#e8b860');
+    wheel(ox+6,oy+9,4,0,WK.timD,WK.timL,'#3a3226');
+    trestle(ox+1,oy+16,12); R(ox+6,oy+13,1,6,'#9aa0a6');                              // the sawpit and its frame saw
+    R(ox+1,oy+29,11,1,WK.timD); planks(ox+2,oy+26,9,3);                              // planks on their bearers
+    logPile(ox+20,oy+28,3);
+    plaza(ox+18,oy+20);
+  } else if (res===1){   // the cliff quarry
+    ground(ox,oy,32,32,'#9b9484','#aca595','#88816f',29);
+    R(ox,oy,32,3,'#6f8a46'); R(ox,oy,32,1,'#86a050');                               // the turf along the cliff's top
+    R(ox,oy+3,32,9,'#c9c3b6'); R(ox,oy+7,32,1,'#a39d90'); R(ox,oy+8,32,1,'#ddd8cc');  // its cut faces, stepped
+    for (let i=0;i<32;i+=3){ P(ox+i,oy+4+(i%3),'#b0aa9c'); P(ox+i+1,oy+9+(i%2),'#b0aa9c'); }
+    for (const [x,y] of [[4,4],[13,3],[22,4],[8,9],[19,9],[27,8]]){ R(ox+x,oy+y,5,1,'#8f897d'); R(ox+x,oy+y,1,3,'#8f897d'); }   // blocks half cut out
+    R(ox,oy+12,32,1,'#6e6a60');
+    for (const x of [0,27]){ R(ox+x,oy+12,5,12,'#b9b3a6'); R(ox+x,oy+12,5,1,'#cfc9bc'); R(ox+(x ? x : 4),oy+13,1,11,'#8a8478'); R(ox+x,oy+24,5,1,'#6e6a60'); }   // the arms of the cliff
+    wheel(ox+9,oy+19,5,0,WK.tim,WK.timL,'#857d6d'); R(ox+8,oy+24,3,2,WK.timD);                  // the treadwheel crane
+    for (let i=0;i<7;i++) P(ox+9+i,oy+18-Math.round(i*1.6),WK.timD);                  // its jib, out over the face
+    block(ox+21,oy+26,4,3); block(ox+25,oy+26,4,3); block(ox+23,oy+23,4,3); R(ox+20,oy+29,11,1,WK.timD);   // cut stone on a sledge
+    plaza(ox+18,oy+20);
+  } else {   // the old copper workings
+    ground(ox,oy,32,32,'#867d6c','#968d7c','#726a5a',31);
+    for (let j=0;j<13;j++){ const ins=j<3 ? 3-j : 0; R(ox+ins,oy+j,32-2*ins,1,j<2 ? '#9a9a90' : j>10 ? '#5f5e57' : '#706f67'); }   // the outcrop over the workings
+    for (let k=0;k<56;k++){ const x=(speck(k,51)*31)|0, y=2+((speck(k,52)*9)|0), s=speck(k,53); if (s<0.3) R(ox+x,oy+y,2,1,'#4fa07a'); else if (s<0.45) R(ox+x,oy+y,2,1,'#c8743a'); else P(ox+x,oy+y,s<0.75 ? '#8e8d84' : '#4f4e48'); }
+    R(ox,oy+12,32,1,'#55544d');
+    R(ox+3,oy+6,7,7,'#140e0a'); R(ox+2,oy+4,9,2,WK.stD); R(ox+2,oy+4,9,1,WK.stL); R(ox+2,oy+6,1,7,WK.stD); R(ox+10,oy+6,1,7,WK.stD);   // the stone-lined adit
+    rails(ox+5,oy+13,oy+28,ox+11);
+    for (let j=0;j<14;j++){ const hw=Math.round(5*Math.sqrt(Math.max(0,1-((j-9)/9)**2))); R(ox+26-hw,oy+10+j,hw*2+1,1,j<2 ? '#b07a58' : '#8c5a42'); P(ox+26+hw,oy+10+j,'#64402e'); P(ox+26-hw,oy+10+j,'#a06a4c'); }   // the kiln's dome, of fired brick
+    for (let j=12;j<24;j+=2) for (let i=22+((j>>1)&1)*2;i<30;i+=4) P(ox+i,oy+j,'#6a4434');
+    R(ox+24,oy+20,4,4,'#2a1a10'); R(ox+25,oy+5,3,6,WK.stS); R(ox+25,oy+5,3,1,'#2e2f2b');   // its mouth and chimney
+    oreHeap(ox+14,oy+26,9);
+    plaza(ox+18,oy+20);
+  }
+}
+/** A region's works at work (active: held by somebody, no fighting there), k through the 30-second cycle; occ: its occupier, whose
+    banner flies over it (the region's own flag is down). */
+export function drawWorksLive(ctx: CanvasRenderingContext2D, res: number, ox: number, oy: number, k: number, now: number, active: boolean, occ: number){
+  const prev=G; G=ctx;
+  if (active){
+    if (res===0){
+      wheel(ox+6,oy+9,4,now/500,WK.timD,WK.timL,'#3a3226');
+      for (let i=0;i<3;i++){ const t=((now/300+i/3)%1); P(ox+Math.round(t*6),oy+3,'#bfe0f0'); }   // water down the flume
+      if (((now/250)|0)&1){ P(ox+4,oy+13,'#d8eef8'); P(ox+8,oy+13,'#d8eef8'); }
+      const s=Math.round(Math.sin(now/120)*1.5); R(ox+6,oy+13+s,1,6,'#9aa0a6'); P(ox+6,oy+13+s,'#d0d6da');   // the frame saw
+      const layers=1+Math.min(2,(k*3)|0); planks(ox+2,oy+29-3-layers*2,9,3+layers*2);                       // the planks pile up
+    } else if (res===1){
+      wheel(ox+9,oy+19,5,now/600,WK.tim,WK.timL,'#857d6d');
+      const f=(k*8)%1, up=f<0.5 ? f*2 : 2-f*2, by=oy+21-Math.round(up*10);
+      R(ox+15,oy+8,1,Math.max(0,by-oy-8),'#c9b48a'); block(ox+13,by,4,3);
+      if (((now/180)|0)%5===0){ const x=4+(((now/900)|0)*7)%24; P(ox+x,oy+6,'#fffbe8'); P(ox+x+1,oy+5,'#e8e2d4'); }   // chips flying from the face
+    } else {
+      const glow=0.55+0.45*Math.sin(now/170)*Math.sin(now/61+1);
+      ctx.globalAlpha=0.55+0.4*glow; R(ox+24,oy+21,4,3,'#ff8a2b'); ctx.globalAlpha=0.35+0.4*glow; R(ox+25,oy+20,2,1,'#ffd86b'); ctx.globalAlpha=0.4+0.3*glow; R(ox+5,oy+9,3,3,'#ffb24a'); ctx.globalAlpha=1;
+      smoke(ctx,ox+25,oy+3,now);
+      const f=(k*3)%1, [cx,cy]=along([[6.5,13],[6.5,28],[13,28]],f<0.5 ? f*2 : 2-f*2); mineCart(ox+Math.round(cx),oy+Math.round(cy),f<0.5);
+    }
+  }
+  if (occ && W.nations[occ]){   // the occupier's banner, on a pole at the corner of the works
+    const x=ox+30, y=oy+1; ctx.fillStyle=EDGE; ctx.fillRect(x-1,y-8,3,10); ctx.fillStyle='#7a5634'; ctx.fillRect(x,y-7,1,9);
+    ctx.fillStyle=EDGE; ctx.fillRect(x-7,y-8,7,6); paintSmallFlag(ctx,W.nations[occ].code,x-6,y-7,true);
   }
   G=prev;
 }

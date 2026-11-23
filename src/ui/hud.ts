@@ -52,7 +52,7 @@ export function updateHUD(now: number){
   ui.meMilitia.textContent=me.called ? `${me.militia} (${me.called} called up)` : String(me.militia); ui.meMilitiaRow.hidden=!me.militia; ui.meTraining.textContent=String(me.training);
   const people=me.villagers+me.soldiers+me.beggars, perTick=humanRate(me,people), bedsB=BED_BONUS*me.beds, empty=houseBonus(me,people)-bedsB;
   ui.meNext.textContent = me.alive && me.capTile>=0 ? `Next human in ${Math.max(0,(HUMAN_EVERY-me.humanProg)/perTick*TICK/GAME_SPEED).toFixed(1)}s${me.farms?` · farms +${Math.round(FARM_BONUS*me.farms*100)}%`:''}${empty>0.0005?` · empty homes +${Math.round(empty*100)}%`:''}${bedsB>0?` · home capacity +${+(bedsB*100).toFixed(1)}%`:''}` : 'No capital: no new humans';
-  // without a barracks, everyone under arms trains at the castle as militia
+  // without a barracks nobody can be trained: the hint says so
   ui.soldiers.disabled=!me.alive; ui.soldiersHint.hidden=!me.alive || me.barracks>0;
   // the slider stops short of the professionals (the blue part), unless the lock is open
   { const people=me.villagers+me.soldiers, cap=me.draftAll ? 1 : Math.floor(soldierMax(me)*100)/100;

@@ -1,7 +1,7 @@
 /* ---------- Emberfront: boot & main loop ---------- */
 import { TW, TH, RW, RH, RS, NP, TICK, UI_SCALE } from './core/constants';
 import { RG, region, cedeRegion } from './sim/regions';
-import { W, owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, pHp } from './sim/state';
+import { W, owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, pHp, pMain, pSpan } from './sim/state';
 import { findBlock, queueCommand } from './sim/sim';
 import { plotProblem, navalSite } from './sim/buildings';
 import { client } from './client';
@@ -77,4 +77,4 @@ function toSpawn(){ if (client.state!=='spawn'){ $('intro').hidden=true; $('scri
   newWorld:(seed?: number)=>newGame(seed), loadMap:(i: number)=>{ client.mapIndex=i; newGame(); },
   navalSites:()=>{ const n=W.nations[1], out: number[]=[]; if (n) for (let q=0;q<NP;q++) if (navalSite(n,q).orient>=0) out.push(q); return out; },
   freePlots:()=>{ const n=W.nations[1], out: number[]=[]; if (n) for (let q=0;q<NP;q++) if (!plotProblem(n,q)) out.push(q); return out; },
-  dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, overview:ovBuf, attacks:W.attacks, armies:W.armies, tickN:W.tickN }) };
+  dump:()=>({ owner, isLand, terr, road, pType, pOwner, pVar, pBurn, pTimer, pMain, pSpan, overview:ovBuf, attacks:W.attacks, armies:W.armies, tickN:W.tickN }) };
