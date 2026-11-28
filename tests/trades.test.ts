@@ -1,6 +1,6 @@
 // Trades and the soldier slider: the price of a first building, the limit set by the professionals, and the lock.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { B_BARRACKS, TW, TH, NP, PW, B_FARM, B_TOWER, B_RESEARCH, B_CARPENTER, RUSH_TICKS, GAME_SPEED } from '../src/core/constants';
+import { B_BARRACKS, TW, TH, NP, PW, B_FARM, B_TOWER, B_RESEARCH, B_CARPENTER, GAME_SPEED, GOLD_PER_TILE } from '../src/core/constants';
 import { plotProblem, build } from '../src/sim/buildings';
 import { taxRate, incomeParts } from '../src/sim/sim';
 import { TIER_XP, TOPICS, R_TAXES, R_HOUSING } from '../src/sim/research';
@@ -112,12 +112,9 @@ describe('numbers', () => {
     expect(BUILD_TICKS).toBe(15*GAME_SPEED*10);
     expect(CARPENT_TICKS).toBe(20*GAME_SPEED*10);
   });
-  it('the first minute settles unclaimed land at half price, then at the usual one', () => {
-    const t=(me().capTile%TW)+TW*(((me().capTile/TW)|0)+30), full=tileCost(1,0,t)*2;
-    expect(W.rushUntil).toBe(RUSH_TICKS);
-    expect(W.tickN).toBeLessThan(RUSH_TICKS);
-    run(RUSH_TICKS);
-    expect(tileCost(1,0,t)).toBeCloseTo(full,9);
+  it('settles unclaimed land at the usual price from the start (no land rush)', () => {
+    const t=(me().capTile%TW)+TW*(((me().capTile/TW)|0)+30);
+    expect(tileCost(1,0,t)).toBeCloseTo(GOLD_PER_TILE,9);
   });
 });
 
@@ -162,12 +159,9 @@ describe('scholars and the call-up', () => {
 });
 
 describe('v70', () => {
-  it('the land rush lasts two minutes, and the land tax is doubled only then', () => {
-    expect(RUSH_TICKS).toBe(120*GAME_SPEED*10);
+  it('the land tax is the same from the start (no land rush)', () => {
     expect(LAND_TAX).toBeCloseTo(0.0004,9);
     const n=me(); n.taxpayers=0;
-    expect(incomeParts(n).land).toBeCloseTo(LAND_TAX*2*n.tiles,9);   // (in the rush)
-    W.rushUntil=0;
     expect(incomeParts(n).land).toBeCloseTo(LAND_TAX*n.tiles,9);
   });
 

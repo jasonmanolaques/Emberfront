@@ -225,7 +225,7 @@ export const W = {
   map: 'gen',   // 'gen' for a generated map, else a real-world one (sim/realmap.ts)
   mapSeed: 1, srand: Math.random as Rng, seaLevel: 0, heightRange: 1, landCount: 1, landTiles: new Int32Array(0),
   nations: [] as Nation[], M: 1, contact: new Int32Array(1), attacks: [] as Attack[], burning: [] as number[], attackSeq: 0,
-  commands: [] as Command[], simTime: 0, tickN: 0, rushUntil: 0,   // rushUntil: the tick the land rush (settling at half price) ends
+  commands: [] as Command[], simTime: 0, tickN: 0,
   prand: Math.random as Rng,         // separate stream for people, so they never shift the territory game's randomness
   humans: [] as Human[], humanSeq: 0,
   armies: [] as Army[],              // every kingdom's armies (sim/war.ts)

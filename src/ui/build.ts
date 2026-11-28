@@ -1,6 +1,6 @@
 /* ---------- buildings panel: pick a building, then click your land to place it ---------- */
 import { region } from '../sim/regions';
-import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_PART, B_NAVAL, B_ARCHERY } from '../core/constants';
+import { PLAYER, TW, PW, PS, B_FARM, B_BARRACKS, B_TOWER, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_PART, B_NAVAL, B_ARCHERY , NAVAL } from '../core/constants';
 import type { Nation } from '../sim/state';
 import { W, owner, pType, pTier, pOwner, pMain } from '../sim/state';
 import { R_HOUSING, R_INFANTRY, hasMedics } from '../sim/research';
@@ -22,7 +22,7 @@ const panel=$('buildPanel'), list=$('buildList'), tip=$('btip'), title=$('buildT
 /** The building menus on the right: what each holds. */
 export const CATEGORIES = [
   { id:'urban',     name:'Urban development',   types:[B_FARM, B_GUILD, B_CARPENTER, B_MINTER, B_HOSPITAL, B_TOWER] },
-  { id:'military',  name:'Military',            types:[B_BARRACKS, B_ARCHERY, B_SMITHY, B_NAVAL] },   // (every kind of barracks)
+  { id:'military',  name:'Military',            types:[B_BARRACKS, B_ARCHERY, B_SMITHY, ...(NAVAL ? [B_NAVAL] : [])] },   // (every kind of barracks)
   { id:'resources', name:'Resource buildings',  types:[B_PLANTATION, B_QUARRY, B_COPPERMINE] },
   { id:'society',   name:'Society advancement', types:[B_RESEARCH] },
 ];

@@ -31,6 +31,9 @@ export const B_HOSPITAL=19;   // hospital: 2 plots; two doctors fetch the wounde
 export const B_CARPENTER=20;   // carpenters: one villager builds extra hovels for free, 20 seconds each (sim/population.ts)
 export const B_WORKS=22;   // a region's works (sawmill, quarry or copper mine) round its flag: 2×2 plots, the main one top-left (pMain), nobody's; it works for whoever holds the region (sim/war.ts)
 export const B_ARCHERY=21;   // archer barracks: what the build menu places; on the map it is a barracks plot marked in pArch (it joins the others into one army)
+/** Ports (naval bases, ships, settling and invading by sea) are switched off: armies cross the water on their own (they row), and claims
+    reach across the sea (RG.near in sim/regions.ts). The code stays, for a later return. */
+export const NAVAL = false;
 export const B_NAVAL=18;   // naval base: 8 plots (4×2 or 2×4), at least a third of it on the water
 /** Anything standing on a plot that a kingdom owns and that burns when the ground is taken. */
 export const isStructure = (ty: number) => ty===B_HOUSE || ty===B_FARM || ty===B_TOWER || ty===B_MINE || ty===B_BARRACKS || ty===B_MINTER
@@ -50,10 +53,7 @@ export const DESERT_TICKS = 30;           // then one deserts every 3 s, the lea
 export const SCRAP_GOLD = 30;             // gold back per tier of a deserter's armour, scrapped
 export const TAX_PER_VILLAGER = 0.1;      // gold a second each villager pays at taxation tier 1 (soldiers pay none); each coin minter adds 10% to the taxes
 export const TAX_PER_TIER = 0.5;          // and what each taxation tier above the first adds to that
-export const LAND_TAX = 0.0004;           // gold a second a kingdom earns for each tile of land it holds (a flat boost for its size: 4 a second for 10,000 tiles; doubled during the land rush, RUSH_LAND_TAX)
-export const RUSH_TICKS = 120*GAME_SPEED*10;   // the land rush at the start of a match: the first two minutes on the clock, when settling unclaimed land costs RUSH_COST of the price
-export const RUSH_COST = 0.5;
-export const RUSH_LAND_TAX = 2;   // and the land tax is doubled for those two minutes
+export const LAND_TAX = 0.0004;           // gold a second a kingdom earns for each tile of land it holds (a flat boost for its size: 4 a second for 10,000 tiles)
 export const GOLD_PER_TILE = 0.36;        // cost of settling one unclaimed tile
 // kingdom strength: what the leaderboard and labels show, and what makes land costly to take
 /* A kingdom's strength is its military might alone: each villager and each militiaman counts 100, a soldier 200, 300 or 500 by his armour tier (sim/population.ts). */

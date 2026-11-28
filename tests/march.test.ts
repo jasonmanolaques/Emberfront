@@ -21,7 +21,7 @@ const regionAt = (bx: number, by: number) => by*10+bx+1;
 
 /** A grass map cut into square regions, `shape` changing the ground first (water, mountains...), the player alone. */
 function world(shape?: (x: number, y: number) => number | null){
-  newWorld(7); W.rushUntil=0;
+  newWorld(7);
   isLand.fill(1); terr.fill(T_GRASS); pBuild.fill(1);
   if (shape) for (let y=0;y<TH;y++) for (let x=0;x<TW;x++){ const k=shape(x,y); if (k===null) continue; const t=y*TW+x; terr[t]=k; isLand[t]=k===T_WATER ? 0 : 1; }
   W.landTiles=Int32Array.from({ length: NT }, (_, i) => i).filter(t => isLand[t]); W.landCount=W.landTiles.length;
@@ -130,7 +130,7 @@ describe('the size of an army', () => {
 
 describe('on the map of Europe', () => {
   it('an army marches from its capital to far regions, across straits and seas, and arrives', () => {
-    newWorld(3,'europe-s'); W.rushUntil=0;
+    newWorld(3,'europe-s');
     // France's capital: a long way to the south of Italy, Britain across the Channel, Africa across the sea
     let ok=false;
     for (const [lat,lon] of [[48.86,2.35]] as [number, number][]){
@@ -150,7 +150,7 @@ describe('on the map of Europe', () => {
   }, 240000);
 
   it('marches from one capital to regions all over the map (ten picked evenly), and arrives at every one', () => {
-    newWorld(3,'europe-s'); W.rushUntil=0;
+    newWorld(3,'europe-s');
     const x=Math.floor((2.35+25)/76*TW), y=Math.floor((71.5-48.86)/42.5*TH);
     let ok=false; for (let r=0;r<20 && !ok;r++) ok=startMatch(y*TW+x+r,0,'FR');
     expect(ok).toBe(true);

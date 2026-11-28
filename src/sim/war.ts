@@ -155,7 +155,7 @@ export const attackerIn = (a: number, d: number) => W.claims.has(a*W.M+d) && !!W
 /** Did a begin its war with d (its claims made the crisis)? */
 export const began = (a: number, d: number) => !!W.began[a*W.M+d];
 /** Does region r border ground o holds (controls and nobody occupies, or occupies)? */
-export const besideHeld = (o: number, r: number) => RG.adj[r]?.some(q => holdsRegion(o,q)) ?? false;
+export const besideHeld = (o: number, r: number) => RG.near[r]?.some(q => holdsRegion(o,q)) ?? false;   // (beside it on land, or across the sea: RG.near)
 /** Why a can't claim these regions of d's, or null. */
 export function claimProblem(a: number, d: number, regions: number[]): string | null {
   const A=W.nations[a], D=W.nations[d], M=W.M;
@@ -168,8 +168,8 @@ export function claimProblem(a: number, d: number, regions: number[]): string | 
   if (regions.length>MAX_CLAIMS) return `At most ${MAX_CLAIMS} regions at a time`;
   if (new Set(regions).size!==regions.length) return 'A region is picked twice';
   for (const r of regions) if (!r || r>=RG.n || W.rOwner[r]!==d) return 'Only regions they control can be claimed';
-  if (!RG.adj[regions[0]].some(q => W.rOwner[q]===a && !W.rOcc[q])) return 'The first region must border a region you control';
-  for (let i=1;i<regions.length;i++) if (!regions.slice(0,i).some(p => RG.adj[p].includes(regions[i]))) return 'Each region must border one already claimed';
+  if (!RG.near[regions[0]].some(q => W.rOwner[q]===a && !W.rOcc[q])) return 'The first region must border a region you control (on land, or across the sea)';
+  for (let i=1;i<regions.length;i++) if (!regions.slice(0,i).some(p => RG.near[p].includes(regions[i]))) return 'Each region must border one already claimed';
   return null;
 }
 /** a claims regions of d's: a crisis. d gives them up, or it is war. */
@@ -225,7 +225,7 @@ export function warProblem(a: number, d: number): string | null {
 /** The regions of d's that a could claim first: those beside a region a controls. */
 export function claimable(a: number, d: number){
   const out: number[]=[];
-  for (let r=1;r<RG.n;r++) if (W.rOwner[r]===d && RG.adj[r].some(q => W.rOwner[q]===a && !W.rOcc[q])) out.push(r);
+  for (let r=1;r<RG.n;r++) if (W.rOwner[r]===d && RG.near[r].some(q => W.rOwner[q]===a && !W.rOcc[q])) out.push(r);
   return out;
 }
 
@@ -360,6 +360,7 @@ export function annex(loser: number, winner: number){
   W.ships=W.ships.filter(s => s.o!==loser); W.invasions=W.invasions.filter(i => i.a!==loser);
   L.gold=0; L.stock=[0,0,0];
   for (let r=1;r<RG.n;r++) if (W.rOcc[r]===loser) freeRegion(r);
+  for (let r=1;r<RG.n;r++){ const x=W.rOcc[r]; if (W.rOwner[r]===loser && x && x!==winner && W.nations[x]?.alive) cedeRegion(r,x); }   // (regions a third kingdom occupies are that kingdom's: it keeps what it took)
   const M=W.M;
   for (let o=1;o<M;o++){ W.claims.delete(loser*M+o); W.claims.delete(o*M+loser); const i=loser*M+o, j=o*M+loser; W.ally[i]=W.ally[j]=W.offers[i]=W.offers[j]=W.atWar[i]=W.atWar[j]=W.wars[i]=W.wars[j]=W.aggr[i]=W.aggr[j]=W.lost[i]=W.lost[j]=W.ready[i]=W.ready[j]=0; }
   for (let t=0;t<NT;t++) if (owner[t]===loser) setOwner(t,winner,true);   // the last tile eliminates it

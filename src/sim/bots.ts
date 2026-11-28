@@ -1,5 +1,5 @@
 /* ---------- bots ---------- */
-import { B_EMPTY, B_RUINS, B_PART, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_HOUSE, B_ARCHERY, PW, PH, NP, WAGE } from '../core/constants';
+import { B_EMPTY, B_RUINS, B_PART, B_FARM, B_TOWER, B_BARRACKS, B_MINTER, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_CARPENTER, B_HOUSE, B_ARCHERY, PW, PH, NP, WAGE, NAVAL } from '../core/constants';
 import { W, isle, pType, pOwner, pAband, pMain, type Nation } from './state';
 import { launch } from './territory';
 import { grossIncome } from './sim';
@@ -399,7 +399,7 @@ function claimsFor(n: Nation, d: number){
   const want=Math.max(1,Math.min(MAX_CLAIMS,1+Math.round(n.attackAt*2*srand()+(n.strength>D.strength*2 ? 1 : 0))));
   const chain=[pickWorth(n,first,srand)];
   while (chain.length<want){
-    const next: number[]=[]; for (const r of chain) for (const q of RG.adj[r]) if (W.rOwner[q]===d && !chain.includes(q) && !next.includes(q)) next.push(q);
+    const next: number[]=[]; for (const r of chain) for (const q of RG.near[r]) if (W.rOwner[q]===d && !chain.includes(q) && !next.includes(q)) next.push(q);
     if (!next.length) break;
     chain.push(pickWorth(n,next,srand));
   }
@@ -470,8 +470,8 @@ function botWar(n: Nation){
   const need=(1.4-(n.attackAt-0.5)*2)*(desperate ? 0.6 : 1);   // 1.4 for the cautious, 0.8 for the bold
   let best=0, bs=need;
   for (let o=1;o<M;o++){
-    const D=W.nations[o]; if (o===id || !D.alive || allied(id,o) || !W.contact[id*M+o]) continue;
-    if (!claimable(id,o).length) continue;
+    const D=W.nations[o]; if (o===id || !D.alive || allied(id,o)) continue;
+    if (!claimable(id,o).length) continue;   // (a region of theirs beside one of ours, on land or across the sea)
     const s=pool/defence(D)*(0.8+srand()*0.4);
     if (s>bs){ bs=s; best=o; }
   }
@@ -523,7 +523,7 @@ function counter(n: Nation, a: number, look: number, age: number){
   for (let r=1;r<RG.n;r++){
     if (W.rOwner[r]!==a || W.rOcc[r] || mine.includes(r) || !besideHeld(id,r)) continue;
     const A=W.nations[a]; if (A.capTile>=0 && region[A.capTile]===r && want<3) continue;   // (its castle region only for the boldest)
-    let s2=0; for (const q of RG.adj[r]) if (holdsRegion(id,q)) s2++;
+    let s2=0; for (const q of RG.near[r]) if (holdsRegion(id,q)) s2++;
     s2+=W.srand()*0.5;
     if (s2>bs){ bs=s2; best=r; }
   }
@@ -536,7 +536,7 @@ function heldShare(a: number, d: number){ const regs=claimsOf(a,d); return regs.
 /** One more region of d's for a winning attacker a to claim: beside its claims or ground it holds; 0 if none (or it claims 6 already). */
 function moreClaims(a: number, d: number){
   const regs=claimsOf(a,d); if (regs.length>=6) return 0;
-  for (const r of regs) for (const q of RG.adj[r]) if (W.rOwner[q]===d && !regs.includes(q)) return q;
+  for (const r of regs) for (const q of RG.near[r]) if (W.rOwner[q]===d && !regs.includes(q)) return q;
   return 0;
 }
 /** In peace a bot with two armies or more stations those beyond the first in its regions on the border with the strongest neighbour, a region each, for a quick answer
@@ -552,7 +552,7 @@ function deploy(n: Nation){
   let foe=0, fs=-1;
   for (let o=1;o<M;o++){ const D=W.nations[o]; if (o===id || !D.alive || allied(id,o) || !W.contact[id*M+o]) continue; if (D.strength>fs){ fs=D.strength; foe=o; } }
   if (!foe) return;
-  const border: number[]=[]; for (let r=1;r<RG.n;r++) if (W.rOwner[r]===id && RG.adj[r].some(q => W.rOwner[q]===foe)) border.push(r);
+  const border: number[]=[]; for (let r=1;r<RG.n;r++) if (W.rOwner[r]===id && RG.near[r].some(q => W.rOwner[q]===foe)) border.push(r);
   for (const x of home){
     const r=border.find(r => !armyProblem(id,x.id,'station',r)); if (!r) return;
     armyOrder(id,x.id,'station',r);
@@ -569,7 +569,7 @@ export function botThink(n: Nation){
   if (!hungry) n.hungry=0; else if (!n.hungry) n.hungry=W.simTime;
   botBuild(n,exposed);
   botWar(n);
-  botSea(n);
+  if (NAVAL) botSea(n);
   let active=0; for (const A of W.attacks) if (!A.done && A.att===n.id) active++;
   if (active>=2) return;
   // personality: how much gold it lets pile up before settling more land (little, with beggars to find room for)

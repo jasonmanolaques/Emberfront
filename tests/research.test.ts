@@ -15,7 +15,7 @@ const mine = () => W.humans.filter(h => h.o === 1);
 const run = (n: number) => { for (let i=0;i<n;i++) tick(); };
 const houses = () => { const out: number[]=[]; for (let q=0;q<NP;q++) if (pType[q]===B_HOUSE && pOwner[q]===1) out.push(q); return out; };
 function start(seed: number){
-  newWorld(seed); W.rushUntil=0; RG.site.fill(-1);   // (the regions' works shut: only the kingdom's own buildings fill its stockpile)
+  newWorld(seed); RG.site.fill(-1);   // (the regions' works shut: only the kingdom's own buildings fill its stockpile)
   for (let r=0;r<60;r++) for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){
     if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
     if (startMatch((TH/2+dy*3)*TW + TW/2+dx*3, 0)) return;

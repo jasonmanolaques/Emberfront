@@ -7,6 +7,8 @@ import { newWorld, startMatch, tick, queueCommand } from '../src/sim/sim';
 import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
 import { build, navalSite, navalProblem, plotProblem, costFor, structureOf } from '../src/sim/buildings';
+import { NAVAL } from '../src/core/constants';
+const dn = NAVAL ? describe : describe.skip;   // (ports are switched off: NAVAL in core/constants.ts)
 import { labelWorld, allocIsles, seaPaths, waypoints, basesOf, dockTile, settlePlan, SHIP_TICKS, hasLandOn } from '../src/sim/naval';
 
 const N = (i: number) => W.nations[i];
@@ -15,7 +17,7 @@ const SEA_X0=250, SEA_X1=290;   // a channel of water from x=250 to 289; the isl
 
 /** A flat map: mainland west of a channel, an island east of it; the player in the middle of the mainland. */
 function world(rivals=0){
-  newWorld(7); W.rushUntil=0;
+  newWorld(7);
   isLand.fill(1); terr.fill(T_GRASS); pBuild.fill(1);
   for (let y=0;y<TH;y++) for (let x=SEA_X0;x<SEA_X1;x++){ const t=y*TW+x; isLand[t]=0; terr[t]=T_WATER; }
   for (let q=0;q<NP;q++){ const c=(((q/PW)|0)*4+2)*TW+(q%PW)*4+2; pBuild[q]=isLand[c] ? 1 : 0; }
@@ -33,7 +35,7 @@ function world(rivals=0){
 /** The plot at the top-left of a naval base on the shore: three plots of land and a channel's width of water. */
 const shorePlot = () => 40*PW+60;   // plot x 60..63 = tiles 240..255: water from tile 250
 
-describe('the naval base', () => {
+dn('the naval base', () => {
   it('stands over plots on the water, a third of it at least, and the land in it your own', () => {
     world();
     const me=N(1), q=shorePlot();
@@ -62,7 +64,7 @@ describe('the naval base', () => {
   });
 });
 
-describe('ships', () => {
+dn('ships', () => {
   it('cost 5 wood and take 15 seconds each, one after another; ready ships are the kingdom\'s', () => {
     world();
     const me=N(1); me.stock=[100,100,0];
@@ -79,7 +81,7 @@ describe('ships', () => {
   });
 });
 
-describe('naval settlement', () => {
+dn('naval settlement', () => {
   const ISLAND=100*TW+300, NEAR=30*TW+240, FAR=30*TW+200;   // an island tile; mainland 9 tiles from the shore; mainland 49 tiles from it
   const owned = (f: (k: number) => boolean) => { let n=0; for (let k=0;k<NT;k++) if (owner[k]===1 && f(k)) n++; return n; };
   function withBase(ships=2){
@@ -162,7 +164,7 @@ describe('naval settlement', () => {
   });
 });
 
-describe('villagers cross by boat', () => {
+dn('villagers cross by boat', () => {
   it('once a colony stands, villagers walk the sea lane to build houses on the island, and do not need a ship', () => {
     world();
     const me=N(1); me.stock=[100,100,0]; me.gold=4000;
@@ -183,9 +185,9 @@ describe('villagers cross by boat', () => {
 });
 
 
-describe('ships keep to the water', () => {
+dn('ships keep to the water', () => {
   it('no stretch of any ship\'s course crosses land, on a real map with coves, peninsulas and islands', () => {
-    newWorld(5,'europe-s'); W.rushUntil=0;
+    newWorld(5,'europe-s');
     const water: number[]=[]; for (let t=0;t<NT;t+=37) if (!isLand[t] && sea[t]>0) water.push(t);
     let checked=0, bad=0, rng=12345; const rnd=() => (rng=(Math.imul(rng,1103515245)+12345)>>>0)/4294967296;
     for (let k=0;k<400 && checked<60;k++){

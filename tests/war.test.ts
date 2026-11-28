@@ -16,6 +16,10 @@ import { claim, claimProblem, answer, inCrisis, armyProblem, armyOrder, armyOf, 
 import { WAGE, WAGE_IDLE, B_TOWER, B_ARCHERY } from '../src/core/constants';
 import { buildFort, fortTier, fortSpot } from '../src/sim/buildings';
 import { pTier } from '../src/sim/state';
+import { annex, besideHeld } from '../src/sim/war';
+import { capitalsOn } from '../src/sim/realmap';
+import { isle } from '../src/sim/state';
+import { NP, B_NAVAL } from '../src/core/constants';
 import { waiting, fortUpkeep, FORT_DMG, began, outlook, ARROW_DMG, RALLY_TICKS, ARCHER_WAGE, siteOf, castleArchers, blowOf, garrisonOf, GARRISON, GARRISON_TICKS, WORKS_YIELD } from '../src/sim/war';
 import { B_WORKS } from '../src/core/constants';
 import { pMain } from '../src/sim/state';
@@ -39,12 +43,12 @@ const regionAt = (bx: number, by: number) => by*10+bx+1;
 const blockOf = (t: number) => [((t%TW)/S)|0, (((t/TW)|0)/S)|0];
 
 /** A flat grass map cut into square regions, the player and one bot that never thinks of its own. */
-function world(){
-  newWorld(7); W.rushUntil=0;
+function world(rivals=1){
+  newWorld(7);
   isLand.fill(1); terr.fill(T_GRASS); pBuild.fill(1);
   W.landTiles=Int32Array.from({ length: NT }, (_, i) => i); W.landCount=NT;
   labelWorld();
-  if (!startMatch((TH/2)*TW+TW/2, 1)) throw new Error('no spawn');
+  if (!startMatch((TH/2)*TW+TW/2, rivals)) throw new Error('no spawn');
   allocIsles();
   for (const n of W.nations.slice(1)){ n.nextThink=1e9; n.nextWar=1e9; n.humanProg=-1e9; }
   const names: string[]=[]; for (let by=0;by<7;by++) for (let bx=0;bx<10;bx++) names.push(`R${bx}.${by}`);
@@ -880,6 +884,45 @@ describe('region works', () => {
     made.length=0; run(PRODUCE_TICKS+10);
     listen({ produced: () => {} });
     expect(made.filter(m => m[0]===RG.site[theirs[0]]).map(m => m[1])).toEqual([1]);
+  });
+});
+
+describe('v93', () => {
+  it('a kingdom that falls goes to its conqueror, but a region a third kingdom occupies goes to that kingdom', () => {
+    world(2); const { home, theirs }=lands(2);
+    if (region[N(3).capTile]===theirs[1]) return;   // (a layout this test can't use)
+    occupyRegion(theirs[1],3);
+    annex(2,1); run(10);   // (region control recounted)
+    expect(N(2).alive).toBe(false);
+    expect(W.rOwner[theirs[0]]).toBe(1);
+    expect(W.rOwner[theirs[1]]).toBe(3);   // (it keeps what it took)
+    expect(W.rOcc[theirs[1]]).toBe(0);
+    for (let i=RG.start[theirs[1]];i<RG.start[theirs[1]+1];i++) expect(owner[RG.tiles[i]]).toBe(3);
+    void home;
+  });
+
+  it('ports are closed: no naval base can be built', () => {
+    world(); lands(1);
+    const n=N(1); n.stock=[100,100,100];
+    let q=0; while (q<NP && pType[q]!==0) q++;
+    expect(placeProblem(n,q,B_NAVAL)).toBe('Ports are closed');
+  });
+
+  it('on Europe the sea is cut into zones, and a region across the sea from one of yours (England from France) may be claimed, and attacked', () => {
+    newWorld(5,'europe-s');
+    const caps=capitalsOn('europe-s'), at=(c: string) => caps.find(k => k.country.code===c)!.tile;
+    expect(RG.sea.length).toBe(NT);
+    for (let r=1;r<RG.n;r++) for (const q of RG.adj[r]) expect(RG.near[r]).toContain(q);   // (land neighbours are near too)
+    const gb=isle[at('GB')], fr=isle[at('FR')];
+    expect(gb).not.toBe(fr);
+    let pair: [number, number] | null=null;
+    for (let r=1;r<RG.n && !pair;r++) if (RG.land[r] && RG.isle[r]===gb) for (const q of RG.near[r]) if (RG.isle[q]===fr){ pair=[r,q]; break; }
+    expect(pair).not.toBeNull();   // (some region of Britain faces one of the mainland across the sea)
+    const [england,coast]=pair!;
+    expect(startMatch(at('FR'),['GB'],'FR')).toBe(true);
+    cedeRegion(coast,1); cedeRegion(england,2); census();
+    expect(claimProblem(1,2,[england])).toBeNull();
+    expect(besideHeld(1,england)).toBe(true);
   });
 });
 

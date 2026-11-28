@@ -29,6 +29,8 @@ export const RG = {
   start: new Int32Array(2),               // each region's tiles are tiles[start[r] .. start[r+1])
   tiles: new Int32Array(0),
   adj: [[]] as number[][],                // the regions each one borders on land
+  near: [[]] as number[][],               // ...and over the sea too: those on the same sea zone (claims and attacks reach them; see seaZones)
+  sea: new Int32Array(0),                 // the sea zone of each water tile (0 on land): big provinces of the sea, with no part in play but to tell which coasts face each other
   isle: new Int32Array(1),                // the landmass each region's flag stands on
   res: new Uint8Array(1),                 // the good each region's works make: 0 wood (a sawmill), 1 stone (a quarry), 2 copper (a copper mine)
   site: new Int32Array(1),                // the top-left plot of each region's works (2×2 plots round its flag), -1 if it has no room for them
@@ -181,6 +183,28 @@ function finishRegions(names: string[], flags: Int32Array){
   RG.n=n; RG.names=['',...g.names]; RG.flag=flag; RG.land=land; RG.start=start; RG.tiles=tiles; RG.res=res; RG.site=site;
   RG.adj=adj.map(s => [...s].sort((a,b) => a-b));
   RG.isle=new Int32Array(n); for (let r=1;r<n;r++) if (flag[r]>=0) RG.isle[r]=isle[flag[r]];
+  seaZones();
+}
+/** The sea cut into big zones (about a twelfth of the map's width across), each the water nearest one of a grid of seeds, so the coasts on
+    either side of a strait or a stretch of sea share a zone; a lake no seed reaches is a zone of its own. Two regions with coast on one zone
+    are near each other over the sea (RG.near): one may be claimed, and attacked, from the other, as if they bordered on land (England from
+    across the Channel). The zones have no other part in play. */
+function seaZones(){
+  const n=RG.n, sea=new Int32Array(NT), step=Math.max(24,Math.round(Math.max(TW,TH)/12));
+  const q=new Int32Array(NT); let head=0, tail=0, zones=0;
+  for (let y=step>>1;y<TH;y+=step) for (let x=step>>1;x<TW;x+=step){ const t=y*TW+x; if (!isLand[t] && !sea[t]){ sea[t]=++zones; q[tail++]=t; } }
+  const flood=() => { while (head<tail){ const t=q[head++], x=t%TW, z=sea[t]; for (const k of [x>0 ? t-1 : -1, x<TW-1 ? t+1 : -1, t>=TW ? t-TW : -1, t<NT-TW ? t+TW : -1]) if (k>=0 && !isLand[k] && !sea[k]){ sea[k]=z; q[tail++]=k; } } };
+  flood();
+  for (let t=0;t<NT;t++) if (!isLand[t] && !sea[t]){ sea[t]=++zones; q[tail++]=t; flood(); }   // (lakes and bays no seed reached)
+  const coast: Set<number>[]=Array.from({ length: zones+1 }, () => new Set<number>());
+  for (let t=0;t<NT;t++){
+    const r=region[t]; if (!r || !isLand[t]) continue;
+    const x=t%TW;
+    for (const k of [x>0 ? t-1 : -1, x<TW-1 ? t+1 : -1, t>=TW ? t-TW : -1, t<NT-TW ? t+TW : -1]) if (k>=0 && sea[k]) coast[sea[k]].add(r);
+  }
+  const near: Set<number>[]=Array.from({ length: n }, (_,r) => new Set(RG.adj[r] ?? []));
+  for (const c of coast){ const L=[...c]; for (const a of L) for (const b of L) if (a!==b) near[a].add(b); }
+  RG.sea=sea; RG.near=near.map(s => [...s].sort((a,b) => a-b));
 }
 
 /** Clears who holds what (a new match, or the kingdoms counted again: sim.ts). */

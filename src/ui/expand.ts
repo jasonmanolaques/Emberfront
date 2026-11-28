@@ -3,7 +3,7 @@
    a single ⚓ button for a naval settlement: it asks for the coast to land on, and then the same choice of how
    much gold the ship carries over the sea; the border begins where it lands. */
 import { W } from '../sim/state';
-import { PLAYER, UI_SCALE } from '../core/constants';
+import { PLAYER, UI_SCALE, NAVAL } from '../core/constants';
 import { fmt } from '../core/util';
 import { playerAttack, startNavalSettle, settleBySea } from '../game';
 import { hasLandOn, basesOf } from '../sim/naval';
@@ -21,9 +21,9 @@ function place(x: number, y: number){
 /** Opens the menu for unclaimed tile t at (x, y): page pixels where the player clicked. */
 export function openExpand(t: number, x: number, y: number){
   const me=W.nations[PLAYER]; if (!me) return;
-  tile=t; sea=false; menu.hidden=false; seaBtn.hidden=false;
+  tile=t; sea=false; menu.hidden=false; seaBtn.hidden=!NAVAL;
   // the border settles land it touches: land on a landmass where the kingdom has none can only be settled by sea
-  const here=hasLandOn(PLAYER,t), why=here ? null : 'No land of yours on that island: settle it by sea';
+  const here=hasLandOn(PLAYER,t), why=here ? null : NAVAL ? 'No land of yours on that island: settle it by sea' : 'No land of yours on that island: its regions can be claimed in a war, from a coast facing it';
   for (const b of land.querySelectorAll<HTMLButtonElement>('button[data-r]')){ const g=me.gold*+b.dataset.r!; b.title=why ?? `Spend ${fmt(g)} gold settling land this way`; b.disabled=g<2 || !!why; }
   // by sea: a naval base, and a ship of the fleet; the one button asks for the coast to land on, and the gold after it
   const noSea = !basesOf(me).length ? 'Build a naval base to settle by sea' : me.fleet<1 ? 'You need a ship: build one at a naval base' : null;

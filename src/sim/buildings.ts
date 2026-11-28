@@ -5,7 +5,7 @@
    at tier 3 four of a kind in a square join into one of 2×2 (tier 3); a joined building makes far
    more than its parts did apart. ---------- */
 import { plannedWall } from './fort';
-import { TW, PW, PH, NP, T_FOREST, B_WORKS, B_CARPENTER, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_NAVAL, B_ARCHERY, TH, isStructure } from '../core/constants';
+import { TW, PW, PH, NP, T_FOREST, B_WORKS, B_CARPENTER, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_CASTLE, B_CPART, B_RUINS, B_BARRACKS, B_MINTER, B_SITE, B_PLANTATION, B_QUARRY, B_COPPERMINE, B_PART, B_RESEARCH, B_GUILD, B_SMITHY, B_HOSPITAL, B_NAVAL, B_ARCHERY, TH, isStructure, NAVAL } from '../core/constants';
 import { W, owner, occ, terr, isLand, isle, road, pType, pOwner, pVar, pBuild, pCenter, pBurn, pTimer, pAband, pMain, pHp, pTier, pSpan, pArmor, pIn, pArch, type Nation } from './state';
 import { R_GATHER, hasMedics } from './research';
 import { on } from './events';
@@ -247,7 +247,7 @@ export function navalSite(n: Nation, q: number, over: Over='none'): { orient: nu
 export function placeProblem(n: Nation, q: number, type: number, over: Over='none'): string | null {
   if (type===B_ARCHERY) type=B_BARRACKS;   // (an archer barracks stands like any barracks)
   if (type===B_TOWER) return 'Watchtowers stand as a fort round a region\'s flag: pick the region';
-  if (type===B_NAVAL) return navalSite(n,q,over).problem;
+  if (type===B_NAVAL) return NAVAL ? navalSite(n,q,over).problem : 'Ports are closed';
   if (type===B_HOSPITAL && !hasMedics(n)) return 'Research field medics first';
   const [w,h]=SIZE[type] ?? [1,1];
   if (q<0 || q%PW+w>PW || ((q/PW)|0)+h>PH) return 'There is no room to build there';

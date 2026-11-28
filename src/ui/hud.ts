@@ -9,6 +9,7 @@ import { client } from '../client';
 import { updateWarChips, refreshDiplomacy } from './diplomacy';
 import { refreshResearch } from './research';
 import { refreshArmy } from './army';
+import { units } from '../sim/army';
 import { refreshNaval } from './naval';
 import { refreshCommand } from './command';
 import { flagCSS } from '../render/flags';
@@ -59,11 +60,12 @@ export function updateHUD(now: number){
     const blk=$('soldierBlock'), lock=$('soldierLock');
     blk.style.width=people ? `calc((100% - 14px) * ${(pros/people).toFixed(4)} + 7px)` : '0'; blk.hidden=!pros;
     lock.setAttribute('aria-pressed',String(me.draftAll)); lock.textContent=me.draftAll ? '🔓' : '🔒';
-    if (me.alive && +ui.soldiers.value/100>cap+0.004) setSoldierShare(cap); }
+    if (me.alive && +ui.soldiers.value/100>cap+0.004) setSoldierShare(cap);
+    // the mark: the share of the people that would fill every place in the barracks
+    const fill=$('soldierFill'), room=(units[PLAYER] ?? []).reduce((k,u) => k+u.cap,0), pct=people ? Math.min(1,room/people) : 0;
+    fill.hidden=!me.alive || !room;
+    if (room){ fill.style.left=`calc((100% - 14px) * ${pct.toFixed(4)} + 7px)`; fill.dataset.pct=`${Math.round(pct*100)}%`; fill.title=`${Math.round(pct*100)}% of your people would fill every place in your barracks (${room} soldiers)${pct>=1 ? ': more than all of them' : ''}`; } }
   ui.clock.textContent=fmtTime(W.simTime/GAME_SPEED);
-  { const left=Math.max(0,W.rushUntil-W.tickN), rush=$('rush'), show=left>0 && me.alive;   // the land rush: the first minute, settling at half price
-    if (rush.hidden===show){ rush.hidden=!show; if (!show && wasRush){ wasRush=false; log('The land rush is over: settling costs the usual price again'); } }
-    if (show){ wasRush=true; $('rushT').textContent=fmtTime(Math.ceil(left*TICK/GAME_SPEED)); } }
   if (now-lastBoard>450){
     lastBoard=now;
     const list=W.nations.slice(1).sort((a,b)=>(+b.alive - +a.alive)||(b.tiles-a.tiles));
@@ -87,10 +89,9 @@ export function updateHUD(now: number){
 }
 const failed=new Set<() => void>();
 
-let wasRush=false;
 export function log(text: string, kind?: string){
   const d=document.createElement('div'); d.className='entry'+(kind?' '+kind:''); d.textContent=text;
-  ui.log.prepend(d); const es=ui.log.querySelectorAll('.entry'); if (es.length>4) es[es.length-1].remove();   // (the land rush note under them stays)
+  ui.log.prepend(d); const es=ui.log.querySelectorAll('.entry'); if (es.length>4) es[es.length-1].remove();
   setTimeout(()=>d.remove(),9500);
 }
 let toastTimer=0;

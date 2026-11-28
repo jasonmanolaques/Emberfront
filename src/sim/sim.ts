@@ -1,6 +1,6 @@
 /* ---------- simulation entry points: worlds, matches, commands, ticks ----------
    No DOM, no canvas: this runs the same in a browser, a server or a test. */
-import { B_TOWER, B_WORKS, TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, kingdomLimit, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, TAX_PER_TIER, RUSH_TICKS, RUSH_LAND_TAX, LAND_TAX, MINTER_BONUS, WAGE, } from '../core/constants';
+import { B_TOWER, B_WORKS, TW, TH, NT, PW, PH, GEN_W, GEN_H, MAX_KINGDOMS, kingdomLimit, TICK, T_MOUNT, T_SNOW, B_CASTLE, B_CPART, GOLD_START, GOODS_START, TAX_PER_VILLAGER, TAX_PER_TIER, LAND_TAX, MINTER_BONUS, WAGE, NAVAL } from '../core/constants';
 import { mulberry32 } from '../core/rng';
 import { W, resizeGrid, pCenter, owner, occ, isLand, terr, road, frontMark, pType, pOwner, pVar, pMain, pBurn, pTimer, pIn, pAband, pHp, pTier, pSpan, pArmor, type Nation, type Command } from './state';
 import { on } from './events';
@@ -94,7 +94,7 @@ export function newWorld(seed: number, map='gen'){
   W.burning=[]; W.attacks=[]; W.attackSeq=0; W.commands.length=0;
   W.nations=[blankNation(0,'Unclaimed land','#cfc6a8',false)];
   W.M=1; W.contact=new Int32Array(1);
-  W.simTime=0; W.tickN=0; W.rushUntil=RUSH_TICKS;
+  W.simTime=0; W.tickN=0;
   W.humans=[]; W.humanSeq=0; W.wounded=[];
   resetWar(1); resetStories(1); resetWalks(); labelWorld(); resetNaval(); resetHomes(); resetRooms();
   buildRegions(W.map,seed); resetRegions(1);
@@ -247,10 +247,10 @@ function applyCommand(c: Command){
     if (send<2) return;
     launch(c.nation,o,send);
   } else if (c.type==='colonize'){
-    const n=W.nations[c.nation]; if (!n || !n.alive || c.tile<0) return;
+    const n=W.nations[c.nation]; if (!NAVAL || !n || !n.alive || c.tile<0) return;
     colonize(n,c.tile,n.gold*c.ratio);
   } else if (c.type==='ship'){
-    const n=W.nations[c.nation]; if (n) queueShip(n,c.plot);
+    const n=W.nations[c.nation]; if (NAVAL && n) queueShip(n,c.plot);
   } else if (c.type==='soldiers'){
     const n=W.nations[c.nation]; if (!n || !n.alive) return;
     n.soldierShare=Math.min(n.draftAll ? 1 : soldierMax(n),Math.max(0,c.share));   // (not past the free villagers, unless the lock is on)
@@ -297,7 +297,7 @@ export const paid = (n: Nation) => n.soldiers-n.militia+n.called;
 export const taxRate = (n: Nation) => TAX_PER_VILLAGER+TAX_PER_TIER*Math.max(0,n.tier[R_TAXES]-1);
 export function incomeParts(n: Nation){
   let lost=0; for (let b=1;b<W.M;b++) lost+=W.occCount[n.id*W.M+b];   // (land the enemy occupies pays no tax)
-  const tax=taxRate(n)*n.taxpayers, land=LAND_TAX*(W.tickN<W.rushUntil ? RUSH_LAND_TAX : 1)*Math.max(0,n.tiles-lost), boost=(tax+land)*MINTER_BONUS*n.minters;
+  const tax=taxRate(n)*n.taxpayers, land=LAND_TAX*Math.max(0,n.tiles-lost), boost=(tax+land)*MINTER_BONUS*n.minters;
   return { tax, land, boost, soldiers:n.wageS, militia:n.wageM, towers:fortUpkeep(n.id) };
 }
 export const grossIncome = (n: Nation) => { const p=incomeParts(n); return p.tax+p.land+p.boost; };

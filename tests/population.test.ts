@@ -42,7 +42,7 @@ function roomy(r = 24){
 }
 let barracks = -1;
 function start(seed: number, rivals: number, withBarracks = true){
-  newWorld(seed); W.rushUntil=0;
+  newWorld(seed);
   for (let r=0;r<60;r++) for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){
     if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
     if (startMatch((TH/2+dy*3)*TW + TW/2+dx*3, rivals)){ roomy(); barracks = withBarracks ? addBarracks() : -1; return; }
@@ -209,7 +209,7 @@ describe('population', () => {
 describe('population with bots', () => {
   it('never loses a person while the kingdom loses no land', () => {
     // seed 4242, spawned at tile 40500: bots expand into the unclaimed ground right next to the castle
-    newWorld(4242); W.rushUntil=0; startMatch(40500, 9); setShare(0.5);
+    newWorld(4242); startMatch(40500, 9); setShare(0.5);
     let tiles = me().tiles, lost = 0;
     for (let i=0;i<3000;i++){
       const before = new Set(mine().filter(h => !h.beggar).map(h => h.id));   // (beggars can die of want)
