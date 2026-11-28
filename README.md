@@ -227,30 +227,26 @@ A garrison costs the besiegers about a man for each of its men (its line is as g
 
 **Battles** (`engage`, `fight`). Two hostile armies that come within 26 pixels of each other fight. Each army's front row is its **fighting row**. Spearmen close with the enemy: the army that was holding its ground stays and the other comes up to it. **A row fights until every man of it is down**: its fallen leave gaps, nobody steps into them, and only when the last man falls does **the next row move up into the fighting zone**. In the fighting rows each man fights **the man opposite him**; a man with nobody opposite goes for the nearest enemy of the fighting row with room about him (**three on one at most**: from the front and from each side), so the last men of a broken row are overwhelmed quickly and the whole line stays busy; the rows behind wait their turn. **When an army's spearmen are all down its archers hold their ground** and the enemy's fighting row comes to them: archers with the enemy upon them **fight hand to hand** (at half a spearman's blow) **and stop shooting**, while the archers' rows behind them shoot on. **Two armies with only archers left stay where they are and shoot** at each other; nobody closes. **A tick is simultaneous**: everyone alive as it begins strikes or shoots in it, and the blows and arrows land together at its end, so neither side strikes first. The army with nobody left standing in the field has lost; its men at home are its depot.
 
-**Fire and melee, and the dice.** As in Europa Universalis a battle goes by **phases of three ticks**, a tick a second on the clock (`BATTLE_TICK`, `PHASE_TICKS`): it begins with **fire**, then **melee**, then fire again, and so on. As each phase begins **each side rolls a die** for it: **1** is **-20%** to its arrows or blows of that phase, 2 -10%, **3** even, 4 +6.7%, 5 +13.3%, **6** **+20%** (`diceFactor`). **In a fire phase** every archer who is not in the melee looses **one arrow a tick** (0.5 damage, by the die) at a man of the enemy army picked at random, its front rows likelier; nobody strikes, but the lines close and men take their places. **In a melee phase** every man of the two fighting rows strikes **once a tick** (each at his own beat of the second, so the line is alive rather than striking as one), and no arrows fly. Over each line a plate shows the phase (**a bow** for fire, **crossed swords** for melee), three pips for its ticks, the die, and what it is worth (*Fire +13%*).
+**Fire and melee, and the dice.** As in Europa Universalis a battle goes by **phases of three ticks**, a tick a second on the clock (`BATTLE_TICK`, `PHASE_TICKS`): it begins with **fire**, then **melee**, then fire again, and so on. As each phase begins **each side rolls a die** for it: **1** is **-20%** to its arrows or blows of that phase, 2 -10%, **3** even, 4 +6.7%, 5 +13.3%, **6** **+20%** (`diceFactor`). **In a fire phase** the archers loose **a volley a tick**, all at once: every archer of **the two archer rows nearest the front** (`ARCHER_ROWS`: twenty at most; those further back can't see the enemy) who is not in the melee shoots one arrow at a man of the enemy army picked at random, its front rows likelier, and **an arrow lands one time in two** (`ARROW_HIT`; 0.5 damage, by the die); nobody strikes, but the lines close and men take their places. **In a melee phase the whole of both fighting rows strikes at once, once a tick** (`STRIKE_BEAT`: every man of the row on the same beat, so the line fights as a line), a blow landing 7 times in 10, and no arrows fly. Over each line a plate shows the phase (**a bow** for fire, **crossed swords** for melee), three pips for its ticks, the die, and what it is worth (*Fire +13%*).
 
-**Playtests** (16 battles of each make-up, on flat ground, tier I unless said; attacker against defender; every man at full health):
+**Playtests** (v92, `tests/war.test.ts` world: 6 battles of each make-up, each side attacking in half of them; tier I, every man at full health). Before v92 the men of a row struck at their own beats (one to three at a time) and every archer row shot arrows that never missed, so a deep block of archers outshot any line of spearmen; now:
 
 | Battle | Outcome | Time on the clock |
 |---|---|---|
-| 10 spearmen against 10 | even (11 to 5) | about 17 s |
-| 20 against 20 | even (5 to 11) | about 35 s |
-| 50 against 50 | even (10 to 6) | about 90 s |
-| 5 against 25 | the 25 lose one man | about 10 s |
-| 20 spearmen against 20 archers | the spearmen, 15 times in 16, 10 left | about 34 s |
-| 30 archers against 30 archers (fire only) | even (10 to 6) | about 39 s |
-| 20 spearmen against 10 spearmen + 10 archers | even (6 to 10) | about 32 s |
-| 40 spearmen against 20 spearmen + 20 archers | the mixed army, every time, 27 left | about 35 s |
-| 20 spearmen + 5 archers against 10 spearmen + 15 archers | the second, 12 times in 16 | about 41 s |
-| 15 spearmen + 25 archers against 30 spearmen + 10 archers | the first, every time, 19 left | about 42 s |
-| 70 spearmen + 30 archers against the same | even (6 to 10) | about 75 s |
-| 100 spearmen against 60 spearmen + 40 archers | the mixed army, every time, 77 left | about 58 s |
-| 10 heavy (III) spearmen against 30 archaic | the 30, every time, 10 left | about 38 s |
-| 10 heavy (III) spearmen against 20 archaic | the heavy, 15 times in 16, 7 left | about 31 s |
-| 10 reinforced (II) spearmen against 15 archaic | the reinforced, 14 times in 16, 5 left | about 26 s |
-| 20 reinforced (II) + 10 archers against 40 archaic spearmen | the armoured army, every time, 19 left | about 45 s |
+| 10 spearmen against 10 / 20 against 20 / 40 against 40 | even | about 15 / 33 / 68 s |
+| 20 spearmen against 20 archers | the spearmen, every time, 10 left | about 35 s |
+| 40 spearmen against 40 archers | the spearmen, every time, 20 left | about 69 s |
+| 20 archers against 20 archers (fire only) | even | about 77 s |
+| 20 spearmen against 10 spearmen + 10 archers | the spearmen, 5 times in 6, 6 left | about 36 s |
+| 30 spearmen against 15 spearmen + 15 archers | the spearmen, 5 times in 6, 7 left | about 58 s |
+| 40 spearmen against 20 spearmen + 20 archers | the mixed army, every time, 11 left | about 62 s |
+| 50 spearmen against 25 spearmen + 25 archers | the mixed army, 4 times in 6 | about 84 s |
+| 40 spearmen against 10 spearmen + 30 archers | the spearmen, every time, 10 left | about 72 s |
+| 30 spearmen + 10 archers against 15 spearmen + 25 archers | the first, 5 times in 6, 14 left | about 74 s |
+| 20 spearmen + 20 archers against the same | even | about 90 s |
+| 20 spearmen + 10 archers against 30 spearmen | the mixed army, 4 times in 6 | about 50 s |
 
-What they show: a row of ten takes about 15 seconds to break, so a battle lasts as long as its rows are deep; **archers behind enough spearmen decide battles** (every archer shoots in every fire phase, while only ten spearmen can fight at once), and archers the enemy reaches die fast; a heavy spearman is worth about two archaic ones, a reinforced one about one and a half. A battle costs next to nothing to work out: 0.1 to 0.25 ms a tick for the whole game with 200 men fighting, and a 24-kingdom game on Europe averages about 4.4 ms a tick.
+What they show: **the whole front row fights** (about 15 of the 20 men of the two fighting rows strike at each striking tick, the rest stepping round to a man with room); a row of ten takes about 15 seconds to break, so a battle lasts as long as its rows are deep. **Spearmen are the core of an army**: pure archers lose badly to as many spearmen, and an army mostly of archers loses to one of spearmen. **Archers support**: a quarter of archers is the strongest mix, and half archers beats pure spearmen only in big armies (40 men and more), where spearmen fight only ten at a time and wait under the arrows. A battle costs next to nothing to work out: 0.1 to 0.25 ms a tick for the whole game with 200 men fighting, and a 24-kingdom game on Europe averages about 4.4 ms a tick.
 
 **War goals, both sides.** Once a crisis is refused, **either side** may set its war goals at will (**✎ War goals** in the war bar; `setClaims`, `claimsProblem`): claim **any** region of the other's, or let claims go. The attacker that began it (`began`) and the **defender** alike: a defender who claims regions of the attacker's can **attack them** with its armies like any attacker, whether or not the attacker holds regions of its own (each region attacked must still border ground it holds). The war needs a claim on one side at least: a side may let all its own claims go only while the other claims something. A region let go that its claimant occupied is free again. The war bar lists **your goals** and **theirs**, each with how many are taken.
 

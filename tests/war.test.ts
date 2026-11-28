@@ -24,7 +24,7 @@ import { CASTLE_ARROW } from '../src/sim/defense';
 import { R_CASTLE } from '../src/sim/research';
 import { MILITIA_HP, ARCHER_HP } from '../src/sim/army';
 import { pHp } from '../src/sim/state';
-import { WIDTH, PH_FIRE, PH_MELEE, PHASE_TICKS, BATTLE_TICK } from '../src/sim/war';
+import { WIDTH, PH_FIRE, PH_MELEE, PHASE_TICKS, BATTLE_TICK, ARROW_HIT, ARCHER_ROWS } from '../src/sim/war';
 import { bldHp } from '../src/sim/defense';
 import { unitAt, SOLDIER_HP, SOLDIER_DMG } from '../src/sim/army';
 import { pArch, pArmor } from '../src/sim/state';
@@ -402,17 +402,19 @@ describe('armies in peace and war', () => {
 });
 
 describe('battle lines', () => {
-  it('two lines that meet fight all along: in a melee phase nearly every man of both fighting rows strikes three times', () => {
+  it('two lines that meet fight all along: in a melee phase the whole of both fighting rows strikes at once, three times', () => {
     world(); const { home, theirs }=lands(1);
     const a=army(1,40,home), d=army(2,40,theirs[0]);
     war(1,2,theirs);
     armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
     until(() => a.mode===A_BATTLE, 4000);
-    until(() => a.phase===PH_MELEE, PHASE_TICKS+5);
-    let swings=0; listen({ swing: () => { swings++; } });
-    run(PHASE_TICKS-1);
+    until(() => a.phase===PH_FIRE, PHASE_TICKS*2);
+    const at=new Map<number, number>(); listen({ swing: () => { at.set(W.tickN,(at.get(W.tickN) ?? 0)+1); } });
+    until(() => a.phase===PH_MELEE, PHASE_TICKS+5); run(PHASE_TICKS-1);   // (a whole melee phase)
     listen({ swing: () => {} });
-    expect(swings).toBeGreaterThanOrEqual(0.85*20*3);   // (twenty men in the two fighting rows, three blows each)
+    const swings=[...at.values()].reduce((x,y) => x+y,0);
+    expect(at.size).toBe(3);                              // three blows, each struck by the whole row on one tick
+    expect(Math.min(...at.values())).toBeGreaterThanOrEqual(17);   // (twenty men in the two fighting rows, nearly all of them at each)
     expect(swings).toBeLessThanOrEqual(20*3);
   });
 
@@ -488,15 +490,34 @@ describe('archers', () => {
     expect(shape(a)).toEqual([[],[5]]);
   });
 
-  it('shoot only in the fire phases, an arrow a tick each, from the rows behind; no arrows without a fight', () => {
+  it('shoot from the two archer rows nearest the front only (twenty at most), and half their arrows miss', () => {
+    expect([ARROW_HIT, ARCHER_ROWS]).toEqual([0.5, 2]);
+    world(); const { home, theirs }=lands(1);
+    const a=army(1,50,home,0,40), d=army(2,30,theirs[0]);
+    for (const h of W.humans) if (h.war===d.id) h.hp=1e6;   // (nobody falls: the volleys are what is counted)
+    war(1,2,theirs);
+    let shots=0; listen({ arrowShot: () => { shots++; } });
+    armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
+    until(() => a.mode===A_BATTLE, 4000);
+    until(() => (W.tickN-a.since)%(PHASE_TICKS*2)===PHASE_TICKS*2-1, PHASE_TICKS*2+1);
+    const hp=W.humans.filter(h => h.war===d.id).reduce((t,h) => t+h.hp,0);
+    shots=0; run(PHASE_TICKS);
+    listen({ arrowShot: () => {} });
+    expect(shots).toBe(20*3);   // (forty archers in four rows: the front two shoot, three volleys)
+    const lost=hp-W.humans.filter(h => h.war===d.id).reduce((t,h) => t+h.hp,0);
+    expect(lost/(shots*ARROW_DMG)).toBeGreaterThan(0.3); expect(lost/(shots*ARROW_DMG)).toBeLessThan(0.75);   // (about half land, by the line's die)
+  });
+
+  it('shoot only in the fire phases, a volley a tick, from the two archer rows nearest the front; no arrows without a fight', () => {
     world(); const { home, theirs }=lands(1);
     const a=army(1,25,home,0,15), d=army(2,15,theirs[0]);
     war(1,2,theirs);
     let shots=0; listen({ arrowShot: () => { shots++; } });
     armyOrder(2,d.id,'defend',theirs[0]); armyOrder(1,a.id,'attack',theirs[0]);
     until(() => a.mode===A_BATTLE, 4000);
-    shots=0; run(PHASE_TICKS-1);
-    expect(shots).toBeGreaterThanOrEqual(15*3-3); expect(shots).toBeLessThanOrEqual(15*3);   // (fifteen archers, three ticks)
+    until(() => (W.tickN-a.since)%(PHASE_TICKS*2)===PHASE_TICKS*2-1, PHASE_TICKS*2+1);   // (the last tick before a fire phase)
+    shots=0; run(PHASE_TICKS);
+    expect(shots).toBeGreaterThanOrEqual(15*3-3); expect(shots).toBeLessThanOrEqual(15*3);   // (fifteen archers, three volleys)
     shots=0; run(PHASE_TICKS); expect(shots).toBe(0);                                           // (the melee phase: no arrows)
     expect(ARROW_DMG).toBe(0.5);
     world(); const l2=lands(1); army(1,15,l2.home,0,10);

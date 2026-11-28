@@ -72,6 +72,9 @@ const GAP = 2.2;                                  // pixels between the two fron
 export const ARMY_SP = 6;                         // pixels a second an army marches (on open ground)
 const SAFE_TICKS = 40*GAME_SPEED*10;              // an army retreating or going home is let go for 40 s
 const HEAL_TICKS = 30*GAME_SPEED*10;              // a wounded soldier at his barracks is whole again in 30 s
+export const ARROW_HIT = 0.5;                     // an arrow lands one time in two (a blow hand to hand: HIT_CHANCE)
+export const ARCHER_ROWS = 2;                     // the archer rows that can shoot: the two nearest the front (20 archers; those behind can't see the enemy)
+export const STRIKE_BEAT = 0;                     // the beat of each battle tick on which the fighting rows strike, all at once, and the archers loose their volley
 export const ARROW_DMG = 0.5;                     // what an archer's arrow does (by his line's die, in a battle)
 export const ARCHER_WAGE = 1.1;                   // an archer is paid a tenth more than a spearman (0.33 a second in the field)
 export const RALLY_TICKS = 30*GAME_SPEED*10;      // an army that retreats rallies for 30 s on the clock, taking no orders
@@ -996,15 +999,16 @@ function fight(x: Army, y: Army){
     if (h.duel>=0) unbind(h);
     h.foe=e ? e.h.id : -1;
     walk(h,f.gx,f.gy,f.gx!==f.px || f.gy!==f.py ? 1.4 : 1);
-    if (e && ph===PH_MELEE && beat===(h.id*7)%BATTLE_TICK && Math.hypot(e.h.x-h.x,e.h.y-h.y)<=REACH){ const k=blow(h,e.h,f.own); if (k) dealt.push([e.h,k,h.o,f.foe]); }
+    if (e && ph===PH_MELEE && beat===STRIKE_BEAT && Math.hypot(e.h.x-h.x,e.h.y-h.y)<=REACH){ const k=blow(h,e.h,f.own); if (k) dealt.push([e.h,k,h.o,f.foe]); }
   }
   // the archers: one arrow a tick each in a fire phase, but for those in the melee
   if (ph===PH_FIRE) for (const [m,foe] of [[x,y],[y,x]] as [Army, Army][]){
     let pool: Human[] | null=null, total=0; const weight: number[]=[];
-    for (let r=m.spearRows;r<m.rows.length;r++){
+    if (beat!==STRIKE_BEAT) continue;   // (a volley: every archer who can shoot looses at once)
+    for (let r=m.spearRows;r<Math.min(m.rows.length,m.spearRows+ARCHER_ROWS);r++){   // (only the archer rows nearest the front see the enemy)
       if (r===0 && contact) continue;   // (the enemy is upon this row: it fights hand to hand)
       for (const id of m.rows[r]){
-        const h=id ? byId.get(id) : undefined; if (!h || !h.arch || h.hp<=0 || beat!==(h.id*7)%BATTLE_TICK) continue;
+        const h=id ? byId.get(id) : undefined; if (!h || !h.arch || h.hp<=0) continue;
         if (!pool){
           pool=[];
           for (let k=0;k<foe.rows.length;k++) for (const eid of foe.rows[k]){ const e=eid ? byId.get(eid) : undefined; if (!e || e.hp<=0) continue; const w=k===0 ? 3 : k===1 ? 2 : 1; pool.push(e); weight.push(w); total+=w; }
@@ -1012,7 +1016,7 @@ function fight(x: Army, y: Army){
         if (!total) break;
         let p=W.prand()*total, i=0; while (i<pool.length-1 && p>=weight[i]){ p-=weight[i]; i++; }
         const e=pool[i];
-        dealt.push([e,ARROW_DMG*diceFactor(m.roll || 3),m.o,foe]);
+        if (W.prand()<ARROW_HIT) dealt.push([e,ARROW_DMG*diceFactor(m.roll || 3),m.o,foe]);   // (an arrow may miss)
         on.arrowShot(h.x,h.y-3,e.x,e.y-2,false,e.id);
       }
     }
@@ -1181,11 +1185,11 @@ function siegeStep(x: Army){
       if (h.duel>=0) unbind(h);
       const [sx,sy]=slotOf(x,r,i); walk(h,sx,sy);
       if (h.arch){
-        if (ph!==PH_FIRE || beat!==(h.id*7)%BATTLE_TICK) continue;
+        if (ph!==PH_FIRE || beat!==STRIKE_BEAT) continue;
         const e=foes.length ? foes[(W.prand()*foes.length)|0] : undefined;
-        if (e){ e.hp-=ARROW_DMG; e.by=x.o; if (e.hp<=0) W.kills[x.o*W.M+e.o]++; on.arrowShot(h.x,h.y-3,e.x,e.y-2,e.hp<=0,e.id); }
+        if (e){ if (W.prand()>=ARROW_HIT){ on.arrowShot(h.x,h.y-3,e.x,e.y-2,false,e.id); continue; } e.hp-=ARROW_DMG; e.by=x.o; if (e.hp<=0) W.kills[x.o*W.M+e.o]++; on.arrowShot(h.x,h.y-3,e.x,e.y-2,e.hp<=0,e.id); }
         else { pHp[q]+=ARROW_DMG; on.arrowShot(h.x,h.y-3,cx+(W.prand()-0.5)*10,cy-4,false,-1); }
-      } else if (r===0 && ph===PH_MELEE && beat===(h.id*7)%BATTLE_TICK && Math.hypot(sx-h.x,sy-h.y)<2.5){
+      } else if (r===0 && ph===PH_MELEE && beat===STRIKE_BEAT && Math.hypot(sx-h.x,sy-h.y)<2.5){
         on.swing(h.id,-1);
         if (W.prand()<HIT_CHANCE){ pHp[q]+=blowOf(h)*(1+((W.prand()*3|0)-1)*STRIKE_SWING); on.hit(h.x+fx*2,h.y+fy*2-2,false,-1,h.id); }
       }
