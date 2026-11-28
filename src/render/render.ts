@@ -24,7 +24,7 @@ import { H_SOLDIER, TASK_HOME_GO, TASK_HOME_BUILD, TASK_FIX_GO, TASK_FIX, TASK_F
 import { units, unitLabel } from '../sim/army';
 import { chatter, drawSpeech } from './speech';
 import { paintSmallFlag, flagImage } from './flags';
-import { allied, atWar, HIT_TICKS, claimsOf, claimProblem, armyOf, A_HOME, PH_FIRE, PHASE_TICKS, BATTLE_TICK, castleArchers } from '../sim/war';
+import { humanById, allied, atWar, HIT_TICKS, claimsOf, claimProblem, armyOf, A_HOME, PH_FIRE, PHASE_TICKS, BATTLE_TICK, castleArchers } from '../sim/war';
 import { RG, region } from '../sim/regions';
 const RANKS = ['', 'Leader', 'General', 'Captain', 'Commander', 'Grand Marshal'];
 const rankFor = (size: number) => size<=5 ? 0 : size<=15 ? 1 : size<=30 ? 2 : size<=50 ? 3 : size<=80 ? 4 : 5;
@@ -145,7 +145,7 @@ function drawShips(now: number, vx0: number, vy0: number, vx1: number, vy1: numb
   }
 }
 function drawPeople(now: number, vx0: number, vy0: number, vx1: number, vy1: number){
-  const byId = new Map<number, Human>(); for (const p of W.humans) byId.set(p.id,p);
+  const byId = { get: humanById };   // (the war's index of people: no Map of everyone rebuilt every frame)
   const lead = leaders();
   const nextX = new Map<number, number>(), nextY = new Map<number, number>();
   const step = reduceMotion ? 0 : ((now/170)|0)&1;

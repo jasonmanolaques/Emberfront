@@ -792,7 +792,7 @@ function step(h: Human){
   if ((h.task===TASK_REST || h.task===TASK_REST_GO) && h.kind===H_SOLDIER && (warringNow(h.o) || h.post>=0 || h.base>=0 || !h.housed || !restsIn(h.rest,h.o))){ backToRoam(h); return; }   // militia: out, to war or to a post
   if (h.task===TASK_REST){
     if (!restsIn(h.rest,h.o) || !h.housed){ think(h); return; }   // the house is gone or lost, or he has lost his home: out he comes
-    if (--h.wait<=0){ h.wait=lookAgain(); if (needsHome(n) && roomForHome(n)) think(h); }   // houses to build, and room for one? (else he rests on)
+    if ((h.wait-=h.kind===H_VILLAGER ? BOOK : 1)<=0){ h.wait=lookAgain(); if (needsHome(n) && roomForHome(n)) think(h); }   // houses to build, and room for one? (else he rests on)
     return;
   }
   if (h.task===TASK_REST_GO && !restsIn(h.rest,h.o)){ think(h); return; }
@@ -871,6 +871,7 @@ export function updatePopulation(){
   // people die when their kingdom falls, the ground under them is taken, or they fall in battle
   for (let i=H.length-1;i>=0;i--){
     const h=H[i];
+    if (h.task===TASK_REST && h.kind===H_VILLAGER && h.hp>0 && (W.tickN+h.id)%BOOK!==0 && N[h.o].alive) continue;   // (one resting at home is looked at every BOOK ticks)
     const doc=isDoctorTask(h.task);   // (a doctor out for a wounded man goes where the fighting is)
     if (!doc && h.hp>0 && N[h.o].alive && shelter(h)) continue;   // (a man on ground that is another's, not at war: set back on his own, not lost)
     if (!N[h.o].alive || (!doc && !mayStand(h,owner[tileOf(h.x,h.y)])) || h.hp<=0){
@@ -909,7 +910,7 @@ export function updatePopulation(){
     if (turn) staffGuilds(n, mine);
   }
   updateWar();   // the armies: crises, orders, marches, battles, flags (after the soldiers are stationed in their barracks' armies)
-  for (const h of H) if (!inPhalanx(h)) step(h);   // (the soldiers of an army stand in its phalanx: sim/war.ts moves them)
+  for (const h of H){ if (h.task===TASK_REST && h.kind===H_VILLAGER && (W.tickN+h.id)%BOOK!==0) continue; if (!inPhalanx(h)) step(h); }   // (resting at home: looked at every BOOK ticks)   // (the soldiers of an army stand in its phalanx: sim/war.ts moves them)
   // headcount after everyone has moved, so it matches what is on the map this tick
   for (const n of N){ n.villagers=0; n.soldiers=0; n.militia=0; n.called=0; n.wageS=0; n.wageM=0; n.training=0; n.beggars=0; n.homeless=0; n.unhoused=0; n.taxpayers=0; n.might=0; n.jobs[0]=n.jobs[1]=n.jobs[2]=n.jobs[3]=n.jobs[4]=0; n.studying=0; }
   for (const h of H){

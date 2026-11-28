@@ -24,7 +24,7 @@ import { TW, TH, NT, NP, PW, TMULT, GAME_SPEED, WAGE, WAGE_IDLE, WAGE_ATTACK, B_
 import { W, owner, occ, terr, isLand, isle, pType, pOwner, pCenter, pHp, pMain, pBurn, type Human, type Nation, type Army } from './state';
 import { wear, bldHp, castleTier, CASTLE_MEND, CASTLE_ARROW } from './defense';
 import { on } from './events';
-import { H_SOLDIER, indoors, switching, tileOf, pace, release, doorOf, makeHuman, TASK_ROAM } from './population';
+import { H_SOLDIER, indoors, switching, tileOf, pace, release, doorOf, makeHuman, TASK_ROAM, BOOK } from './population';
 import { units, unitAt, groupKeys, groupLead, maxHp, SOLDIER_DMG, SOLDIER_HP, MILITIA_HIT, ARCHER_HIT, type Unit } from './army';
 import { RG, region, holdsRegion, cedeRegion, occupyRegion, freeRegion, flagXY, CONTROL } from './regions';
 import { ignite, fortTier, fortSpot, builtTier, capitalIn, PRODUCE_TICKS } from './buildings';
@@ -85,7 +85,19 @@ export const atWar = (a: number, b: number) => W.atWar[a*W.M+b]===1;
 export function alliesOf(a: number){ let k=0; for (let o=1;o<W.M;o++) if (allied(a,o)) k++; return k; }
 
 /* ---------- per-tick lookups ---------- */
-const byId = new Map<number, Human>();
+/** People by id: an array indexed by id, which a tick fills from W.humans and empties again cheaply (only the ids it set), far cheaper than a
+    Map of thirty thousand rebuilt every tick. */
+class IdMap {
+  private a: (Human | undefined)[]=[]; private ids: number[]=[];
+  get(id: number){ return id>=0 ? this.a[id] : undefined; }
+  has(id: number){ return id>=0 && this.a[id]!==undefined; }
+  set(id: number, h: Human){ if (this.a[id]===undefined) this.ids.push(id); this.a[id]=h; return this; }
+  delete(id: number){ this.a[id]=undefined; }
+  clear(){ const a=this.a; for (const id of this.ids) a[id]=undefined; this.ids.length=0; }
+}
+const byId = new IdMap();
+/** The person with this id, as of this tick's start of the war (render and interface look people up with it). */
+export const humanById = (id: number) => byId.get(id);
 const armyById = new Map<number, Army>();
 let warring = new Uint8Array(1);                // per nation: at war with anyone
 const led = new Set<number>();                  // soldiers moved by their army this tick
@@ -657,6 +669,23 @@ function botAccepts(D: Nation, a: number){
   if (claimsCapital(a,D.id)) return false;
   return A.strength>D.strength*(2+regs*0.4) && W.srand()<0.8;
 }
+/** A tick of an army at home between its countings: its men (those still fit and at home) go on to their places and heal; who is in it is
+    looked at again at the next counting. */
+function homeStep(x: Army){
+  const heal=1/HEAL_TICKS;
+  for (let r=0;r<x.rows.length;r++){
+    const row=x.rows[r];
+    for (let i=0;i<row.length;i++){
+      const h=row[i] ? byId.get(row[i]) : undefined; if (!h || h.o!==x.o || h.war>=0 || !fit(h)) continue;
+      led.add(h.id);
+      if (h.cool>0) h.cool--;
+      if (h.hp<maxHp(h)) h.hp=Math.min(maxHp(h),h.hp+maxHp(h)*heal);
+      if (h.duel>=0) unbind(h);
+      if (h.foe>=0) h.foe=-1;
+      const [sx,sy]=slotOf(x,r,i); walk(h,sx,sy);
+    }
+  }
+}
 /** One tick of army x: the men of its phalanx to their places, and the phalanx on its way. */
 function stepArmy(x: Army){
   if (x.host>=0){   // (its men fight in another army's ranks: it goes where that one goes, and its reinforcements join them there)
@@ -664,6 +693,7 @@ function stepArmy(x: Army){
     if (x.coming.length) bringUp(x);
     x.men=0; return;
   }
+  if (x.mode===A_HOME && !x.garrison && !x.coming.length && x.rows.length && (W.tickN+x.id)%BOOK!==0){ homeStep(x); return; }   // (an army at home is counted afresh every BOOK ticks: in between its men keep their places)
   const all=membersOf(x);
   if (x.coming.length) bringUp(x);
   const coming=new Set(x.coming);

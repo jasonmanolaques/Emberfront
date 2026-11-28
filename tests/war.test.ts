@@ -9,7 +9,7 @@ import { setOwner } from '../src/sim/territory';
 import { census } from '../src/sim/census';
 import { build, placeProblem } from '../src/sim/buildings';
 import { labelWorld, allocIsles } from '../src/sim/naval';
-import { H_SOLDIER, makeHuman, doorOf, HUMAN_EVERY } from '../src/sim/population';
+import { H_SOLDIER, makeHuman, doorOf, HUMAN_EVERY, BOOK } from '../src/sim/population';
 import { maxHp } from '../src/sim/army';
 import { RG, region, setRegions, cedeRegion, updateRegions, occupyRegion, CONTROL } from '../src/sim/regions';
 import { claim, claimProblem, answer, inCrisis, armyProblem, armyOrder, armyOf, makePeace, offerPeace, acceptPeace, giveGoals, setClaims, claimsProblem, claimsOf, wageOf, diceFactor, CRISIS_TICKS, CAPTURE_TICKS, ROLL_TICKS, MAX_CLAIMS, P_GOALS, A_HOME, A_MARCH, A_HOLD, A_BATTLE, O_DEFEND, partner } from '../src/sim/war';
@@ -480,11 +480,11 @@ describe('archers', () => {
     expect(along(d,0)-along(d,1)).toBeCloseTo(5.2,0); expect(along(d,1)-along(d,2)).toBeCloseTo(2.6,0);
     // out of a battle the rows close up: a fallen man's place is taken from the last row of his kind
     const dead=a.rows[0].slice(0,3); for (const id of dead) W.humans.find(h => h.id===id)!.hp=0;
-    run(3);
+    run(BOOK+2);   // (an army at home is counted afresh every BOOK ticks)
     expect(shape(a)).toEqual([[10,7],[5]]);
     // with the spearmen gone the archers are the front
     for (const id of a.rows.slice(0,2).flat()) W.humans.find(h => h.id===id)!.hp=0;
-    run(3);
+    run(BOOK+2);
     expect(shape(a)).toEqual([[],[5]]);
   });
 
