@@ -1,6 +1,6 @@
 // The real-world maps, and kingdoms as real countries with their flags and capitals.
 import { describe, it, expect } from 'vitest';
-import { TW, TH, NT, T_SNOW, T_MOUNT, MAX_KINGDOMS, EUROPE_KINGDOMS, kingdomLimit } from '../src/core/constants';
+import { TW, TH, NT, T_SNOW, T_MOUNT, MAX_KINGDOMS, EUROPE_KINGDOMS, kingdomLimit, standardKingdoms } from '../src/core/constants';
 import { W, isLand, terr } from '../src/sim/state';
 import { newWorld, startMatch } from '../src/sim/sim';
 import { capitalsOn, REAL_MAPS } from '../src/sim/realmap';
@@ -105,18 +105,18 @@ describe('the real-world maps', () => {
     for (let i=1;i<N.length;i++) for (let j=i+1;j<N.length;j++) expect(colourGap(N[i].hex,N[j].hex)).toBeGreaterThanOrEqual(0.05);
   });
 
-  it('hold a full game on Europe: 24 kingdoms (you and 23 of the 61 other countries with a capital on it), each at its real capital', () => {
+  it('hold a full game on Europe: every country with a capital on it (60 and more, of the 64 a game holds), each at its real capital', () => {
     newWorld(2,'europe');
     expect([TW,TH]).toEqual([1824,1488]);
     const caps=capitalsOn('europe'), codes=caps.map(c => c.country.code);
     expect(codes.length).toBeGreaterThanOrEqual(60);
     for (const k of ['IS','PT','GB','FR','DE','IT','PL','RU','TR','EG','AZ','AD','VA','LI']) expect(codes).toContain(k);
     expect(startMatch(caps.find(c => c.country.code==='FR')!.tile,codes.filter(c => c!=='FR'),'FR')).toBe(true);
-    expect(W.nations.length-1).toBe(EUROPE_KINGDOMS);   // the limit, though every country was asked for
-    expect(W.nations.slice(1).every(n => n.alive)).toBe(true);
+    expect(W.nations.length-1).toBe(Math.min(EUROPE_KINGDOMS,codes.length));   // every one asked for, up to the limit
+    expect(W.nations.slice(1).filter(n => n.alive).length).toBeGreaterThanOrEqual(W.nations.length-2);   // (a capital crowded in among others may find no room)
     const at=new Map(caps.map(c => [c.country.code, c.tile]));
-    for (const n of W.nations.slice(1)) expect(near(n.capTile,at.get(n.code)!)).toBeLessThan(30);
-    expect(W.landCount/EUROPE_KINGDOMS).toBeGreaterThan(25000);   // room to grow: far more land each than a generated game of 10
+    for (const n of W.nations.slice(1)) if (n.alive) expect(near(n.capTile,at.get(n.code)!)).toBeLessThan(30);
+    expect(W.landCount/EUROPE_KINGDOMS).toBeGreaterThan(15000);   // room to grow: more land each than a generated game of 10
   });
 
   it('are bigger than a generated map, so close capitals have room', () => {
@@ -159,19 +159,20 @@ describe('countries', () => {
     expect(new Set(COUNTRIES.map(k => k.code)).size).toBe(COUNTRIES.length);
   });
 
-  it('Europe holds 24 kingdoms: you and 23 rivals, however many are asked for, out of all the countries that could play', () => {
-    expect([kingdomLimit('europe'), EUROPE_KINGDOMS, kingdomLimit('balkans'), kingdomLimit('gen')]).toEqual([24, 24, MAX_KINGDOMS, MAX_KINGDOMS]);
+  it('Europe holds 64 kingdoms: you and 63 rivals, however many are asked for, out of all the countries that could play', () => {
+    expect([kingdomLimit('europe'), EUROPE_KINGDOMS, kingdomLimit('balkans'), kingdomLimit('gen')]).toEqual([64, 64, MAX_KINGDOMS, MAX_KINGDOMS]);
+    expect([standardKingdoms('europe'), standardKingdoms('europe-s'), standardKingdoms('gen')]).toEqual([64, 64, 24]);   // (the standard match: a full one on Europe)
     newWorld(5,'europe');
     const all=capitalsOn('europe');
     expect(all.length).toBeGreaterThan(61);   // (more than 29 could be drawn from)
     const me=all.find(c => c.country.code==='GR')!;
-    const rivals=all.map(c => c.country.code).filter(c => c!=='GR');
+    const rivals=COUNTRIES.map(c => c.code).filter(c => c!=='GR');   // (every country: those with no capital on the map are founded at random places)
     expect(startMatch(me.tile,rivals,'GR')).toBe(true);
-    expect(W.nations.length-1).toBe(24);
+    expect(W.nations.length-1).toBe(64);
     expect(W.nations[1].code).toBe('GR');
   });
 
-  it('have a small Europe for testing: the same Europe at two thirds of the size each way, with the standard 24 kingdoms', () => {
+  it('have a small Europe: the same Europe at two thirds of the size each way, with the standard 64 kingdoms', () => {
     newWorld(5,'europe-s');
     expect([TW,TH]).toEqual([1216,992]);
     const big=capitalsOn('europe').length, small=capitalsOn('europe-s').length;
@@ -181,11 +182,12 @@ describe('countries', () => {
     expect(isLand[at(52.5,-1.5)]).toBe(1);                 // Britain
     expect(isLand[at(45,-1.5)]).toBe(0);                   // the Bay of Biscay
     expect(W.landCount).toBeGreaterThan(NT*0.2);
-    expect(kingdomLimit('europe-s')).toBe(24);
+    expect(kingdomLimit('europe-s')).toBe(64);
     const me=capitalsOn('europe-s').find(c => c.country.code==='FR')!;
     const rivals=capitalsOn('europe-s').map(c => c.country.code).filter(c => c!=='FR');
     expect(startMatch(me.tile,rivals,'FR')).toBe(true);
-    expect(W.nations.length-1).toBe(24);
+    expect(W.nations.length-1).toBe(Math.min(64,rivals.length+1));
+    expect(W.nations.slice(1).filter(n => n.alive).length).toBeGreaterThanOrEqual(W.nations.length-3);   // (founded, but for one or two crowded out)
   });
 
   it('lets a country with no capital on the map play there all the same, founded at a random place', () => {

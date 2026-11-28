@@ -9,7 +9,8 @@ import { humanRate, houseBonus, BED_BONUS, FARM_BONUS, H_VILLAGER, H_SOLDIER, TA
 import { listen } from '../src/sim/events';
 import { B_BARRACKS, B_CARPENTER, B_NAVAL } from '../src/core/constants';
 import { costFor, structureOf } from '../src/sim/buildings';
-import { CARPENT_TICKS } from '../src/sim/population';
+import { CARPENT_TICKS, BOOK } from '../src/sim/population';
+import { census } from '../src/sim/census';
 
 const me = () => W.nations[1];
 const mine = () => W.humans.filter(h => h.o === 1);
@@ -163,11 +164,12 @@ describe('homeless people and beggars', () => {
     me().humanProg=-1e9;
     until(() => !building().length);
     pBuild.fill(0);   // no room left anywhere to build another house
-    const hs=houses(); for (const q of hs.slice(-2)){ pType[q]=B_EMPTY; pOwner[q]=0; }
-    me().houses-=2; me().beds-=2;
+    // houses pulled down (the last built first) until there are beds for all but two
+    census();
+    for (let k=0;k<40 && me().beds>mine().length-2;k++){ const hs=houses(), q=hs[hs.length-1]; pType[q]=B_EMPTY; pOwner[q]=0; census(); }
     for (const h of mine()) h.homeless=0;   // (the newest may have waited a while for a house already)
     for (const h of mine()) if (h.home>=0){ cancelSite(h.home); h.home=-1; h.task=TASK_ROAM; }   // (nobody is still on his way to a site)
-    tick(); tick();
+    run(BOOK+1);   // (the beds handed out again: the kingdom's bookkeeping comes round within BOOK ticks)
   }
 
   it('leaves the newest arrivals homeless, and they pay no tax', () => {
@@ -186,8 +188,8 @@ describe('homeless people and beggars', () => {
   it('turns a villager homeless for a minute into a beggar who does no work', () => {
     crowded();
     const h=mine().filter(h => !h.housed && h.kind===H_VILLAGER)[0];
-    run(BEG_TICKS-5); expect(h.beggar).toBe(false);
-    run(10);          expect(h.beggar).toBe(true);
+    run(BEG_TICKS-2*BOOK-2); expect(h.beggar).toBe(false);
+    run(3*BOOK+4);           expect(h.beggar).toBe(true);   // (counted a bookkeeping, BOOK ticks, at a time)
     expect(me().beggars).toBeGreaterThan(0);
     for (let i=0;i<300;i++){ tick(); expect(h.task).toBe(TASK_ROAM); expect(h.home).toBe(-1); }
     expect(h.sp).toBeLessThanOrEqual(1);   // crawls
@@ -228,7 +230,7 @@ describe('homeless people and beggars', () => {
     const b=mine().find(h => h.beggar)!;
     // a housed person dies: the longest-homeless (the beggar) moves in and goes back to work
     kill(mine().filter(h => h.housed)[0]);
-    run(2);
+    run(BOOK+1);
     expect(b.housed).toBe(true);
     expect(b.beggar).toBe(false);
     expect(b.sp).toBeGreaterThan(1);

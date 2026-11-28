@@ -1,6 +1,6 @@
 /* ---------- territory & combat ---------- */
 import { GAME_SPEED, TW, TH, NT, PW, PH, TMULT, B_TOWER, B_CASTLE, B_CPART, B_BARRACKS, GOLD_PER_TILE, RUSH_COST, isStructure } from '../core/constants';
-import { W, owner, occ, terr, isLand, isle, frontMark, pType, pOwner, pBurn, type Attack } from './state';
+import { W, owner, occ, terr, isLand, isle, frontMark, pType, pOwner, pBurn, landChanged, type Attack } from './state';
 import { on } from './events';
 import { ignite, captureBuilding } from './buildings';
 import { regionTile, regionHooks } from './regions';
@@ -46,7 +46,7 @@ export function setOwner(t: number, o: number, keep=false){
   const prev=owner[t]; if (prev===o) return;
   if (occ[t]){ W.occCount[prev*W.M+occ[t]]--; occIsleAdd(t,prev,occ[t],-1); occ[t]=0; }   // changing hands ends any occupation
   recountEdges(t,prev,o);
-  owner[t]=o;
+  owner[t]=o; landChanged(prev); landChanged(o);
   regionTile(t,prev,o);
   if (W.isleOwn.length && isLand[t]){ const i=isle[t]*W.M; W.isleOwn[i+prev]--; W.isleOwn[i+o]++; }   // (the tiles each kingdom has on each landmass)
   const x=t%TW, y=(t/TW)|0;

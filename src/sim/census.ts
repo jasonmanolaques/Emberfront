@@ -47,6 +47,7 @@ export function census(){
   tallies=W.nations.map(() => newTally());
   tally(0,NP);
   commit();
+  tallies=[];   // (a pass spread over the ticks that was under way starts again at its next beginning, rather than adding its slices to these counts)
 }
 /** The same count spread over ten ticks (`k`, 0 to 9, is the tick's place in the ten): a tenth of the plots each, so no one tick pays for
     all of it. The kingdoms' counts are those of the last whole pass. */

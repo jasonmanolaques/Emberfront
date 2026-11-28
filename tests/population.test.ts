@@ -7,7 +7,7 @@ import { W, owner, isLand, pType } from '../src/sim/state';
 import { build, plotProblem } from '../src/sim/buildings';
 import { newWorld, startMatch, queueCommand, tick, grossIncome } from '../src/sim/sim';
 import { setOwner } from '../src/sim/territory';
-import { HUMAN_EVERY as E, H_SOLDIER, H_VILLAGER, T_SOLDIER, T_MILITIA, MILITIA_HP, TASK_ROAM, TASK_TO_TRAIN, TASK_INSIDE, doorOf, frontOf, switching as isSwitching, indoors } from '../src/sim/population';
+import { BOOK, HUMAN_EVERY as E, H_SOLDIER, H_VILLAGER, T_SOLDIER, T_MILITIA, MILITIA_HP, TASK_ROAM, TASK_TO_TRAIN, TASK_INSIDE, doorOf, frontOf, switching as isSwitching, indoors } from '../src/sim/population';
 
 const me = () => W.nations[1];
 const mine = () => W.humans.filter(h => h.o === 1);
@@ -78,9 +78,10 @@ describe('population', () => {
     const entered = new Map<number, number>(), stints: number[] = [];
     const lastTask = new Map(mine().map(h => [h.id, h.task]));
     setShare(0.5);
+    let checked=false;   // (the kingdom's bookkeeping comes round within BOOK ticks)
     for (let i=0;i<600 && stints.length<5;i++){
       tick();
-      if (i===0){
+      if (!checked && (switching().length>0 || i>=BOOK)){ checked=true;
         // those building their house finish it, so they are not picked
         const busy = (h: { home: number }) => h.home>=0;
         const walking = switching(), others = mine().filter(h => busy(h) && !isSwitching(h)).length;
@@ -142,17 +143,17 @@ describe('population', () => {
   });
 
   it('turns soldiers back into villagers when the share is lowered', () => {
-    run(10*E); setShare(0.5); tick(); settle();
+    run(10*E); setShare(0.5); run(BOOK); settle();
     expect(count(H_SOLDIER)).toBeGreaterThan(0);
-    setShare(0); tick(); settle();
+    setShare(0); run(BOOK); settle();
     expect(count(H_SOLDIER)).toBe(0);
   });
 
   it('turns back walkers who are no longer needed when the share drops mid-walk', () => {
-    run(10*E); setShare(1); tick();
+    run(10*E); setShare(1); run(BOOK);
     const walkers = mine().filter(h => h.task === TASK_TO_TRAIN).map(h => h.id);
     expect(walkers.length).toBeGreaterThan(0);
-    setShare(0); tick();
+    setShare(0); run(BOOK);
     expect(walkers.every(id => W.humans.find(h => h.id === id)!.kind === H_VILLAGER)).toBe(true);
     expect(mine().filter(h => h.task === TASK_TO_TRAIN)).toHaveLength(0);   // only those already inside finish
   });

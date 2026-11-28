@@ -62,11 +62,13 @@ export const STR_VILLAGER = 100, STR_MILITIA = 100, STR_SOLDIER = [0, 200, 300, 
 export const PLAYER = 1;                  // nation id of the local player
 export const UI_SCALE = 0.8;             // the interface is drawn at this share of its first size (CSS zoom on every panel: see --ui in style.css)
 export const MAX_KINGDOMS = 64;           // kingdoms in one game at most, the player's included (a full game)
-export const EUROPE_KINGDOMS = 24;        // ...on the Europe map: you and 23 rivals picked at random from the other countries, a size the late game runs smoothly at
+export const EUROPE_KINGDOMS = 64;        // ...on the Europe map: you and 63 rivals (every country with a capital on it, then others at random places), a size the late game runs smoothly at
 /** The most kingdoms a game on that map holds. */
-export const EUROPE_S_KINGDOMS = 24;      // ...and on the small Europe (two thirds the size in each direction)
-/** The standard match: you and 23 rivals, on every map (Europe and the generated ones alike). */
+export const EUROPE_S_KINGDOMS = 64;      // ...and on the small Europe (two thirds the size in each direction)
+/** The standard match on a generated map: you and 23 rivals. */
 export const STANDARD_KINGDOMS = 24;
+/** The standard match on a map: on Europe a full one, you and 63 rivals (measured: the late game keeps up with it); elsewhere STANDARD_KINGDOMS. */
+export const standardKingdoms = (map: string | null | undefined) => map==='europe' || map==='europe-s' ? 64 : STANDARD_KINGDOMS;
 export const kingdomLimit = (map: string | null | undefined) => map==='europe' ? EUROPE_KINGDOMS : map==='europe-s' ? EUROPE_S_KINGDOMS : MAX_KINGDOMS;
 /** Is this one of the Europe maps (their rivals are drawn at random, a limited number of them)? */
 export const isEurope = (map: string | null | undefined) => map==='europe' || map==='europe-s';

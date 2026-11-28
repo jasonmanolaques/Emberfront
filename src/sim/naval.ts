@@ -15,7 +15,7 @@
    This file holds what needs no war: the land and the sea told apart, docks, routes over the water,
    ships, colonies, the landing zone a coast gives. */
 import { TW, TH, NT, PW, B_NAVAL, B_CASTLE, B_CPART, GAME_SPEED } from '../core/constants';
-import { W, owner, occ, isLand, isle, sea, ferry, pType, pOwner, pBurn, pSpan, type Nation, type Ship } from './state';
+import { W, owner, occ, isLand, isle, sea, ferry, pType, pOwner, pBurn, pSpan, landChanged, type Nation, type Ship } from './state';
 import { setOwner, launchOn } from './territory';
 import { dims } from './buildings';
 import { on } from './events';
@@ -304,7 +304,7 @@ function landColony(s: Ship){
   s.gold=0; s.colony=-1;
 }
 /** The sea lane between the naval base and the new colony: its water tiles open to the kingdom's villagers, in boats. */
-const markLane = (o: number, t: number) => { ferry[t]=o; const x=t%TW, y=(t/TW)|0, b=laneBox.get(o); if (!b) laneBox.set(o,[x,y,x,y]); else { b[0]=Math.min(b[0],x); b[1]=Math.min(b[1],y); b[2]=Math.max(b[2],x); b[3]=Math.max(b[3],y); } };
+const markLane = (o: number, t: number) => { if (ferry[t]!==o){ landChanged(o); landChanged(ferry[t]); } ferry[t]=o; const x=t%TW, y=(t/TW)|0, b=laneBox.get(o); if (!b) laneBox.set(o,[x,y,x,y]); else { b[0]=Math.min(b[0],x); b[1]=Math.min(b[1],y); b[2]=Math.max(b[2],x); b[3]=Math.max(b[3],y); } };
 function openLane(s: Ship){
   const q=s.base, o=s.o;
   const mark=(t: number) => markLane(o,t);

@@ -11,7 +11,7 @@
    high its flag stands, who occupies it, and how much of it each kingdom owns) lives in W. */
 import { TW, TH, NT, PW, PH, NP, B_EMPTY, B_WORKS, T_FOREST, T_HILLS, T_MOUNT, T_SNOW } from '../core/constants';
 import { mulberry32 } from '../core/rng';
-import { W, owner, occ, isLand, isle, pType, pMain, pBuild, pCenter, terr, elev } from './state';
+import { W, owner, occ, isLand, isle, pType, pMain, pBuild, pCenter, terr, elev, landChanged } from './state';
 import { VIEWS } from './mapview';
 import { DATA, decodeRaw, capitalsOn } from './realmap';
 import { REGION_DATA } from './regiondata';
@@ -239,13 +239,14 @@ export function cedeRegion(r: number, o: number){
 export function occupyRegion(r: number, a: number){
   const d=W.rOwner[r]; W.rOcc[r]=a; W.rFlag[r]=0;
   for (let i=RG.start[r];i<RG.start[r+1];i++){ const t=RG.tiles[i]; if (owner[t]===d && occ[t]!==a){ if (occ[t]) W.occCount[d*W.M+occ[t]]--; occ[t]=a; W.occCount[d*W.M+a]++; on.occupied(t); } }
+  landChanged(d);
   on.regionChanged(r,d,d);
 }
 /** Region r is free of its occupier again. */
 export function freeRegion(r: number){
   const a=W.rOcc[r]; if (!a) return;
   W.rOcc[r]=0;
-  for (let i=RG.start[r];i<RG.start[r+1];i++){ const t=RG.tiles[i]; if (occ[t]){ W.occCount[owner[t]*W.M+occ[t]]--; occ[t]=0; on.occupied(t); } }
+  for (let i=RG.start[r];i<RG.start[r+1];i++){ const t=RG.tiles[i]; if (occ[t]){ landChanged(owner[t]); W.occCount[owner[t]*W.M+occ[t]]--; occ[t]=0; on.occupied(t); } }
   on.regionChanged(r,W.rOwner[r],W.rOwner[r]);
 }
 /** Set by territory.ts (it owns setOwner): kept as a hook so this module needs nothing of it. */

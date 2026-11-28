@@ -194,6 +194,10 @@ export let ferry = new Uint8Array(NT);   // sea lanes a kingdom's villagers cros
 export let pType = new Uint8Array(NP), pOwner = new Uint8Array(NP), pVar = new Uint8Array(NP), pBuild = new Uint8Array(NP);
 export let pMain = new Int32Array(NP), pCenter = new Int32Array(NP), pBurn = new Float32Array(NP), pTimer = new Float32Array(NP);
 export let pAband = new Uint8Array(NP);   // houses standing empty, run down
+/** A count per kingdom (by id) bumped whenever its land changes: tiles won or lost, occupied or freed, sea lanes marked. What is worked out from a
+    kingdom's land (its walking field) need only be worked out again when this has moved. */
+export const landVer = new Int32Array(256);
+export const landChanged = (o: number) => { if (o>0 && o<256) landVer[o]++; };
 export let pIn = new Uint8Array(NP);      // houses: villagers resting inside, or on their way in (smoke rises from the chimney)
 export let occ = new Uint8Array(NT);      // a kingdom's land held by an enemy at war: the occupier (0 = free); the owner stays
 export let pHp = new Float32Array(NP);     // damage a building has taken (multi-plot buildings keep theirs on the main plot)

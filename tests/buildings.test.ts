@@ -231,7 +231,7 @@ describe('gold and strength', () => {
     expect(p.land).toBeCloseTo(LAND_TAX*n.tiles, 9);
     expect(p.boost).toBeCloseTo((p.tax+p.land)*MINTER_BONUS*n.minters, 9);
     expect(p.soldiers).toBeCloseTo((n.soldiers-n.militia)*WAGE_IDLE, 9);
-    expect(n.soldiers-n.militia).toBe(5);
+    expect(n.soldiers).toBe(9);   // (all nine under arms: with no barracks the trained ones serve as militia, or are on their way back to work)
     expect(p.militia).toBe(0);   // (militia are paid only while called up)
     expect(n.income).toBeCloseTo(p.tax+p.land+p.boost-p.soldiers-p.militia, 9);
   });
