@@ -113,9 +113,9 @@ describe('the real-world maps', () => {
     for (const k of ['IS','PT','GB','FR','DE','IT','PL','RU','TR','EG','AZ','AD','VA','LI']) expect(codes).toContain(k);
     expect(startMatch(caps.find(c => c.country.code==='FR')!.tile,codes.filter(c => c!=='FR'),'FR')).toBe(true);
     expect(W.nations.length-1).toBe(Math.min(EUROPE_KINGDOMS,codes.length));   // every one asked for, up to the limit
-    expect(W.nations.slice(1).filter(n => n.alive).length).toBeGreaterThanOrEqual(W.nations.length-2);   // (a capital crowded in among others may find no room)
+    expect(W.nations.slice(1).every(n => n.alive)).toBe(true);
     const at=new Map(caps.map(c => [c.country.code, c.tile]));
-    for (const n of W.nations.slice(1)) if (n.alive) expect(near(n.capTile,at.get(n.code)!)).toBeLessThan(30);
+    for (const n of W.nations.slice(1)) expect(near(n.capTile,at.get(n.code)!)).toBeLessThan(30);
     expect(W.landCount/EUROPE_KINGDOMS).toBeGreaterThan(15000);   // room to grow: more land each than a generated game of 10
   });
 
@@ -187,7 +187,7 @@ describe('countries', () => {
     const rivals=capitalsOn('europe-s').map(c => c.country.code).filter(c => c!=='FR');
     expect(startMatch(me.tile,rivals,'FR')).toBe(true);
     expect(W.nations.length-1).toBe(Math.min(64,rivals.length+1));
-    expect(W.nations.slice(1).filter(n => n.alive).length).toBeGreaterThanOrEqual(W.nations.length-3);   // (founded, but for one or two crowded out)
+    expect(W.nations.slice(1).every(n => n.alive)).toBe(true);   // (every one founded: one whose capital has no room, at a random place with room)
   });
 
   it('lets a country with no capital on the map play there all the same, founded at a random place', () => {

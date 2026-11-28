@@ -206,11 +206,22 @@ function startReal(b: [number, number], rivals: number | string[], me?: string, 
   resetWar(W.M); resetStories(W.M); allocIsles(); resetRegions(W.M);
   spawnNation(meN,b[0],b[1]);
   // each at its capital, or as near it as there is room (close capitals push each other apart)
-  chosen.forEach((c,i) => { const n=N[i+2], blk=findBlock(c.tile%TW,(c.tile/TW)|0,6); if (blk) spawnNation(n,blk[0],blk[1]); else n.alive=false; });
+  chosen.forEach((c,i) => { const n=N[i+2], blk=findBlock(c.tile%TW,(c.tile/TW)|0,6) ?? roomElsewhere(); if (blk) spawnNation(n,blk[0],blk[1]); else n.alive=false; });
   scanContacts(true); census();
   return true;
 }
 
+/** A block of land with room for a castle somewhere on the map, away from the kingdoms founded so far (for one whose capital has no room:
+    a small island crowded by its own mountains). Null if none is found. */
+function roomElsewhere(): [number, number] | null {
+  const minD=Math.max(18,Math.round(TW*0.012)), at=W.nations.slice(1).filter(n => n.capTile>=0).map(n => [n.capTile%TW,(n.capTile/TW)|0]);
+  for (let tries=0;tries<4000;tries++){
+    const lt=W.landTiles[(W.srand()*W.landTiles.length)|0], x=lt%TW, y=(lt/TW)|0;
+    if (at.some(([px,py]) => Math.hypot(px-x,py-y)<minD)) continue;
+    const blk=findBlock(x,y,6); if (blk) return blk;
+  }
+  return null;
+}
 /** True if nation a shares a land border with nation o (0 = unclaimed land). Read-only. */
 export function bordersOn(a: number, o: number){
   for (let t=0;t<NT;t++) if (owner[t]===o && isLand[t] && touches(t,a)) return true;
