@@ -1,6 +1,6 @@
 import { GAME_SPEED } from './core/constants';
 /* ---------- client state: this browser's view of the match, not part of the simulation ---------- */
-export type Phase = 'intro' | 'spawn' | 'play';
+export type Phase = 'intro' | 'spawn' | 'pick' | 'play';   // (pick: the 15 seconds of choosing a starting region)
 
 export const client = {
   state: 'intro' as Phase,

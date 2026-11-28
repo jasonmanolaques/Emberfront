@@ -39,7 +39,7 @@ export function resize(){
   view.width=Math.max(1,Math.round(r.width*cam.dpr)); view.height=Math.max(1,Math.round(r.height*cam.dpr));
   const cx=cam.x+oldW/cam.zoom/2, cy=cam.y+oldH/cam.zoom/2;
   cam.fitZ=Math.min(view.width/RW,view.height/RH);
-  if (client.state==='intro' || client.state==='spawn' || oldW<=1) fitCam();
+  if (client.state==='intro' || client.state==='spawn' || client.state==='pick' || oldW<=1) fitCam();
   else { cam.zoom=clamp(cam.zoom,cam.fitZ,maxZ()); cam.x=cx-view.width/cam.zoom/2; cam.y=cy-view.height/cam.zoom/2; clampCam(); }
 }
 /** Map tile under a point in device pixels, or -1. */

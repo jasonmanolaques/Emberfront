@@ -47,7 +47,8 @@ export interface SimEvents {
   colonyBound(o: number, t: number): void;                     // o sent a ship to colonize land at tile t
   colonyFounded(o: number, t: number): void;                   // a colony's ship came ashore at tile t
   deserted(o: number, x: number, y: number, tier: number, gold: number): void;
-  regionChanged(r: number, o: number, prev: number): void;     // region r is now controlled by o (prev before), or its occupation changed
+  regionChanged(r: number, o: number, prev: number): void;
+  regionPicked(o: number, r: number, was: number): void;        // at the start, kingdom o claimed region r (giving up `was`, 0 if none)     // region r is now controlled by o (prev before), or its occupation changed
   regionTaken(r: number, by: number, from: number): void;      // an army brought region r's flag down (by occupies it), or raised it again (by its owner)
   claimsAnswered(a: number, d: number, accept: boolean): void; // d gave up a's claims (accept) or refused them: war
   armyOrdered(o: number, id: number, order: string, r: number): void;   // army id of o was sent: 'attack', 'defend' or 'retreat' to region r
@@ -60,7 +61,7 @@ export interface SimEvents {
 
 const noop = () => {};
 export const on: SimEvents = {
-  regionChanged: noop, claimsChanged: noop, battleRoll: noop, regionTaken: noop, claimsAnswered: noop, armyOrdered: noop, armyLost: noop, battle: noop, warWon: noop,
+  regionChanged: noop, regionPicked: noop, claimsChanged: noop, battleRoll: noop, regionTaken: noop, claimsAnswered: noop, armyOrdered: noop, armyLost: noop, battle: noop, warWon: noop,
   tileChanged: noop, plotChanged: noop, roadBuilt: noop, plotIgnited: noop,
   buildingPlaced: noop, capitalFell: noop, eliminated: noop, roleChanged: noop,
   towerShot: noop, arrowShot: noop, produced: noop,

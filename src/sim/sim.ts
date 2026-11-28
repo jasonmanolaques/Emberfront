@@ -31,7 +31,7 @@ function blankNation(id: number, name: string, hex: string, isPlayer: boolean, c
     soldierShare:0, humanProg:0, villagers:0, soldiers:0, militia:0, called:0, wageS:0, wageM:0, training:0, beggars:0, homeless:0, taxpayers:0, stock:[0,0,0], abandoned:0, surplusTicks:0,
     study:R_HOUSING, tier:[1,1,1,1,1,1,1], xp:[0,0,0,0,0,0,0] };
 }
-function makeNation(id: number, k: Country, isPlayer: boolean): Nation {
+export function makeNation(id: number, k: Country, isPlayer: boolean): Nation {
   const srand=W.srand;
   const n={ ...blankNation(id,k.name,k.hex,isPlayer,k.code), gold:GOLD_START, stock:[...GOODS_START], alive:true,
     expandAt:0.22+srand()*0.25, attackAt:0.5+srand()*0.3, ratio:0.3+srand()*0.25, nextThink:1+srand()*2, nextWar:100+srand()*100 };
@@ -65,12 +65,17 @@ export function findBlock(tx: number, ty: number, maxR: number): [number, number
 }
 const START_R = 8;   // tiles round its castle a kingdom starts with
 function spawnNation(n: Nation, bx: number, by: number){
-  const cx=(bx+1)*4, cy=(by+1)*4; n.capTile=cy*TW+cx;
+  const cx=(bx+1)*4, cy=(by+1)*4;
   for (let dy=-START_R;dy<=START_R;dy++) for (let dx=-START_R;dx<=START_R;dx++){
     if (dx*dx+dy*dy>START_R*START_R) continue; const x=cx+dx, y=cy+dy;
     if (x<0||y<0||x>=TW||y>=TH) continue; const t=y*TW+x;
     if (isLand[t] && !owner[t]) setOwner(t,n.id);
   }
+  placeCastle(n,bx,by);
+}
+/** Kingdom n's castle on the 2×2 block of plots with its top-left at (bx,by): its capital. */
+export function placeCastle(n: Nation, bx: number, by: number){
+  n.capTile=((by+1)*4)*TW+(bx+1)*4;
   const q=by*PW+bx; n.capPlot=q;
   for (const k of [q,q+1,q+PW,q+PW+1]){ pType[k]=B_CPART; pOwner[k]=n.id; pMain[k]=q; pBurn[k]=0; pHp[k]=0; }
   pType[q]=B_CASTLE; on.plotChanged(q);
@@ -138,7 +143,7 @@ export function startMatch(t: number, rivals: number | string[], me?: string, pl
 }
 
 /** Kingdoms whose flags give nearly the same colour: each later one a shade lighter or darker. */
-function tellApart(N: Nation[]){
+export function tellApart(N: Nation[]){
   for (let i=2;i<N.length;i++){
     const clash=(hex: string) => N.slice(1,i).some(o => colourGap(o.hex,hex)<0.1);
     if (!clash(N[i].hex)) continue;

@@ -18,7 +18,8 @@ import { bindInput } from './ui/input';
 import { refreshBuildPanel } from './ui/build';
 import { $ } from './ui/dom';
 import { openArmy } from './ui/army';
-import { newGame, step, trySpawn, playerAttack, setSoldierShare } from './game';
+import { newGame, step, trySpawn, playerAttack, setSoldierShare, pickBanner, finishPick } from './game';
+import { pickTick } from './sim/pick';
 
 document.documentElement.style.setProperty('--ui',String(UI_SCALE));
 let acc=0, last=performance.now(), hudAt=0;
@@ -49,6 +50,10 @@ function frame(now: number){
     const t0=performance.now(); let n=0;
     try { while (acc>=TICK && n<12 && (n===0 || performance.now()-t0<STEP_BUDGET)){ step(); acc-=TICK; n++; } } catch (e){ acc=0; fault('simulation',e); }
     if (acc>=TICK*2) acc=TICK*2;
+  } else if (client.state==='pick' && !client.paused){
+    // the regions are being chosen: the bots look again as the seconds run (the game's own clock has not started)
+    acc+=dt*client.speed;
+    try { while (acc>=TICK){ acc-=TICK; if (pickTick()){ acc=0; finishPick(); break; } } pickBanner(); } catch (e){ acc=0; fault('choosing',e); }
   }
   try { render(now, running ? dt*client.speed : (client.state==='play' ? 0 : dt)); } catch (e){ fault('drawing',e); }
   if (now>hudAt && client.state==='play'){ try { updateHUD(now); updateAutoSettle(); refreshBuildPanel(); } catch (e){ fault('panels',e); } hudAt=now+200; }

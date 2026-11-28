@@ -9,7 +9,7 @@ import { view, cam, clampCam, zoomAt, tileAt } from '../render/camera';
 import { hover } from '../render/render';
 import { ui, showHUD } from './hud';
 import { $ } from './dom';
-import { newGame, nextMap, startGame, trySpawn, setSoldierShare, centerHome, setPaused } from '../game';
+import { newGame, nextMap, startGame, trySpawn, pickClick, setSoldierShare, centerHome, setPaused } from '../game';
 import { openExpand, closeExpand, expandOpen } from './expand';
 import { placeAt, clickOwnBuilding, stopPlacing, toggleBuildPanel } from './build';
 import { openDiplomacy, closeDiplomacy, diplomacyOpen, closePop, claimClick, cancelClaim, confirmClaim } from './diplomacy';
@@ -26,12 +26,25 @@ import { claimsOf } from '../sim/war';
 import { fortTier, capitalIn, PRODUCE_TICKS } from '../sim/buildings';
 import { garrisonOf, WORKS_YIELD } from '../sim/war';
 import { GAME_SPEED } from '../core/constants';
+import { picking, pickProblem } from '../sim/pick';
 
 interface Drag { sx: number; sy: number; lx: number; ly: number; moved: boolean; button: number; }
 const pointers=new Map<number,{x: number; y: number}>(); let drag: Drag | null=null, pinch: {d: number; mx: number; my: number} | null=null;
 function devXY(e: MouseEvent): [number, number] { const r=view.getBoundingClientRect(); return [(e.clientX-r.left)*cam.dpr,(e.clientY-r.top)*cam.dpr]; }
 
 function updateTip(e: PointerEvent){
+  if (client.state==='pick' && hover.mouse && hover.tile>=0 && isLand[hover.tile] && !drag?.moved){   // choosing a region: what it is, and whose
+    const r=region[hover.tile], P=picking; if (!r || !P){ ui.tip.hidden=true; return; }
+    const o=P.holder[r], why=pickProblem(PLAYER,r);
+    const l1=RG.names[r] ?? 'A region', l2=o ? (o===PLAYER ? 'Your starting region' : `Claimed by ${W.nations[o].name}`) : why ?? 'Free: click to claim it', l3=`${RG.land[r]} tiles of land · its works make ${['wood','stone','copper'][RG.res[r]]}`;
+    ui.tip.innerHTML=`<span class="t1"></span><span class="t2"></span><span class="t2"></span>`;
+    ui.tip.children[0].textContent=l1; ui.tip.children[1].textContent=l2; ui.tip.children[2].textContent=l3; ui.tip.hidden=false;
+    const gr=$('game').getBoundingClientRect(), tipR=ui.tip.getBoundingClientRect();
+    let x=e.clientX-gr.left+16, y=e.clientY-gr.top+16;
+    if (x+tipR.width>gr.width-8) x=e.clientX-gr.left-tipR.width-12; if (y+tipR.height>gr.height-8) y=e.clientY-gr.top-tipR.height-12;
+    ui.tip.style.left=x/UI_SCALE+'px'; ui.tip.style.top=y/UI_SCALE+'px';
+    return;
+  }
   if (!hover.mouse || client.state!=='play' || hover.tile<0 || !isLand[hover.tile] || drag?.moved){ ui.tip.hidden=true; return; }
   const t=hover.tile, o=owner[t], tr=terr[t], landCount=W.landCount;
   let l1, l2;
@@ -67,6 +80,7 @@ function endPointer(e: PointerEvent){
     else if (drag && !drag.moved && drag.button===0 && e.type==='pointerup'){
       const [sx,sy]=devXY(e), t=tileAt(sx,sy);
       if (client.state==='spawn') trySpawn(t);
+      else if (client.state==='pick') pickClick(t);
       else if (client.state==='play'){
         const o=t>=0 ? owner[t] : 0;
         const wasOpen=expandOpen(); closeExpand();

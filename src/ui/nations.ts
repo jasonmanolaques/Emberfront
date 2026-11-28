@@ -1,8 +1,8 @@
 /* ---------- choosing your country and your rivals, on the start card ----------
-   A window lists the countries that can play on this map (on a real-world one, those whose
-   capital is on it). Click one to play it; tick the ones you will face. On a real-world map
-   everyone, you included, is founded at their real capital. Quick picks choose the nearest
-   capitals to yours (at random on a generated map), all of them, or none. */
+   A window lists every country. None is chosen for you: click one to play it; tick the ones you will
+   face, or let the standard match draw them at random. Nobody starts at a real capital: when the game
+   begins every kingdom has 15 seconds to choose the region it starts in (sim/pick.ts). Quick picks draw
+   5, 10 or 20 at random, the standard match, a full game, or none. */
 import { TW, kingdomLimit, isEurope, standardKingdoms } from '../core/constants';
 import { COUNTRIES, MAJOR, countryByCode } from '../core/countries';
 import { W } from '../sim/state';
@@ -29,14 +29,9 @@ function quick(kind: string, k=0): string[] {
   const av=available().filter(a => a.country.code!==client.me);
   if (kind==='none') return [];
   if (kind==='full') return av.map(a => a.country.code).sort(() => Math.random()-0.5).slice(0,maxRivals());
-  if (kind==='standard'){   // (64 kingdoms on Europe, 24 elsewhere, the rivals drawn at random: on a real map those with a capital on it first)
-    const pool=av.sort(() => Math.random()-0.5); if (real()) pool.sort((a,b) => +(b.tile>=0)-+(a.tile>=0));
+  if (kind==='standard'){   // (64 kingdoms on Europe, 24 elsewhere, the rivals drawn at random from every country)
+    const pool=av.sort(() => Math.random()-0.5);
     return pool.slice(0,Math.min(standardKingdoms(W.map),maxKingdoms())-1).map(a => a.country.code);
-  }
-  const mine=available().find(a => a.country.code===client.me);
-  if (real() && mine){
-    const d=(t: number) => t<0 || mine.tile<0 ? Infinity : Math.hypot(t%TW-mine.tile%TW, ((t/TW)|0)-((mine.tile/TW)|0));
-    return av.sort((a,b) => d(a.tile)-d(b.tile) || a.country.code.localeCompare(b.country.code)).slice(0,k).map(a => a.country.code);
   }
   return av.map(a => a.country.code).sort(() => Math.random()-0.5).slice(0,k);
 }
@@ -52,10 +47,7 @@ export function fitChoice(){
   const av=available(), codes=new Set(av.map(a => a.country.code)), saved=client.choices[client.mapIndex];
   if (saved){ client.me=saved.me; client.rivals=[...saved.rivals]; }
   else client.rivals=[];
-  if (!codes.has(client.me)){
-    const big=av.filter(a => MAJOR.has(a.country.code)), pool=big.length ? big : av;
-    client.me=pool[(Math.random()*pool.length)|0].country.code;
-  }
+  if (!codes.has(client.me)) client.me='';   // (no country chosen for you: you choose one)
   client.rivals=client.rivals.filter(c => codes.has(c) && c!==client.me);
   if (!saved) client.rivals = quick('standard');   // (the standard match: 64 kingdoms on Europe, 24 on the other maps)
   keep();
@@ -71,8 +63,8 @@ function summary(){
   $('pcName').textContent=k?.name ?? 'Choose your country';
   $('pcRivals').textContent=`${client.rivals.length} rival${client.rivals.length===1?'':'s'}`;
   const start=$('start') as HTMLButtonElement;
-  start.textContent = real() ? `Start as ${k?.name ?? '…'}` : 'Choose your spawn';
-  start.disabled=!client.rivals.length;
+  start.textContent = k ? `Start as ${k.name}` : 'Choose your country';
+  start.disabled=!k || !client.rivals.length;
 }
 
 export const nationsOpen = () => !win.hidden;
@@ -90,12 +82,7 @@ function render(){
       +(me ? `<span class="you">You</span>` : `<label class="riv"><input type="checkbox" ${picked.has(k.code) ? 'checked' : ''}>Rival</label>`)+`</li>`;
   }).join('') || '<li class="none">No country by that name on this map</li>';
   $('nCount').textContent=`${client.rivals.length} rival${client.rivals.length===1?'':'s'} · ${client.rivals.length+1} of ${maxKingdoms()} kingdoms`;
-  $('nHint').textContent = real()
-    ? 'Click a country to play it: you start at its real capital (a country with none on this map, where you choose). Tick the countries you will face: each is founded at its own capital, or at a random place if it has none on this map.'
-    : 'Click a country to play it: you choose where to found it. Tick the countries you will face: they are founded around the map.';
-  $('nPlace').hidden=!real();
-  for (const b of $('nPlace').querySelectorAll<HTMLButtonElement>('button')) b.setAttribute('aria-pressed',String(b.dataset.p===client.placement));
-  for (const b of win.querySelectorAll<HTMLButtonElement>('.nquick button[data-k]')) b.textContent=`${real() ? 'Nearest' : 'Random'} ${b.dataset.k}`;
+  $('nHint').textContent='Click a country to play it. Tick the countries you will face (or let the standard match draw them at random). When the game begins, everyone has 15 seconds to choose the region they start in.';
   const full=win.querySelector<HTMLButtonElement>('.nquick button[data-q="full"]')!, n=Math.min(maxKingdoms(), available().length);
   full.hidden = n<=standardKingdoms(W.map);   // (on Europe the standard match is all the room there is)
   full.textContent = isEurope(W.map) ? `Random ${n-1}` : n<maxKingdoms() ? `All · ${n}` : `Full game · ${maxKingdoms()}`;
@@ -123,7 +110,6 @@ win.querySelector('.nquick')!.addEventListener('click', e => {
   keep(!!b.dataset.k);   // (a random draw stays a random draw: it is made afresh for each game)
   render();
 });
-$('nPlace').addEventListener('click', e => { const b=(e.target as HTMLElement).closest('button') as HTMLButtonElement | null; if (!b) return; client.placement=b.dataset.p as typeof client.placement; render(); });
 $('nDone').addEventListener('click', closeNations);
 $('nClose').addEventListener('click', closeNations);
 $('pickCountry').addEventListener('click', openNations);

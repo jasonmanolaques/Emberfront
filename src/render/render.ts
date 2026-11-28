@@ -561,7 +561,7 @@ export function render(now: number, dt: number){
       ctx.imageSmoothingEnabled=false; ctx.drawImage(flagImage(n.code),sx-nw/2-fw-Math.round(fs*0.2),sy-fs*0.35-fh/2,fw,fh); }
     const ts=(fs*0.72)|0; ctx.font=`500 ${ts}px "Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif`; ctx.lineWidth=Math.max(2,ts*0.22);
     ctx.fillStyle=n.isPlayer?'#ffe27a':rel ?? '#e9eef3';
-    ctx.strokeText(fmt(n.strength),sx,sy+fs*0.55); ctx.fillText(fmt(n.strength),sx,sy+fs*0.55);
+    if (client.state==='play'){ ctx.strokeText(fmt(n.strength),sx,sy+fs*0.55); ctx.fillText(fmt(n.strength),sx,sy+fs*0.55); }   // (while the regions are chosen, the names alone)
   }
   // each barracks' army over its roof: soldiers there over its room, and the army by tier
   if (zs>=1.5){

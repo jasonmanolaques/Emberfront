@@ -13,14 +13,15 @@ import { buildBase, paintAll, paintRoad, paintTile, repaint, sizeTerrain } from 
 import { drawPlotAndNeighbours } from './render/sprites';
 import { addFlash, fireBurst, gatePuff, addShot, addHit, dustPuff, addCorpse, floats, resetEffects } from './render/effects';
 import { GOOD_NAME } from './sim/resources';
-import { PW, isEurope, standardKingdoms } from './core/constants';
+import { PW, isEurope, standardKingdoms, GAME_SPEED } from './core/constants';
 import { resetStyles } from './render/style';
 import { resetLabels, resetGhosts, noteBlow, noteSwing, noteArrow } from './render/render';
 import { onStory } from './ui/story';
 import { resetPeople } from './render/people';
 import { resetSpeech, say, pick, LINES } from './render/speech';
 import { claimsOf } from './sim/war';
-import { regionName } from './sim/regions';
+import { regionName, RG, region } from './sim/regions';
+import { beginPick, claimRegion, pickProblem, endPick, picking, pickLeft, cancelPick } from './sim/pick';
 const RANKS = ['', 'Leader', 'General', 'Captain', 'Commander', 'Grand Marshal'];
 import { setupBuildPanel, toggleBuildPanel } from './ui/build';
 import { ui, log, toast, showHUD, checkEnd, onEliminated, onCapitalFell, onBuildingPlaced } from './ui/hud';
@@ -205,6 +206,7 @@ export const MAPS: { name: string; map: string; seed?: number }[] = [
 /** Starts afresh on the current map (MAPS), or with `seed`, on a map generated from it. */
 export function newGame(seed?: number){
   const m=MAPS[client.mapIndex];
+  cancelPick();
   if (seed!==undefined) newWorld(seed);
   else newWorld(m.seed ?? (Math.random()*2147483647)|0, m.map);
   $('mapName').textContent=`${m.name} · ${client.mapIndex+1}/${MAPS.length}`;
@@ -228,28 +230,48 @@ export function step(){
   if (W.tickN%10===5) checkEnd();
 }
 
-/** The start card's button: on a real-world map you start at once at your country's capital;
-    on a generated one you choose where. */
+/** The start card's button: the 15 seconds of choosing a starting region begin (sim/pick.ts), every kingdom choosing at once. */
 export function startGame(){
+  if (!client.me){ toast('Choose your country first'); return; }
   $('intro').hidden=true; $('scrim').hidden=true;
-  if (W.map==='gen'){ client.state='spawn'; ui.banner.hidden=false; return; }
-  if (!handPicked()) client.rivals=randomRivals();   // (the standard match: 23 of the other countries, drawn afresh for each game)
-  const cap=available().find(a => a.country.code===client.me);
-  client.state='spawn';
-  if (cap) trySpawn(cap.tile);
-  if ((client.state as string)!=='play') ui.banner.hidden=false;   // (no room there after all: choose a place)
+  if (!handPicked()) client.rivals=randomRivals();   // (the standard match: the rivals drawn at random, afresh for each game)
+  beginPick(client.me, client.rivals.filter(c => c!==client.me));
+  client.state='pick'; ui.banner.hidden=false; pickBanner();
+  showHUD(false); fitCam();
+}
+/** The banner over the map while the regions are chosen: the time left, and the region you hold. */
+export function pickBanner(){
+  const P=picking; if (!P) return;
+  const r=P.of[PLAYER], s=Math.ceil(pickLeft()/(GAME_SPEED*10));
+  ui.banner.textContent=`Choose your starting region · ${s} s · ${r ? `yours: ${RG.names[r]} (click another to move)` : 'click a free region to claim it'}`;
+}
+/** A click on the map while the regions are chosen: claim that region (moving from the one held), if it is free and has room for a castle. */
+export function pickClick(t: number){
+  if (t<0) return;
+  const r=region[t], why=pickProblem(PLAYER,r);
+  if (why){ toast(why); return; }
+  claimRegion(PLAYER,r); pickBanner();
+}
+/** The time to choose is up: every kingdom is founded in its region, and the game begins. */
+export function finishPick(){
+  endPick();
+  enterPlay();
 }
 
 export function trySpawn(t: number){
   if (t<0) return;
   if (!startMatch(t, client.rivals.length ? client.rivals : standardKingdoms(W.map)-1, client.me || undefined, client.placement)){ toast('Pick open land away from water and mountains'); return; }
+  enterPlay();
+}
+/** The match is under way: the panels for the player's kingdom, the camera on its castle. */
+function enterPlay(){
   const me=W.nations[PLAYER];
   $('meName').textContent=me.name; $('meCrest').style.cssText=flagCSS(me.code);
   client.state='play'; ui.banner.hidden=true; showHUD(true);
   setupBuildPanel(); setupDiplomacy();
   toggleBuildPanel(true,'resources');   // (the first plantation and quarry are free: the resource buildings are what the first minutes are for)
   focusOn(me.capTile, Math.max(cam.fitZ*2.2, 1.8*cam.dpr));
-  log(`${me.name} is founded. Expand fast while the land is empty.`,'good');
+  log(`${me.name} is founded in ${RG.names[region[me.capTile]] ?? 'its region'}. Expand fast while the land is empty.`,'good');
 }
 
 /** Settling unclaimed land: spend `ratio` of the treasury pushing the border toward tile t.
