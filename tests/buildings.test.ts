@@ -225,7 +225,7 @@ describe('gold and strength', () => {
     const n=me(); n.humanProg=-1e9;
     const [dx,dy]=doorOf(n);
     for (let i=0;i<9;i++){ const h=makeHuman(n,H_SOLDIER,dx,dy+2); h.militia=i<4; W.humans.push(h); }   // 5 trained soldiers and 4 militia
-    place(B_MINTER, freeFor(B_MINTER)); run(3);   // (the counts catch up)
+    place(B_MINTER, freeFor(B_MINTER)); run(3+5);   // (the counts catch up: heads are counted every 5 ticks)
     const p=incomeParts(n);
     expect(p.tax).toBeCloseTo(TAX_PER_VILLAGER*n.taxpayers, 9);
     expect(p.land).toBeCloseTo(LAND_TAX*n.tiles, 9);

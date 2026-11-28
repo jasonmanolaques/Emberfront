@@ -3,6 +3,7 @@ import { TW, TH, NP, B_EMPTY, B_HOUSE, B_FARM, B_TOWER, B_MINE, B_CPART, B_RUINS
 import { W, owner, occ, isLand, pType, pOwner, pBuild, pCenter, pBurn, pTimer, pTier, pArch } from './state';
 import { HOUSE_BEDS } from './research';
 import { on } from './events';
+import { countHeads } from './population';
 import { isBld, joinGatherers } from './buildings';
 
 /** Counts shared border edges between every pair of nations into W.contact[a*M+b], each kingdom's
@@ -47,6 +48,7 @@ export function census(){
   tallies=W.nations.map(() => newTally());
   tally(0,NP);
   commit();
+  countHeads();   // (and the people counted at the next tick)
   tallies=[];   // (a pass spread over the ticks that was under way starts again at its next beginning, rather than adding its slices to these counts)
 }
 /** The same count spread over ten ticks (`k`, 0 to 9, is the tick's place in the ten): a tenth of the plots each, so no one tick pays for

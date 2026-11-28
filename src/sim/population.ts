@@ -866,6 +866,9 @@ function reviveWounded(h: Human, x: number, y: number){
   W.humans.push(h); backToRoam(h);
 }
 const groups: Human[][]=[];   // each kingdom's people, this tick
+let countNow=true;   // (the next tick counts heads whatever: a new match, or a test that needs the counts)
+/** The next tick counts every kingdom's people, soldiers and the rest, rather than waiting its turn. */
+export const countHeads = () => { countNow=true; };
 export function updatePopulation(){
   const N=W.nations, H=W.humans;
   // people die when their kingdom falls, the ground under them is taken, or they fall in battle
@@ -911,7 +914,9 @@ export function updatePopulation(){
   }
   updateWar();   // the armies: crises, orders, marches, battles, flags (after the soldiers are stationed in their barracks' armies)
   for (const h of H){ if (h.task===TASK_REST && h.kind===H_VILLAGER && (W.tickN+h.id)%BOOK!==0) continue; if (!inPhalanx(h)) step(h); }   // (resting at home: looked at every BOOK ticks)   // (the soldiers of an army stand in its phalanx: sim/war.ts moves them)
-  // headcount after everyone has moved, so it matches what is on the map this tick
+  // headcount after everyone has moved, so it matches what is on the map (every BOOK ticks: the counts move slowly; and at once after a full count of the map)
+  if (W.tickN%BOOK!==0 && !countNow) return;
+  countNow=false;
   for (const n of N){ n.villagers=0; n.soldiers=0; n.militia=0; n.called=0; n.wageS=0; n.wageM=0; n.training=0; n.beggars=0; n.homeless=0; n.unhoused=0; n.taxpayers=0; n.might=0; n.jobs[0]=n.jobs[1]=n.jobs[2]=n.jobs[3]=n.jobs[4]=0; n.studying=0; }
   for (const h of H){
     const n=N[h.o]; if (h.gar) continue;

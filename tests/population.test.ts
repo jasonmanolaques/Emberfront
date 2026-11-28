@@ -52,7 +52,7 @@ function start(seed: number, rivals: number, withBarracks = true){
 // runs until ok() (a little while, so those busy with a load or a house can join in), and checks it
 function soon(ok: () => boolean, max = 100){ for (let i=0;i<max && !ok();i++) tick(); expect(ok()).toBe(true); }
 // runs until nobody is switching role, then returns how many ticks that took
-function settle(max = 3000){ for (let i=0;i<max;i++){ if (!mine().some(isSwitching)) return i; tick(); } throw new Error('never settled'); }
+function settle(max = 3000){ for (let i=0;i<max;i++){ if (!mine().some(isSwitching)){ for (let k=0;k<BOOK;k++) tick(); return i; } tick(); } throw new Error('never settled'); }   // (and the heads counted again: every BOOK ticks)
 
 describe('population', () => {
   beforeEach(() => start(12345, 0));
